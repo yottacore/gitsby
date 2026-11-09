@@ -6,14 +6,14 @@
 ##		Two backlog rules that review rounds kept leaking through, checked in cicd
 ##		stage 1 instead of by hand:
 ##		1. Every open code-review item (not ✅ ✋ 🚫, or in the new format not Done,
-##		   Canceled, Moot or Deferred) carries an "Origin:" sub-bullet -
+##		   Canceled, Moot, or Deferred) has an "Origin:" sub-bullet -
 ##		   the commit or round that introduced it, whether an earlier round saw it,
 ##		   and Confirmed (reproduced) or Plausible (read only).
 ##		2. A suite check removed on this branch, against the integration branch, is
 ##		   named in the backlog. Two decisions were reversed by deleting the check
 ##		   that encoded them, with nothing written down; this makes that a stop.
 ##		The removed-check match is a fixed-string grep for the check's ID or its
-##		label, so a label carrying a shell variable has to be quoted in the backlog
+##		label, so a label with a shell variable has to be quoted in the backlog
 ##		as written. A check that keeps its ID under a new label was edited, not
 ##		removed.
 ##	Syntax:
@@ -59,13 +59,9 @@ git -C "${root}" rev-parse --git-dir >/dev/null 2>&1 || fUsage "backlog-check: $
 
 findings=0
 
-## 1. Open review items without an Origin line, in either format. An old one is a
-## "\t- <emoji> Code Review ..." line, open unless the emoji says done, deferred or
-## canceled, and runs to the next line at its depth or shallower; its sub-bullets sit
-## at two tabs. A new one is a top-level "- Code Review ..." item, open unless its
-## Status row says Done, Canceled, Moot or Deferred, and runs to the next top-level
-## line; its rows sit at one tab. Each open item is listed, and listed again as
-## missing when it has no Origin row.
+## 1. Open review items without an Origin line, in either format: an old emoji line at one tab, or
+## a new top-level "- Code Review ..." item whose Status isn't closed. Each open item is listed,
+## and again as missing with no Origin row.
 reviewScan="$(awk '
 	function flush() {
 		if (cur != "" && open) { print "open " cur; if (!found) print "missing " cur }

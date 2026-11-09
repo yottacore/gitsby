@@ -223,7 +223,7 @@ func TestCollapseCommand(t *testing.T) { // [dbfqr]
 	}
 }
 
-// The internal tokens carry a hyphen precisely so they cannot be typed.
+// The internal tokens have a hyphen precisely so they cannot be typed.
 func TestCollapseCommandRefusesInternalTokens(t *testing.T) { // [dbfqs]
 	for _, name := range []string{"br-merge", "repo-clone", "account-apply"} {
 		if _, err := collapseCommand(command{name: name}); err == nil {

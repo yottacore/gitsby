@@ -11,6 +11,7 @@ package main
 
 import (
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -132,14 +133,9 @@ func (a *app) releasePreflight() error {
 	if have := runLines("git", "tag", "--list", "v"+ver, ver); len(have) > 0 {
 		return usagef("Tag '%s' already exists.", have[0])
 	}
-	// An invented version on a target that would gain nothing cuts a tag for no
-	// release, and the natural re-run after a failed push cuts a second one on the
-	// same commit - so the first is stranded forever. A version you typed, and
-	// promoting a candidate, are deliberate and stay allowed. Fails open: if we
-	// can't tell, the release goes ahead. 'release' parks first, so uncommitted work
-	// or unpushed commits ARE something to release even when the branches currently
-	// look level - the guard only speaks for a settled repo. Under --staged only
-	// the index is parked, so edits left out of it are nothing to release.
+	// An invented version on a target that gains nothing cuts a tag for no release, and
+	// a re-run cuts another. Fails open. A parked tree is something to release, or under
+	// --staged the index.
 	parks := runOut("git", "status", "--porcelain") != ""
 	if a.opt.staged {
 		parks = !runOK("git", "diff", "--cached", "--quiet")
@@ -154,7 +150,7 @@ func (a *app) releasePreflight() error {
 		relTarget = "refs/remotes/origin/" + relMain
 	}
 	// The local branch is what gets tagged and pushed, so it is what "nothing new"
-	// is about. Stand down if origin holds commits we don't: the pull would bring
+	// is about. Stand down if origin has commits we don't: the pull would bring
 	// them in.
 	if a.branchExistsLocal(relMain) && a.branchExistsRemote(relMain) {
 		if !runOK("git", "merge-base", "--is-ancestor", "refs/remotes/origin/"+relMain, relTarget) {
@@ -172,7 +168,8 @@ func (a *app) releasePreflight() error {
 	}
 	if relExisting := runOut("git", "describe", "--exact-match", "--tags", relTarget); relExisting != "" {
 		a.out.status("Nothing new to release since " + relExisting + ".")
-		a.out.clean("  If that tag never reached origin, push it: git push origin tag " + relExisting)
+		a.out.clean("  If that tag never reached origin, push it:")
+		a.out.clean("    git push origin tag " + typedArg(relExisting, runtime.GOOS))
 		a.out.clean("")
 		return errDone
 	}
@@ -216,8 +213,12 @@ func (a *app) cmdRelease() error {
 		}
 		// By full ref: git merge reads a tag of the same name ahead of the branch.
 		if err := a.step("git", "merge", "--no-ff", "refs/heads/"+devBranch, "-m", mergeMessage); err != nil {
+			rerun := meName + " release"
+			if a.cmd.arg != "" {
+				rerun += " " + typedArg(a.cmd.arg, runtime.GOOS)
+			}
 			return a.backOutMerge(err, devBranch, mainBranch, startBranch,
-				"git checkout "+devBranch+" && git merge "+mainBranch+", then '"+meName+" release'")
+				[]string{"git checkout " + typedArg(devBranch, runtime.GOOS), "git merge " + typedArg(mainBranch, runtime.GOOS)}, rerun)
 		}
 	}
 	if err := a.step("git", "tag", "-a", a.rel.tag, "-m", a.rel.tag); err != nil {

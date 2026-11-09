@@ -36,11 +36,8 @@ set -Eeuo pipefail
 meDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd -- "${meDir}/../.." && pwd)"
 
-## git hands a hook the checkout it is pushing from: GIT_DIR from a linked worktree or a
-## --git-dir push, GIT_WORK_TREE beside it, GIT_PREFIX from a subdirectory. Left in place, a
-## git command aimed at the gate worktree acts on that checkout instead - it detaches its HEAD
-## and writes its index - and the unit tests' throwaway repos resolve to the real one. Every
-## git call here names its directory, and the gate should see what a hand run sees.
+## git hands a hook the checkout it pushes from, and a git command aimed at the gate worktree
+## would act on that one instead. Every git call here names its directory.
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_PREFIX
 
 ## Unindented on purpose: a <<- heredoc would strip the tab inside the if.

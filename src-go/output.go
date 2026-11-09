@@ -35,7 +35,7 @@ func newPrinter() *printer {
 
 func (p *printer) resetBlank() { p.lastBlank = false }
 
-// clean prints a plain line; an empty one only lands when the previous line was
+// clean prints a plain line; an empty one only prints when the previous line was
 // not already blank.
 func (p *printer) clean(s string) {
 	if s != "" {
@@ -51,7 +51,7 @@ func (p *printer) clean(s string) {
 
 func (p *printer) cleanf(format string, a ...any) { p.clean(fmt.Sprintf(format, a...)) }
 
-// forceClean lands a blank even directly after another one, for the framing that
+// forceClean prints a blank even directly after another one, for the framing that
 // has to be a fixed number of lines rather than a rhythm.
 func (p *printer) forceClean(s string) {
 	p.resetBlank()
@@ -65,6 +65,15 @@ func (p *printer) status(s string) {
 		return
 	}
 	p.clean("[ " + s + " ]")
+}
+
+// statusNotes is a status line with labeled notes under it, such as the File line
+// for a path, which never goes inside the sentence.
+func (p *printer) statusNotes(s string, notes []string) {
+	p.status(s)
+	for _, l := range notes {
+		p.clean("  " + l)
+	}
 }
 
 // warn writes one line to stderr, unprefixed, for a warning that sits in the
@@ -111,11 +120,8 @@ func escArgs(a []any) []any {
 	return out
 }
 
-// printable escapes the control characters in a value for display, the way the
-// accounts file writes them: by name between two marks, such as ◉NEWLINE◉, and
-// ◉U+XXXX◉ for the rest. A newline split one field into two, and an ESC drives
-// the terminal. Everything else, a backslash included, prints as written, so a
-// path never comes out re-spelled.
+// printable escapes control characters for display the way the accounts file does, such
+// as ◉NEWLINE◉, and ◉U+XXXX◉ for the rest. A backslash prints as written.
 func printable(s string) string {
 	if !strings.ContainsFunc(s, unicode.IsControl) {
 		return s
@@ -159,12 +165,8 @@ func (p *printer) confirm(prompt string) bool {
 	return false
 }
 
-// wrapWords breaks a sentence at word boundaries, at a fixed column rather than at
-// the terminal's. Fixed on purpose: an explanation written to fit is one that reads
-// the same in a transcript, in a bug report and on a narrow terminal, and a width
-// that moves cannot be written to at all. A word longer than the limit - a path, a
-// URL - is left whole and allowed to overhang, since breaking one makes it
-// un-copyable.
+// wrapWords breaks a sentence at a fixed column, not the terminal's, so it reads the
+// same anywhere. A word past the limit, such as a path, is left whole.
 func wrapWords(text string, width int) []string {
 	var lines []string
 	var line string

@@ -3,15 +3,15 @@
 #  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
 
 ##	Purpose:
-##		- Mints the ID a new test carries, and checks that every test has one.
+##		- Mints the ID a new test gets, and checks that every test has one.
 ##		- An ID is the whole minutes from 2000-01-01 UTC to when the test was written,
 ##		  in lowercase Crockford base 32 (0-9, a-z less i, l, o, u). Five characters
 ##		  until 2063, and IDs of one length sort by age in a plain byte sort. A minute
 ##		  another test already has goes to the next free one.
-##		- A suite check carries it at the front of its label, as "[<id>] label". A
+##		- A suite check has it at the front of its label, as "[<id>] label". A
 ##		  pass/fail pair written out by hand is one check, so its fOk and fFail
-##		  (fBad in parity) share one. A Go test carries it on its func line, as a
-##		  trailing "// [<id>]". A spawn-count measure carries it like a suite check.
+##		  (fBad in parity) share one. A Go test has it on its func line, as a
+##		  trailing "// [<id>]". A spawn-count measure has it like a suite check.
 ##		- A check inside a loop is one test, so every pass of the loop reports the
 ##		  same ID.
 ##	Syntax:

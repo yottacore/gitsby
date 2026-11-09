@@ -21,7 +21,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- `account apply` adds a credential helper for each account. With two accounts logged in to gh, plain `git push` over https in the folder of the one that isn't active used to fail, because gh's own helper only answers for the active account. The helper asks gh for that account's token when git needs it, then tries its `tokenFile`. On other hosts it tries only the `tokenFile`. No token is written to disk, and a credential manager already set up is still asked first. Re-run `gitsby account apply` to get it.
+- `account apply` adds a credential helper for each account. With two accounts logged in to gh, plain `git push` over https in the folder of the one that isn't active used to fail, because gh's own helper only answers for the active account. The helper asks gh for that account's token when git needs it, then tries its `tokenfile`. On other hosts it tries only the `tokenfile`. No token is written to disk, and a credential manager already set up is still asked first. Re-run `gitsby account apply` to get it.
+
+### Changed
+
+- The SSH line in `status` and `whoami` names the key file on a `File:` line under it, not inside its parentheses, where a long path wrapped the line. `repo clone` ends with `[ Cloned. ]`, with the folder on a `File:` line. `account apply` and `account set` do the same for each file they write, and for a fragment `account apply` no longer uses.
+
+### Fixed
+
+- A failed `account apply` no longer empties an account's fragment that your global git config already includes. Each fragment is written to a new file beside it, which replaces it only once every key is in. A full disk or a permissions error leaves the old one as it was, and a lock file git left beside it no longer stops the run.
+
+- A Fix line that names a path with an apostrophe in it gives a command that pastes. The `chmod 600` for a loose token file gave one the shell couldn't read, and the others gave none. When `br merge` or `release` stops on a conflict, each command to settle it is on a line of its own, with the branch names quoted where a shell needs it.
+
+- A syntax error from `release` or `raw` that quotes what was typed shows a control character by name, as every other error does, so an escape typed by mistake no longer changes the terminal's colors.
 
 ## v3.0.0-beta.1 - 2026-11-08
 

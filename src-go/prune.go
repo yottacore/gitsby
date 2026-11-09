@@ -1,5 +1,5 @@
 // br prune's survey and plan. All read-only: the survey decides, the plan shows
-// every branch by name, and the deleting half lands with the other writers.
+// every branch by name, and the deleting half sits with the other writers.
 
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 // Licensed under The MIT License (MIT). Full text at:
@@ -23,9 +23,9 @@ type prunePlan struct {
 
 func (p prunePlan) empty() bool { return len(p.local) == 0 && len(p.remote) == 0 }
 
-// resolvePrune sorts local branches into what's already landed and what isn't.
-// Ancestry is an exact test here only because gitsby always lands with a real
-// merge commit - a squash- or rebase-landed branch never looks contained, and is
+// resolvePrune sorts local branches into what's already merged and what isn't.
+// Ancestry is an exact test here only because gitsby always merges with a real
+// merge commit - a squash- or rebase-merged branch never looks contained, and is
 // kept rather than guessed at.
 func (a *app) resolvePrune() error {
 	target := a.mergeTarget()
@@ -40,9 +40,8 @@ func (a *app) resolvePrune() error {
 	current := a.currentBranch()
 	// Ask once per target ref, not once per branch: 'for-each-ref --merged' answers
 	// "which branches are contained in this ref" for all of them in a single call.
-	// The delete-time per-branch re-check stays with the deleting half, deliberately:
-	// the confirmation prompt can sit a while, and that one is the safety net rather
-	// than the survey.
+	// cmdPrune surveys again the same way at delete time, since the confirmation
+	// prompt can sit a while; that one is the safety net, this one the plan.
 	mergedLocal := map[string]bool{}
 	for _, ref := range a.prune.targetRefs {
 		for _, branch := range runLines("git", "for-each-ref", "--format=%(refname:lstrip=2)", "--merged", ref, "refs/heads/") {
@@ -57,7 +56,7 @@ func (a *app) resolvePrune() error {
 	// branch that shares its name with a tag.
 	for _, branch := range a.localBranchNames() {
 		// The branch we're standing on can't be deleted, and protected ones never are.
-		// But if it WOULD have qualified, say so - otherwise it just vanishes from
+		// But if it WOULD have qualified, say so - otherwise it vanishes from
 		// every list.
 		if branch == current {
 			if !a.isProtectedBranch(branch) && mergedLocal[branch] {
@@ -78,12 +77,8 @@ func (a *app) resolvePrune() error {
 			return err
 		}
 		a.prune.local = append(a.prune.local, branch)
-		// The remote copy goes only when origin has the merge too: a landing that
-		// hasn't been pushed yet leaves origin holding the only ref to that work.
-		// The map was built by listing refs/remotes/origin, so being in it already
-		// says the remote branch is there - no second ref lookup per branch. The
-		// value it tested is kept, since that is what origin must still hold when the
-		// delete goes out.
+		// The remote copy goes only when origin has the merge too. The tested value is
+		// kept, since origin must still hold it when the delete goes out.
 		if tip, ok := mergedRemote[branch]; ok {
 			if a.prune.remoteTip == nil {
 				a.prune.remoteTip = map[string]string{}
@@ -150,13 +145,9 @@ func sortRemoteDeletes(branches []string, tested, onOrigin map[string]string) (s
 // would come after the local deletes, and prune never lists those branches again.
 const leasePushBudget = 16384
 
-// leaseDeleteBatches builds the argument list of each delete push. Every branch is
-// leased on the value that was tested, spelled out: a bare --force-with-lease reads
-// the tracking ref and follows push.useForceIfIncludes, which refuses a delete once
-// the local branch is gone. Each delete names the full ref, since origin matches a
-// short name against its tags too, and one match too many sends none of them. A
-// batch closes before the next branch would take its arguments past budget; a
-// branch too long for any budget still goes, alone.
+// leaseDeleteBatches builds each delete push's arguments, leased on the tested value and
+// by full ref, since a bare lease refuses a delete once the local branch is gone.
+// Batches split at budget.
 func leaseDeleteBatches(branches []string, tested map[string]string, budget int) []leaseBatch {
 	const fixedLen = len("push") + len("origin") + len("--delete") + 3
 	var batches []leaseBatch
@@ -225,7 +216,7 @@ func typedArg(word, goos string) string {
 	if plain {
 		return word
 	}
-	return "'" + strings.ReplaceAll(word, "'", `'\''`) + "'"
+	return shellQuote(word)
 }
 
 // pruneNothingToDo says WHY the plan is empty - "no branch is merged" would be a

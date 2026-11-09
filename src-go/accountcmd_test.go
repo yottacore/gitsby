@@ -13,6 +13,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -318,15 +319,9 @@ func TestAccountListPrintsRulesAsWritten(t *testing.T) { // [dcq9x]
 // setApp builds a run pointed at a real accounts file, for the writer below.
 func setApp(t *testing.T, body, name, key, value string) (*app, string) {
 	t.Helper()
-	file := filepath.Join(t.TempDir(), "config.shcl")
-	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	a := newApp(newPrinter())
-	a.opt.configFile, a.opt.configGiven, a.opt.quiet = file, true, true
-	if err := a.cfg.load(a.opt); err != nil {
-		t.Fatalf("load: %v", err)
-	}
+	a.opt.quiet = true
+	file := loadConfigFile(t, a.cfg, &a.opt, body)
 	a.cmd = command{name: "account-set", arg: name, arg2: key, arg3: value, mutating: true}
 	return a, file
 }
@@ -453,21 +448,18 @@ func TestAccountSetKeepsTheDottedForm(t *testing.T) { // [dbss0]
 	}
 }
 
-// A file in the old layout is rewritten in the current one on its first edit,
-// comments and all. The mark a Windows editor wrote and its line endings go, since
-// the module writes one shape.
-func TestAccountSetConvertsAFlatFile(t *testing.T) { // [dbss1]
+// A file in the old layout is in the current one by the time it is edited,
+// comments and all, converted as it was read. The mark a Windows editor wrote and
+// its line endings go, since the module writes one shape.
+func TestAccountSetOnAConvertedFlatFile(t *testing.T) { // [dbss1]
 	body := utf8BOM + "# mine\r\naccount.work.path = C:/work   # tree\r\naccount.work.ghAccount = \"a#b\"\r\nprotocol = https\r\n"
 	a, file := setApp(t, body, "work", "host", "gitea.com")
 	plan, err := a.accountSetPlan()
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
-	// Off since 2026-11-07: a whole v2.1.0 file is converted on read now, so the
-	// plan has nothing left to convert.
-	// if !plan.converts || plan.exists {
-	if plan.exists {
-		t.Errorf("plan = %+v, want a conversion adding a key", plan)
+	if plan.converts || plan.exists {
+		t.Errorf("plan = %+v, want a key added and nothing left to convert", plan)
 	}
 	if err := a.cmdAccountSet(); err != nil {
 		t.Fatalf("set: %v", err)
@@ -487,12 +479,12 @@ func TestAccountSetConvertsAFlatFile(t *testing.T) { // [dbss1]
 	}
 	// A drive path is a folder on Windows alone; anywhere else it is listed as ignored.
 	if isWindows() {
-		if got := cfg.foldersOf("work"); len(got) != 1 || got[0] != "c:/work" {
+		if got := ruleMatches(cfg.paths, "work"); len(got) != 1 || got[0] != "c:/work" {
 			t.Errorf("folders = %v", got)
 		}
 		return
 	}
-	if got := cfg.foldersOf("work"); len(got) != 0 {
+	if got := ruleMatches(cfg.paths, "work"); len(got) != 0 {
 		t.Errorf("folders = %v, want none off Windows", got)
 	}
 	if want := "account[work].path (not an absolute folder: C:/work)"; !slices.Contains(cfg.unknown, want) {
@@ -597,7 +589,7 @@ func TestAccountSetRefusesADuplicatedKey(t *testing.T) { // [dbhg7]
 	}
 }
 
-// A key the loader ignores, written past this command, lands in the file and is
+// A key the loader ignores, written past this command, ends up in the file and is
 // dropped on every read: the file says one thing and every command does another.
 func TestAccountSetRefusesAKeyNothingReads(t *testing.T) { // [dbhg8]
 	a, _ := setApp(t, "account: work\n\tpath: /a\n", "work", "hostname", "gitea.com")
@@ -649,7 +641,7 @@ func TestAccountSetUsageNests(t *testing.T) { // [dd5g6]
 }
 
 // 'host' and 'user' are interpolated into the credential helper, which git hands
-// to a shell. The loader drops one carrying a shell character; refusing to WRITE
+// to a shell. The loader drops one with a shell character; refusing to WRITE
 // it is what stops the file and the behavior disagreeing.
 func TestAccountSetRefusesAShellCharacterInHost(t *testing.T) { // [dbhg9]
 	a, _ := setApp(t, "account: work\n\tpath: /a\n", "work", "host", "gitea.com; id")
@@ -670,7 +662,7 @@ func TestAccountSetWritesTheDocumentedSpelling(t *testing.T) { // [dbhga]
 	}
 }
 
-// A value carrying ' #' is a comment from that point on when it is read back, so
+// A value with ' #' is a comment from that point on when it is read back, so
 // it has to go in quoted or the account silently gets a truncated value.
 func TestAccountSetQuotesAValueThatWouldBeReparsed(t *testing.T) { // [dbhgb]
 	a, file := setApp(t, "account: work\n\tpath: /a\n", "work", "name", "Ada #1")
@@ -805,6 +797,7 @@ func TestAccountSetRefusesAPlaceItCantLookIn(t *testing.T) { // [dcmpn]
 	if err := os.Chmod(dir, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// TempDir's cleanup needs it back, and says so if this fails.
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 	if err := a.cfg.load(a.opt); err != nil {
 		t.Fatalf("load: %v", err)
@@ -929,7 +922,7 @@ func TestUnreadableFix(t *testing.T) { // [dcmjz]
 		want       []string
 	}{
 		{"linux", "/h/c.shcl", fs.ErrPermission, []string{"Make it readable, then run this again:", "  chmod u+r '/h/c.shcl'"}},
-		{"linux", "/h/it's.shcl", fs.ErrPermission, []string{"Make it readable, then run this again."}},
+		{"linux", "/h/it's.shcl", fs.ErrPermission, []string{"Make it readable, then run this again:", `  chmod u+r '/h/it'\''s.shcl'`}},
 		{"windows", "C:/c.shcl", fs.ErrPermission, []string{"Give your account read access to it, then run this again."}},
 		{"linux", "/h/c.shcl", errors.New("input/output error"), []string{"Run this again once it can be read."}},
 	}
@@ -1072,18 +1065,22 @@ func TestAccountSetProtocol(t *testing.T) { // [dcnrq]
 }
 
 func TestLookupFix(t *testing.T) { // [dcmpq]
+	quoted := filepath.Join(t.TempDir(), "it's")
+	if err := os.Mkdir(quoted, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct {
 		goos, file string
 		cause      error
-		want       string
+		want       []string
 	}{
-		{"linux", "/h/c.shcl", errors.New("input/output error"), "Run this again once it can be looked up."},
-		{"windows", "C:/h/c.shcl", fs.ErrPermission, "Give your account access to the folder it is in, then run this again."},
-		{"linux", "/h/it's/c.shcl", fs.ErrPermission, "Make the folder it is in searchable, then run this again."},
-		{"linux", "/nonexistent-top/h/c.shcl", fs.ErrPermission, "Make the folders above it searchable, then run this again."},
+		{"linux", "/h/c.shcl", errors.New("input/output error"), []string{"Run this again once it can be looked up."}},
+		{"windows", "C:/h/c.shcl", fs.ErrPermission, []string{"Give your account access to the folder it is in, then run this again."}},
+		{"linux", filepath.Join(quoted, "c.shcl"), fs.ErrPermission, []string{"Make the folder it is in searchable, then run this again:", "  chmod u+x " + shellQuote(quoted)}},
+		{"linux", "/nonexistent-top/h/c.shcl", fs.ErrPermission, []string{"Make the folders above it searchable, then run this again."}},
 	}
 	for _, tc := range tests {
-		if got := lookupFix(tc.goos, tc.file, tc.cause); len(got) != 1 || got[0] != tc.want {
+		if got := lookupFix(tc.goos, tc.file, tc.cause); !slices.Equal(got, tc.want) {
 			t.Errorf("lookupFix(%s, %s, %v) = %q, want %q", tc.goos, tc.file, tc.cause, got, tc.want)
 		}
 	}
@@ -1213,7 +1210,7 @@ func TestLockFix(t *testing.T) { // [dcnkc]
 	}{
 		{"linux", "/h/c.shcl.lock", []string{"If no other gitsby is running, a run that was stopped left it behind. Remove it, then run this again:", "  rm '/h/c.shcl.lock'"}},
 		{"windows", "C:/h/c.shcl.lock", []string{"If no other gitsby is running, a run that was stopped left it behind. Remove it, then run this again."}},
-		{"linux", "/h/it's/c.shcl.lock", []string{"If no other gitsby is running, a run that was stopped left it behind. Remove it, then run this again."}},
+		{"linux", "/h/it's/c.shcl.lock", []string{"If no other gitsby is running, a run that was stopped left it behind. Remove it, then run this again:", `  rm '/h/it'\''s/c.shcl.lock'`}},
 	}
 	for _, tc := range tests {
 		if got := lockFix(tc.goos, tc.lock); !slices.Equal(got, tc.want) {
@@ -1331,6 +1328,7 @@ func TestAccountUnsetRefusesAnUnreadableFile(t *testing.T) { // [dd83k]
 	if err := os.Chmod(file, 0o200); err != nil {
 		t.Fatal(err)
 	}
+	// Put back so nothing left over is unreadable; a failed restore changes no result.
 	t.Cleanup(func() { _ = os.Chmod(file, 0o600) })
 	if err := a.cfg.load(a.opt); err != nil {
 		t.Fatalf("load: %v", err)
@@ -1346,16 +1344,13 @@ func TestAccountUnsetRefusesAnUnreadableFile(t *testing.T) { // [dd83k]
 	}
 }
 
-// A flat file comes out in the current layout without the key, as a set would
-// leave it.
-func TestAccountUnsetConvertsAFlatFile(t *testing.T) { // [dd83m]
+// A flat file converted on read comes out without the key, as a set would leave
+// it.
+func TestAccountUnsetOnAConvertedFlatFile(t *testing.T) { // [dd83m]
 	a, file := unsetApp(t, "# old\naccount.work.email = a@x\naccount.work.name = Al\n", "work", "name")
 	plan, done, err := a.accountUnsetPlan()
-	// Off since 2026-11-07: a whole v2.1.0 file is converted on read now, so the
-	// plan has nothing left to convert.
-	// if err != nil || done || !plan.converts {
-	if err != nil || done {
-		t.Fatalf("plan: converts = %v, done = %v, err = %v", plan.converts, done, err)
+	if err != nil || done || plan.converts {
+		t.Fatalf("plan: converts = %v, done = %v, err = %v; want nothing left to convert", plan.converts, done, err)
 	}
 	a.set = &plan
 	if err := a.cmdAccountSet(); err != nil {
@@ -1394,7 +1389,7 @@ func TestWriteRefusalNamesPermissionsOnlyWhenTheyAreTheCause(t *testing.T) { // 
 		if !errors.Is(err, c.err) {
 			t.Errorf("%v: the cause is not on the chain", c.err)
 		}
-		// The module's own refusals carry their path in the text, and come through as is.
+		// The module's own refusals have their path in the text, and come through as is.
 		var pe *fs.PathError
 		if errors.As(c.err, &pe) && strings.Count(msg, "/h/c.shcl") != 1 {
 			t.Errorf("%v: the path should be on its File line only:\n%s", c.err, msg)
@@ -1427,6 +1422,95 @@ func TestAccountApplyKeepsTheReasonAFragmentFailed(t *testing.T) { // [ddf46]
 	if strings.Contains(err.Error(), "ermission") {
 		t.Errorf("refusal blames permissions:\n%s", err)
 	}
+}
+
+// A failed apply emptied a fragment the global config already included, since it
+// was cut to nothing and then written a key at a time (2026110912215201).
+func TestAccountApplyFailureKeepsTheFragment(t *testing.T) { // [df35e]
+	if isWindows() {
+		t.Skip("the fake git is a shell script")
+	}
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git")
+	}
+	const old = "[user]\n\tname = Before\n"
+	setup := func(t *testing.T) (*app, string) {
+		t.Helper()
+		global := filepath.Join(t.TempDir(), ".gitconfig")
+		if err := os.WriteFile(global, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("GIT_CONFIG_GLOBAL", global)
+		t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+		cfg := writeConfig(t, "account: b\n\tpath: /srv/b\n\tghaccount: bacct\n\tname: B\n\temail: b@example.com\n")
+		a := newApp(newPrinter())
+		a.cfg = cfg
+		dir := filepath.FromSlash(cfg.includeDir())
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		fragment := filepath.Join(dir, cfg.fragmentNames()["b"])
+		if err := os.WriteFile(fragment, []byte(old), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return a, fragment
+	}
+	kept := func(t *testing.T, fragment string) {
+		t.Helper()
+		// A failed read is empty, which fails the check too.
+		if got, _ := os.ReadFile(fragment); string(got) != old {
+			t.Errorf("the fragment changed on a failed apply:\n%s", got)
+		}
+		left, err := filepath.Glob(fragment + ".*")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(left) != 0 {
+			t.Errorf("left behind: %v", left)
+		}
+	}
+	t.Run("a key git won't write", func(t *testing.T) {
+		a, fragment := setup(t)
+		fakeTool(t, "git", `case " $* " in *" user.email "*) exit 1 ;; esac; exec '`+realGit+`' "$@"`)
+		err := a.cmdAccountApply()
+		if err == nil || !strings.Contains(err.Error(), "left as it was") {
+			t.Fatalf("apply: %v", err)
+		}
+		if !strings.Contains(err.Error(), "\n  File: "+nativePath(fragment)) {
+			t.Errorf("the fragment isn't on its own File line: %v", err)
+		}
+		kept(t, fragment)
+	})
+	t.Run("a stale lock beside it", func(t *testing.T) {
+		a, fragment := setup(t)
+		if err := os.WriteFile(fragment+".lock", nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := a.cmdAccountApply(); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		// A failed read is empty, which fails the check too.
+		if got, _ := os.ReadFile(fragment); !strings.Contains(string(got), "b@example.com") {
+			t.Errorf("fragment:\n%s", got)
+		}
+	})
+	t.Run("a folder that takes no new file", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root writes anywhere")
+		}
+		a, fragment := setup(t)
+		dir := filepath.Dir(fragment)
+		if err := os.Chmod(dir, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Chmod(dir, 0o700) }() // TempDir's cleanup needs it back
+		err := a.cmdAccountApply()
+		if err == nil || !strings.Contains(err.Error(), "Creating its replacement failed") {
+			t.Fatalf("apply: %v", err)
+		}
+		kept(t, fragment)
+	})
 }
 
 // A lock name past the filesystem's limit said to check permissions on the folder.
@@ -1513,5 +1597,67 @@ func TestAbsPathValueKeepsTheReasonTheFolderIsGone(t *testing.T) { // [ddf4a]
 	_, err := absPathValue("tok.txt", "file")
 	if err == nil || !strings.Contains(err.Error(), "since finding the current folder failed with: getwd: no such file or directory") {
 		t.Errorf("err = %v, want the reason the current folder couldn't be found", err)
+	}
+}
+
+// shWord reads s as one sh word: plain characters, '...' and backslash escapes.
+// ok is false for anything a shell would split or expand.
+func shWord(s string) (word string, ok bool) {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '\'':
+			end := strings.IndexByte(s[i+1:], '\'')
+			if end < 0 {
+				return "", false
+			}
+			b.WriteString(s[i+1 : i+1+end])
+			i += end + 1
+		case c == '\\' && i+1 < len(s):
+			i++
+			b.WriteByte(s[i])
+		case strings.IndexByte(" \t\n;&|$`\"()<>*?[#~\\", c) >= 0:
+			return "", false
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String(), true
+}
+
+// A Fix command pastes as shown, whatever the path has in it. An apostrophe in one
+// closed the quote early, or the command was left out. 2026110912215206.
+func TestFixLiteralsPaste(t *testing.T) { // [df35x]
+	base := t.TempDir()
+	for _, name := range []string{"o'brien", "a b", "$HOME `x` \\y", "''", "it's \"q\""} {
+		dir := filepath.Join(base, name)
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		file := filepath.Join(dir, "c.shcl")
+		for cmd, lines := range map[string][]string{
+			"chmod u+r": unreadableFix("linux", file, fs.ErrPermission),
+			"chmod u+x": lookupFix("linux", file, fs.ErrPermission),
+			"rm":        lockFix("linux", file+".lock"),
+		} {
+			want := map[string]string{"chmod u+x": dir, "rm": file + ".lock"}[cmd]
+			if want == "" {
+				want = file
+			}
+			if len(lines) != 2 {
+				t.Errorf("%s: no command for %q: %q", cmd, want, lines)
+				continue
+			}
+			arg, found := strings.CutPrefix(lines[1], "  "+cmd+" ")
+			if got, ok := shWord(arg); !found || !ok || got != want {
+				t.Errorf("%s line %q reads as %q, want %q", cmd, lines[1], got, want)
+			}
+		}
+	}
+	// The loose token file's chmod line quotes through the same helper.
+	for _, path := range []string{"/h/o'brien/tok", "''", "a'b'c"} {
+		if got, ok := shWord(shellQuote(path)); !ok || got != path {
+			t.Errorf("shellQuote(%q) reads back as %q", path, got)
+		}
 	}
 }

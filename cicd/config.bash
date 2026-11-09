@@ -16,9 +16,10 @@
 ##	SPDX-License-Identifier: MIT
 
 
-## Only allow running 'sourced'.
+## Only allow running 'sourced'. A plain printf, not an error helper: one defined here would
+## end up in the script that sources this.
 declare -i isSourced_t6wqf=0; [[ "${BASH_SOURCE[0]}" == "${0}" ]] || isSourced_t6wqf=1
-((isSourced_t6wqf)) || { echo -e "\nError in $(basename "${BASH_SOURCE[0]}"): This script is meant to be 'sourced' from within another script.\n"; exit 1; }
+((isSourced_t6wqf)) || { printf '\nError in %s: This script is meant to be sourced from within another script.\n\n' "${BASH_SOURCE[0]##*/}" >&2; exit 1; }
 
 
 ## Identity
@@ -29,18 +30,9 @@ EXE_NAME="gitsby"
 ## script builds under legacy/ are reference only and no stage touches them except parity.
 GO_MODULE_DIR="src-go"
 
-## Build flags, in one place because four build sites have to agree on them.
-##   -trimpath      keeps the build machine's directory names out of the binary.
-##   -buildvcs=false keeps the repository's revision and dirty flag out of it. Without this
-##                  the published assets carry whatever commit preceded the tag they claim -
-##                  so nobody, including us, can rebuild them to the checksums we publish.
-##   -buildid=      drops the last input-derived stamp, so identical source gives identical
-##                  bytes on any machine with the same toolchain (pinned in go.mod).
-##   -s -w          no symbol table, no DWARF: smaller is one of the two things that matter.
-## CGO_ENABLED=0 goes with them, on the native build as well as the cross-builds, so every
-## artifact the pipeline produces is the same kind of thing. GOAMD64=v1 sits beside it at each
-## site. It's Go's default, so the bytes don't change, but a GOAMD64 left in the environment or
-## in 'go env -w' would raise the CPU floor past the Core 2 Duo and Phenom II.
+## Build flags, in one place since 4 build sites have to agree. -trimpath, -buildvcs=false and
+## -buildid= make the bytes reproducible from the tag; -s -w for size. CGO_ENABLED=0 and
+## GOAMD64=v1 sit beside them at each site, so an inherited GOAMD64 can't raise the CPU floor.
 GO_BUILD_FLAGS=(-trimpath -buildvcs=false)
 GO_LDFLAGS_COMMON="-s -w -buildid="
 ## The toolchain that builds the published assets. Two compiler versions produce different
@@ -57,13 +49,9 @@ CICD_CONTAINER=1
 ## over the whole path, where * crosses folders.
 MERGE_GATE_SKIP=('*.md' 'project/' 'reference/' 'assets/logo.png')
 
-## The versions the Go tools were at when this pipeline last gated a green run. Recorded,
-## compared and warned about - never installed and never enforced. Which version passed
-## something is worth knowing: a finding that appears out of nowhere on an unchanged tree
-## is usually a tool that moved rather than code that did, and a machine two years behind
-## reports clean for the opposite reason. Read with 'go version -m', which answers for any
-## Go-built binary - the four of them spell '--version' four different ways, and one has no
-## such flag at all. The toolchain itself is GO_RELEASE_TOOLCHAIN above.
+## The Go tool versions at the last green gate. Recorded and warned about, never installed or
+## enforced, since a tool that moved is the usual cause of a new finding on an unchanged tree.
+## Read with 'go version -m'.
 GO_TOOL_VERSIONS=(
 	"staticcheck=v0.7.0"
 	"golangci-lint=v2.12.2"
@@ -86,19 +74,15 @@ TOOL_VERSIONS=(
 	"codeql=2.27.2"
 )
 
-## The core budget, per 'Machine use' in the shared CICD rules. The compiler takes every core by
-## default, which makes the machine unusable for the duration. BUILD_JOBS is half the cores,
-## rounded down, or a quarter on a busy box, where the 1-minute load is over half the cores.
-## HEAVY_JOBS is a quarter busy or not, for native fuzzing, go test -race, the soak test and
-## CodeQL. Never under 1. Steps run one at a time, so each one gets the whole count. cicd.bash
-## works both out again before each stage. GITSBY_CICD_CPUS stands in for the core count: the
-## run in the container gets the box's that way, since its --cpus quota leaves nproc alone.
-## fCpuJobs VAR CORES LOAD HEAVY sets VAR, with LOAD as the load average prints it.
+## The core budget, per 'Machine use' in the shared CICD rules: BUILD_JOBS half the cores, a
+## quarter on a busy box; HEAVY_JOBS a quarter always. Never under 1. GITSBY_CICD_CPUS stands in
+## for the core count in the container. fCpuJobs VAR CORES LOAD HEAVY sets VAR, with LOAD as the
+## load average prints it.
 fCpuJobs(){
 	local -n jobs_cpuJ="$1"
 	local -i cores=1 load100=0
 	local load="${3:-0}" frac=""
-	## Checked first, since arithmetic would run what a bad one holds.
+	## Checked first, since arithmetic would run what a bad one has in it.
 	[[ "$2" =~ ^[1-9][0-9]{0,5}$ ]] && cores="$2"
 	frac="${load#*.}"; [[ "${load}" == *.* ]] || frac=""; frac="${frac}00"
 	if [[ "${load%%.*}" =~ ^[0-9]+$ && "${frac:0:2}" =~ ^[0-9]+$ ]]; then load100=$(( 10#${load%%.*} * 100 + 10#${frac:0:2} )); fi
@@ -124,16 +108,9 @@ fLowPriority(){
 	renice 19 -p "$$" >/dev/null 2>&1 || true
 	if command -v ionice >/dev/null 2>&1; then ionice -c 3 -p "$$" >/dev/null 2>&1 || true; fi
 }
-## Memory, per the same rules. A runaway step has to die alone, before the OOM killer reaches the
-## desktop: on 2026-11-08 another project's analyzer took 67 GB plus 18 GB of swap on b23, and
-## earlyoom killed the user's session first. Every container a run starts gets the cap with no
-## swap, first in line for the OOM killer, and cicd.bash puts its whole run in a user scope with
-## the same cap where systemd-run --user works. A step killed at the cap exits 137, and fails.
-## CICD_MEM_CAP is a docker size such as 24g, or none for no cap. The default is a third of the
-## RAM, 4g to 32g. No step needs more: the peaks on b23 over the 2 weeks to 2026-11-09 were the
-## checks container 10.0 GB, the quick run's 4.4 GB, go test -c 0.7 GB and a build 0.3 GB, page
-## cache included. fMemCap sets memCap, empty for none, and memArgs for docker run, and on
-## anything else says so and fails.
+## Memory, per the same rules, so a runaway step dies alone before the OOM killer reaches the
+## desktop. CICD_MEM_CAP is a size with k, m or g, or none; default a third of RAM, 4g to 32g,
+## well over the 10 GB peak on b23 to 2026-11-09. fMemCap sets memCap and memArgs.
 fMemCap(){
 	local kb=""
 	memCap="${CICD_MEM_CAP:-}"; memArgs=()
@@ -144,21 +121,23 @@ fMemCap(){
 		memCap=$(( kb / 3 / 1048576 )); (( memCap <= 32 )) || memCap=32; (( memCap >= 4 )) || memCap=4
 		memCap+="g"
 	fi
-	## Matched, never read as arithmetic, so x[$(cmd)] can't run.
-	if [[ ! "${memCap}" =~ ^[1-9][0-9]{0,14}[kmgKMG]?$ ]]; then
+	## Matched before any arithmetic, so x[$(cmd)] can't run.
+	if [[ ! "${memCap}" =~ ^[1-9][0-9]{0,14}[kmgKMG]$ ]]; then
 		printf '%s\n' "[ FAILED: CICD_MEM_CAP '${CICD_MEM_CAP}' isn't a size like 24g, or none ]" >&2
 		memCap=""; return 1
 	fi
 	memCap="${memCap,,}"
+	case "${memCap: -1}" in
+		k) (( 10#${memCap%k} >= 1048576 )) ;;
+		m) (( 10#${memCap%m} >= 1024 )) ;;
+		*) true ;;
+	esac || { printf '%s\n' "[ FAILED: CICD_MEM_CAP '${CICD_MEM_CAP}' is under 1g, too little for a run ]" >&2; memCap=""; return 1; }
 	memArgs=(--memory "${memCap}" --memory-swap "${memCap}" --oom-score-adj 1000)
 }
 
-## Stage 1: lint. Go first (gofmt is the arbiter of format, vet and staticcheck gate),
-## then every first-party shell file (globs, expanded by the engine). shellcheck is
-## gating; there is deliberately NO bash formatter stage - the pipeline's own scripts are
-## hand-formatted on purpose. Markdown is probe-gated (markdownlint if installed); the Python
-## files get a compile check and ruff's leak rules. legacy/ is deliberately absent from every glob: it is frozen,
-## so a newer shellcheck finding there is noise nobody is allowed to fix.
+## Stage 1: lint. Go, then every first-party shell file (shellcheck gates; no bash formatter,
+## ever), markdown when markdownlint is there, and Python. legacy/ is in no glob, since it's
+## frozen.
 SHELL_LINT_GLOBS=(
 	"install.bash"
 	"cicd/*.bash"
@@ -180,14 +159,15 @@ PY_LINT_FILES=(
 	"cicd/utility/demo/gen-demo-gif.py"
 	"cicd/utility/codeql-findings.py"
 )
-## ruff over the same files, these rules only: lru_cache on a method (B019), open() with no
-## 'with' (SIM115), and a mutable default argument (B006). Probe-gated.
+## ruff over the same files, first these rules in isolation: lru_cache on a method (B019), open()
+## with no 'with' (SIM115), and a mutable default argument (B006). Then ruff.toml's own rules.
+## Probe-gated.
 PY_LINT_RULES=(B019 SIM115 B006)
 ## Stage 3: pip-audit over the third-party libraries those files import, as installed. Skipped
 ## by --quick and --no-fuzz, like govulncheck. The leak checks' CodeQL reads their installed source too.
 PY_AUDIT_DISTS=(Pillow fonttools pycairo PyGObject)
 ## Advisories against the upstream versions of the Debian builds the demo runs on. Debian's
-## builds carry security patches past those versions, so each one names the Debian build
+## builds have security patches past those versions, so each one names the Debian build
 ## that fixed it: backlog 2026101905585018. Pillow is the upstream wheel, so it needs none.
 ## A new advisory fails the run.
 PIP_AUDIT_IGNORE=(
@@ -212,17 +192,16 @@ PS_LINT_SETTINGS="PSScriptAnalyzerSettings.psd1"
 ## Probe-gated on goversioninfo; release.bash regenerates it with the version bump.
 WINRES_CMD=(cicd/utility/gen-winres.bash)
 
-## Stage 1: backlog rules. Open review items carry an "Origin:" line, and a suite check
+## Stage 1: backlog rules. Open review items have an "Origin:" line, and a suite check
 ## removed on the branch is named in the backlog. See the script's header for why.
 BACKLOG_CHECK_CMD=(cicd/utility/backlog-check.bash)
 
 ## Stage 2: build + regression tests. The suite runs against the compiled binary and gates.
-## Skipped by --quick, which keeps only the build and go test here.
 TEST_CMD=(cicd/test.bash)
 
 ## Stage 3: fuzz + security (adversarial input against gitsby's own command/option/
-## arg surface, with an injection canary). Runs under --quick too; the native fuzz
-## targets and govulncheck don't.
+## arg surface, with an injection canary). Runs under --quick too, and so do the native
+## fuzz targets; govulncheck doesn't.
 FUZZ_CMD=(cicd/fuzz.bash)
 
 ## Stage 4: backwards compatibility. Same input to the Go build and to the frozen v2.1.0
@@ -247,13 +226,9 @@ KEEP_BUILD_DIR="cicd/artifacts/builds"      # relative to repo root; created if 
 ## profiles go, one folder per run.
 LEAKCHECK_SOAK_ROUNDS=30
 LEAKCHECK_DIR="cicd/artifacts/leakcheck"    # relative to repo root; created if missing (gitignored)
-## They also run CodeQL, from the Go and Python bundles of the version in TOOL_VERSIONS:
-## the CLI and its query packs, checked against these sums when the image is built. It's in the
-## image and nowhere else. Each language gets its security and quality suite. Go's runs once for
-## each OS in RELEASE_TARGETS, since the extractor sees one OS's files at a time. Python's runs
-## once, over PY_LINT_FILES and the installed source of PY_AUDIT_DISTS. Third-party code goes
-## under vendor/, where only Go's security, correctness and reliability findings count, and only
-## Python's security ones (cicd/utility/codeql-findings.py).
+## CodeQL, from the Go and Python bundles of the version in TOOL_VERSIONS, checked against these
+## sums at image build. Go's runs per RELEASE_TARGETS OS. Third-party findings:
+## cicd/utility/codeql-findings.py.
 CODEQL_SHA256="0cfb942cd33fb71d3a3b84dad626ef8895ea3f1ceb097bc8cdb7d4493f032ae9"
 CODEQL_PY_SHA256="b0dce01b3aa8d14cfbac8a653eb1921fb71514695fc33b79f0e0e2eb81467350"
 CODEQL_SUITE="codeql/go-queries:codeql-suites/go-security-and-quality.qls"
@@ -300,11 +275,9 @@ DOGFOOD_DESTS_DARWIN_UNIVERSAL=(
 ## business in a Linux ~/.local/bin, and it would match there every time.
 DOGFOOD_FALLBACK_DIR="${HOME}/.local/bin"
 
-## Release assets (cicd/release.bash). Every platform the module cross-builds to, which is
-## every platform Go targets - the tree is pure Go with no cgo, so nothing here needs an
-## SDK or a machine of its own. Published as gitsby-<goos>-<goarch>, with .exe on Windows,
-## alongside a SHA256SUMS over the set. macOS is one universal file for both CPUs, joined the
-## way dogfood joins it, so the installers take the same file on any Mac.
+## Release assets (cicd/release.bash): every platform Go targets, since there's no cgo. Published
+## as gitsby-<goos>-<goarch> with a SHA256SUMS. macOS is one universal file, joined as dogfood
+## joins it.
 RELEASE_TARGETS=(
 	"linux/amd64"
 	"linux/arm64"
@@ -315,13 +288,9 @@ RELEASE_TARGETS=(
 	"freebsd/arm64"
 )
 
-## Stage 6: demo gif. Types the scenario's command into a fake terminal, runs it
-## against a build of its own, stamped with the newest release rather than the commit
-## (in a throwaway anonymized repo the scenario builds), renders the 960x540 animated
-## loop (hard-cut boundary). Seeded, with pinned commit dates and that fixed stamp, so
-## a commit that changes nothing the demo prints reproduces the same file byte for
-## byte (the optimizer below is deterministic too, though its version counts).
-## Skipped by --quick / --no-demogif; self-skips if the scenario is absent.
+## Stage 6: demo gif. Seeded, with pinned dates and the newest release's stamp, so a commit that
+## changes nothing the demo prints gives the same bytes. Skipped by --quick / --no-demogif, or
+## with no scenario.
 DO_DEMOGIF=1
 DEMOGIF_SCENARIO="cicd/utility/demo/demo-scenario.toml"
 DEMOGIF_CMD=(cicd/utility/demo/gen-demo-gif.py --scenario "${DEMOGIF_SCENARIO}")
@@ -337,12 +306,9 @@ DEMOGIF_TOOLS=(Pillow gifsicle)
 ## optimized one. Lossy modes buy almost nothing on a 35-color text demo.
 DEMOGIF_OPT_CMD=(gifsicle -O3)
 
-## Stage 7: Remote tests, over ssh. Each box is taken through a host lock shared with
-## other projects, only while its run lasts and only if free right now. The lock is a script
-## outside the repo; the first file matching REMOTE_LOCK_GLOB is it, and with none the stage
-## is skipped. The boxes are this machine's, so on anyone else's that is what happens. Each box
-## goes through the VM state helper beside the lock where there is one, which wakes a VM and puts
-## it back as it was found. The Windows box runs first.
+## Stage 7: remote tests, over ssh. Each box is taken through a host lock shared with other
+## projects, only if free now. No lock matching REMOTE_LOCK_GLOB skips the stage. The Windows box
+## runs first.
 REMOTE_TEST_CMD=(cicd/remote-tests.bash)
 REMOTE_LOCK_GLOB="${HOME}/synced/0-0/common/exec/util/linux/bash/*_windows-host-lock.bash"
 ## Each entry is the name the lock knows a box by, then optionally a colon and the ssh names it
@@ -417,3 +383,5 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-25 JC: BUILD_JOBS rounds down, and drops to a quarter on a busy box. HEAVY_JOBS for the hard steps, and fLowPriority.
 ##		- 2026-10-25 JC: MERGE_GATE_SKIP, the paths a push to main may change and still skip the pre-push hook's --merge-gate.
 ##		- 2026-11-09 JC: fMemCap, a memory cap with no swap from CICD_MEM_CAP, for every container a run starts and the run itself.
+##		- 2026-11-09 JC: fMemCap refuses a CICD_MEM_CAP with no unit, or under 1g.
+##		- 2026-11-09 JC: The sourced-only guard prints its error to stderr with printf.

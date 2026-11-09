@@ -37,7 +37,7 @@ func TestDocsOnly(t *testing.T) { // [dcnqz]
 // A repo started with 'git init -b <name>' and never cloned has no origin/HEAD and
 // none of the usual names, and guessing "main" there named a branch that did not
 // exist. A lone branch is the default by elimination, and an unborn one by the
-// name HEAD already carries.
+// name HEAD already has.
 func TestResolveDefaultBranchWithoutOrigin(t *testing.T) { // [dd5g8]
 	if !inPath("git") {
 		t.Skip("no git")

@@ -72,7 +72,7 @@ Scope: the product itself is Go now. Go's *formatting* is `gofmt` - the lint sta
 
 - No goroutines or channels without a measured reason. This program's life is spent waiting on `git`; concurrency here buys latency bugs, not speed. Where a measurement does call for it, as with the account probes that each wait on the network, guard shared state with a `sync.Mutex` rather than a channel. Every goroutine gets a clear way out, through a `context.Context` where it can be cancelled, and the tests run with `-race` and fail on one still running when they end.
 
-- Package-level variables are for what Go can't make a constant: compiled regexps, `errors.New` sentinels, read-only lookup tables, and strings the linker sets with `-X`. Nothing at package level changes after startup. Run state lives on the struct that owns the run.
+- Package-level variables are for what Go can't make a constant: compiled regexps, `errors.New` sentinels, read-only lookup tables, and strings the linker sets with `-X`. Nothing at package level changes after startup, except a cache of a pure lookup, such as `toolCache` and `sshConfigCache`. It is keyed on all its inputs, filled lazily, guarded by a `sync.Mutex`, and never read as repo state. Run state lives on the struct that owns the run.
 
 - Keep interfaces small and define them where they are consumed. Accept an interface, return a concrete type. Don't introduce one until a second implementation exists or a test needs a seam.
 

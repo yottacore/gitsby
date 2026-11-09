@@ -1,8 +1,5 @@
-// Process running. Everything goes out as an argument list - no shell between, so
-// word splitting and expansion cannot happen to user values on the way to a tool.
-// The plain readers are free functions because they hold nothing; the announcing
-// runners hang off the run, because a step we announce is exactly the thing that
-// invalidates what the run has cached.
+// Process running. Everything goes out as an argument list, with no shell between. The
+// announcing runners hang off the run, since a step invalidates what it cached.
 
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 // Licensed under The MIT License (MIT). Full text at:
@@ -31,11 +28,8 @@ func runOut(name string, args ...string) string {
 	return out
 }
 
-// runOutOK is runOut that also says whether the command worked, for the few
-// callers that must tell "the tool failed" apart from "the answer is nothing".
-// gh in particular exits nonzero for a repo that isn't there and for a network
-// that is down, and stating the first when it was the second sends you off to
-// create something that already exists.
+// runOutOK is runOut that also says whether the command worked, for callers that must
+// tell a failed tool from an empty answer.
 func runOutOK(name string, args ...string) (string, bool) {
 	out, err := toolCmd(name, args...).Output()
 	if err != nil {
@@ -51,7 +45,7 @@ func runOK(name string, args ...string) bool {
 
 // splitLines cuts captured output into lines. The trailing '\r' comes off every
 // one of them: trimming only the end of the whole capture leaves the interior
-// ones in place, so the first line of a two-line answer carried a stray carriage
+// ones in place, so the first line of a two-line answer had a stray carriage
 // return that no later comparison could match.
 func splitLines(out string) []string {
 	lines := strings.Split(out, "\n")
@@ -135,11 +129,17 @@ func shellWord(s string, always bool) string {
 	if !strings.ContainsAny(s, "\"$`\\!") {
 		return `"` + s + `"`
 	}
+	return shellQuote(s)
+}
+
+// shellQuote single-quotes a word for sh, apostrophes included, so a path in a
+// Fix line pastes as one word whatever is in it.
+func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // stepAs announces one thing and runs another, for the gh calls whose real
-// argument list carries flags the plan never showed - echoing it verbatim would
+// argument list has flags the plan never showed - echoing it verbatim would
 // contradict the preview. The failure names the command, not the arguments.
 func (a *app) stepAs(announce, label, name string, args ...string) error {
 	a.out.clean("")
@@ -224,7 +224,7 @@ func named(cmd *exec.Cmd, name string, missing error) *exec.Cmd {
 	return cmd
 }
 
-// toolCache holds findTool's answers. PATH is part of the key, since a test may
+// toolCache keeps findTool's answers. PATH is part of the key, since a test may
 // change it between runs in one process. Locked, since look-ahead goroutines spawn too.
 var toolCache = struct {
 	sync.Mutex
@@ -249,7 +249,7 @@ func findTool(name string) (string, []string) {
 	return hit.path, hit.ours
 }
 
-// rawActiveVar holds the chain of 'raw' runs above this one, for everything 'raw'
+// rawActiveVar has the chain of 'raw' runs above this one, for everything 'raw'
 // starts. A 'raw' passes over a tool file whose run is already on it and takes
 // the next one on PATH, so a hook or alias calling 'gitsby raw' works, and so does
 // a wrapper on PATH that calls us back (2026101916533300, 2026102306584122).
@@ -321,11 +321,8 @@ func rawNest(chain, name, entry string) (string, error) {
 	return strings.Join(above, " "), nil
 }
 
-// lookTool is exec.LookPath that skips any PATH entry leading back to this very
-// binary, through a symlink or a hardlink. Each candidate still goes through
-// LookPath, so PATHEXT and the exec bit work as before. A relative entry is
-// skipped, since LookPath's ErrDot never let one run. Also returns the entries
-// skipped as ours.
+// lookTool is exec.LookPath that skips any PATH entry leading back to this binary, by
+// link or hardlink, and relative entries. Also returns the entries skipped as ours.
 func lookTool(name string) (found string, ours []string) {
 	return walkTool(name, nil)
 }

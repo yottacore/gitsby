@@ -81,7 +81,7 @@ fImageBuild(){
 		## From cicd/, so the recipe can copy the guard in.
 		docker build -q -t "${containerImage}" -f "${here}/container/Dockerfile" "${containerArgs[@]}" --label "dev.run=${run}" "${here}" >/dev/null || fDie "image build failed"
 	fi
-	## Made here rather than by the first run that mounts it, so it carries the labels.
+	## Made here rather than by the first run that mounts it, so it has the labels.
 	if ! docker volume inspect "${APP_NAME}-cicd-cache" >/dev/null 2>&1; then
 		docker volume create --label "dev.project=${APP_NAME}" --label "dev.run=${run}" "${APP_NAME}-cicd-cache" >/dev/null || fDie "can't make the ${APP_NAME}-cicd-cache volume"
 	fi

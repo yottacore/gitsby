@@ -1,9 +1,5 @@
-// --staged: commit what is staged, and leave everything else where it is. Gitsby
-// still stages nothing itself; the flag only stops 'git add --all' undoing a
-// 'git add' that was already made. Nothing is stashed around a pull either, since
-// git's autostash puts staged work back unstaged. So where git would refuse a
-// step over the edits left in the tree, the run is refused before its plan.
-// design.md, "--staged".
+// --staged: commit what is staged and leave the rest where it is. Where git would refuse
+// a step over the edits left, the run is refused before its plan. design.md, "--staged".
 
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 // Licensed under The MIT License (MIT). Full text at:
@@ -158,7 +154,7 @@ func (a *app) stagedPreflight() error {
 		if err := a.stagedMoveCheck(a.branchTarget(current), all, left); err != nil {
 			return err
 		}
-		// The back-merge checks dev out too. What main holds by then is read as
+		// The back-merge checks dev out too. What main has by then is read as
 		// the index, which is right unless the merge itself touches one of these.
 		dev := a.mergeTarget()
 		if a.isHotfixBranch("") && dev != a.defaultBranch() && (a.branchExistsLocal(dev) || a.branchExistsRemote(dev)) {
@@ -183,11 +179,8 @@ func (a *app) stagedMoveCheck(target string, all, left map[string]bool) error {
 	return a.stagedPullCheck(target, left)
 }
 
-// stagedReleaseCheck follows cmdRelease: park, then dev and its pull, then the
-// default branch and its pull. Each check that passes leaves a file the same on
-// every branch read so far, so the merge, the move back to dev and its
-// fast-forward, and the last checkout can't touch one either. The index stands in
-// for whichever branch is being left, for the same reason.
+// stagedReleaseCheck follows cmdRelease's checkouts, with the index standing in for the
+// branch being left. A file that passes is the same on every branch read so far.
 func (a *app) stagedReleaseCheck(current string, all, left map[string]bool) error {
 	here := current
 	if a.mergeTarget() == "dev" && here != "dev" {

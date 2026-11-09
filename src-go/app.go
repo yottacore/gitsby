@@ -89,7 +89,7 @@ type command struct {
 	mutating bool
 }
 
-// repoState holds the answers a run asks git for more than once. Each is asked
+// repoState keeps the answers a run asks git for more than once. Each is asked
 // once and remembered; a step that could move any of them forgets them on its
 // way out, so the after-shot reads what the step left behind rather than what
 // preceded it.
@@ -129,7 +129,7 @@ func (r *repoState) forget() {
 // it up is two LookPath calls for a name that cannot change mid-run.
 type hostState struct {
 	tea   cached[string]     // Gitea's CLI as this machine spells it, "" when absent
-	login cached[hostAnswer] // who that CLI holds a login for on origin's host
+	login cached[hostAnswer] // who that CLI has a login for on origin's host
 }
 
 // remoteState is what this run knows about origin and who it talks to origin as:

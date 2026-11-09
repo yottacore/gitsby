@@ -110,11 +110,8 @@ func (a *app) writesAccounts() bool {
 	return false
 }
 
-// identityWillPrint: whether this run reaches showIdentity at all. Every mutating
-// command previews the block, bar the 3 that write accounts, which show the
-// account list instead; among the read-only ones only status and whoami do. It
-// gates the live probes that feed the block and nothing else, so being over-broad
-// costs a round trip and never an answer.
+// identityWillPrint: whether this run reaches showIdentity. It gates only the live
+// probes that feed the block, so over-broad costs a round trip, never an answer.
 func (a *app) identityWillPrint() bool {
 	if a.writesAccounts() {
 		return false
@@ -161,20 +158,20 @@ func (a *app) showHostLine() {
 		// glab runs on the account's token, so it has no login of its own to name.
 		line += " (" + cli + ")"
 	case a.isOffline():
-		line += " (" + cli + ") - offline, so who it acts as is unknown"
+		line += " (" + cli + "): (unknown - offline, so " + cli + " wasn't asked)"
 	default:
 		who, failure := a.hostLogin(cli, host)
 		switch {
 		case failure != "":
-			line += " (" + cli + "): unknown - couldn't ask " + cli + ": " + failure
+			line += " (" + cli + "): (unknown - couldn't ask " + cli + ": " + failure + ")"
 		case who == "":
-			line += " (" + cli + "): unknown - '" + cli + " login add' has no login for this host"
+			line += " (" + cli + "): (unknown - '" + cli + " login add' has no login for this host)"
 		default:
 			line += " (" + cli + "): " + who
 		}
 		// Only a write can act as the wrong account, so only a write gets the
 		// comparison - the same rule the gh line above follows, and the reason this
-		// block exists at all rather than just naming the host.
+		// block exists at all rather than only naming the host.
 		if a.remote.isWrite {
 			keyWho := a.sshLogin(a.remote.probeURL)
 			if identityMismatchText(cli, who, keyWho) != "" {
@@ -261,19 +258,8 @@ func (a *app) accountSubject() string {
 	return "the account asked for"
 }
 
-// accountSourceText says where this run's account came from, in terms somebody can
-// go and look at. "(from config 'acme')" named neither the file nor which config -
-// and there are two configs in play here, since 'gitsby.ghAccount' is a git config
-// key and the account blocks are not.
-func (a *app) accountSourceText() string {
-	return a.acct.source
-}
-
-// showAccountFrom names where the account came from, and which file that is, under
-// the line they explain. Their own lines rather than a parenthetical: the honest
-// answer names a path, and a path is what makes a line wrap. Printed even when the
-// source repeats the name on the line above - what the reader is missing there is
-// not the string, it is what KIND of thing the string is and who chose it.
+// showAccountFrom names where the account came from, and which file, on their own lines
+// under the one they explain, since a path makes a line wrap.
 func (a *app) showAccountFrom() {
 	if a.acct.source == "" {
 		return
@@ -299,7 +285,7 @@ func upperFirst(text string) string {
 	return string(text[0]-32) + text[1:]
 }
 
-// showAccountNote prints one labeled explanation under the Account line, wrapped at
+// showAccountNote prints one labeled explanation under an identity line, wrapped at
 // a fixed column rather than at whatever the terminal happens to be. A line given
 // with a leading indent is a literal - a config line to type - and is printed as it
 // stands, since wrapping one would make it wrong.
@@ -374,11 +360,8 @@ func (a *app) showAccountKept() {
 		" still applied - that is where the "+strings.Join(lines, " and ")+tail)
 }
 
-// showAccountUnapplied covers the cases where the account did not authenticate this
-// run, and reports whether it printed. Separate from the applied line because the
-// two answer different questions: the applied line says who, and this says what
-// happened instead, why, and what to type to fix it. One line carries the first.
-// It cannot carry the other three, and the attempt read as a paragraph.
+// showAccountUnapplied covers an account that didn't authenticate this run, with what
+// happened, why and the fix, and reports whether it printed.
 func (a *app) showAccountUnapplied() bool {
 	switch {
 	case a.acct.bypassed:
@@ -442,7 +425,7 @@ func (a *app) showAccountOtherHost() {
 	}
 }
 
-// showAccountNoToken explains the account gitsby resolved but holds no credential
+// showAccountNoToken explains the account gitsby resolved but has no credential
 // for. gh is what goes on acting as itself where gh is the tool; anywhere else there
 // is no second identity to fall back to, and git pushes with whatever it already had.
 func (a *app) showAccountNoToken() {
@@ -456,7 +439,7 @@ func (a *app) showAccountNoToken() {
 			return
 		}
 		a.showAccountFix("Run 'gh auth login' as "+who+", or point this block at a file holding its token:",
-			"  "+meName+" account set "+a.acct.name+" tokenFile <file>")
+			"  "+meName+" account set "+a.acct.name+" tokenfile <file>")
 		return
 	}
 	a.showAccountNote("Why", "An account is applied by handing git its access token, and "+meName+
@@ -466,7 +449,7 @@ func (a *app) showAccountNoToken() {
 		return
 	}
 	a.showAccountFix("Point this block at a file holding a "+a.accountHost()+" token for it:",
-		"  "+meName+" account set "+a.acct.name+" tokenFile <file>")
+		"  "+meName+" account set "+a.acct.name+" tokenfile <file>")
 }
 
 // showAccountLine leads the block, because it explains the lines under it: the key
@@ -481,7 +464,7 @@ func (a *app) showAccountLine() {
 	if a.acct.looseTokenFile != "" {
 		a.out.clean(acctCont + "WARNING: the token file is readable by other users on this machine.")
 		a.showAccountNote("File", nativePath(a.acct.looseTokenFile))
-		a.showAccountFix("Keep it to yourself:", "  chmod 600 '"+a.acct.looseTokenFile+"'")
+		a.showAccountFix("Keep it to yourself:", "  chmod 600 "+shellQuote(a.acct.looseTokenFile))
 	}
 	// This repo could authenticate with the account's token instead of a key, and
 	// doesn't. Worth one line, because it is the whole point of configuring accounts
@@ -569,7 +552,7 @@ func readSSHConfig(target string) sshConfig {
 	return cfg
 }
 
-// sshConfigCache holds 'ssh -G' answers by target. PATH is in the key, since a
+// sshConfigCache keeps 'ssh -G' answers by target. PATH is in the key, since a
 // test may change it in one process. Locked, since look-ahead goroutines read
 // remotes too.
 var sshConfigCache = struct {
@@ -619,11 +602,8 @@ func (a *app) showSSHLine(remoteURL string) {
 		return
 	}
 	ssh := readSSHConfig(sshConnectTarget(remoteURL))
-	// An '-i' in git's own ssh command outranks whatever ssh -G nominated: that is
-	// the key git hands ssh, and with IdentitiesOnly set ssh_config's candidates
-	// never get a look in. Without this the line can name the right account beside
-	// the wrong key file, which is worse than either alone - it invites you to
-	// trust the half that happens to be wrong.
+	// An '-i' in git's own ssh command outranks ssh -G's pick, since with IdentitiesOnly
+	// ssh_config's candidates never get a look in.
 	fields := strings.Fields(a.gitSSHCommand())
 	for i, arg := range fields {
 		if arg == "-i" && i+1 < len(fields) {
@@ -640,13 +620,10 @@ func (a *app) showSSHLine(remoteURL string) {
 	if hostAlias != ssh.host {
 		line += " via alias '" + hostAlias + "'"
 	}
-	if ssh.keyFile != "" {
-		line += ", key " + nativePath(ssh.keyFile)
-	}
-	// Neither half above answers the question this line exists for: the connect
-	// user is 'git' for every GitHub account, and the key is only ssh's first
-	// readable candidate, not necessarily the one that authenticates. So ask the
-	// host who we actually are. Offline it stays unknown - the fetch already said why.
+	// Neither the connect user nor the key answers the question this line exists
+	// for: the user is 'git' for every GitHub account, and the key is only ssh's
+	// first readable candidate, not necessarily the one that authenticates. So ask
+	// the host who we actually are. Offline it stays unknown - the fetch already said why.
 	account := "(unknown - offline, so " + ssh.host + " wasn't asked)"
 	if !a.isOffline() {
 		account = "(unknown - " + ssh.host + " didn't answer with a login)"
@@ -655,6 +632,11 @@ func (a *app) showSSHLine(remoteURL string) {
 		}
 	}
 	a.out.clean("SSH ..........: " + account + " (" + line + ")")
+	// The key's path goes under the line rather than in the parentheses, where a
+	// long one wrapped it.
+	if ssh.keyFile != "" {
+		a.showAccountNote("File", nativePath(ssh.keyFile))
+	}
 }
 
 // showGhLine: gh-backed commands act as gh's account, not the ssh key's - so name

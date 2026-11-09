@@ -55,13 +55,9 @@ func (a *app) cmdCommit() error {
 }
 
 func (a *app) cmdPull() error {
-	// --autostash instead of a manual stash push/pop: a failed pull (diverged,
-	// offline) leaves the tree intact instead of stranding work in the stash.
-	// Skipping beats failing when the remote is simply out of reach: pullcom is the
-	// only way to commit, so being offline must not turn a good commit into a
-	// failed command. A reachable remote that can't fast-forward is a real problem
-	// and still fails hard. --no-fetch skips it too, rather than merging the last
-	// fetch's copy: that would say "up to date" about refs nobody has checked.
+	// --autostash, so a failed pull leaves the tree as it was, not work in the stash.
+	// Offline skips the pull, since pullcom is the only way to commit; --no-fetch skips
+	// it too.
 	switch {
 	case !a.opt.fetch:
 		a.out.status("Skipping the pull (--no-fetch).")
@@ -85,22 +81,14 @@ func (a *app) pullIfOnline(extra ...string) error {
 	return nil
 }
 
-// pullArgs is the pull, for a branch that has an upstream. By the time it runs,
-// the fetch at the start of the command has already brought in every branch on
-// origin, and 'git pull' would only ask origin the same question again. So it
-// merges what that fetch left, which is also what the plan's incoming list
-// showed. An upstream on some other remote was not part of that fetch, so it
-// still pulls. A local branch as upstream needs no fetch at all. No upstream
-// gives the merge too, for the plan; the runners skip the step then.
+// pullArgs is the pull for a branch with an upstream. It merges what the command's fetch
+// left, which the plan showed. An upstream on another remote still pulls.
 func (a *app) pullArgs(extra ...string) []string {
 	return pullArgsFor(a.upstream(), extra...)
 }
 
-// pullArgsFor names the upstream the way git shortens it, which is never
-// ambiguous, so the plan says which branch comes in and the step merges that
-// same name. Only a branch with no upstream at all is left to '@{u}'. A local
-// upstream whose name starts with a dash would read as an option, so it goes by
-// its full ref.
+// pullArgsFor names the upstream the way git shortens it, so the plan and the merge say
+// the same branch. A local one starting with a dash goes by its full ref.
 func pullArgsFor(upstream upstreamRef, extra ...string) []string {
 	if upstream.full != "" && !strings.HasPrefix(upstream.full, "refs/remotes/origin/") && !strings.HasPrefix(upstream.full, "refs/heads/") {
 		return append([]string{"pull", "--ff-only"}, extra...)
@@ -116,12 +104,8 @@ func pullArgsFor(upstream upstreamRef, extra ...string) []string {
 	return append(args, name)
 }
 
-// pushIfOnline is the park push, for a command that still means something without
-// it. The commands that exist to publish never get here - they are refused up
-// front - so nothing reports success having sent nothing. Silence would read as
-// published, hence the note, which names the branch: the command may move off it
-// next (br switch, merge), and a 'sync' from wherever you end up would publish
-// that branch, not this one.
+// pushIfOnline is the park push, for a command that still means something without it.
+// Offline gets a note naming the branch, since the command may move off it next.
 func (a *app) pushIfOnline() error {
 	if !a.hasOrigin() {
 		a.out.status("No 'origin' remote; nothing to push.")
@@ -139,11 +123,8 @@ func (a *app) pushIfOnline() error {
 	return nil
 }
 
-// directPush: sync is about to send your own work straight to main, dev or the
-// default branch, which the workflow routes through a branch and a pull request.
-// A merge is not that - br merge offline, the hotfix back-merge and release all
-// leave one for sync to publish - so only commits made on the branch itself
-// count, plus a tree that is about to become one. design.md "--direct".
+// directPush: sync is about to send your own commits straight to main, dev or the
+// default branch. A merge left for sync doesn't count. design.md "--direct".
 func (a *app) directPush() bool {
 	if a.cmd.name != "sync" || a.opt.direct || !a.hasOrigin() || !a.isProtectedBranch("") {
 		return false
@@ -170,11 +151,8 @@ func (a *app) pushArgs() []string {
 	return []string{"push"}
 }
 
-// pushesToRemote: whether this command sends anything to origin. The identity
-// comparison keyed off it costs a live ssh probe and refuses the run outright, so
-// it must not fire for a command whose whole job is local - a mismatched key has
-// nothing to do with a commit that never leaves the machine. Named by exception,
-// so a mutating command added later is covered until it says otherwise.
+// pushesToRemote: whether this command sends anything to origin, since the identity
+// check costs an ssh probe. Named by exception, so a new mutating command is covered.
 func (a *app) pushesToRemote() bool {
 	switch a.cmd.name {
 	case "pullcom", "repo-clone", "repo-url", "account-apply", "account-set", "account-unset":
@@ -205,11 +183,8 @@ func (a *app) publishBranch(branch string) error {
 	return a.step("git", "push", "-u", "origin", "HEAD")
 }
 
-// cmdCommitPull pulls BEFORE committing. Committing first mints a local commit,
-// so a remote that merely moved ahead is now diverged and --ff-only refuses -
-// which is the everyday case, not an edge one. Pulling first fast-forwards (the
-// dirty tree rides over on --autostash) and the commit lands on top, so history
-// stays linear and --ff-only stays satisfiable.
+// cmdCommitPull pulls before committing, so a remote that moved ahead fast-forwards and
+// the commit goes on top. Committing first would leave it diverged for --ff-only.
 func (a *app) cmdCommitPull() error {
 	if err := a.cmdPull(); err != nil {
 		return err
@@ -229,15 +204,9 @@ func (a *app) cmdPush() error {
 func (a *app) cmdPrune() error {
 	doneLocal := 0
 	heldBack := map[string]bool{}
-	// -D with our own gate, not -d. 'git branch -d' asks whether the branch is contained in
-	// its upstream, or in HEAD when it has none - neither of which is the question here, and
-	// the second one refuses a genuinely-merged local-only branch from any other branch.
-	// Re-checked right now rather than trusting the plan - the prompt may have sat a while -
-	// but surveyed the way resolvePrune surveys: one 'for-each-ref --merged' per target ref
-	// answers containment for every branch at once, instead of a merge-base fork per branch.
-	// A branch deleted since the plan drops out of the survey, which reads as not-contained
-	// and holds it (and its remote copy) back, same as the per-branch ask did. This survey
-	// reads refs/heads only; pruneRemote asks origin itself about the remote half.
+	// -D with our own gate, since -d asks about the upstream or HEAD. Re-checked now, as
+	// the prompt may have sat, by one 'for-each-ref --merged' per target. A branch gone
+	// since reads as not merged.
 	stillMerged := map[string]bool{}
 	unconfirmed := func() bool {
 		for _, branch := range a.prune.local {
@@ -343,13 +312,8 @@ func (a *app) cmdPrune() error {
 	return nil
 }
 
-// pruneRemote deletes br prune's remote half and says how many went. The plan was
-// decided from the local copy of origin, which is only as new as the last fetch:
-// --no-fetch, or a prompt left waiting, leaves it older, and a plain delete push
-// removes whatever origin holds by then. So cmdPrune asks origin before deleting
-// anything, and each delete is leased on the value that passed the containment
-// check, which covers the moment between the answer and the push. asked is false
-// when origin couldn't be asked, which says nothing about any branch.
+// pruneRemote deletes br prune's remote half and says how many went. Each delete is
+// leased on the value cmdPrune got from origin. asked false: origin couldn't be asked.
 func (a *app) pruneRemote(branches []string, onOrigin map[string]string, asked bool) int {
 	if len(branches) == 0 {
 		return 0

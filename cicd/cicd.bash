@@ -22,7 +22,7 @@
 ##	  per-project settings live in config.bash.
 ##	- Stages (fail-fast, any error aborts before the next stage):
 ##	   0. remote sync (fast-forward from origin before anything is built or tested)
-##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, shellcheck over the pipeline's own scripts, and ruff's leak rules over the demo script)
+##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, shellcheck over the pipeline's own scripts, and ruff over the Python files: its leak rules, then ruff.toml's)
 ##	   2. build + unit tests (go test -race, failing on a goroutine left running) + regression tests (cicd/test.bash against the compiled binary)
 ##	   3. fuzz + security (cicd/fuzz.bash) + native fuzz targets + govulncheck + pip-audit + spawn counts + leak checks (a soak test and CodeQL); --quick skips both audits and CodeQL
 ##	   4. backwards compatibility (cicd/parity.bash: this build vs the frozen v2.1.0 one)
@@ -76,8 +76,9 @@
 ##	                       unless it changes only the paths MERGE_GATE_SKIP in config.bash lists
 ##	   -h, --help          show this help
 ##	- Memory: every container a run starts is capped with no swap, and so is the run itself, in a
-##	  user scope where systemd-run --user works. CICD_MEM_CAP sets the cap, a docker size such
-##	  as 24g, or none. The default is a third of the RAM, 4g to 32g. A step over it exits 137.
+##	  user scope where systemd-run --user works. CICD_MEM_CAP sets the cap, a size with its unit,
+##	  k, m or g, such as 24g, and 1g at least, or none. The default is a third of the RAM, 4g to
+##	  32g. A step over it exits 137.
 ##	- If neither -q/-y nor -m is given, the run prompts once for a commit message
 ##	  (blank = git editor; Ctrl+C aborts the whole run), then finishes unattended.
 ##	- Reuse: copy the cicd/ directory into another project and edit config.bash.
@@ -100,7 +101,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"   ## the git repo root (cicd/..)
 export PATH="${HOME}/.local/bin:${PATH}"   ## user-prefix npm tools (markdownlint) win
 source "${here}/config.bash"
-## No VCS stamps on anything go builds here, the lint and test builds too, not just the -o ones.
+## No VCS stamps on anything go builds here, the lint and test builds too, not only the -o ones.
 ## Go takes only a .git folder for a repo, so from the hook's worktree under .git it walks up to
 ## the main checkout and stamps that, and in the image git won't read it and the build fails.
 export GOFLAGS="${GOFLAGS:+${GOFLAGS} }-buildvcs=false"
@@ -110,7 +111,8 @@ source "${here}/utility/include/image-go.bash"         ## fImageGo(), fImageReci
 source "${here}/utility/include/safe-rm.bash"          ## fSafeRm(), the guard every recursive removal goes through
 fLowPriority
 cd "${root}"
-stamp="$(date +%Y%m%d-%H%M%S)"
+## UTC, since the image runs in UTC and its records share folders with the box's.
+stamp="$(date -u +%Y%m%d-%H%M%S)"
 
 ## Output helpers: fEcho / fEcho_Clean, blank-collapsing.
 ## fEcho "msg" -> "[ msg ]" status line; fEcho_Clean "msg" -> plain line, and a
@@ -129,7 +131,7 @@ fEcho(){       if [[ -n "$*"     ]]; then fEcho_Clean "[ $* ]"; else fEcho_Clean
 fEcho_Force(){ fEcho_ResetBlankCounter; fEcho "$*"; }
 __letterbox="•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
 fSection(){ fCpuBudget; fEcho_Clean; fEcho_Clean "${__letterbox}"; fEcho "$*"; [[ "${stagePause:-0}" == 0 ]] || sleep "${stagePause}"; }
-## Steps. stepList holds the ones this run takes, in order, by key, and stepTitle their names. Off
+## Steps. stepList has the ones this run takes, in order, by key, and stepTitle their names. Off
 ## steps aren't in it, so they aren't counted. The run in the container numbers its own steps from
 ## where the run out here left off (stepBase), out of the whole run's total.
 declare -A stepTitle=([sync]="Remote sync" [lint]="Lint" [test]="Build + regression tests" [fuzz]="Fuzz + security"
@@ -248,19 +250,16 @@ elif [[ "${CICD_CONTAINER:-0}" == 1 ]]; then
 	else containerNote="WARNING: docker isn't usable here, so ${inImage} on this box, with its own tool versions"; fi
 fi
 if ((installHook)); then exec "${here}/utility/pre-push.bash" --install; fi
-## The memory cap, from config.bash's fMemCap: memArgs goes on every docker run. Then the whole run
-## goes in a user scope with the same cap, once, so the steps it runs here are capped too. The
-## containers are dockerd's children, not this run's, so they're capped apart. Not in the image,
-## and not where systemd-run --user doesn't work, such as a bare CI runner; it runs as before
-## there. OOMPolicy continue, so a step the kernel kills fails, and the cleanup still runs. A step
-## killed at the cap exits 137.
+## The memory cap, from config.bash's fMemCap: memArgs on every docker run, and the whole run in a
+## user scope with the same cap where systemd-run --user works. OOMPolicy continue, so the cleanup
+## still runs. A step killed at the cap exits 137.
 memCap=""; memArgs=()
 fMemCap || exit 1
+memScope=(systemd-run --user --scope --quiet -p "MemoryMax=${memCap^^}" -p MemorySwapMax=0 -p OOMPolicy=continue)
 if [[ -n "${memCap}" && -z "${GITSBY_CICD_MEM_SCOPE:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && ((! listOnly)) \
-	&& command -v choom >/dev/null 2>&1 && systemd-run --user --scope --quiet true >/dev/null 2>&1; then
+	&& command -v choom >/dev/null 2>&1 && "${memScope[@]}" true >/dev/null 2>&1; then
 	export GITSBY_CICD_MEM_SCOPE="${memCap}"
-	exec systemd-run --user --scope --quiet -p "MemoryMax=${memCap^^}" -p MemorySwapMax=0 -p OOMPolicy=continue \
-		choom -n 1000 -- bash "${here}/${BASH_SOURCE[0]##*/}" ${cliArgs[@]+"${cliArgs[@]}"}
+	exec "${memScope[@]}" choom -n 1000 -- bash "${here}/${BASH_SOURCE[0]##*/}" ${cliArgs[@]+"${cliArgs[@]}"}
 fi
 ## Set once the image is there. One left in the caller's environment would say otherwise.
 ## Where the run outside left off, as "<steps before this run's>/<total>".
@@ -279,11 +278,8 @@ unset GITSBY_CICD_IMAGE GITSBY_CICD_RUN GITSBY_CICD_KEEP_TEMP GITSBY_CICD_STEPS 
 if [[ -n "${handsOff}" ]]; then doSync=0; DOGFOOD_TARGETS=(); GIT_PUBLISH=(); fi
 [[ -z "${aliasNote}" ]] || { fEcho_Clean; fEcho_Clean "${aliasNote}"; }
 
-## One folder for the run's temp files, ${HOST_TEMP}/<app>/<start time>_<NNN>, so a run stopped
-## partway leaves none behind. TMPDIR, TEMP and TMP point into it, so the harnesses' folders and
-## the tools' files go in it too. Its run.pid marks it as a run's, and is checked again before the
-## removal. --keep-temp keeps it, and the files the steps would have removed from it, and says
-## where it is and which containers were kept. --list makes none.
+## One folder for the run's temp files, ${HOST_TEMP}/<app>/<start time>_<NNN>, with TMPDIR, TEMP
+## and TMP pointed in. Its run.pid marks it as a run's. --keep-temp keeps it; --list makes none.
 runTmp=""; runName=""; runRe='^[0-9]{8}-[0-9]{6}_[0-9]{3}$'
 ## What the run removed, for the one line at its end, and about how many bytes that freed.
 tidyGone=(); declare -i tidyFreed=0
@@ -323,12 +319,9 @@ fModCachePrune(){
 		"${root}/src-go/go.mod" "${root}/src-go/go.sum" 2>/dev/null)" || return 0
 	[[ ! "${n}" =~ ^[1-9][0-9]*$ ]] || gone+=("${n} Go module version(s)")
 }
-## At the end of a run that used the image, passed or not: the run's containers, the project's
-## dangling images, its older image tags once a newer one has passed, and the Go cache volume when
-## it's over 2 GB, or else on a pass its module cache's versions go.sum doesn't name. Only what
-## carries the project's label. The build cache is docker's default
-## builder, which every project shares, so the daemon's builder.gc trims it, not a run here. The
-## run's end line says what went and about what it freed.
+## At the end of a run that used the image: its containers, the project's dangling images and
+## older tags, and the Go cache volume when over 2 GB or on a pass its unused module versions.
+## Only what has the project's label. The shared build cache is left to the daemon's builder.gc.
 fDockerTidy(){
 	local passed="$1" before after ids id ref seen=0 vol="${APP_NAME}-cicd-cache" size
 	local -a gone=()
@@ -384,7 +377,7 @@ fRunTmpDone(){
 	if ((! ${#tidyGone[@]})); then fEcho_Clean "Cleanup: nothing to remove"; fEcho_Clean; return 0; fi
 	printf -v list '%s, ' "${tidyGone[@]}"
 	## The steps remove their own files as they finish, and the run in the image keeps its folder
-	## on the container's tmpfs, so the run folder is mostly just its run.pid by now. A size under
+	## on the container's tmpfs, so the run folder is mostly its run.pid by now. A size under
 	## a megabyte, or one docker didn't give, says nothing about the disk.
 	if ((tidyFreed < 1000000)); then fEcho_Clean "Cleanup: removed ${list%, }"; fEcho_Clean; return 0; fi
 	fEcho_Clean "Cleanup: removed ${list%, }; freed about $(numfmt --to=si --suffix=B "${tidyFreed}" 2>/dev/null || echo "${tidyFreed} bytes")"
@@ -578,11 +571,8 @@ fStageLint(){
 	## Keyed off the module, not a glob - the tools walk it themselves. A missing
 	## toolchain is fatal now rather than a warning: it is what builds the product.
 	command -v go >/dev/null 2>&1 || fDie "go toolchain not installed - nothing in this pipeline can run without it"
-	## Which version of each tool is about to gate this run. A tool that moved on its own is
-	## the usual reason a finding appears - or stops appearing - on a tree nobody touched.
-	## Warned about only: this pipeline installs nothing, and a version skew is a thing to
-	## know rather than a reason to refuse to build.
-	## A tool that is missing altogether is warned about by the step that needs it.
+	## Which version of each tool gates this run, since a tool that moved is the usual reason a
+	## finding comes or goes on an untouched tree. Warned only.
 	toolDrift=()
 	for toolSpec in "${GO_TOOL_VERSIONS[@]}"; do
 		toolName="${toolSpec%%=*}"; toolWant="${toolSpec#*=}"
@@ -614,7 +604,7 @@ fStageLint(){
 		fEcho "WARNING: golangci-lint skipped (not installed: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest)"
 	fi
 	## The committed Windows resource, against what the newest tag would generate. It is linked
-	## into published bytes, so an edited icon or description that nobody regenerated would ship
+	## into published bytes, so an edited icon or description that nobody regenerated would go out
 	## silently. Probe-gated like the two above.
 	winresStatus=0
 	"${WINRES_CMD[@]}" --check -q || winresStatus=$?
@@ -652,12 +642,15 @@ fGoVersion(){ git describe --tags --always --dirty --match 'v*' 2>/dev/null || e
 ## source builds to the same bytes; a wall-clock stamp would mean nobody, including us,
 ## could ever rebuild a published asset to its published checksum.
 fGoBuildEpoch(){ git log -1 --format=%ct 2>/dev/null || echo 0 ;}
-## The native build, which the suites run against.
+## The native build, which the suites run against. They take whatever sits at that path, so
+## each step that runs one builds first, unless an earlier step in this run already did.
+nativeBuilt=0
 fNativeBuild(){
 	(cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 \
 		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${goVersion#v} -X main.buildEpoch=${goBuildEpoch}" -o "${EXE_NAME}" .) \
 		|| fDie "go build failed"
 	fEcho "OK: go build (v${goVersion#v})"
+	nativeBuilt=1
 }
 ## --leakcheck: the checks too slow for every run. The soak test loops the everyday commands
 ## in one process and compares the heap and goroutine count at round N and 2N. Not under
@@ -713,11 +706,9 @@ for name in sys.argv[2:]:
         shutil.copyfile(f, dest / f.relative_to(site))
 ' "$1/vendor" "${PY_AUDIT_DISTS[@]}"
 }
-## CodeQL reports only on source under the database's root, so it runs over a scratch copy of the
-## module with its dependencies vendored in, the tree left as it was. Tests and vendor/ are both
-## off by default in the Go extractor. It sees one OS's files at a time, so it runs once for each
-## OS a release is built for. Python's run is one more, over a scratch copy of its own. The
-## reports are kept beside the soak runs, newest 20.
+## CodeQL reports only on source under the database's root, so it runs over a scratch copy with
+## the dependencies vendored, once per release OS, plus one for Python. Reports kept beside the
+## soak runs, newest 20.
 fCodeQL(){
 	local leakDir="${root}/${LEAKCHECK_DIR}" cqDir="" cqWork="" log="" rc=0 goos="" old=""
 	local -a cqFiles=() cqOses=() sarifs=() cqIgnore=()
@@ -854,7 +845,7 @@ fContainerRun(){
 		-e "GITSBY_CICD_TZ=<${tzOff}>${tzSign}${tzOff:1:2}:${tzOff:3:2}" ${memArgs[@]+"${memArgs[@]}"} \
 		--user "$(id -u):$(id -g)" "${containerMounts[@]}" -w "${root}" \
 		"${containerImage}" bash "${root}/cicd/cicd.bash" "${innerArgs[@]}" &
-	## Waited on, not run in front: bash holds a trap until a command in front ends, and docker
+	## Waited on, not run in front: bash defers a trap until a command in front ends, and docker
 	## passes Ctrl+C on into the container rather than ending.
 	wait "$!" || fDie "the run in the container failed (above)"
 	fEcho "OK: the container run"
@@ -902,11 +893,10 @@ if ((gate)); then
 		exit 0
 	fi
 	[[ -z "${containerNote}" ]] || fEcho "${containerNote}"
-	gateBuilt=0
 	for a in "${stepList[@]}"; do
 		fStep "${a}"
-		if [[ "${a}" == suite || "${a}" == fuzz || "${a}" == parity ]] && ((! gateBuilt)); then
-			goVersion="$(fGoVersion)"; goBuildEpoch="$(fGoBuildEpoch)"; fNativeBuild; gateBuilt=1
+		if [[ "${a}" == suite || "${a}" == fuzz || "${a}" == parity ]] && ((! nativeBuilt)); then
+			goVersion="$(fGoVersion)"; goBuildEpoch="$(fGoBuildEpoch)"; fNativeBuild
 		fi
 		case "${a}" in
 			lint)   fStageLint ;;
@@ -1008,8 +998,8 @@ elif ((doTest)); then
 else
 	fEcho_Clean "Tests ...............: $(fOffWhy test)"
 fi
-if ((doTest)); then
-	fEcho_Clean "Go build ............: ${GO_MODULE_DIR} -> ${GO_MODULE_DIR}/${EXE_NAME} (the suite's subject)"
+if ((doTest || doFuzz || doParity)); then
+	fEcho_Clean "Go build ............: ${GO_MODULE_DIR} -> ${GO_MODULE_DIR}/${EXE_NAME} (the suites' subject)"
 fi
 if ((doFuzz && quick)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	fEcho_Clean "Fuzz + security .....: ${FUZZ_CMD[*]}, native fuzzing and spawn counts; govulncheck and pip-audit ${skipNote}"
@@ -1108,10 +1098,12 @@ fi
 ## stage can be reviewed after the fact. Rotate the prior (closed) logs first.
 ## Inside the container the outer run's log already has all of it.
 if [[ -n "${LINT_LOG_DIR:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && mkdir -p "${root}/${LINT_LOG_DIR}" 2>/dev/null; then
-	gfs_rotate "${root}/${LINT_LOG_DIR}" run log >/dev/null 2>&1 || true
-	exec > >(tee "${root}/${LINT_LOG_DIR}/run_${stamp}.log") 2>&1
+	TZ=UTC0 gfs_rotate "${root}/${LINT_LOG_DIR}" run log >/dev/null 2>&1 || true
+	## tee ignores INT and TERM: Ctrl+C reaches the whole group, and with tee gone the exit
+	## trap's first line would take SIGPIPE before any cleanup ran.
+	exec > >(trap '' INT TERM; exec tee "${root}/${LINT_LOG_DIR}/run_${stamp}.log") 2>&1
 	## Wait for tee to drain on exit, else the shell prompt returns mid-flush and
-	## the last output lands after it (looks like the prompt "came back").
+	## the last output prints after it (looks like the prompt "came back").
 	teePid=$!
 	trap 'fRunTmpDone "$?"; exec 1>&- 2>&-; wait "${teePid}" 2>/dev/null' EXIT
 fi
@@ -1144,7 +1136,7 @@ if ((doSync)); then
 	fStepEnd
 fi
 
-## Version stamped into every build this run. Dev builds carry what describe says; a
+## Version stamped into every build this run. Dev builds have what describe says; a
 ## release injects the clean one. Read after the sync, which can move HEAD. -dirty
 ## because a run that publishes builds source whose commit stage 8 hasn't made yet.
 goVersion="$(fGoVersion)"; goBuildEpoch="$(fGoBuildEpoch)"
@@ -1166,9 +1158,9 @@ if ((doLint)); then
 	fStepEnd
 fi
 
-## Stage 2: build, then the regression suite against what was just built. The build is
+## Stage 2: build, then the regression suite against what was built. The build is
 ## the native one; the cross-builds happen at dogfood, where they have somewhere to go.
-## Dev builds carry the describe version; release builds inject the clean one.
+## Dev builds have the describe version; release builds inject the clean one.
 if ((doTest)); then
 	fStep test
 	fNativeBuild
@@ -1185,9 +1177,11 @@ fi
 
 ## Stage 3: fuzz + security (adversarial input against our parsing, plus checks
 ## of what we shell out to). govulncheck and pip-audit ask a server, so --quick leaves them out.
-## The leak checks come last, and --leakcheck runs them under --no-fuzz too. Same lands-later
+## The leak checks come last, and --leakcheck runs them under --no-fuzz too. Same comes-later
 ## policy as the tests.
 if ((doFuzz || leakcheck)); then fStep fuzz; fi
+## fuzz.bash and the spawn counts run the build, which --no-test left unmade.
+((! doFuzz || nativeBuilt)) || fNativeBuild
 if ((doFuzz)) && [[ -f "${FUZZ_CMD[0]:-}" ]]; then
 	"${FUZZ_CMD[@]}"
 elif ((doFuzz)); then
@@ -1195,9 +1189,14 @@ elif ((doFuzz)); then
 fi
 ## Coverage-guided fuzzing of the pure parsers, briefly. Their seed corpus already ran
 ## with 'go test' in stage 2; this hunts a little past it each run. One target per
-## invocation is go's rule, and a crasher lands in src-go/testdata/fuzz/ as evidence.
+## invocation is go's rule, and a crasher goes in src-go/testdata/fuzz/ as evidence.
+## A list that failed or came back empty would fuzz nothing and still pass.
 if ((doFuzz)); then
-	for fuzzTarget in $(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>/dev/null | grep '^Fuzz' || true); do
+	fuzzList="$(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>&1)" \
+		|| { fEcho_Clean "$(tail -n 40 <<< "${fuzzList}")"; fDie "go test -list failed, so no fuzz target could run"; }
+	mapfile -t fuzzTargets < <(grep '^Fuzz' <<< "${fuzzList}" || true)
+	((${#fuzzTargets[@]})) || fDie "go test -list found no fuzz targets in ${GO_MODULE_DIR}"
+	for fuzzTarget in "${fuzzTargets[@]}"; do
 		## The test ID sits at the end of the func line, as '// [<id>]'.
 		fuzzId="$(sed -n "s|^func ${fuzzTarget}(.*// \[\([0-9A-Za-z]*\)\][[:space:]]*\$|\1 |p" "${root}/${GO_MODULE_DIR}"/*_test.go 2>/dev/null || true)"
 		## Kept so a failure shows what go said: a crasher's input, or a worker that died under load.
@@ -1219,11 +1218,8 @@ elif command -v govulncheck >/dev/null 2>&1; then
 else
 	fEcho "WARNING: govulncheck skipped (not installed: go install golang.org/x/vuln/cmd/govulncheck@latest)"
 fi
-## The demo's Python libraries, at the versions installed here. Most come from Debian's archive
-## rather than pip, so pip-audit gets a list of pins, not an environment. Debian patches a hole
-## without moving the upstream version, so it can report one already fixed; PIP_AUDIT_IGNORE in
-## config.bash lists those, each with the backlog item that checks it. Off the container a box's
-## own old Pillow fails here on purpose; it is the copy that box renders with.
+## The demo's Python libraries at the versions installed here, mostly from Debian, so pip-audit
+## gets pins. PIP_AUDIT_IGNORE in config.bash lists holes Debian patched without a version bump.
 if [[ -z "${PY_AUDIT_DISTS+x}" ]] || ((! doFuzz || ! ${#PY_AUDIT_DISTS[@]})); then
 	:
 elif ((quick)); then
@@ -1265,6 +1261,7 @@ fStepEnd
 ## asks the other question: do they ANSWER the same? Self-skips once legacy/ is gone.
 if ((doParity)); then
 	fStep parity
+	((nativeBuilt)) || fNativeBuild
 	if [[ -f "${PARITY_CMD[0]:-}" ]]; then
 		"${PARITY_CMD[@]}"
 	else
@@ -1273,12 +1270,9 @@ if ((doParity)); then
 	fStepEnd
 fi
 
-## Stage 5: dogfood. Cross-build each configured target and copy it to the first existing,
-## writable dir in that target's list. No sudo fallback on purpose - an unwritable dest is a
-## warning, not an unattended privilege escalation. A cross-build failure is fatal: it means
-## the tree stopped being portable, which is worth finding here rather than at a release.
-## Builds target $1 (goos/goarch) to the file $2, with the image's Go when the run uses it. Stage 7
-## builds the Mac one this way too, so the Mac tests run against the same build dogfood installs.
+## Stage 5: dogfood. Cross-build each target and copy it to the first writable dir in its list. No
+## sudo fallback: an unwritable dest is a warning. A cross-build failure is fatal. fCrossBuild
+## builds target $1 to file $2, with the image's Go when the run uses it.
 fCrossBuild(){
 	local target="$1" out="$2" arch part
 	local -a arches parts=()
@@ -1306,7 +1300,7 @@ if ((${#DOGFOOD_TARGETS[@]})); then
 			continue
 		fi
 		## Built into the module dir under the target's own name, so the native binary the
-		## suite just ran against is not overwritten by a build that cannot run here.
+		## suite ran against is not overwritten by a build that cannot run here.
 		out="${root}/${GO_MODULE_DIR}/${EXE_NAME}-${t//\//-}"
 		fCrossBuild "${t}" "${out}"
 		cp -f "${out}" "${dogfoodDest[${t}]}/${exe}"
@@ -1319,11 +1313,8 @@ if ((${#DOGFOOD_TARGETS[@]})); then
 	fStepEnd
 fi
 
-## Stage 6: demo gif. Types the scenario into a fake terminal, runs each command
-## against a build of its own, stamped with the newest release, renders the
-## animated loop. A failure is a warning, never a stop. When the render differs
-## from the committed copy, a timestamped original is kept (GFS-pruned) out of
-## tree, then landed in-repo.
+## Stage 6: demo gif, against a build stamped with the newest release. A failure is a warning. A
+## changed render keeps a timestamped original out of tree (GFS-pruned), then moves in.
 ((! DO_DEMOGIF)) || fStep demogif
 if ((! DO_DEMOGIF)); then
 	:
@@ -1335,7 +1326,7 @@ else
 	mkdir -p "$(dirname "${demogifOut}")"
 	## Every command prints a banner naming its build, and a build stamped with the commit put a
 	## new one on camera at every commit, so the whole gif was replaced on every run. The demo's
-	## own build carries the newest release instead - the version and build number that release's
+	## own build has the newest release instead - the version and build number that release's
 	## published binary prints - so the gif changes only when what it shows does.
 	demoVersion="0.0.0"; demoBuildEpoch=""
 	demoTags="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' 2>/dev/null || true)"
@@ -1378,10 +1369,10 @@ else
 			rm -f -- "${demogifTmp:?}"
 			fEcho "WARNING: demo gif differs; ${handsOff} rewrites no tracked file, so the committed one stays"
 		else
-			## Keep the new original out of tree (GFS-pruned), then land it in the repo.
+			## Keep the new original out of tree (GFS-pruned), then move it into the repo.
 			mkdir -p "${DEMOGIF_ARCHIVE_DIR}"
 			cp -f "${demogifTmp}" "${DEMOGIF_ARCHIVE_DIR}/demo_${stamp}.gif"
-			gfs_rotate "${DEMOGIF_ARCHIVE_DIR}" demo gif >/dev/null 2>&1 || true
+			TZ=UTC0 gfs_rotate "${DEMOGIF_ARCHIVE_DIR}" demo gif >/dev/null 2>&1 || true
 			mv -f "${demogifTmp}" "${demogifOut}"
 			fEcho "OK: demo gif regenerated"
 		fi
@@ -1395,13 +1386,9 @@ else
 fi
 fStepEnd
 
-## Stage 7: the Go tests on a Mac, a Windows box and the other Unix boxes, and the regression
-## suite on the Mac and the Unix boxes against the build for each. The Linux arm64 box also runs
-## the windows/arm64 Go tests under Wine. Nothing else runs the tests on
-## those platforms, and Windows-only breaks went unnoticed for weeks before this. A box that is off, unreachable or taken by someone else
-## is skipped with a note rather than waited for. Slow, and on other hosts, so --quick only
-## builds the Unix boxes' targets, which takes seconds and finds one that stopped compiling.
-## --no-remote leaves those out too, and the run in the container always gets it.
+## Stage 7: the Go tests on a Mac, Windows and the other Unix boxes, and the regression suite on
+## the Mac and Unix ones. A box that's off or taken is skipped with a note. --quick only builds
+## the Unix targets; --no-remote and the container run skip it.
 if ((doRemote || (quick && ! noRemote))); then fStep remote; fi
 if ((! doRemote)); then
 	if ((quick && ! noRemote)); then
@@ -1510,3 +1497,7 @@ fEcho_Clean
 ##		- 2026-11-06 JC: A run that passed in the image cuts the cache volume's Go module cache to what go.sum names, when no other run's container is up.
 ##		- 2026-11-07 JC: Lint runs ruff with the project's ruff.toml too, after the leak rules.
 ##		- 2026-11-09 JC: A memory cap with no swap, CICD_MEM_CAP, on every container a run starts, first in line for the OOM killer, and on the run itself in a user scope.
+##		- 2026-11-09 JC: The run log's tee ignores INT and TERM, so Ctrl+C still runs the exit trap's cleanup.
+##		- 2026-11-09 JC: Under --no-test the fuzz and parity steps build first, rather than run whatever build was on disk. The native fuzzing fails when go test -list fails or lists no target.
+##		- 2026-11-09 JC: The memory scope's probe passes the same properties as the run, so a systemd that doesn't know one runs as before.
+##		- 2026-11-09 JC: The run's stamp, which names its log, temp folder, soak and CodeQL folders and archived demo gif, is in UTC, and the rotations read it so. The image named them in UTC and the box in its own time.

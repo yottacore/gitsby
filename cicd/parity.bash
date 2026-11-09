@@ -6,7 +6,7 @@
 ##		- Backwards compatibility. Compares this build against the frozen v2.1.0
 ##		  script under legacy/, rather than each against a spec. cicd/test.bash
 ##		  asks "does this behave correctly?" of one build; this asks "does the new
-##		  one ANSWER as the shipped one did?" for the same input.
+##		  one ANSWER as the released one did?" for the same input.
 ##		- Aimed at the defect class the behavioral suite is blind to by
 ##		  construction: every port bug that has reached users here was a language
 ##		  mechanism differing - file encoding, argument parsing, return types,
@@ -50,11 +50,8 @@ APP_NAME="$(source "${here}/config.bash" && printf '%s' "${APP_NAME}")"
 fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
 work="$(mktemp -d "${safeTmp}/gitsby-parity.XXXXXX")"
 trap 'fSafeRm "${work:?}" >/dev/null' EXIT
-## The same directory in the spelling native Windows understands. A folder rule has to be written
-## in a spelling BOTH builds can resolve, and an MSYS mount path such as '/tmp/...' is not one:
-## only this shell knows its own mount table, and the PowerShell build must not need Git Bash to
-## exist. 'account' marks a rule that resolves to no directory, which is what makes that visible
-## rather than silent.
+## The same directory as native Windows spells it, since an MSYS path such as '/tmp/...' resolves
+## only in this shell. 'account' marks a rule that resolves to no directory.
 workNative="${work}"
 command -v cygpath >/dev/null 2>&1 && workNative="$(cygpath -m "${work}")"
 workBack="${workNative//\//\\}"
@@ -70,14 +67,9 @@ export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test
 export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
 
-## Pinning the config FILES is not isolation on its own: GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank
-## every one of them, and an inherited GH_TOKEN is what a gh call reports back. Both arrive from
-## an ordinary working terminal, and neither shows up as a failure you can act on.
-fUnsetInheritedGitConfig(){
-	local -i i=0
-	for (( i = 0; i < ${GIT_CONFIG_COUNT:-0}; i++ )); do unset "GIT_CONFIG_KEY_${i}" "GIT_CONFIG_VALUE_${i}"; done
-	unset GIT_CONFIG_COUNT
-}
+## GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank the pinned config files, and an inherited GH_TOKEN is
+## what gh reports. By name, since arithmetic on an inherited count can run a command.
+fUnsetInheritedGitConfig(){ unset GIT_CONFIG_COUNT "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"; }
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE
 
@@ -109,14 +101,16 @@ fTestLine(){ local re='^\[([0-9A-Za-z]+)\] (.*)$' d="$2"; [[ ! "${d}" =~ ${re} ]
 fOk(){   pass=$((pass+1)); ((quiet)) || fTestLine PASS "$*"; }
 fBad(){  fail=$((fail+1)); fTestLine FAIL "$*"; }
 
-## The subject and the reference. 'new' is whatever cicd stage 2 just built; 'ref' is the
+## The subject and the reference. 'new' is whatever cicd stage 2 built; 'ref' is the
 ## frozen script, read-only and never rebuilt.
 newBuild="${root}/src-go/gitsby"; [[ -x "${newBuild}" ]] || newBuild="${newBuild}.exe"
 refBuild="${root}/legacy/bin/gitsby"
 
+## A missing build is a step that compared nothing, unlike a missing frozen one, which is the end
+## state the header names.
 if [[ ! -x "${newBuild}" ]]; then
-	fEcho_Clean "parity: no build at src-go/gitsby - nothing to compare, skipping."
-	exit 0
+	fEcho_Clean "parity: no build at src-go/gitsby - run 'go build' there, or cicd.bash's test step" >&2
+	exit 1
 fi
 if [[ ! -f "${refBuild}" ]]; then
 	fEcho_Clean "parity: no frozen build at legacy/bin/gitsby - nothing to compare against, skipping."
@@ -124,17 +118,21 @@ if [[ ! -f "${refBuild}" ]]; then
 fi
 
 fNormalize(){
-	## Only the two things the builds are ENTITLED to differ on: the program's own name, and the
-	## absolute path of whichever build produced the line. Everything else is left alone, because
-	## everything else differing is the point of this file.
-	## Every spelling of the work directory folds to one token: the two shells legitimately echo a
-	## path the way their own runtime spells it, and that is not a parity finding.
+	## Only what the builds may differ on: the program's name and the build's path. Every spelling
+	## of the work directory folds to one token.
 	sed -e 's/gitsby\.ps1/gitsby/g' -e "s|${reRoot}|<root>|g" \
 		-e "s|${reWorkBack}|<work>|gI" -e "s|${reWorkNative}|<work>|gI" -e "s|${reWork}|<work>|g"
 }
 
 fRunNew(){ local -r d="${1}"; shift; ( cd "${d}" || exit 1; "${newBuild}" "${@}" 2>&1 || true ) | fNormalize ;}
 fRunRef(){ local -r d="${1}"; shift; ( cd "${d}" || exit 1; bash "${refBuild}" "${@}" 2>&1 || true ) | fNormalize ;}
+
+## The flat fixtures are converted by this build on its first read, and the old copy is named for
+## the second it was made. A path converted twice in one second keeps its second write flat, and
+## which reader ran would follow the clock, so each check writes its own file.
+declare -i cfgSeq=0
+__cfg=""
+fNewCfg(){ cfgSeq+=1; __cfg="${work}/cfg-${cfgSeq}.shcl"; }
 
 fSame(){
 	## One input, both builds, byte-identical answers after normalization.
@@ -234,10 +232,8 @@ fEcho "gitsby parity: this build vs the frozen v2.1.0 script"
 fEcho_Clean
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## Path spelling. The folder rule is the feature most exposed to path handling, and this is where
-## the scripted builds diverged for real: one resolved a spelling through the filesystem and the
-## other did not, so the same rule matched in one and not the other. Silently, which is the worst
-## kind. Go resolves paths its own third way, so the question is live again.
+## Path spelling. The scripted builds once matched a folder rule in one and not the other, and Go
+## resolves paths its own way.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fEcho_Clean "-- folder rules, however the path is spelled"
 tree="${work}/tree"
@@ -258,11 +254,12 @@ else
 	spellings+=("${winPath,,}")
 fi
 for spelling in "${spellings[@]}"; do
-	cat > "${work}/spell.shcl" <<-EOF
+	fNewCfg
+	cat > "${__cfg}" <<-EOF
 		account.s.path      = ${spelling}
 		account.s.ghAccount = spellacct
 	EOF
-	fSameLead  "[db5zr] path spelled '${spelling}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/spell.shcl" status
+	fSameLead  "[db5zr] path spelled '${spelling}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${__cfg}" status
 done
 
 ## 'pathContains' names folder names rather than a machine's tree, so it is the one rule meant to
@@ -273,25 +270,23 @@ mkdir -p "${work}/mA/github.com/alice/proj" "${work}/mB/github.com/alice/proj" "
 for d in "${work}/mA/github.com/alice/proj" "${work}/mB/github.com/alice/proj" "${work}/mA/github.com/alice-old/proj"; do
 	git init --quiet -b main "${d}"
 done
-## Written again for each check, since this build converts it on the first read.
 fSegConfig(){
-	cat > "${work}/seg.shcl" <<-EOF
+	fNewCfg
+	cat > "${__cfg}" <<-EOF
 		account.seg.pathContains = github.com/alice
 		account.seg.ghAccount    = segacct
 	EOF
 }
 fSegConfig
-fSameLead  "[db62s] pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "[db62s] pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${__cfg}" status
 fSegConfig
-fSameLead  "[db62t] pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "[db62t] pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${__cfg}" status
 fSegConfig
-fSameLead  "[db62v] and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "[db62v] and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${__cfg}" status
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## Option binding. Every build parses its own arguments, and that is where the scripted pair
-## produced three separate defects: options claimed out of a passthrough, a joined '-Config=FILE'
-## binding nothing, and a bare '--' killing the process before any code ran. The Go build parses
-## by hand for exactly this reason, which is worth proving rather than assuming.
+## Option binding, where the scripted pair had 3 defects: options taken out of a passthrough, a
+## joined '-Config=FILE', and a bare '--'.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fEcho_Clean
 fEcho_Clean "-- option forms"
@@ -311,10 +306,8 @@ fSameExit "[db601] -NoFetch before 'raw' is taken by both"        "${tree}" -q -
 fSameExit "[db602] a bad 'raw' tool is refused by both"           "${tree}" -q raw curl x
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## Renamed commands. 'update' became 'pullcom' and 'br land' became 'br merge', and both old
-## spellings are permanent aliases - so the rename must have moved the name and nothing else.
-## Run outside a repository, where both builds refuse for a reason that has nothing to do with
-## the rename: what is being compared is that the old name still ROUTES, and to the same place.
+## Renamed commands. 'update' and 'br land' are permanent aliases, so the old name must still
+## route to the same place. Run outside a repo, where both builds refuse.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fEcho_Clean
 fEcho_Clean "-- renamed commands, old spellings"
@@ -329,7 +322,7 @@ fSame "[dben0] 'br land' answers as it always did"     "${notRepo}" -q -NoFetch 
 fSameSpelling(){
 	local -r label="${1}"; local -r dir="${2}"; local -r old="${3}"; local -r new="${4}"; shift 4
 	local a="" b=""
-	# shellcheck disable=SC2086  ## deliberate word-split: these carry multi-word commands ('br land').
+	# shellcheck disable=SC2086  ## deliberate word-split: these are multi-word commands ('br land').
 	a="$(fRunNew "${dir}" -q -NoFetch ${old})"
 	# shellcheck disable=SC2086  ## ${new} is a list of arguments, split on purpose.
 	b="$(fRunNew "${dir}" -q -NoFetch ${new})"
@@ -345,10 +338,9 @@ fSameSpelling "[dben2] 'br merge' and 'br land' are one command" "${notRepo}" "b
 fSameSpelling "[deyw8] 'pull' and 'pullcom' are one command"     "${notRepo}" "pull"     "pullcom"
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## Plans. The pull step changed on purpose on 2026-10-03: the fetch at the start of the command
-## already has origin's branches, so this build merges the upstream rather than pulling, which
-## asked origin again, and names it. Both spellings of that one line map to one token; every
-## other line still has to match the frozen build.
+## Plans. The pull step changed on purpose on 2026-10-03, merging the fetched upstream rather than
+## pulling. Both spellings of that line map to one token; every other line must match the frozen
+## build.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fEcho_Clean
 fEcho_Clean "-- plans"
@@ -367,7 +359,8 @@ fSamePlan "[ddf67] sync plans the same steps, the pull step aside"    "${pullSte
 fEcho_Clean
 fEcho_Clean "-- string case"
 for name in mixed MIXED MiXeD; do
-	cat > "${work}/case.shcl" <<-EOF
+	fNewCfg
+	cat > "${__cfg}" <<-EOF
 		account.mixed.path      = ${spellings[0]}
 		account.mixed.ghAccount = caseacct
 	EOF
@@ -375,7 +368,7 @@ for name in mixed MIXED MiXeD; do
 	## the other way this loop ran three identical commands and compared them to each other, which
 	## passes whatever either build does with the variable.
 	export GITSBY_ACCOUNT="${name}"
-	fSameLead  "[db603] GITSBY_ACCOUNT='${name}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/case.shcl" status
+	fSameLead  "[db603] GITSBY_ACCOUNT='${name}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${__cfg}" status
 	unset GITSBY_ACCOUNT
 done
 
@@ -416,3 +409,6 @@ fEcho_Clean "parity passed: ${pass}, differed: ${fail}"
 ##		- 20261106 JC: Its scratch folder goes through fSafeRm, made where the guard takes it.
 ##		- 20261107 JC: The shellcheck disable says why.
 ##		- 20261107 JC: The frozen build reads first in fSameLead, and the flat fixtures are written again per check, since this build converts a flat accounts file on its first read.
+##		- 20261109 JC: No build at src-go/gitsby fails, as in fuzz.bash, rather than skipping.
+##		- 20261109 JC: Each flat fixture is written to its own file, since a second conversion of one path in the same second kept it flat.
+##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript.

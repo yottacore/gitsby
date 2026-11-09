@@ -43,11 +43,9 @@ const (
 
 var ownerNameRE = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
-// lsRemoteAbsentRE is git's wording, and only git's, for a host that was reached
-// and said no: a path that is not a repository, a repository the host does not
-// have, and a credential the host asked for or refused. git asks for one only
-// after the host answers 401, which GitHub and Gitea both do for a repository
-// that isn't there.
+// lsRemoteAbsentRE is git's wording for a host that was reached and said no. A
+// credential prompt counts, since git asks only after a 401, as GitHub and Gitea give
+// for no repo.
 var lsRemoteAbsentRE = regexp.MustCompile(`does not appear to be a git repository|Repository not found\.|(?m:^fatal: repository '.*' not found$)|could not read (?:Username|Password) for '|Authentication failed for '`)
 
 // isLocalPath: a remote that is a directory on this machine, rather than
@@ -68,11 +66,8 @@ func isLocalPath(url string) bool {
 	return true
 }
 
-// sameRemote: whether two remote URLs name the same place. Text settles it for a
-// real URL, but git rewrites a local path into the platform's own spelling when
-// it stores one - hand it '/c/tmp/x' on Windows and it gives back 'C:/tmp/x' -
-// so comparing our own argument against git's copy said "different" for the same
-// directory, and a re-run of 'repo clone' refused itself.
+// sameRemote: whether 2 remote URLs name the same place. git stores a local path in the
+// platform's spelling, '/c/tmp/x' as 'C:/tmp/x' on Windows.
 func sameRemote(a, b string) bool {
 	if a == "" || b == "" {
 		return false
@@ -86,12 +81,9 @@ func sameRemote(a, b string) bool {
 	return canonPath(a) == canonPath(b)
 }
 
-// probeRemote is one network round-trip: does the remote exist, and does it have
-// history? No auth prompts - a bad https URL would otherwise stop and ask for
-// credentials mid-run - and the timeout composes onto git's own ssh command, so
-// a per-repo core.sshCommand still probes as the key git actually pushes with.
-// The answer is missing only when git's own words say the host was reached and
-// said no; anything else is unknown, with the reason git gave.
+// probeRemote is one round trip: does the remote exist, and does it have history? Under
+// remoteEnv. Missing only when git's words say the host said no; else unknown, with
+// git's reason.
 func (a *app) probeRemote(url string) (repoExistence, string) {
 	probe := toolCmd("git", "ls-remote", url)
 	probe.Env = a.remoteEnv()
@@ -198,7 +190,11 @@ func (a *app) settleRepoURL() (bool, error) {
 		// host never hears about, and refusing it anywhere else was the parser's limit
 		// showing through as a rule. A local path still has nothing to re-spell.
 		if remoteTarget(current) == "" || a.originHost() == "" {
-			return false, usagef("origin (%s) has no host and 'owner/name' to re-spell, so there is no other spelling of it to switch to.", maskURL(current))
+			where := noteLines("URL", maskURL(current))
+			if isLocalPath(current) {
+				where = noteLines("File", nativePath(current))
+			}
+			return false, refusalBlock("origin has no host and 'owner/name' to re-spell, so there is no other spelling of it to switch to.", [][]string{where}, nil)
 		}
 		if hostURL(a.originHost(), remoteTarget(current), a.cmd.arg) == current {
 			a.out.status("origin already uses " + a.cmd.arg + "; nothing to do.")
@@ -209,10 +205,10 @@ func (a *app) settleRepoURL() (bool, error) {
 	return false, nil
 }
 
-// cloneDestDir names where a clone will land, from the arguments alone. Asked
+// cloneDestDir names where a clone will go, from the arguments alone. Asked
 // before the account is resolved as well as when the clone is settled: the folder
 // rules that pick the account are the destination's, and nothing has touched the
-// disk by then. Empty means the URL carried no name to derive one from.
+// disk by then. Empty means the URL had no name to derive one from.
 func cloneDestDir(url, dir string) string {
 	if dir != "" {
 		return dir
@@ -241,11 +237,8 @@ func (a *app) settleRepoClone() (bool, error) {
 	if a.cmd.arg == "" {
 		return false, syntaxUsage("No URL given.", "repo clone <url> [directory]", repoURLDef("<url>"), repoDirDef())
 	}
-	// 'owner/name' is what create and connect take; refusing it here only after
-	// the plan was confirmed is the surprise.
-	// 'owner/name' has only ever meant github.com, so the transport question is
-	// about github.com too - not about whichever host the directory we are standing
-	// in happens to use.
+	// 'owner/name' is refused before the plan, not after. It has only ever meant
+	// github.com, so the transport is asked of github.com too.
 	if ownerNameRE.MatchString(a.cmd.arg) && !pathExists(a.cmd.arg) {
 		a.cmd.arg = githubURL(a.cmd.arg, a.protocolFor("github.com"))
 	}
@@ -256,13 +249,14 @@ func (a *app) settleRepoClone() (bool, error) {
 	if pathExists(a.tgt.cloneDir) {
 		existingURL := runOut("git", "-C", a.tgt.cloneDir, "remote", "get-url", "origin")
 		if pathExists(a.tgt.cloneDir+"/.git") && sameRemote(existingURL, a.tgt.cloneURL) {
-			a.out.status("'" + a.tgt.cloneDir + "' is already a clone of that URL; nothing to do.")
+			a.out.statusNotes("Already a clone of that URL; nothing to do.", noteLines("File", a.cloneDirShown()))
 			a.out.clean("")
 			return true, nil
 		}
 		// An empty dir is fine (git allows it); anything else would clobber.
 		if !isDir(a.tgt.cloneDir) || !dirEmpty(a.tgt.cloneDir) {
-			return false, usagef("'%s' already exists and isn't a clone of that URL.", a.tgt.cloneDir)
+			return false, refusalBlock("The clone's folder already exists and isn't a clone of that URL.",
+				[][]string{noteLines("File", a.cloneDirShown())}, nil)
 		}
 	}
 	return false, nil
@@ -313,18 +307,15 @@ func (a *app) settleRepoCreate() error {
 	if err := mustBeInPath("gh"); err != nil {
 		return err
 	}
-	a.tgt.ghTarget = a.cmd.arg
-	switch state, reason := ghRepoState(a.tgt.ghTarget); state {
-	case repoUnknown:
-		return usagef("Couldn't ask GitHub about %s, so there is no telling whether it exists: %s", a.tgt.ghTarget, reason)
-	case repoMissing:
-		a.tgt.connectMode = "create"
-		return nil
-	case repoEmpty:
-		return usagef("github.com/%s already exists and is empty; connect to it instead: %s repo connect %s", a.tgt.ghTarget, meName, a.tgt.ghTarget)
-	default:
-		return usagef("github.com/%s already has commits; clone it instead (%s repo clone), or reconcile with raw git.", a.tgt.ghTarget, meName)
+	state, err := a.askGhTarget()
+	if err != nil {
+		return err
 	}
+	if state == repoEmpty {
+		return usagef("github.com/%s already exists and is empty; connect to it instead: %s repo connect %s", a.tgt.ghTarget, meName, a.tgt.ghTarget)
+	}
+	a.tgt.connectMode = "create"
+	return nil
 }
 
 func (a *app) settleRepoConnectTo() error {
@@ -343,22 +334,33 @@ func (a *app) settleRepoConnectTo() error {
 	if err := mustBeInPath("gh"); err != nil {
 		return err
 	}
-	a.tgt.ghTarget = a.cmd.arg
-	switch state, reason := ghRepoState(a.tgt.ghTarget); state {
-	case repoUnknown:
-		return usagef("Couldn't ask GitHub about %s, so there is no telling whether it exists: %s", a.tgt.ghTarget, reason)
-	case repoMissing:
-		return usagef("github.com/%s doesn't exist, or you can't see it. To create it: %s repo create %s", a.tgt.ghTarget, meName, a.tgt.ghTarget)
-	case repoEmpty:
-		// gh never uses a host alias, so this is the canonical url. We build this one
-		// ourselves, so the config's transport applies - unlike 'repo create', where gh
-		// adds the remote and only gh's own git_protocol decides.
-		a.tgt.connectURL = githubURL(a.tgt.ghTarget, a.protocolFor("github.com"))
-		a.tgt.connectMode = "add"
-		return nil
-	default:
-		return usagef("github.com/%s already has commits; clone it instead (%s repo clone), or reconcile with raw git.", a.tgt.ghTarget, meName)
+	state, err := a.askGhTarget()
+	if err != nil {
+		return err
 	}
+	if state == repoMissing {
+		return usagef("github.com/%s doesn't exist, or you can't see it. To create it: %s repo create %s", a.tgt.ghTarget, meName, a.tgt.ghTarget)
+	}
+	// gh never uses a host alias, so this is the canonical url. We build this one
+	// ourselves, so the config's transport applies - unlike 'repo create', where gh
+	// adds the remote and only gh's own git_protocol decides.
+	a.tgt.connectURL = githubURL(a.tgt.ghTarget, a.protocolFor("github.com"))
+	a.tgt.connectMode = "add"
+	return nil
+}
+
+// askGhTarget asks gh about the owner/name given, for repo create and connect.
+// It refuses the 2 answers both refuse, so only missing and empty come back.
+func (a *app) askGhTarget() (repoExistence, error) {
+	a.tgt.ghTarget = a.cmd.arg
+	state, reason := ghRepoState(a.tgt.ghTarget)
+	switch state {
+	case repoUnknown:
+		return state, usagef("Couldn't ask GitHub about %s, so there is no telling whether it exists: %s", a.tgt.ghTarget, reason)
+	case repoMissing, repoEmpty:
+		return state, nil
+	}
+	return state, usagef("github.com/%s already has commits; clone it instead (%s repo clone), or reconcile with raw git.", a.tgt.ghTarget, meName)
 }
 
 func (a *app) cmdClone() error {
@@ -394,7 +396,7 @@ func (a *app) cmdConnect() error {
 		}
 		return a.step("git", "push", "-u", "origin", "HEAD")
 	case "push":
-		// origin already set - just make sure everything is published
+		// origin already set - make sure everything is published
 		switch {
 		case !a.hasUpstream() || isAhead():
 			return a.step("git", a.pushArgs()...)
@@ -430,12 +432,9 @@ func (a *app) cmdRepoURLShow() {
 	a.out.clean("Switch with '" + meName + " repo url <https|ssh>'.")
 }
 
-// showFilesToPublish: every in-repo command shows what it is about to touch; this
-// is the one that publishes a whole directory for the first time, possibly to a
-// public repo, so it owes the same. Asked through a throwaway git dir OUTSIDE the
-// work tree: that way .gitignore and core.excludesFile are honored exactly as the
-// real 'git add --all' will honor them (listing files git would skip is its own
-// kind of wrong), and answering 'n' leaves the directory as it was found.
+// showFilesToPublish lists what a first publish would add, through a throwaway git dir
+// outside the tree, so the excludes apply as 'git add --all' will and 'n' changes
+// nothing.
 func (a *app) showFilesToPublish() {
 	probeDir, err := os.MkdirTemp("", "")
 	if err != nil {

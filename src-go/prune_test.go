@@ -90,7 +90,7 @@ func TestLeaseDeleteBatches(t *testing.T) { // [dcmhq]
 }
 
 // checkBatches holds each batch to its shape: its leases, then origin --delete, then
-// the same branches in order, within budget unless it carries the one oversized name.
+// the same branches in order, within budget unless it has the one oversized name.
 // The names it hands back are those branches too.
 func checkBatches(t *testing.T, name string, got []leaseBatch, tested map[string]string, budget int, wantBranches [][]string, oversized string) {
 	t.Helper()

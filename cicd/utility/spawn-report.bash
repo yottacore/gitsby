@@ -3,7 +3,7 @@
 #  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
 
 ##	Purpose:
-##		Surface the newest recorded spawn counts, the profiling counterpart to
+##		Show the newest recorded spawn counts, the profiling counterpart to
 ##		lint-report.bash. spawn-count.bash records one spawn_<ts>.tsv per cicd run
 ##		(gitignored, GFS-rotated); this prints the newest one, with the deltas
 ##		against the run before it. Two modes: plain (always print) and --check

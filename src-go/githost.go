@@ -21,14 +21,14 @@ import (
 
 // remoteRef is a remote URL taken apart: where it lives and what it is called.
 // Every field empty is the ordinary answer for a local path - a directory is a
-// perfectly good remote, it just has no host to ask anything about.
+// perfectly good remote, it has no host to ask anything about.
 type remoteRef struct {
 	host  string // canonical hostname, after any ssh_config alias is resolved
 	owner string
 	name  string
 }
 
-// target is 'owner/name', or nothing when the URL carried only a host.
+// target is 'owner/name', or nothing when the URL had only a host.
 func (r remoteRef) target() string {
 	if r.owner == "" || r.name == "" {
 		return ""
@@ -36,13 +36,8 @@ func (r remoteRef) target() string {
 	return r.owner + "/" + r.name
 }
 
-// parseRemote splits a remote URL into host, owner and name. One parser for every
-// caller: the three that grew separately agreed on github.com and on nothing else,
-// which is exactly the asymmetry that hides until a second host shows up.
-//
-// An ssh_config alias is resolved for the ssh spellings only. An https host is
-// written literally and ssh has no say in it, so asking would spend a process to
-// be told what we were already looking at.
+// parseRemote splits a remote URL into host, owner and name, for every caller. An
+// ssh_config alias is resolved for the ssh spellings only.
 func parseRemote(url string) remoteRef {
 	ref, viaSSH := parseRemoteText(url)
 	// A host gh already serves is a real hostname, not an alias, so asking ssh about
@@ -65,7 +60,7 @@ func parseRemoteText(url string) (ref remoteRef, viaSSH bool) {
 	ref.host = host
 	path = strings.TrimSuffix(strings.TrimSuffix(path, "/"), ".git")
 	// Everything before the last segment is the owner: a Gitea instance served
-	// under a subpath, and GitHub's own 'owner/name', both land here correctly.
+	// under a subpath, and GitHub's own 'owner/name', both come out right here.
 	if slash := strings.LastIndex(path, "/"); slash > 0 {
 		ref.owner, ref.name = path[:slash], path[slash+1:]
 		// Only the segment immediately above the repo names the owner; anything
@@ -101,7 +96,7 @@ func splitRemoteURL(url string) (host, path string, viaSSH bool) {
 		}
 		return hostOrNothing(host, strings.TrimPrefix(path, "/"), viaSSH)
 	}
-	// The two '://' forms both carry the path after the first slash.
+	// The two '://' forms both have the path after the first slash.
 	if slash := strings.Index(host, "/"); slash >= 0 {
 		host, path = host[:slash], host[slash+1:]
 	}
@@ -115,8 +110,8 @@ func splitRemoteURL(url string) (host, path string, viaSSH bool) {
 }
 
 // hostOrNothing refuses a "host" no host could be: whitespace means some other
-// colon-bearing string landed in the split, and "couldn't tell" (empty) is the
-// honest answer rather than a name for rules to match against.
+// colon-bearing string ended up in the split, and "couldn't tell" (empty) is the
+// true answer rather than a name for rules to match against.
 func hostOrNothing(host, path string, viaSSH bool) (string, string, bool) {
 	if strings.ContainsFunc(host, unicode.IsSpace) {
 		return "", "", false
@@ -163,7 +158,7 @@ func (a *app) hostName() string {
 	return "origin"
 }
 
-// teaNames: upstream installs Gitea's CLI as 'tea', and Debian ships the same
+// teaNames: upstream installs Gitea's CLI as 'tea', and Debian packages the same
 // program as 'tea-cli' because the name was already taken there. Looking for one
 // spelling finds it on the machines that happen to use that one.
 var teaNames = []string{"tea", "tea-cli"}
@@ -271,7 +266,7 @@ func (a *app) teaAsAccount(cli string) (bool, error) {
 	if !gave {
 		why = "The account has no token for " + a.acct.credHost + "."
 		fix = noteLines("Fix", "Point the account at a file holding a "+a.acct.credHost+" token, or run it anyway with --any-identity:",
-			"  "+meName+" account set "+a.acct.name+" tokenFile <file>")
+			"  "+meName+" account set "+a.acct.name+" tokenfile <file>")
 	}
 	if a.opt.quiet {
 		return false, refusalBlock("tea would act as '"+printable(got)+"', its own login for "+a.acct.credHost+", not as '"+printable(want)+"'.", [][]string{noteLines("Why", why), fix}, nil)
@@ -335,11 +330,8 @@ func (a *app) glabRepoArg() string {
 	return strings.TrimSuffix(strings.TrimSuffix(strings.TrimPrefix(path, "/"), "/"), ".git")
 }
 
-// hostToolFor picks the CLI for a host. gh for GitHub and for nothing else: it is
-// a GitHub client, and pointing it at somebody else's git host gets an error in
-// GitHub's vocabulary about a repo it was never looking at. tea for any other host
-// that has it installed - it is Gitea's client, and it says so itself when the host
-// turns out not to be one.
+// hostToolFor picks the CLI for a host: gh for GitHub and nothing else, tea for any
+// other host that has it installed.
 func (a *app) hostToolFor(host string) (hostTool, string) {
 	switch {
 	case isGitHubHost(host):
@@ -376,20 +368,16 @@ func (a *app) hostCLIHint() string {
 		" Some distributions install it as 'tea-cli'; either name is found."
 }
 
-// hostAnswer is what tea said about a host: the login it holds, or why it could
-// not be asked. Both empty means it was asked and holds none there.
+// hostAnswer is what tea said about a host: the login it has, or why it could
+// not be asked. Both empty means it was asked and has none there.
 type hostAnswer struct {
 	user    string
 	failure string
 }
 
-// hostLogin names the account tea holds for a host, or nothing, plus tea's reason
-// when it failed to answer. Read from the login list rather than from 'tea whoami'
-// for two reasons: whoami reports the DEFAULT login, which on a machine with two
-// instances configured is as likely as not to be the other one; and with no login
-// at all it prints "no gitea login configured" to stdout and exits 0, so neither
-// its status nor a naive read of its output says anything. Asked once - it is live
-// enough to be worth not repeating.
+// hostLogin names the account tea has for a host, or nothing, plus tea's reason when it
+// failed. From the login list, since 'tea whoami' gives the default login and exits 0
+// with none.
 func (a *app) hostLogin(cli, host string) (user, failure string) {
 	answer := a.host.login.get(func() hostAnswer {
 		if cli == "" || host == "" {

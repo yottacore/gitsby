@@ -1,8 +1,5 @@
-// The account commands: 'list' shows what is configured and which rule this
-// folder matches - the command you run when a push went out as the wrong person
-// and you want to know why - and 'apply' teaches plain git the same folder
-// rules, so a bare 'git push' in one of these folders behaves the same as it
-// does through us.
+// The account commands: 'list' shows what is configured and which rule this folder
+// matches, and 'apply' gives plain git the same folder rules.
 
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 // Licensed under The MIT License (MIT). Full text at:
@@ -65,20 +62,7 @@ func (c *config) accountNames() []string {
 	return seen
 }
 
-// foldersOf: the folder rules belonging to one account, as canonical paths.
-func (c *config) foldersOf(name string) []string {
-	return matchesOf(c.paths, name)
-}
-
-// segmentsOf: the 'pathContains' rules belonging to one account. Kept apart from
-// the folder rules because they are a different claim: those name a tree on this
-// machine, these name a run of folder names on any machine, which is what lets one
-// config file be synced between them.
-func (c *config) segmentsOf(name string) []string {
-	return matchesOf(c.segments, name)
-}
-
-// rulesOf is matchesOf with the whole rule, for a caller that prints one.
+// rulesOf: the rules in one list that belong to one account.
 func rulesOf(rules []acctRule, name string) []acctRule {
 	var out []acctRule
 	for _, r := range rules {
@@ -89,22 +73,8 @@ func rulesOf(rules []acctRule, name string) []acctRule {
 	return out
 }
 
-func matchesOf(rules []acctRule, name string) []string {
-	var out []string
-	for _, r := range rules {
-		if r.acct == name && r.match != "" {
-			out = append(out, r.match)
-		}
-	}
-	return out
-}
-
-// includeDir: where the per-account git config fragments live - beside the config
-// file that describes them, so the two travel together and 'account apply' has an
-// unambiguous set of files it owns. A cut at the last '/' found none in a Windows
-// path typed with backslashes, or in a bare file name, and put the folder under
-// the file. Absolute, since git reads a relative include from its own config's
-// folder.
+// includeDir: where the per-account fragments live, beside the config file. Absolute,
+// since git reads a relative include from its own config's folder.
 func (c *config) includeDir() string {
 	if c.file == "" {
 		return ""
@@ -117,11 +87,8 @@ func (c *config) includeDir() string {
 	return strings.TrimSuffix(filepath.ToSlash(dir), "/") + "/accounts"
 }
 
-// fragmentNames maps each account to its fragment's file name: the host, then the
-// login it goes out as. One login on two hosts then gets two files, and a look in
-// the folder says which is which. An account with no login uses its own name in
-// that slot. Two accounts sharing a host and a login each add their own name too,
-// since the accounts file can hold both.
+// fragmentNames maps each account to its fragment's file name: host, then login, or the
+// account's own name with no login. 2 accounts sharing both add their names.
 func (c *config) fragmentNames() map[string]string {
 	names := c.accountNames()
 	base := make(map[string]string, len(names))
@@ -173,11 +140,8 @@ type includeCandidate struct {
 	account string
 }
 
-// sortIncludes orders candidates the way the two matchers have to agree: git takes
-// the LAST rule that matches and gitsby the most specific, so least specific comes
-// first. Equal specificity is the case that used to disagree - gitsby keeps the
-// FIRST rule declared, so that one has to be written LAST for git to keep it too,
-// which is why the order runs backwards here.
+// sortIncludes puts least specific first: git takes the last rule that matches, gitsby
+// the most specific. On a tie gitsby keeps the first declared, so it goes last.
 func sortIncludes(list []includeCandidate) {
 	slices.SortFunc(list, func(x, y includeCandidate) int {
 		return cmp.Or(
@@ -187,13 +151,8 @@ func sortIncludes(list []includeCandidate) {
 	})
 }
 
-// accountApplyPlan: the includeIf conditions 'account apply' would write.
-// gitdir/i, not gitdir: a path compares case-insensitively on Windows and macOS,
-// and a rule that silently misses because of a capital letter is worse than no
-// rule. 'pathContains' maps onto git's own gitdir globbing, so plain git gets the
-// same rule rather than an approximation of it. Fewest folder names
-// first, and all of them ahead of the absolute rules; within the absolute rules,
-// shortest path first, so a tree nested inside another account's tree lands last.
+// accountApplyPlan: the includeIf conditions 'account apply' would write. gitdir/i,
+// since a path ignores case on Windows and macOS.
 func (c *config) accountApplyPlan() []includeRule {
 	dir := c.includeDir()
 	if dir == "" {
@@ -257,11 +216,8 @@ func (c *config) accountManagedIncludes() []string {
 	}
 	canonDir := canonPath(dir)
 	var keys []string
-	// --null, not the plain form: that one separates the key from the value with a
-	// space, and the key holds a folder path which can contain one. Every such rule
-	// came back truncated, so it was never recognized as ours - which made each
-	// re-run append a duplicate, and left a rule dropped from the config file
-	// applying forever. -z ends each record with a NUL and the key with a newline.
+	// --null, since the key holds a folder path that can have a space, where the plain
+	// form splits key from value.
 	for _, record := range strings.Split(runOut("git", "config", "--global", "--get-regexp", "--null", `^includeIf\..*\.path$`), "\x00") {
 		key, value, found := strings.Cut(record, "\n")
 		if !found {
@@ -300,16 +256,13 @@ func (a *app) cmdAccountList() {
 	a.out.clean("Config file ..: " + configDisp)
 	a.out.clean(dirLabel + nativePath(a.contextDir()))
 	hereAccount := a.cfg.accountForDir(a.contextDir())
-	// An account that resolved and simply names no login is not the same as no
-	// account at all - reported as "nothing configured" it contradicted the source
-	// printed in the same sentence. Named as "(no login named)" it said nothing
-	// anybody could act on either: the account is what the reader has to go and
-	// edit, so name that instead.
+	// An account with no login is still an account. Name it, since it's what the reader
+	// has to edit.
 	resolvedLine := a.accountWho(a.accountHost())
 	switch {
 	case resolvedLine != "":
 		if a.acct.source != "" {
-			resolvedLine += " (from " + a.accountSourceText() + ")"
+			resolvedLine += " (from " + a.acct.source + ")"
 		}
 	case a.acct.name != "":
 		resolvedLine = "'" + a.acct.name + "' - it names no login" + a.accountFallbackNote()
@@ -393,13 +346,8 @@ func (a *app) showAccount(name string, isHere bool) {
 		marker = "->"
 	}
 	a.out.clean(marker + " " + name)
-	// The host leads, because it decides whether anything under it applies at all.
-	// Leaving the deciding field off the listing made 'account list' - the command
-	// that always says - silent about the one key that had refused an account.
-	// Shown only once some account names a git host, and then for every account,
-	// including the ones that never said: it is the comparison that answers "why did
-	// this one apply and that one not", and it is meaningless where every account is
-	// on the same host. A config with one git host in it reads exactly as it always did.
+	// The host leads, since it decides whether the rest applies. Shown for every account
+	// once any names a git host, so the list says why one applied and another didn't.
 	if host := a.cfg.value(name, "host"); host != "" {
 		a.out.clean("     host ....: " + host)
 	} else if a.cfg.anyHostStated() {
@@ -443,11 +391,8 @@ func (a *app) showAccount(name string, isHere bool) {
 	// Each rule as the file writes it. The canonical form is lower case on Windows
 	// with every link resolved, so printing that named a folder nobody had typed.
 	for _, r := range rulesOf(a.cfg.paths, name) {
-		// A rule pointing at nothing matches nothing, and reads exactly like no rule
-		// at all - which is how you end up acting as the wrong account while believing
-		// you configured it. Usually a typo; on Windows it is also how a shell-only
-		// path spelling such as '/tmp/...' looks, since only the shell build can
-		// resolve one.
+		// A rule pointing at no folder matches nothing. Usually a typo; on Windows also
+		// a shell-only spelling such as '/tmp/...'.
 		if isDir(r.match) {
 			a.out.clean("     folder ..: " + r.written)
 		} else {
@@ -460,12 +405,8 @@ func (a *app) showAccount(name string, isHere bool) {
 	}
 }
 
-// cmdAccountApply writes one fragment per account, and an includeIf per folder
-// rule pointing at it - with 'git config', never by editing the file ourselves,
-// so git's own parser decides what a valid entry looks like. The directory is
-// checked BEFORE writing anything: left to mkdir and the redirect, a blocked
-// path surfaced as a raw tooling error part way through the run, which reads as
-// a crash rather than as something you can act on.
+// cmdAccountApply writes one fragment per account and an includeIf per folder rule,
+// through 'git config' so git decides what's valid. The folder is checked first.
 func (a *app) cmdAccountApply() error {
 	dir := a.cfg.includeDir()
 	if dir == "" {
@@ -497,7 +438,7 @@ func (a *app) cmdAccountApply() error {
 		written := slices.Collect(maps.Values(files))
 		for _, e := range entries {
 			if strings.HasSuffix(e.Name(), ".gitconfig") && !slices.Contains(written, e.Name()) {
-				a.out.status("Not used any more, safe to remove: " + nativePath(dir+"/"+e.Name()))
+				a.out.statusNotes("Not used any more, safe to remove.", noteLines("File", nativePath(dir+"/"+e.Name())))
 			}
 		}
 	}
@@ -522,31 +463,42 @@ func (a *app) cmdAccountApply() error {
 	return nil
 }
 
-// writeAccountFragment writes one account's git config fragment. Every write is
-// checked and every failure stops the run: this is the one command that writes
-// outside the repo you are standing in, so it is the one place where a discarded
-// exit code turns into a silent no-op - it said "Wrote" and exited 0 whatever
-// happened.
-func (a *app) writeAccountFragment(dir, file, name string) error {
+// writeAccountFragment writes one account's git config fragment. Every write is checked,
+// since this is the one command that writes outside the repo.
+func (a *app) writeAccountFragment(dir, file, name string) (err error) {
 	fragment := dir + "/" + file
-	// Nothing goes into the global config until every fragment is written.
-	const fragmentKept = "Fragments written before it stay. Your global git config was not changed."
-	if err := os.WriteFile(fragment, nil, 0o600); err != nil {
+	// Nothing goes into the global config until every fragment is written, and the
+	// global config may already include this one. So the keys go into a new file
+	// that replaces it only once all of them are in.
+	const fragmentKept = "This one is as it was, and fragments written before it stay. Your global git config was not changed."
+	// The replace would take a read-only fragment, or another user's, without a
+	// word, so those are refused here, with nothing changed.
+	if f, err := os.OpenFile(fragment, os.O_WRONLY, 0); err == nil {
+		_ = f.Close() // opened only to ask; nothing went through it
+	} else if !errors.Is(err, fs.ErrNotExist) {
 		return writeRefusal("Couldn't write an account fragment.", "Writing it", err,
 			fragmentKept, "Check permissions on it and on the folder it is in, then run this again.",
 			noteLines("File", nativePath(fragment)))
 	}
-	// WriteFile only applies its mode when it creates the file, so a fragment left
-	// world-readable by an earlier run - or by a umask - stays that way through
-	// every re-apply. It names the account and points at the token file.
-	if err := os.Chmod(fragment, 0o600); err != nil && !isWindows() {
-		return writeRefusal("Couldn't make an account fragment private. It names your account and points at your token file.", "Setting its mode", err,
-			fragmentKept, "Make it yours, or remove it, then run this again.",
+	// CreateTemp makes it 0600, which git keeps through its own writes. Its name
+	// doesn't end in .gitconfig, so a crash's leftover isn't offered as a fragment.
+	tmp, err := os.CreateTemp(dir, file+".*.tmp")
+	if err != nil {
+		return writeRefusal("Couldn't write an account fragment.", "Creating its replacement", err,
+			fragmentKept, "Check permissions on the folder it is in, then run this again.",
 			noteLines("File", nativePath(fragment)))
 	}
+	newFragment := filepath.ToSlash(tmp.Name())
+	_ = tmp.Close() // git writes it, not this handle
+	defer func() {
+		if err != nil {
+			_ = os.Remove(newFragment) // the refusal is the error to report; a leftover is never read
+		}
+	}()
 	write := func(key, value string) error {
-		if !a.inheritOK("git", "config", "--file", fragment, key, value) {
-			return usagef("Couldn't write %s into '%s'; it is incomplete, and nothing further was applied.", key, fragment)
+		if !a.inheritOK("git", "config", "--file", newFragment, key, value) {
+			return refusalBlock("Couldn't write "+key+" into an account fragment; it was left as it was, and nothing further was applied.",
+				[][]string{noteLines("File", nativePath(fragment))}, nil)
 		}
 		return nil
 	}
@@ -554,13 +506,8 @@ func (a *app) writeAccountFragment(dir, file, name string) error {
 		{"user.name", a.cfg.value(name, "name")},
 		{"user.email", a.cfg.value(name, "email")},
 		{"gitsby.ghAccount", a.cfg.value(name, "ghAccount")},
-		// Which account plain git should ASK for over https. Without it the fragment
-		// covered the ssh half and left the https half to whichever credential the
-		// helper happened to hold first - so a bare 'git push' in a configured folder
-		// could still go out as someone else, which is the gap 'apply' exists to close.
-		// Naming the user is what makes a credential manager look up that account's
-		// entry rather than any entry for the host. Keyed on the account's own host
-		// and login, the same pair gitsby's own runs hand the helper.
+		// Which account plain git asks for over https, so a credential manager looks up
+		// that account's entry and not any for the host.
 		{"credential.https://" + a.cfg.hostOf(name) + ".username", a.cfg.loginOf(name)},
 		// Expanded, since git knows none of the home spellings the accounts file takes.
 		{"gitsby.ghTokenFile", expandHome(a.cfg.value(name, "tokenFile"))},
@@ -583,7 +530,12 @@ func (a *app) writeAccountFragment(dir, file, name string) error {
 			return err
 		}
 	}
-	a.out.status("Wrote " + fragment)
+	if err := os.Rename(newFragment, fragment); err != nil {
+		return writeRefusal("Couldn't write an account fragment.", "Replacing it", err,
+			fragmentKept, "Check permissions on it and on the folder it is in, then run this again.",
+			noteLines("File", nativePath(fragment)))
+	}
+	a.out.statusNotes("Wrote an account fragment.", noteLines("File", nativePath(fragment)))
 	return nil
 }
 
@@ -598,15 +550,9 @@ func (a *app) fragmentHelperFor(name string) string {
 	return fragmentHelper(onGitHub)
 }
 
-// fragmentHelper is the credential helper an account fragment gives plain git. The
-// text is the same for every account on a kind of host: it reads the login and
-// the token file out of git config when git runs it, so nothing from the accounts
-// file is pasted into a line a shell runs, and the token is fetched each time
-// rather than written down. gh is asked only on a host gh serves, since tea has no
-// 'auth token'. The token file is read from the global config only, the scope
-// the fragment is included from, because a repo's own config is not yours, and a
-// relative one is no file, as readTokenFile has it. A username git already holds
-// is left alone; 'x' stands in where there is none, as in gitsby's own runs.
+// fragmentHelper is the credential helper a fragment gives plain git. It reads the login
+// and token file from git config when it runs, so nothing from the accounts file goes
+// into a shell line. Detail: backlog 2026110810100400.
 func fragmentHelper(onGitHub bool) string {
 	steps := []string{
 		`test "$1" = get || return 0`,
@@ -642,23 +588,15 @@ const (
 	accountSetCont   = "               "
 )
 
-// accountSetUsage spells out the three words 'account set' takes, and what each one
-// is. A reader being told the syntax is a reader who did not know it, so the closed
-// list of keys belongs here rather than one command further on, and the examples
-// use one account name twice - that repetition IS what '<account>' means. The value
-// forms are the ones the matcher reads: 'pathContains' is a run of folder names, not
-// a glob, so an example with '*' in it would teach a rule that never fires.
+// accountSetUsage spells out the 3 words 'account set' takes, with the closed list of
+// keys. No '*' in the examples, since 'pathContains' is folder names, not a glob.
 func accountSetUsage() error {
 	lines := []string{
 		"Syntax: " + meName + " account set <account> <key> <value>",
 		accountSetIndent + "Writes '<key>: <value>' into the <account> block of the accounts file.",
 		accountSetPad + "<account>  A string you define for one login; e.g. 'work', 'personal'.",
 	}
-	key := wrapWords("The setting to change. One of: "+strings.Join(accountSetFields, ", ")+".", 57)
-	lines = append(lines, accountSetPad+"<key>      "+key[0])
-	for _, rest := range key[1:] {
-		lines = append(lines, accountSetCont+rest)
-	}
+	lines = appendKeyDef(lines, "The setting to change. One of: "+strings.Join(accountSetFields, ", ")+".")
 	lines = append(lines,
 		accountSetPad+"<value>    What to set it to. Quote it if it has spaces.",
 		accountSetIndent+"Examples:",
@@ -679,16 +617,22 @@ func accountUnsetUsage() error {
 		accountSetIndent + "Removes '<key>' from the <account> block of the accounts file, every line of it.",
 		accountSetPad + "<account>  The account to change; e.g. 'work', 'personal'.",
 	}
-	key := wrapWords("The setting to remove. One of: "+strings.Join(accountSetFields, ", ")+", or any other key the block has.", 57)
-	lines = append(lines, accountSetPad+"<key>      "+key[0])
-	for _, rest := range key[1:] {
-		lines = append(lines, accountSetCont+rest)
-	}
+	lines = appendKeyDef(lines, "The setting to remove. One of: "+strings.Join(accountSetFields, ", ")+", or any other key the block has.")
 	lines = append(lines,
 		accountSetIndent+"Example:",
 		accountSetPad+"Go back to the default host for an account:",
 		accountSetPad+accountSetIndent+meName+" account unset gitea.com_my-login host")
 	return &usageError{msg: strings.Join(lines, "\n")}
+}
+
+// appendKeyDef adds the '<key>' line of either usage, wrapped under its column.
+func appendKeyDef(lines []string, def string) []string {
+	key := wrapWords(def, 57)
+	lines = append(lines, accountSetPad+"<key>      "+key[0])
+	for _, rest := range key[1:] {
+		lines = append(lines, accountSetCont+rest)
+	}
+	return lines
 }
 
 // canonAccountField maps whatever casing was typed onto the documented spelling,
@@ -704,13 +648,9 @@ func canonAccountField(field string) string {
 	return ""
 }
 
-// absPathValue is the 'path', 'tokenfile' or 'sshkey' value 'account set' writes;
-// what is "folder" or "file", for the refusal. A relative one means the folder the
-// command runs in, as it would for any command, and the file can never say that
-// later - so it goes in absolute. Spelled the way the platform spells it rather
-// than in canonical form, since the file is edited by hand, and with forward
-// slashes, since a backslash in a bare value is an escape. A value starting at
-// home is written as typed, so one file still works where home differs.
+// absPathValue is the 'path', 'tokenfile' or 'sshkey' value 'account set' writes,
+// absolute since the file can't say where it was typed. Forward slashes, since a
+// backslash in a bare value is an escape. One starting at home stays as typed.
 func absPathValue(value, what string) (string, error) {
 	// filepath.Abs("") is the current directory, which nobody typed.
 	if value == "" {
@@ -753,11 +693,8 @@ func managedIncludePattern(key string) (string, bool) {
 	return "", false
 }
 
-// relativeManagedIncludes names our includeIf patterns in the global git config
-// whose folder is not absolute. An 'account apply' from before such a rule was
-// ignored wrote them, and plain git goes on reading one far from where it was
-// typed until the next apply removes it. A '**/' pattern is a 'pathcontains' rule,
-// which names no folder by design.
+// relativeManagedIncludes names our includeIf patterns in the global git config with a
+// relative folder, left by an older apply. A '**/' one is a pathcontains rule.
 func (c *config) relativeManagedIncludes() []string {
 	var out []string
 	for _, key := range c.accountManagedIncludes() {
@@ -793,7 +730,7 @@ type accountSetTarget struct {
 	creates  bool   // the file itself does not exist yet
 	converts bool   // the file is in the old flat layout, and comes out in the current one
 	reshapes bool   // the save changes more of the file than the key: spacing, key case, line ends
-	read     string // the file as the plan read it; the save refuses once it holds anything else
+	read     string // the file as the plan read it; the save refuses once it has anything else
 	unset    bool   // 'account unset': the key comes out rather than going in
 	gone     []goneLine
 }
@@ -889,11 +826,12 @@ func refusalBlock(head string, notes [][]string, cause error) error {
 }
 
 // refusalText lays a refusal out as its first line with the labeled notes under it.
+// Each line is escaped here, since a head often quotes a value as typed.
 func refusalText(head string, notes [][]string) string {
-	lines := []string{head}
+	lines := []string{printable(head)}
 	for _, note := range notes {
 		for _, l := range note {
-			lines = append(lines, "  "+l)
+			lines = append(lines, "  "+printable(l))
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -939,22 +877,17 @@ func causeText(err error) string {
 	return strings.TrimSuffix(text, ".")
 }
 
-// unreadableFix is the Fix for a file that can't be read. A command only where the
-// answer is known: gitsby makes this file 0600 as you, so off Windows a missing
-// read bit is the usual cause, and chmod says so itself when the file is somebody
-// else's. On Windows it is an ACL entry or a program holding the file, and no one
-// command is right. Takes the platform, so both are testable from either.
+// unreadableFix is the Fix for a file that can't be read: chmod off Windows, where
+// gitsby made it 0600, and no one command on Windows. Takes goos, so both are testable.
 func unreadableFix(goos, file string, cause error) []string {
 	switch {
 	case !errors.Is(cause, fs.ErrPermission):
 		return []string{"Run this again once it can be read."}
 	case goos == "windows":
 		return []string{"Give your account read access to it, then run this again."}
-	case strings.Contains(file, "'"):
-		return []string{"Make it readable, then run this again."}
 	}
 	// A leading space makes it a literal line: indented, never wrapped.
-	return []string{"Make it readable, then run this again:", "  chmod u+r '" + file + "'"}
+	return []string{"Make it readable, then run this again:", "  chmod u+r " + shellQuote(file)}
 }
 
 // lookupFix is the Fix for a place that couldn't be looked in. The command is given
@@ -967,24 +900,17 @@ func lookupFix(goos, file string, cause error) []string {
 		return []string{"Run this again once it can be looked up."}
 	case goos == "windows":
 		return []string{"Give your account access to the folder it is in, then run this again."}
-	case strings.Contains(dir, "'"):
-		return []string{"Make the folder it is in searchable, then run this again."}
 	}
 	if _, err := os.Lstat(dir); err != nil {
 		return []string{"Make the folders above it searchable, then run this again."}
 	}
 	// A leading space makes it a literal line: indented, never wrapped.
-	return []string{"Make the folder it is in searchable, then run this again:", "  chmod u+x '" + dir + "'"}
+	return []string{"Make the folder it is in searchable, then run this again:", "  chmod u+x " + shellQuote(dir)}
 }
 
-// createNew makes a file that must not exist yet and writes it through one
-// handle: the accounts file, the old copy a conversion keeps, and the lock. The
-// open fails on anything already at the path, a link included, so it can never
-// truncate - and writing through that same handle means no empty file sits there
-// for another run to load in between. The mode is set from the first byte, since
-// each of these names accounts and token files. opened says whether the file now
-// exists because of this call, which a failed write leaves in place: removing it
-// by name could delete a file another run has since renamed over it.
+// createNew makes a file that must not exist yet, a link included, and writes it through
+// the same handle at its mode, so no empty file is ever there to load. opened says this
+// call made it. A failed write leaves it, since another run may own the name by then.
 func createNew(file, text string, mode fs.FileMode) (opened bool, err error) {
 	f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
@@ -1003,14 +929,9 @@ func createNew(file, text string, mode fs.FileMode) (opened bool, err error) {
 // A run holds the lock only from its re-read to its save, which is milliseconds.
 const accountLockWait = 3 * time.Second
 
-// lockAccountsFile keeps two runs from saving over each other. Each reads the
-// whole file and saves it whole, so the later save dropped what the earlier one
-// wrote. The lock goes beside the file, not on it: the save renames a new file
-// over the name, and a lock on the old one guards nothing. An exclusive create is
-// the one lock every platform has. The func it returns removes the lock, but only
-// while it is still the one this run made. That is told by a random token written
-// into it, not by device and inode: UFS hands a freed inode number straight to the
-// next new file, so another run's lock made after ours went can look like ours.
+// lockAccountsFile keeps 2 runs from saving over each other, by an exclusive create
+// beside the file, since the save renames over the name. The unlock checks a random
+// token in it, not the inode, which UFS hands straight to the next file.
 func lockAccountsFile(file string, wait time.Duration) (func(), error) {
 	// The save writes through a link, so two names for one file take one lock.
 	target := file
@@ -1063,14 +984,14 @@ func lockAccountsFile(file string, wait time.Duration) (func(), error) {
 // testable from either.
 func lockFix(goos, lock string) []string {
 	const stale = "If no other " + meName + " is running, a run that was stopped left it behind. Remove it, then run this again"
-	if goos == "windows" || strings.Contains(lock, "'") {
+	if goos == "windows" {
 		return []string{stale + "."}
 	}
 	// A leading space makes it a literal line: indented, never wrapped.
-	return []string{stale + ":", "  rm '" + lock + "'"}
+	return []string{stale + ":", "  rm " + shellQuote(lock)}
 }
 
-// changedRefusal: the file no longer holds what the plan read. Saving would put
+// changedRefusal: the file no longer has what the plan read. Saving would put
 // back what it held then, and drop whatever went in since.
 func changedRefusal(file string, cause error) error {
 	why := "Something wrote it after this command read it, and saving now would undo that."
@@ -1085,21 +1006,30 @@ func changedRefusal(file string, cause error) error {
 	}, cause)
 }
 
+// accountNameArg is the account the set and unset commands were given, folded
+// to the case the file keeps.
+func (a *app) accountNameArg() (string, error) {
+	name := strings.ToLower(a.cmd.arg)
+	if !acctNameOK.MatchString(name) {
+		return "", usagef("'%s' isn't a usable account name; letters, digits, '.', '_' and '-' only.", a.cmd.arg)
+	}
+	return name, nil
+}
+
 // accountSetPlan resolves what 'account set' would do without doing any of it.
 // The value is validated here rather than at write time, so a refusal happens
 // before the plan is shown rather than after it has been agreed to.
 func (a *app) accountSetPlan() (accountSetTarget, error) {
 	var t accountSetTarget
-	name := strings.ToLower(a.cmd.arg)
-	if !acctNameOK.MatchString(name) {
-		return t, usagef("'%s' isn't a usable account name; letters, digits, '.', '_' and '-' only.", a.cmd.arg)
+	name, err := a.accountNameArg()
+	if err != nil {
+		return t, err
 	}
 	t.field = canonAccountField(a.cmd.arg2)
 	if t.field == "" {
 		return t, usagef("'%s' isn't an account key %s reads. One of: %s.", a.cmd.arg2, meName, strings.Join(accountSetFields, ", "))
 	}
 	t.value, t.disp = a.cmd.arg3, "account["+name+"]"
-	var err error
 	switch t.field {
 	case "path":
 		t.value, err = absPathValue(t.value, "folder")
@@ -1109,13 +1039,10 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	if err != nil {
 		return t, err
 	}
-	// The same checks the loader makes, made here where they can still be answered.
-	// Written past them the line lands in the file and is then dropped on every
-	// read, so the file says one thing and every command does another. The key is
-	// checked as it will be written, since the folder a relative one was typed in
-	// can carry a space.
+	// The loader's checks, made where they can still be answered, or the line is written
+	// and then dropped on every read. The key is checked as it will be written.
 	if t.field == "sshkey" && strings.ContainsAny(sshKeyArg(t.value), sshKeyShellChars) {
-		return t, usagef("git hands a key path to a shell, so one carrying whitespace or a shell character is re-parsed rather than used. Move the key somewhere plainer.")
+		return t, usagef("git hands a key path to a shell, so one with whitespace or a shell character is re-parsed rather than used. Move the key somewhere plainer.")
 	}
 	if (t.field == "host" || t.field == "user") && !hostWordOK.MatchString(t.value) {
 		return t, usagef("'%s' isn't a plain %s name; letters, digits, '.', '_' and '-' only.", t.value, t.field)
@@ -1144,7 +1071,7 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	// Taken before the edit, so only what the save changes besides the key counts.
 	tidy := t.doc.ToCanonical() == t.read
 	// One account can be in pieces: blocks whose names differ only in case, or
-	// dotted lines beside a block. The key is edited in whichever piece holds it,
+	// dotted lines beside a block. The key is edited in whichever piece has it,
 	// and added to the first when none does. Editing the first regardless left a
 	// later piece's value as the one read.
 	blocks, _ := acctBlocks(t.doc)
@@ -1249,15 +1176,12 @@ func lostRefusal(t accountSetTarget, kept bool) error {
 	return nil
 }
 
-// accountUnsetPlan resolves what 'account unset' would take out, off one read the
-// way the set plan does. Every line of the key goes, from every block of that
-// name: the loader merges blocks that share a name, so a line left in a second
-// one would keep the setting in force after the plan said it was gone. done means
-// there was nothing to take out, and that has been said.
+// accountUnsetPlan resolves what 'account unset' would take out: every line of the key
+// in every block of that name, since the loader merges them.
 func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
-	name := strings.ToLower(a.cmd.arg)
-	if !acctNameOK.MatchString(name) {
-		return t, false, usagef("'%s' isn't a usable account name; letters, digits, '.', '_' and '-' only.", a.cmd.arg)
+	name, err := a.accountNameArg()
+	if err != nil {
+		return t, false, err
 	}
 	t.unset, t.disp = true, "account["+name+"]"
 	if a.cfg.file == "" {
@@ -1291,7 +1215,7 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 		if len(names) > 0 {
 			has = "it has " + strings.Join(names, ", ")
 		}
-		a.out.status("No " + t.disp + " in " + nativePath(t.file) + " (" + has + "); nothing to do.")
+		a.out.statusNotes("No "+t.disp+" in the accounts file ("+has+"); nothing to do.", noteLines("File", nativePath(t.file)))
 		a.out.clean("")
 		return t, true, nil
 	}
@@ -1320,7 +1244,7 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 		}
 	}
 	if len(t.gone) == 0 {
-		a.out.status(t.disp + " has no '" + t.field + "' in " + nativePath(t.file) + "; nothing to do.")
+		a.out.statusNotes(t.disp+" has no '"+t.field+"' in the accounts file; nothing to do.", noteLines("File", nativePath(t.file)))
 		a.out.clean("")
 		return t, true, nil
 	}
@@ -1358,12 +1282,8 @@ func unsetUnreadable(file string, state candidateState, cause error) error {
 	}, cause)
 }
 
-// cmdAccountSet writes one key into one account block of the accounts file and
-// saves it through the module. Every line the edit didn't touch comes back as it
-// was. Where the module can't manage that, it writes the whole file in its own
-// layout - tabs, lower-case keys, one blank line at most between blocks - and the
-// plan has said so. 'account unset' saves through here too, with its lines already
-// out of the document.
+// cmdAccountSet writes one key into one account block and saves it through the module,
+// keeping untouched lines where it can. 'account unset' saves through here too.
 func (a *app) cmdAccountSet() error {
 	if a.set == nil {
 		t, err := a.accountSetPlan()
@@ -1381,7 +1301,7 @@ func (a *app) cmdAccountSet() error {
 				noteLines("File", nativePath(failedAt(err, dir))))
 		}
 	}
-	// Over a create too: one between its open and its write holds an empty file,
+	// Over a create too: one between its open and its write sees an empty file,
 	// which an edit would read and save over.
 	unlock, err := lockAccountsFile(t.file, accountLockWait)
 	if err != nil {
@@ -1391,11 +1311,11 @@ func (a *app) cmdAccountSet() error {
 	if t.creates {
 		// 0600 from the first byte: this file names your accounts and points at your
 		// token files. Opened so it cannot replace anything, since a file already
-		// there - even one this run could not read - holds someone's accounts.
+		// there - even one this run could not read - has someone's accounts.
 		opened, err := createNew(t.file, t.doc.ToCanonical(), 0o600)
 		switch {
 		case err == nil:
-			a.out.status("Wrote " + nativePath(t.file))
+			a.out.statusNotes("Wrote the accounts file.", noteLines("File", nativePath(t.file)))
 			return nil
 		case opened:
 			return refusalBlock("Couldn't finish writing the accounts file, so it may be incomplete.", [][]string{
@@ -1426,6 +1346,6 @@ func (a *app) cmdAccountSet() error {
 			"Nothing was written.", "Make the folder it is in writable, then run this again.",
 			noteLines("File", nativePath(t.file)))
 	}
-	a.out.status("Wrote " + nativePath(t.file))
+	a.out.statusNotes("Wrote the accounts file.", noteLines("File", nativePath(t.file)))
 	return nil
 }

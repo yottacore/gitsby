@@ -64,17 +64,34 @@ func TestSplitAccountKey(t *testing.T) { // [dbfqz]
 
 func writeConfig(t *testing.T, body string) *config {
 	t.Helper()
+	cfg := &config{values: map[string]string{}}
+	opt := defaultOptions()
+	loadConfigFile(t, cfg, &opt, body)
+	return cfg
+}
+
+// loadConfigFile writes body to a new accounts file and loads it into cfg, with
+// opt pointed at it. The file's path comes back.
+func loadConfigFile(t *testing.T, cfg *config, opt *options, body string) string {
+	t.Helper()
 	file := filepath.Join(t.TempDir(), "config.shcl")
 	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := &config{values: map[string]string{}}
-	opt := defaultOptions()
 	opt.configFile, opt.configGiven = file, true
-	if err := cfg.load(opt); err != nil {
+	if err := cfg.load(*opt); err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	return cfg
+	return file
+}
+
+// ruleMatches is the canonical match of each rule one account has in a list.
+func ruleMatches(rules []acctRule, name string) []string {
+	var out []string
+	for _, r := range rulesOf(rules, name) {
+		out = append(out, r.match)
+	}
+	return out
 }
 
 // madeSymlink is os.Symlink, then a look for the link. Wine says yes and makes
@@ -104,7 +121,7 @@ func driveFixture(body string) string {
 	return strings.ReplaceAll(body, "/srv/", driveFolder("/srv/"))
 }
 
-// driveRule is the rule gitsby holds for driveFolder(p), lower case on Windows.
+// driveRule is the rule gitsby keeps for driveFolder(p), lower case on Windows.
 func driveRule(p string) string {
 	return canonPath(driveFolder(p))
 }
@@ -140,7 +157,7 @@ just-a-key
 	}
 }
 
-// git hands core.sshCommand to a shell, so a key path carrying shell characters
+// git hands core.sshCommand to a shell, so a key path with shell characters
 // is dropped rather than used - quietly falling back to whatever key ssh picks is
 // how you push as the wrong person.
 func TestConfigDropsShellCharactersInSSHKey(t *testing.T) { // [dbfr1]
@@ -387,7 +404,7 @@ func TestCanonPathStopsAtTheDriveRoot(t *testing.T) { // [dcmfc]
 	}
 }
 
-// A byte-order mark is what a Windows editor writes by default, and it lands on
+// A byte-order mark is what a Windows editor writes by default, and it ends up on
 // the first key in the file. Read as part of the name, that key became one
 // nothing understands - and the line reporting those printed the mark with it,
 // so the only diagnostic named a key that looks exactly right.
@@ -570,10 +587,10 @@ bad = line
 	if got := cfg.value("Dotted", "ghAccount"); got != "dottedlogin" {
 		t.Errorf("dotted ghAccount = %q", got)
 	}
-	if got := cfg.foldersOf("block"); !slices.Equal(got, []string{driveRule("/srv/a"), driveRule("/srv/b c"), driveRule("/srv/d")}) {
+	if got := ruleMatches(cfg.paths, "block"); !slices.Equal(got, []string{driveRule("/srv/a"), driveRule("/srv/b c"), driveRule("/srv/d")}) {
 		t.Errorf("block folders = %v", got)
 	}
-	if got := cfg.segmentsOf("block"); !slices.Equal(got, []string{"github.com/alice"}) {
+	if got := ruleMatches(cfg.segments, "block"); !slices.Equal(got, []string{"github.com/alice"}) {
 		t.Errorf("block segments = %v", got)
 	}
 	if got := cfg.value("2024", "host"); got != "gitea.example" {
@@ -598,7 +615,7 @@ func TestConfigLoadHierarchicalNames(t *testing.T) { // [dbss3]
 	if !cfg.knowsAccount("bare") {
 		t.Error("a block with no keys is not an account")
 	}
-	if cfg.knowsAccount("../../evil") || len(cfg.foldersOf("../../evil")) != 0 {
+	if cfg.knowsAccount("../../evil") || len(ruleMatches(cfg.paths, "../../evil")) != 0 {
 		t.Error("a traversal name became an account")
 	}
 	if !slices.Contains(cfg.unknown, "account[../../evil]") {
@@ -676,7 +693,7 @@ func wantProtocol(t *testing.T, cfg *config, want string) {
 
 func wantFolders(t *testing.T, cfg *config, acct string, want ...string) {
 	t.Helper()
-	if got := cfg.foldersOf(acct); !slices.Equal(got, want) {
+	if got := ruleMatches(cfg.paths, acct); !slices.Equal(got, want) {
 		t.Errorf("folders = %v, want %v", got, want)
 	}
 }
@@ -965,7 +982,7 @@ func TestConfigIgnoresARelativePath(t *testing.T) { // [dcmfa]
 		if !slices.Equal(cfg.unknown, tc.unknown) {
 			t.Errorf("%s: unknown = %q, want %q", tc.name, cfg.unknown, tc.unknown)
 		}
-		if got := cfg.foldersOf("work"); !slices.Equal(got, tc.folders) {
+		if got := ruleMatches(cfg.paths, "work"); !slices.Equal(got, tc.folders) {
 			t.Errorf("%s: folders = %q, want %q", tc.name, got, tc.folders)
 		}
 		if !cfg.knowsAccount("work") || !slices.Contains(cfg.accountNames(), "work") {
@@ -1073,6 +1090,7 @@ func TestProbeConfigCandidate(t *testing.T) { // [dcmk1]
 	if err := os.Chmod(shut, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// TempDir's cleanup needs it back, and says so if this fails.
 	t.Cleanup(func() { _ = os.Chmod(shut, 0o700) })
 	if state, _, err := probeConfigCandidate(filepath.Join(shut, "config.shcl")); state != candidateUnknown || !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("in a folder that can't be searched: state = %d, err = %v, want unknown, with a permission error", state, err)
@@ -1141,7 +1159,7 @@ func TestResolveConfigFileSkipsAnUnreadableCandidate(t *testing.T) { // [dcmk2]
 // names differ only in case, or in a dotted line beside a block - was read last
 // wins without a word, so two accounts written as one went unnoticed. The last is
 // still read, and each earlier one that said something else is listed. Pieces
-// that don't disagree are just one account.
+// that don't disagree are one account.
 func TestRepeatedAccountKeys(t *testing.T) { // [ddav1]
 	const read = " gives it again, and that one is read)"
 	for _, tc := range []struct {

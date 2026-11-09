@@ -118,7 +118,7 @@ func sshKeyArg(value string) string {
 
 // sshKeyCommand is the ssh command for an account's key, for GIT_SSH_COMMAND and
 // for core.sshCommand alike. IdentitiesOnly, or ssh offers every key the agent
-// holds and the server picks the first that authenticates - on a two-account
+// has and the server picks the first that authenticates - on a two-account
 // machine a coin toss.
 func sshKeyCommand(value string) string {
 	return "ssh -i " + sshKeyArg(value) + " -o IdentitiesOnly=yes"
@@ -163,12 +163,9 @@ func isAbsFolderFor(goos, p string) bool {
 	return strings.HasPrefix(p, "/")
 }
 
-// folderRuleProblem says why a 'path' value cannot be a folder rule, or "" when it
-// can. A relative value has nothing to be relative to once it sits in a file:
-// gitsby measured one from wherever a command ran, and git measures './' from the
-// folder holding its config - home - so 'path: .' bound every repo under home.
-// String work only, never canonPath's output: resolveLinks asks the disk about a
-// relative value from the current directory, and the answer changes with it.
+// folderRuleProblem says why a 'path' value can't be a folder rule, or "". A relative
+// one has nothing to be relative to in a file. String work only, since resolveLinks
+// reads the disk.
 func folderRuleProblem(value string) string {
 	// Slashes folded again after the '~': a native Windows home comes back as
 	// 'C:\Users\x', which the drive test would otherwise read as no drive at all.
@@ -225,16 +222,9 @@ func canonPath(p string) string {
 	return p
 }
 
-// resolveLinks settles symlink and junction spellings through the nearest
-// ancestor that exists, then puts the rest of the path back on - a clone target
-// need not exist yet, which is why it can't just resolve the whole thing.
-//
-// Every platform, not just Windows. 'git rev-parse --show-toplevel' answers with
-// the tree's real path, so a rule written the way you type it - through a
-// symlinked home, a synced folder, a stable name pointing at a dated one - was
-// compared against the resolved spelling and never matched. Nothing said so
-// either: the folder is real, so the "this rule can never match" note stayed
-// quiet, and a run acted as the wrong account while the listing looked right.
+// resolveLinks settles symlink and junction spellings through the nearest ancestor that
+// exists, since a clone target need not exist. Every platform, since rev-parse answers
+// with the real path and a rule typed through a link never matched.
 func resolveLinks(p string) string {
 	head, tail := p, ""
 	for head != "" && strings.Contains(head, "/") {
@@ -302,12 +292,8 @@ func canonSegment(s string) string {
 	return s
 }
 
-// resolveConfigFile picks the file to read: the first candidate that exists, or nothing.
-// A file named explicitly must exist - naming one that isn't there is a typo, not
-// a fallback - and it is asked whether the option was TYPED, not whether it has a
-// value: '--config ""' falling back to the default file would act as the wrong
-// identity, quietly. An empty GITSBY_CONFIG is left alone deliberately - an unset
-// environment variable and an empty one are the same thing, unlike a typed option.
+// resolveConfigFile picks the first candidate that exists, or nothing. A typed --config
+// must exist, even empty; an empty GITSBY_CONFIG counts as unset.
 func (o options) resolveConfigFile() (string, error) {
 	if o.configGiven {
 		switch {
@@ -345,15 +331,9 @@ func (o options) resolveConfigFile() (string, error) {
 	return "", nil
 }
 
-// configCandidates lists where an accounts file can live, best first. One list for
-// both jobs - the file a run looks for and the file a run creates - so the place
-// 'account set' writes is the place the next command finds.
-//
-// Each platform is asked in its own terms first. XDG_CONFIG_HOME is a Linux and
-// BSD variable, set there by a desktop session rather than by the person running
-// gitsby, so reading it on Windows let an MSYS shell's leftovers decide where a
-// Windows run looks for credentials. '~/.config' comes last everywhere: v2.1.0
-// looked there on every platform, and its file has to keep being found.
+// configCandidates lists where an accounts file can live, best first, for both reading
+// and creating. XDG_CONFIG_HOME isn't read on Windows. '~/.config' comes last, where
+// v2.1.0 kept it.
 func configCandidates() []string {
 	return configCandidatesFor(runtime.GOOS, os.Getenv("XDG_CONFIG_HOME"), os.Getenv("APPDATA"), homeDir())
 }
@@ -392,11 +372,8 @@ func defaultConfigFile() string {
 	return ""
 }
 
-// nativePath spells a path gitsby worked out itself the way the platform does.
-// Display only, and a no-op off Windows. A path from the config file is printed as
-// the file writes it instead, and the canonical form used for matching never is.
-// There was once a fold of home back to '~' here too, dropped 2026-09-16: it
-// shortened one line while the folder rules under it printed in full.
+// nativePath spells a path gitsby worked out the way the platform does. Display only,
+// and a no-op off Windows. Paths from the config file print as written.
 func nativePath(p string) string {
 	if !isWindows() {
 		return p
@@ -547,21 +524,19 @@ func (c *config) load(o options) error {
 	}
 	// Only once read: a file recorded with no document behind it crashed the edit.
 	c.file, c.raw = file, string(data)
-	// The byte-order mark a Windows editor writes by default, off the front of the
-	// first line. Left on, it landed on the first key in the file, which then read
-	// as one nothing understands - and the line that reports those printed the mark
-	// as part of the name, so the one diagnostic meant to explain the loss named a
-	// key that looks perfectly valid.
+	// A Windows editor's byte-order mark, or the first key reads as unknown under a name
+	// that looks valid.
 	text := strings.TrimPrefix(string(data), utf8BOM)
 	if isFlatConfig(text) {
 		// A v2.1.0 file is converted the way a 2.x one is. Read as it is where
 		// that can't be done, or where a line is not one v2.1.0 could read.
 		if wholeFlat(text) {
 			converted := flatToSHCL(text)
-			c.migration = &formatMigration{flat: true}
+			c.migration = &formatMigration{kind: oldFlat}
 			replaceOldFormat(file, string(data), converted, c.migration)
 			if c.migration.done {
 				c.raw = converted
+				// Only Strict can fail: Standard skips and diagnoses a bad line, keeping the rest.
 				doc, _ := shcl.ParseKeepLines(converted, shcl.Standard)
 				c.loadDoc(doc)
 				return nil
@@ -573,7 +548,7 @@ func (c *config) load(o options) error {
 	}
 	if from := oldFormat(text); from > 0 {
 		converted, m := migrateText(string(data))
-		c.migration = &formatMigration{from: from, changed: changedLines(string(data), m.Text), lost: m.Lost}
+		c.migration = &formatMigration{kind: oldMajor, from: from, changed: changedLines(string(data), m.Text), lost: m.Lost}
 		replaceOldFormat(file, string(data), converted, c.migration)
 		if c.migration.done {
 			c.raw = converted
@@ -585,7 +560,7 @@ func (c *config) load(o options) error {
 		// the earlier module, whose double-quoted escapes v3 reads as text. The
 		// time is read before anything writes the file, since a write moves it.
 		if converted, n := oldPinRespelled(string(data)); n > 0 {
-			c.migration = &formatMigration{escapes: true, changed: n}
+			c.migration = &formatMigration{kind: oldPinned, changed: n}
 			replaceOldFormat(file, string(data), converted, c.migration)
 			if c.migration.done {
 				c.raw = converted
@@ -718,7 +693,7 @@ func (c *config) absorb(acct, field, value, key string) {
 		if value == "" {
 			break
 		}
-		// Listed, not guessed at: the file holds no record of where a relative value
+		// Listed, not guessed at: the file has no record of where a relative value
 		// was typed. The account stays defined, so its key and author still apply
 		// when it is named.
 		if problem := folderRuleProblem(value); problem != "" {
@@ -734,11 +709,8 @@ func (c *config) absorb(acct, field, value, key string) {
 			c.segments = append(c.segments, acctRule{canonSegment(value), acct, value})
 		}
 	case "ghaccount", "tokenfile", "sshkey", "name", "email", "protocol", "host", "user":
-		// git hands GIT_SSH_COMMAND and core.sshCommand to a shell, so a key
-		// path carrying whitespace or a shell character is re-parsed there
-		// rather than used - and this file is redirectable by flag and by
-		// environment variable. Drop it and say so: quietly falling back to
-		// whatever key ssh picks is how you push as the wrong person.
+		// git hands the ssh command to a shell, so a key path with a space or shell
+		// character is dropped, with a note, not left to whatever key ssh picks.
 		if field == "sshkey" && strings.ContainsAny(sshKeyArg(value), sshKeyShellChars) {
 			c.unknown = append(c.unknown, key+" (shell characters in the path)")
 			value = ""
@@ -755,11 +727,8 @@ func (c *config) absorb(acct, field, value, key string) {
 				value = ""
 			}
 		}
-		// 'host' and 'user' are interpolated into the credential helper, which
-		// git hands to a shell exactly as it hands one core.sshCommand. Neither
-		// has any business carrying a character a shell would act on, so hold
-		// them to what a hostname and a login can actually contain rather than
-		// trust the file - it is redirectable by flag and by environment variable.
+		// 'host' and 'user' go into the credential helper, which git hands to a shell,
+		// so they're held to what a hostname and a login can hold.
 		if (field == "host" || field == "user") && value != "" && !hostWordOK.MatchString(value) {
 			c.unknown = append(c.unknown, key+" (not a plain "+field+" name)")
 			value = ""
@@ -806,18 +775,15 @@ func splitAccountKey(key string) (acct, field string, ok bool) {
 	}
 	acct, field = rest[:dot], rest[dot+1:]
 	// An empty field ('account.work.') is not an account key either; the whole line
-	// lands with the other ignored ones instead of half-parsing.
+	// goes with the other ignored ones instead of half-parsing.
 	if field == "" || !acctNameOK.MatchString(acct) {
 		return "", "", false
 	}
 	return acct, field, true
 }
 
-// parseConfigValue trims a flat-layout value: one optional layer of quotes keeps
-// a literal '#' or meaningful trailing space; otherwise a '#' after whitespace
-// starts a comment, here as well as at the start of a line. Folding one into the
-// value made a folder rule that could never match, which reads exactly like no
-// rule at all.
+// parseConfigValue trims a flat-layout value: one layer of quotes keeps a literal '#' or
+// trailing space; otherwise a '#' after whitespace starts a comment.
 func parseConfigValue(value string) string {
 	value, _ = splitFlatValue(value)
 	return value
@@ -845,12 +811,8 @@ func splitFlatValue(raw string) (value, comment string) {
 	return strings.TrimRight(raw, " \t"), ""
 }
 
-// accountForDir names the configured account whose folder contains this one.
-// An absolute 'path' rule wins over a 'pathContains' when both match: naming the
-// machine's own tree is the more specific claim. Within each kind the more
-// specific rule wins - the longest path, or the most folder names - so a tree
-// nested inside another account's tree belongs to the inner one. First defined
-// breaks an exact tie.
+// accountForDir names the configured account whose folder holds this one. 'path' beats
+// 'pathContains', then the longest path or most folder names, then the first defined.
 func (c *config) accountForDir(dir string) string {
 	target := canonPath(dir)
 	if target == "" {
@@ -890,11 +852,8 @@ func (c *config) accountForDir(dir string) string {
 	return best
 }
 
-// knowsAccount: whether the file defines this account at all, by any key or any
-// folder rule. Deliberately not the same question as whether it names a GitHub
-// login - an account can be a commit identity and an ssh key and nothing else,
-// which is how you hold a second identity with no gh involved, and what the
-// folder rules have always applied.
+// knowsAccount: whether the file defines this account by any key or folder rule. Not
+// whether it names a GitHub login, since an identity and ssh key alone are an account.
 func (c *config) knowsAccount(name string) bool {
 	return name != "" && slices.Contains(c.accountNames(), strings.ToLower(name))
 }

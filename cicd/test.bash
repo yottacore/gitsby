@@ -7,7 +7,7 @@
 ##		- Regression tests for the compiled build in src-go/.
 ##		- Run by cicd.bash stage 2, which builds the binary first, or standalone
 ##		  after a 'go build' by hand.
-##		- Carries a second set of checks that are not about the implementation at
+##		- Has a second set of checks that are not about the implementation at
 ##		  all: the installers, the frozen v2.1.0 scripts' own platform gates, and
 ##		  source pins on this pipeline's files. They used to ride the Bash leg
 ##		  because that was the leg that always ran; they were never about Bash.
@@ -28,10 +28,9 @@ set -Eeuo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
-## Resolved, because the build reports a folder with its links resolved. On macOS mktemp answers
-## under /var, a link to /private/var, and with a doubled slash when TMPDIR ends in one.
-## mktemp gets its own line. Inside the cd its failure was lost, 'cd ""' stayed put, and the trap
-## removed the folder the suite was started from, a whole checkout once.
+## Resolved, since the build reports folders with links resolved, and macOS mktemp answers under
+## /var. mktemp on its own line, so a failure can't leave the trap removing the folder the suite
+## started in.
 # shellcheck source=/dev/null
 source "${here}/utility/include/safe-rm.bash"
 # shellcheck source=/dev/null
@@ -60,12 +59,8 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test
 ## account block below sets its own HOME and opts back out of this with an empty value.
 export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
 
-## The blocks that test config DISCOVERY opt out of the pin above and fake HOME instead, so they
-## have to neutralize the other two candidates by hand: XDG_CONFIG_HOME is tried before HOME and
-## APPDATA after it, and on a machine where either is set it answers for the real user. Emptied
-## rather than pointed somewhere, so HOME stays the candidate under test. Without this those
-## blocks quietly read whatever accounts the person running the suite had configured, and went
-## red the day they configured any.
+## The config discovery blocks fake HOME instead of the pin above, so XDG_CONFIG_HOME and APPDATA
+## are emptied, or they answer for the real user.
 acNoDiscovery="GITSBY_CONFIG= XDG_CONFIG_HOME= APPDATA="
 ## So every run behaves like one on a machine with accounts configured: a block that drops the
 ## pin and forgets the line above finds an account covering every folder the suite makes, under
@@ -82,19 +77,10 @@ export XDG_CONFIG_HOME="${work}/poison-config" APPDATA="${work}/poison-config"
 export HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 all_proxy=http://127.0.0.1:9
 unset NO_PROXY no_proxy
 
-## Two more inputs the lines above do NOT cover, both of which reach us from an ordinary
-## working terminal rather than from a config file:
-##   - GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank every config FILE, including a repo-local one
-##     and the GIT_CONFIG_GLOBAL set above - so pinning the files is not isolation on its own.
-##   - GH_TOKEN and friends are what the fake gh reports back, so an inherited one makes every
-##     "gh was left alone" check read as "gh was handed a token".
-## Neither shows up as a failure you can act on: the suite just reports checks that were never
-## about the thing they name.
-fUnsetInheritedGitConfig(){
-	local -i i=0
-	for (( i = 0; i < ${GIT_CONFIG_COUNT:-0}; i++ )); do unset "GIT_CONFIG_KEY_${i}" "GIT_CONFIG_VALUE_${i}"; done
-	unset GIT_CONFIG_COUNT
-}
+## GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank every config file, and an inherited GH_TOKEN is what the
+## fake gh reports, so either makes checks lie. By name, since arithmetic on an inherited count
+## can run a command.
+fUnsetInheritedGitConfig(){ unset GIT_CONFIG_COUNT "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"; }
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE
 ## git asks an askpass before it checks GIT_TERMINAL_PROMPT. Git for Windows' login shell sets
@@ -180,11 +166,9 @@ fStub(){ cat > "$1"; chmod +x "$1"; fStubShim "$1" ;}
 ## needs the platform's own spelling, or the statement fails and the check reports on nothing.
 fWinPath(){ if ((isWindows)); then cygpath -m "$1"; else printf '%s' "$1"; fi ;}
 
-## Checks that reach a confirmation need it to refuse rather than wait: stdin at EOF, and nothing
-## for the prompt to fall back to. setsid guarantees that. Windows has no setsid, but PowerShell
-## only ever reads redirected stdin, so </dev/null alone is enough there - which is why the pwsh
-## one-liners below run either way. install.bash does fall back to /dev/tty, so its plan checks
-## additionally need that open to fail.
+## Checks that reach a confirmation need it to refuse, not wait: stdin at EOF and no tty, by
+## setsid. PowerShell reads only redirected stdin, so the redirect is enough on Windows.
+## install.bash falls back to /dev/tty.
 declare -a noTty=()
 canNoTty=0 shNoTty=0
 if command -v setsid >/dev/null 2>&1; then noTty=(setsid); canNoTty=1; shNoTty=1
@@ -205,12 +189,9 @@ export -f fMode fInode
 ## Runs PowerShell source TEXT the way the documented one-liners do (iex / scriptblock), with
 ## stdin at EOF so a confirmation prompt refuses instead of blocking.
 fPwshText(){ "${noTty[@]}" pwsh -NoProfile -Command "$1" </dev/null 2>&1 ;}
-## install.ps1 as a script file, with the web cmdlets replaced by the functions in <dir>/stubs.ps1,
-## which PowerShell finds before a cmdlet of the same name. <shape> picks how releases/latest
-## answers: as 7 or 5.1 answer a redirect, nofull as 5.1 answers the 404 of a repo with no full
-## release, or pre, which is nofull with only pre-releases listed. Each URL asked for goes to
-## <dir>/calls. Telemetry is off: pwsh 7.6.9 on macOS, writing telemetry.uuid into a fresh HOME,
-## leaves the runtime's .dotnet mutex folder in TMPDIR, which reads as install.ps1's leftover.
+## install.ps1 as a script file, with the web cmdlets replaced by <dir>/stubs.ps1. <shape> is how
+## releases/latest answers: 7, 5.1, nofull (a 404) or pre. URLs asked go to <dir>/calls. Telemetry
+## off, or pwsh 7.6.9 on macOS leaves a .dotnet folder in TMPDIR.
 fPsInstall(){ local dir="$1" home="$2" shape="$3" inst="$4"; shift 4; : > "${dir}/calls"; mkdir -p "${home}"
 	env HOME="${home}" FAKE_DIR="${dir}" FAKE_SHAPE="${shape}" POWERSHELL_TELEMETRY_OPTOUT=1 "${noTty[@]}" pwsh -NoProfile -Command ". '${dir}/stubs.ps1'; & '${inst}' $*" </dev/null 2>&1 ;}
 ## Succeeds when a help text for install.ps1 names every parameter and alias of the function that
@@ -349,11 +330,9 @@ fMakeGateFixture(){
 	for s in markdownlint golangci-lint govulncheck ruff pip-audit; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
 	## Says what GOFLAGS it was handed.
 	fGateStub "${gateDir}/bin/staticcheck" staticcheck "printf 'staticcheck GOFLAGS=%s\\n' \"\${GOFLAGS:-}\" >> '${gateCalls}'"
-	## A build in the image leaves its -o file behind, as go's stub does, so dogfood has one to copy.
-	## 'docker-run' fails a run and 'docker-hang' holds one. 'images' is what it lists for the
-	## image's repo, and 'vols' the labeled volumes, as "<name> <size>". 'docker-noimage' and
-	## 'docker-novol' answer that the image or the cache volume isn't there. 'running' is what it
-	## lists as up, and 'modprune' what the module cache prune prints.
+	## A build leaves its -o file. 'docker-run' fails a run, 'docker-hang' stalls one. 'images',
+	## 'vols' and 'running' are what it lists, 'modprune' what the prune prints; 'docker-noimage'
+	## and 'docker-novol' say none.
 	fGateStub "${gateDir}/bin/docker" docker "if [[ ! -e '${gateFail}/docker' ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi
 		[[ \"\${1:-} \${2:-} \${3:-}\" != 'image ls gitsby-cicd' ]] || cat '${gateFail}/images' 2>/dev/null || true
 		[[ \"\${1:-}\" != run || ! -e '${gateFail}/docker-hang' ]] || { : > '${gateFail}/hung'; sleep 5; }
@@ -364,11 +343,9 @@ fMakeGateFixture(){
 		[[ \"\${1:-} \${2:-} \${3:-}\" != 'system df -v' ]] || cat '${gateFail}/vols' 2>/dev/null || true
 		[[ \"\${1:-} \${2:-}\" != 'ps -q' ]] || cat '${gateFail}/running' 2>/dev/null || true
 		[[ \"\${1:-}\" != run || \" \$* \" != *-modprune\ * ]] || cat '${gateFail}/modprune' 2>/dev/null || true"
-	## The demo generator writes a gif header to its --out, and the optimizer, called as
-	## 'gifsicle -O3 IN -o OUT', copies IN to OUT, so stage 6 has a file to compare. py_compile
-	## passes no --out.
-	## Asked for Pillow's version, it answers with what the 'pillow' marker holds, and nothing
-	## without one. Asked to copy the demo's libraries for CodeQL, it leaves one file in place.
+	## The demo generator writes a gif header to its --out, and 'gifsicle -O3 IN -o OUT' copies.
+	## Pillow's version is the 'pillow' marker's. Copying the demo's libraries for CodeQL leaves
+	## one file.
 	fGateStub "${gateDir}/bin/python3" python3 "o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || printf GIF89a > \"\${a}\"; o=''; [[ \"\${a}\" != --out ]] || o=1; done
 		[[ \"\${1:-}\" != -c || \"\${2:-}\" != *PIL.__version__* ]] || cat '${gateFail}/pillow' 2>/dev/null || true
 		[[ \"\${1:-}\" != -c || \"\${2:-}\" != *dpkg-query* ]] || { mkdir -p \"\${3}/PIL\" && : > \"\${3}/PIL/Image.py\"; }
@@ -379,8 +356,10 @@ fMakeGateFixture(){
 		for a in \"\$@\"; do [[ \"\${a}\" != --source-root=* ]] || (cd \"\${a#--source-root=}\" && find . -name '*.py' | sort | sed 's/^/py: /') >> '${gateCalls}'; done"
 	fGateStub "${gateDir}/bin/gifsicle" gifsicle "cp -f -- \"\${2:-}\" \"\${4:-}\""
 	## The memory scope runs what follows its options, and choom what follows --. 'systemd-run'
-	## fails it, as on a box without a user systemd.
+	## fails it, as on a box without a user systemd, and 'systemd-run-props' fails any call with a
+	## property, as an older systemd does with one it doesn't know.
 	fGateStub "${gateDir}/bin/systemd-run" systemd-run "[[ ! -e '${gateFail}/systemd-run' ]] || exit 1
+		[[ ! -e '${gateFail}/systemd-run-props' || \" \$* \" != *' -p '* ]] || { echo 'Unknown assignment: OOMPolicy=continue' >&2; exit 1; }
 		while ((\$#)); do case \"\$1\" in -p) shift 2 ;; -*) shift ;; *) break ;; esac; done; exec \"\$@\""
 	fGateStub "${gateDir}/bin/choom" choom "while ((\$#)); do case \"\$1\" in -n) shift 2 ;; --) shift; break ;; *) break ;; esac; done; exec \"\$@\""
 	## The probe answers yes whatever the marker says, so a failure is the tool's finding and
@@ -390,12 +369,11 @@ fMakeGateFixture(){
 	fGateStub "${gateDir}/bin/pwsh" pwsh "[[ ! -e '${gateFail}/pwsh-nomodule' ]] || exit 3"
 	## gofmt reports by listing files, exiting 0 either way; the engine reads the list.
 	fGateStub "${gateDir}/bin/gofmt" gofmt "if [[ -e '${gateFail}/gofmt' ]]; then echo main.go; fi; exit 0"
-	## go fails by subcommand (go-vet, go-test, go-build), and 'version -m' names no module. A
-	## passing build leaves its -o file behind, so the demo stage has a build to remove. The soak
-	## test passes only when it was handed its rounds, and leaves its summary where it was told;
-	## 'soak' fails it, and 'soak-skip' skips it. 'hang' holds go vet for a few seconds, so a
-	## check can stop the run partway.
+	## go fails by subcommand (go-vet, go-test, go-build); 'version -m' names no module; a build
+	## leaves its -o file. The soak needs its rounds ('soak' fails, 'soak-skip' skips). 'hang'
+	## stalls go vet. 'test -list' names one fuzz target.
 	fGateStub "${gateDir}/bin/go" "go-\${1:-}" "[[ \"\${1:-}\" != version ]] || exit 0
+		[[ \"\${1:-} \${2:-}\" != 'test -list' ]] || echo FuzzA
 		[[ \"\${1:-}\" != vet || ! -e '${gateFail}/hang' ]] || { : > '${gateFail}/hung'; sleep 5; }
 		if [[ ! -e \"${gateFail}/go-\${1:-}\" ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi
 		if [[ -n \"\${GITSBY_SOAK_ROUNDS:-}\" ]]; then
@@ -417,7 +395,7 @@ fGateRun(){ (
 	cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" ./cicd/cicd.bash "$@"
 ) ;}
 ## True when the run exits with exactly $1. An unknown option exits 2, so a plain nonzero test
-## would pass a build that never heard of the option. Output lands in ${gateOut}, and the calls
+## would pass a build that never heard of the option. Output goes to ${gateOut}, and the calls
 ## log starts empty.
 fGateStatus(){
 	local want="$1" rc=0
@@ -441,7 +419,7 @@ fGateContainerRun(){
 		&& grep -qF 'Container ...........: lint, tests, fuzz, compatibility and the demo gif in ' "${gateOut}" \
 		&& ! grep -qE 'Starting (Lint|Build|Fuzz|Backwards)' "${gateOut}"
 }
-## The container carries the run's folder in its name and a label, and the output names it, so
+## The container has the run's folder in its name and a label, and the output names it, so
 ## one run can be found and stopped among other projects' containers.
 fGateContainerName(){
 	local name=""
@@ -458,7 +436,7 @@ fGateContainerQuota(){
 }
 ## Every container a run starts gets the memory cap with no swap, first in line for the OOM
 ## killer: a third of the RAM, 4g to 32g, or CICD_MEM_CAP. none drops it. Anything else stops the
-## run before it starts one, and what the value holds never runs. $1 the cap the calls carry, or
+## run before it starts one, and what the value has in it never runs. $1 the cap the calls pass, or
 ## none.
 fGateMemCapCalls(){
 	local runs=""
@@ -487,16 +465,42 @@ fGateMemCap(){
 fGateMemScope(){
 	local rc=0 q=(--no-container --backlog-run-quick lint)
 	local want="^systemd-run --user --scope --quiet -p MemoryMax=7G -p MemorySwapMax=0 -p OOMPolicy=continue choom -n 1000 -- bash ${gateDir}/cicd/cicd\.bash --no-container --backlog-run-quick lint\$"
+	local probe='^systemd-run --user --scope --quiet -p MemoryMax=7G -p MemorySwapMax=0 -p OOMPolicy=continue true$'
 	gateScope=1 gateMemCap=7g fGateSays 0 'backlog quick run: passed\.' "${q[@]}" \
-		&& fGateCalled '^systemd-run --user --scope --quiet true$' "${want}" '^choom -n 1000 -- bash ' \
-		&& [[ "$(grep -c '^systemd-run .*MemoryMax=' "${gateCalls}")" == 1 ]] || rc=1
+		&& fGateCalled "${probe}" "${want}" '^choom -n 1000 -- bash ' \
+		&& [[ "$(grep -c '^systemd-run .*MemoryMax=.* choom ' "${gateCalls}")" == 1 ]] || rc=1
 	: > "${gateFail}/systemd-run"
 	gateScope=1 gateMemCap=7g fGateSays 0 'backlog quick run: passed\.' "${q[@]}" \
-		&& fGateCalled '^systemd-run --user --scope --quiet true$' && ! fGateCalled '^choom ' || rc=1
+		&& fGateCalled "${probe}" && ! fGateCalled '^choom ' || rc=1
 	rm -f -- "${gateFail:?}/systemd-run"
 	gateScope=1 gateMemCap=none fGateSays 0 'backlog quick run: passed\.' "${q[@]}" && ! fGateCalled '^(systemd-run|choom) ' || rc=1
 	gateScope=1 gateNested=1 fGateSays 0 'backlog quick run: passed\.' --backlog-run-quick lint && ! fGateCalled '^(systemd-run|choom) ' || rc=1
 	gateScope=1 fGateStatus 0 --list && ! fGateCalled '^(systemd-run|choom) ' || rc=1
+	((rc == 0))
+}
+## The probe passes the run's properties, so a systemd that refuses one runs as before, uncapped,
+## rather than failing at the re-exec.
+fGateMemScopeProbe(){
+	local rc=0 q=(--no-container --backlog-run-quick lint)
+	: > "${gateFail}/systemd-run-props"
+	gateScope=1 gateMemCap=7g fGateSays 0 'backlog quick run: passed\.' "${q[@]}" \
+		&& fGateCalled '^systemd-run .* -p OOMPolicy=continue true$' && ! fGateCalled '^choom ' || rc=1
+	rm -f -- "${gateFail:?}/systemd-run-props"
+	((rc == 0))
+}
+## A size with no unit is bytes to docker and MemoryMax, and one under 1g can't hold a build, so
+## both stop the run before it starts anything. The floor is the same in each unit.
+fGateMemCapUnit(){
+	local rc=0 bad="" args=(-y --no-fuzz --no-demogif --no-sync --no-publish)
+	mkdir -p "${gateDir}/home/.local/bin"
+	gateMemCap=512 fGateSays 1 "^\[ FAILED: CICD_MEM_CAP '512' isn't a size like 24g, or none \]\$" "${args[@]}" \
+		&& ! fGateCalled '^docker run ' '^(systemd-run|choom) ' || rc=1
+	for bad in 1023m 1048575k 512M; do
+		gateMemCap="${bad}" fGateSays 1 "^\[ FAILED: CICD_MEM_CAP '${bad}' is under 1g, too little for a run \]\$" "${args[@]}" \
+			&& ! fGateCalled '^docker run ' '^(systemd-run|choom) ' || rc=1
+	done
+	gateMemCap=1024M fGateSays 0 'PASS Remote tests \]$' "${args[@]}" && fGateMemCapCalls 1024m || rc=1
+	gateMemCap=1048576k fGateSays 0 'PASS Remote tests \]$' "${args[@]}" && fGateMemCapCalls 1048576k || rc=1
 	((rc == 0))
 }
 ## --quick is handed to the run in there, which is where it skips the suite.
@@ -673,6 +677,22 @@ fGateRunTmp(){
 	rm -f -- "${gateFail:?}/hang"
 	[[ -z "$(ls -A "${t}/gitsby")" ]]
 }
+## Ctrl+C reaches the whole foreground group, the run log's tee with it. The run still closes its
+## step with FAIL, says what it removed, exits 130 and leaves no folder. Job control gives the run
+## a group of its own, and keeps INT live, which a background job otherwise starts out ignoring.
+fGateCtrlC(){
+	local t="${gateDir}/tmp-ctrlc" pid="" i=0 rc=0
+	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}"
+	: > "${gateFail}/hang"; rm -f -- "${gateFail:?}/hung"
+	set -m
+	( cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" HOST_TEMP="" GITSBY_CICD_MEM_SCOPE=fixture CICD_MEM_CAP="" exec ./cicd/cicd.bash -y --no-container --quick --no-sync --no-publish --no-dogfood ) </dev/null >"${gateOut}" 2>&1 &
+	pid=$!
+	set +m
+	for ((i = 0; i < 100; i++)); do [[ -e "${gateFail}/hung" ]] && break; sleep 0.05; done
+	kill -INT -- "-${pid}"; wait "${pid}" 2>/dev/null || rc=$?
+	rm -f -- "${gateFail:?}/hang"
+	[[ "${rc}" == 130 && -z "$(ls -A "${t}/gitsby")" ]] && grep -qE '; FAIL ' "${gateOut}" && grep -qx 'Cleanup: removed the run folder' "${gateOut}"
+}
 ## --list prints the plan and the IDs in each step that runs, from the suites and the Go tests,
 ## and runs nothing: no tool but docker's probe, and no temp folder. The suite's check and the Go
 ## test are written so this file doesn't hold them as tests of its own.
@@ -723,7 +743,7 @@ fGateKeepTempImage(){
 	((rc == 0))
 }
 ## The run's folder is <start time>_<NNN> under ${HOST_TEMP}/gitsby, or under TMPDIR without
-## it, made with the first free counter. TMPDIR, TEMP and TMP point into it, and it holds the
+## it, made with the first free counter. TMPDIR, TEMP and TMP point into it, and it has the
 ## run's pid. A name another run took is passed over, for the next few seconds' start times.
 fGateRunFolder(){
 	local t="${gateDir}/tmp-folder" rc=0 i line="" dir=""
@@ -771,7 +791,7 @@ fGateTidyLine(){
 	fSafeRm_IfThere "${t:?}"
 	((rc == 0))
 }
-## A run folder that holds only its run.pid by the end frees a few bytes, which the line leaves out
+## A run folder that has only its run.pid by the end frees a few bytes, which the line leaves out
 ## rather than saying "freed about 8B".
 fGateTidySmall(){
 	local t="${gateDir}/tmp-tidysmall" rc=0
@@ -913,6 +933,16 @@ fGateLeakPrune(){
 	fGateSays 0 'WARNING: kept .*/soak_20200101-000010, which has more in it' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
 		&& [[ "$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_*' | wc -l | tr -d ' ')" == 21 ]] \
 		&& [[ -f "${leakDir}/soak_20200101-000010/notes.txt" && ! -e "${leakDir}/soak_20200101-000011" && -d "${leakDir}/soak_20200101-000013" ]]
+}
+## A run west of UTC names its soak folder in UTC, as the image does.
+fGateStampUtc(){
+	local leakDir="${gateDir}/cicd/artifacts/leakcheck" before="" after="" d=""
+	fSafeRm_IfThere "${leakDir:?}"
+	before="$(date -u +%Y%m%d-%H%M%S)"
+	TZ='<-08>8' fGateSays 0 'OK: soak test' -y --no-container --quick --leakcheck --no-lint --no-test --no-fuzz --no-parity --no-demogif --no-remote --no-sync --no-publish --no-dogfood || return 1
+	after="$(date -u +%Y%m%d-%H%M%S)"
+	d="$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_*')"; d="${d##*/soak_}"
+	[[ -n "${d}" && ! "${d}" < "${before}" && ! "${d}" > "${after}" ]]
 }
 ## CodeQL runs over a scratch copy of the module with its dependencies vendored in, tests and
 ## vendor/ extracted, once for each OS a release is built for, and the reports are kept. The tree
@@ -1093,7 +1123,7 @@ fGateDemoCommit(){
 	git -C "${gateDir}" add commits.txt
 	GIT_AUTHOR_DATE="$1" GIT_COMMITTER_DATE="$1" git -C "${gateDir}" commit --quiet -m "$1"
 }
-## Stage 6 with -y: the demo build line holds the text $1, the generator line the text $2, and
+## Stage 6 with -y: the demo build line has the text $1, the generator line the text $2, and
 ## the output matches the extended regex $3. $2 and $3 may be left out.
 fGateDemoStamp(){
 	fGateDemoRun -y && [[ "$(fGateDemoBuild)" == *"$1"* && "$(fGateDemoGen)" == *"${2:-}"* ]] \
@@ -1101,7 +1131,7 @@ fGateDemoStamp(){
 }
 ## Stage 6 with -y: the demo build line is exactly $1, which is not empty, and the gif was left alone.
 fGateDemoSame(){ fGateDemoRun -y && [[ -n "$1" && "$(fGateDemoBuild)" == "$1" ]] && grep -qF 'OK: demo gif unchanged' "${gateOut}" ;}
-## Stage 6 run with $1: the generator ran, and $2 of its lines (1 or 0) carry -q.
+## Stage 6 run with $1: the generator ran, and $2 of its lines (1 or 0) have -q.
 fGateDemoQuiet(){ local gen=""; fGateDemoRun "$1" && gen="$(fGateDemoGen)" && [[ -n "${gen}" && "$(grep -cE -- ' -q( |$)' <<< "${gen}")" == "$2" ]] ;}
 ## Stage 6 with -y while the build fails: the run warns, and the generator never runs.
 fGateDemoBuildFails(){ fGateDemoRun -y && grep -qF 'WARNING: demo build failed' "${gateOut}" && [[ -z "$(fGateDemoGen)" ]] ;}
@@ -1192,7 +1222,7 @@ fGateStepsGate(){
 ## Go tools only: the fixture pins those, and the rest are whatever this box has.
 fGateNoDrift(){ fGateStatus 0 --no-container --gate && ! grep -qE 'tool versions differ.* (staticcheck|golangci-lint|govulncheck|goversioninfo) ' "${gateOut}" ;}
 ## One -y run with every stage skipped but those named in $1 (sync lint test fuzz parity dogfood
-## demogif publish), the rest passed on. Its exit status lands in ${gateRc}, output in ${gateOut},
+## demogif publish), the rest passed on. Its exit status goes to ${gateRc}, output in ${gateOut},
 ## and the calls log starts empty.
 fGateOnly(){
 	local keep=" $1 " s
@@ -1216,7 +1246,7 @@ fGateUpstream(){
 	git -C "${gateOther}" push --quiet 2>/dev/null
 }
 ## remote-tests.bash in its fixture, with the stubs first on PATH, and a session id set that the
-## lock must not be handed. Output lands in ${rtOut}, the status in ${rtRc}, and the calls log
+## lock must not be handed. Output goes to ${rtOut}, the status in ${rtRc}, and the calls log
 ## starts empty.
 fRemoteRun(){
 	: > "${rtLog}"; rtRc=0
@@ -1283,11 +1313,11 @@ fRemoteDirSh(){
 	got="$(env HOST_TEMP=/h TMPDIR=/t/ sh -c "${sh}; echo \"\$d\"") $(env -u HOST_TEMP TMPDIR=/t/ sh -c "${sh}; echo \"\$d\"") $(env -u HOST_TEMP -u TMPDIR sh -c "${sh}; echo \"\$d\"")"
 	[[ "${got}" == '/h/a/b /t/a/b /tmp/a/b' ]]
 }
-## A push from $1, the rest being its arguments. Output lands in ${hookOut}; the gate log starts empty.
+## A push from $1, the rest being its arguments. Output goes to ${hookOut}; the gate log starts empty.
 fHookPush(){ local dir="$1"; shift; : > "${hookLog}"; git -C "${dir}" push "$@" >"${hookOut}" 2>&1 ;}
 ## One digest of every file under $1, names and contents, to show a directory was left as it was.
 fTreeDigest(){ (cd "$1" && find . -type f -exec sha256sum {} + | LC_ALL=C sort | sha256sum) ;}
-## The release fixture's HEAD, tags, what its origin holds and whether its tree is clean, as one string.
+## The release fixture's HEAD, tags, what its origin has and whether its tree is clean, as one string.
 fRelState(){ { git -C "${relRepo}" rev-parse HEAD; git -C "${relRepo}" tag; git -C "${relRepo}" ls-remote origin; git -C "${relRepo}" status --porcelain; } 2>&1 ;}
 ## The release fixture's changelog section for version $1, and its downloads table one row per
 ## line with the padding taken out, then 'aligned' when every row's pipes sit in the same columns.
@@ -1297,7 +1327,7 @@ fRelTable(){ fRelSection "$1" | awk '
 		if (cols == "") cols = pos; else if (pos != cols) bad = 1
 		row = $0; gsub(/ *\| */, "|", row); print substr(row, 2) }
 	END { if (cols != "" && !bad) print "aligned" }' ;}
-## release.bash in that fixture with the stubs first on PATH. Output lands in ${relOut}, its exit
+## release.bash in that fixture with the stubs first on PATH. Output goes to ${relOut}, its exit
 ## status in ${relRc}, and the calls log starts empty.
 fRelRun(){ : > "${relCalls}"; relRc=0; (cd "${relRepo}" && PATH="${rel}/bin:${PATH}" bash cicd/release.bash "$@") </dev/null >"${relOut}" 2>&1 || relRc=$? ;}
 ## config.bash's glob array $1 expanded the way the engine does it, from the repo root: the files,
@@ -1570,7 +1600,7 @@ fRunSuite(){
 	fAssertFail "[dafr1] -v after a command is refused"    bash -c "cd '${cloneA}' && '${gitsby}' -q update -v"
 	fAssertOut  "[dafr2] and says which option"            'Unexpected option'  bash -c "cd '${cloneA}' && '${gitsby}' -q update -v 2>&1"
 	fAssert     "[dab76] -y alias accepted"            bash -c "cd '${cloneA}' && '${gitsby}' -y status"
-	## Every run says which build produced it, so a bug report carries that without being asked.
+	## Every run says which build produced it, so a bug report has that without being asked.
 	## Not on the two paths that already print a version line, not under -q, and never on 'raw',
 	## which hands its tool's stdout straight back to whatever is reading it.
 	fAssertOut    "[dbshm] output names the build it came from"  '^gitsby v[0-9]' \
@@ -1668,7 +1698,7 @@ fRunSuite(){
 	fAssert "[da9vs] worktree clean after update"     bash -c "cd '${cloneA}' && [[ -z \"\$(git status --porcelain)\" ]]"
 	fAssert "[da8m6] update message recorded"         bash -c "cd '${cloneA}' && git log -1 --format=%s | grep -qx 'add file2'"
 	fAssert "[da8m7] update again (nothing to do) ok" bash -c "cd '${cloneA}' && '${gitsby}' -q update 'noop'"
-	## sync takes its message positionally like update, and nothing checked that it lands - the
+	## sync takes its message positionally like update, and nothing checked that it gets through - the
 	## message could quietly be replaced by the auto-generated timestamp with the suite still green.
 	( cd "${cloneA}" && echo s > s.txt )
 	fAssert "[dafrt] sync records the message it was given"  bash -c "cd '${cloneA}' && '${gitsby}' -q --direct sync 'synced by name' && git log -1 --format=%s | grep -qx 'synced by name'"
@@ -1722,7 +1752,7 @@ fRunSuite(){
 	## br create: branches off default, publishes with upstream; dirty work on the
 	## protected base is carried to the new branch, never committed to the base
 	## update now commits, so main sits ahead of origin here; pin its sha instead of
-	## comparing to origin, and assert the WIP never landed on it.
+	## comparing to origin, and assert the WIP never reached it.
 	( cd "${cloneA}" && echo dirty2 >> file1.txt && git rev-parse main > "${work}/$1-mainsha" )
 	fAssert "[da8me] br create feat"             bash -c "cd '${cloneA}' && '${gitsby}' -q br create feat"
 	fAssert "[da8mf] now on feat"            bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == feat ]]"
@@ -1771,11 +1801,11 @@ fRunSuite(){
 	( cd "${cloneA}" && echo feat2 > feat2.txt )
 	fAssert "[da8t0] br land merges feat2 into dev"  bash -c "cd '${cloneA}' && '${gitsby}' -q br land 'merge feat2 work'"
 	fAssert "[da8t1] now on dev after land"       bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == dev ]]"
-	fAssert "[da8n1] feat2 landed on dev not main"  bash -c "cd '${cloneA}' && [[ -f feat2.txt ]] && ! git ls-tree --name-only main | grep -qx feat2.txt"
+	fAssert "[da8n1] feat2 merged into dev not main"  bash -c "cd '${cloneA}' && [[ -f feat2.txt ]] && ! git ls-tree --name-only main | grep -qx feat2.txt"
 	fAssert "[da8t2] br switch with no arg goes to dev"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch main && '${gitsby}' -q br switch && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssertFail "[da8t3] br land from dev rejected"    bash -c "cd '${cloneA}' && '${gitsby}' -q br land"
 	fAssertFail "[da8t4] br land from main rejected (dev repo)"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch main && '${gitsby}' -q br land; rc=\$?; git checkout --quiet dev; exit \$rc"
-	## Landing ends in a branch delete, so a protected branch must be refused before the plan is
+	## br land ends in a branch delete, so a protected branch must be refused before the plan is
 	## shown - not after the user has confirmed 'git branch -d main'.
 	fAssertNotOut "[dafrj] and refuses before showing a plan that deletes it"  'Going to do'  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch main >/dev/null && '${gitsby}' -q br land 2>&1; git checkout --quiet dev"
 
@@ -1804,7 +1834,7 @@ fRunSuite(){
 	## a failed push would cut a second one on the same commit, stranding the first forever.
 	fAssert     "[dafrk] bare release stands down when there is nothing new"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
 	fAssertOut  "[dafrm] and says so"  'Nothing new to release since v1\.3\.1'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
-	fAssertOut  "[dafrn] and names the tag to push if it never landed"  'push it: git push origin tag v1\.3\.1'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
+	fAssertOut  "[dafrn] and names the tag to push if it never reached origin"  '^    git push origin tag v1\.3\.1$'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
 	fAssert     "[dafrp] and cut no tag doing so"  bash -c "cd '${cloneA}' && ! git rev-parse -q --verify refs/tags/v1.3.2 >/dev/null"
 	## A version you typed is deliberate, so it still works on an already-released commit.
 	fAssert     "[dafrq] an explicit version still releases the same commit"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.4.0 && git rev-parse -q --verify refs/tags/v1.4.0 >/dev/null"
@@ -1872,7 +1902,7 @@ fRunSuite(){
 	fAssert "[dafr3] message starting with a dash commits"    bash -c "cd '${cloneA}' && '${gitsby}' -q update -m '-Wall added to CFLAGS' && git log -1 --format=%s | grep -qx -- '-Wall added to CFLAGS'"
 	fAssertFail "[dab6q] unquoted two-word message rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q update Fixed bug"
 
-	## Non-tty: mutating commands fail closed without -q; read-only ones just go quiet
+	## Non-tty: mutating commands fail closed without -q; read-only ones go quiet
 	( cd "${cloneA}" && echo nt > nt.txt )
 	fAssertFail "[dab6r] mutating without -q and no tty refuses"  bash -c "cd '${cloneA}' && '${gitsby}' update ntmsg < /dev/null"
 	fAssert "[dab6s] file left uncommitted"                       bash -c "cd '${cloneA}' && git status --porcelain | grep -q nt.txt"
@@ -1907,7 +1937,7 @@ fRunSuite(){
 	fAssert "[dab68] merge reached origin (dev published)"  bash -c "cd '${o2}' && git show-ref --verify --quiet refs/heads/dev && git ls-tree --name-only dev | grep -qx w.txt"
 	fAssert "[dab69] feat9 deleted on origin after publish" bash -c "cd '${o2}' && ! git show-ref --verify --quiet refs/heads/feat9"
 
-	## release with an upstream-less main: the branch must reach origin, not just the tag
+	## release with an upstream-less main: the branch must reach origin, not only the tag
 	local fx3="${work}/$1-rel2"
 	local o5="${fx3}/origin.git"; local c5="${fx3}/a"
 	mkdir -p "${fx3}"
@@ -1921,7 +1951,7 @@ fRunSuite(){
 		git branch --unset-upstream main  ## however it got lost, main now tracks nothing
 	)
 	fAssert "[dacve] release with an upstream-less main runs"  bash -c "cd '${c5}' && '${gitsby}' -q release v9.0.0"
-	fAssert "[dacvf] origin main advanced, not just the tag"   bash -c "cd '${o5}' && git ls-tree --name-only main | grep -qx d.txt"
+	fAssert "[dacvf] origin main advanced, not only the tag"   bash -c "cd '${o5}' && git ls-tree --name-only main | grep -qx d.txt"
 	fAssert "[dacvg] tag reached origin too"                   bash -c "cd '${c5}' && git ls-remote --tags origin | grep -q 'refs/tags/v9.0.0'"
 
 	## diverged pull with a dirty tree: fails, but work stays in the tree and out of the stash
@@ -2003,13 +2033,9 @@ fRunSuite(){
 	fAssert     "[ddgbk] and it brings in origin's commit"  bash -c "cd '${nameA}' && [[ -f g.txt ]]"
 	fStagedChecks "$1"
 
-	## A command that still means something locally runs offline and says what it skipped; a
-	## command that exists to publish refuses up front, before the plan promises a push.
-	## Same bogus-path trick, on its own clone so the shared fixture keeps its history.
-	## Own throwaway origin: by this point the shared one has a dev branch and release history, so
-	## the merge target would not be main and these checks would be reading a different repo shape.
-	## 'offland' is made and published while the remote still works, so the land below has a real
-	## origin copy to leave alone; everything after the set-url is offline.
+	## A command that still means something locally runs offline and says what it skipped; one
+	## that exists to publish refuses before the plan. Its own throwaway origin, so the target is
+	## main. 'offland' is published before the set-url, so it has an origin copy.
 	local offOrigin="${work}/$1-offo.git"; local offb="${work}/$1-offlinebr"
 	git init --quiet --bare -b main "${offOrigin}"
 	git clone --quiet "${offOrigin}" "${offb}" 2>/dev/null
@@ -2044,17 +2070,14 @@ fRunSuite(){
 	EOF
 	fAssertFail "[daggh] pr create refuses with an unreachable remote"  bash -c "cd '${offb}' && PATH='${offBin}:${PATH}' '${gitsby}' -q br switch offfeat >/dev/null 2>&1; PATH='${offBin}:${PATH}' '${gitsby}' -q pr create 'T'"
 	fAssertOut  "[daggj] and says which command needs origin"  "'pr create' has nothing left to do"  bash -c "cd '${offb}' && PATH='${offBin}:${PATH}' '${gitsby}' -q pr create 'T' 2>&1"
-	## land offline: the merge lands locally, and origin's copy of the branch has to survive -
-	## with the merge unpushed it is the only ref origin holds to that work.
+	## land offline: the merge is made locally, and origin's copy of the branch has to survive -
+	## with the merge unpushed it is the only ref origin has to that work.
 	fAssertOut "[daggk] br land leaves origin's copy of the branch alone"  "Leaving origin's 'offland' alone"  bash -c "cd '${offb}' && '${gitsby}' -q br switch offland >/dev/null 2>&1; '${gitsby}' -q br land 'Off land' 2>&1"
-	fAssert    "[daggm] and the merge landed locally"     bash -c "cd '${offb}' && git log -1 --format=%s main | grep -q 'Off land'"
+	fAssert    "[daggm] and the merge was made locally"     bash -c "cd '${offb}' && git log -1 --format=%s main | grep -q 'Off land'"
 	fAssert    "[daggn] and the remote-tracking ref survived"  bash -c "cd '${offb}' && git show-ref --verify --quiet refs/remotes/origin/offland"
 
-	## Offline messages have to be true. A park with nothing to push says so instead of claiming
-	## committed work awaits; the warning names the branch it means, since the command may move
-	## off it next and a 'sync' from wherever you land would publish that branch instead; and a
-	## hotfix land names the recovery that publishes the default branch - a bare 'sync' runs
-	## from dev after the back-merge and would leave origin's default branch stale.
+	## Offline messages have to be true: no claim of committed work with nothing to push, the
+	## branch named, and a hotfix merge naming the recovery for the default branch.
 	local om="${work}/$1-offmsg.git"; local omw="${work}/$1-offmsgw"
 	git init --quiet --bare -b main "${om}"
 	git clone --quiet "${om}" "${omw}" 2>/dev/null
@@ -2070,7 +2093,7 @@ fRunSuite(){
 	fAssertOut    "[daktw] an ahead branch's park warning names the branch"      "stays local on 'b1'"  bash -c "cd '${omw}' && git checkout --quiet b1 && echo w >> f.txt && '${gitsby}' -q br switch dev 2>&1"
 	fAssert    "[daktx] br hotfix works offline"  bash -c "cd '${omw}' && git checkout --quiet main && '${gitsby}' -q br hotfix hx1 && [[ \"\$(git branch --show-current)\" == hotfix/hx1 ]]"
 	fAssertOut "[dakty] an offline hotfix land names the branch its merge is stuck on"  "the merge to 'main' is local only - once online"  bash -c "cd '${omw}' && echo h >> f.txt && '${gitsby}' -q br land 'Hot fix' 2>&1"
-	fAssert    "[daktz] and the back-merge still carried it to dev"  bash -c "cd '${omw}' && [[ \"\$(git branch --show-current)\" == dev ]] && git merge-base --is-ancestor main dev"
+	fAssert    "[daktz] and the back-merge still brought it to dev"  bash -c "cd '${omw}' && [[ \"\$(git branch --show-current)\" == dev ]] && git merge-base --is-ancestor main dev"
 
 	## ... and offline has to mean the same thing inside a compound command, or the flag saves
 	## nothing there. Own throwaway origin, so the shared one keeps its history for later checks.
@@ -2084,7 +2107,7 @@ fRunSuite(){
 	fAssert "[dadwg] br switch -NoFetch skips its pull"    bash -c "cd '${nfWork}' && '${gitsby}' -q -NoFetch br switch main && [[ \"\$(git rev-parse main)\" == \"\$(cat '${work}/$1-nfsha')\" ]]"
 	fAssert "[dadwh] the same switch pulls when online"    bash -c "cd '${nfWork}' && '${gitsby}' -q br switch main && [[ \"\$(git rev-parse main)\" != \"\$(cat '${work}/$1-nfsha')\" ]]"
 
-	## br prune: drops what's already landed, keeps everything else. Own throwaway origin, since
+	## br prune: drops what's already merged, keeps everything else. Own throwaway origin, since
 	## it deletes branches wholesale and the shared fixture still needs its history.
 	local prOrigin="${work}/$1-pro.git"; local prWork="${work}/$1-prw"
 	git init --quiet --bare -b main "${prOrigin}"
@@ -2174,7 +2197,7 @@ fRunSuite(){
 	fAssert     "[dady1] current branch survives its own prune"  bash -c "cd '${prWork}' && '${gitsby}' -q br prune; git -C '${prWork}' show-ref --verify --quiet refs/heads/standing"
 	## And it must say WHY nothing happened - "no branch is merged" would be false here.
 	fAssertOut  "[dadyv] and the output says why"  "switch off it to prune it"  bash -c "cd '${prWork}' && '${gitsby}' -q br prune"
-	## A merge that hasn't reached origin means origin still holds the only ref to that work:
+	## A merge that hasn't reached origin means origin still has the only ref to that work:
 	## the local branch may go, the remote copy may not.
 	(
 		cd "${prWork}"
@@ -2220,7 +2243,7 @@ fRunSuite(){
 	fAssert    "[dbfvt] and origin keeps the held branch"  bash -c "cd '${prOrigin}' && git show-ref --verify --quiet refs/heads/held"
 	( cd "${prWork}" && git worktree remove --force "${work}/$1-prune-held" >/dev/null 2>&1 || true )
 	## The remote half is decided from the local copy of origin, which is only as new as the last
-	## fetch. So origin is asked just before the push, and each delete is leased on the value the
+	## fetch. So origin is asked right before the push, and each delete is leased on the value the
 	## plan tested. A second clone moves things behind the first one's back. Each run's output is
 	## kept in a file, since running prune again would find nothing left to prune.
 	local pnOrigin="${work}/$1-pno.git"; local pnA="${work}/$1-pna"; local pnB="${work}/$1-pnb"
@@ -2433,7 +2456,7 @@ fRunSuite(){
 	( cd "${pnA}" && "${gitsby}" -q -NoFetch br prune ) > "${work}/$1-pn5.out" 2>&1 || true
 	mv "${pnOrigin}.away" "${pnOrigin}"
 	## 'late' is still here when there is a pty, since a copy moved on origin keeps its local branch.
-	fAssertOut    "[dcmhj] br prune --no-fetch holds origin's deletes when it can't reach origin"  "left origin's copies of ([^ ]+, )*far(, [^ ]+)* alone"  cat "${work}/$1-pn5.out"
+	fAssertOut    "[dcmhj] br prune --no-fetch puts off origin's deletes when it can't reach origin"  "left origin's copies of ([^ ]+, )*far(, [^ ]+)* alone"  cat "${work}/$1-pn5.out"
 	fAssertNotOut "[dcmhk] and doesn't blame the branch"  'already gone'  cat "${work}/$1-pn5.out"
 	fAssert       "[dcmhm] and still deletes the local branch without origin"  bash -c "! git -C '${pnA}' show-ref --verify --quiet refs/heads/far"
 	fAssert       "[dcnmj] and the delete it names, typed as shown once origin is back, clears origin's copy" \
@@ -2460,6 +2483,8 @@ fRunSuite(){
 	fAssert "[dab8a] repo clone runs"                bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' cl1"
 	fAssert "[dab8b] repo clone checked out dev"     bash -c "cd '${cl}/cl1' && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssert "[dab8c] repo clone again (already cloned) ok"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' cl1"
+	fAssertOut "[df362] and names the folder in full on its own line"  "^  File: ${cl//./\\.}/cl1$" \
+		bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' cl1"
 	fAssert "[dab8d] repo clone derives dir from url"       bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' && [[ -d origin/.git ]]"
 	fAssertFail "[dab8e] repo clone into non-empty dir rejected"  bash -c "cd '${cl}' && mkdir -p other && touch other/x && '${gitsby}' -q repo clone '${origin}' other"
 	fAssertFail "[dab8f] repo clone with no url rejected"         bash -c "cd '${cl}' && '${gitsby}' -q repo clone"
@@ -2471,15 +2496,20 @@ fRunSuite(){
 	fAssert "[dab8w] repo clone of a no-dev repo stays on default"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o3}' nd && [[ \"\$(cd nd && git branch --show-current)\" == main ]]"
 	fAssert "[dab8x] repo clone into a pre-existing empty dir"      bash -c "cd '${cl}' && mkdir -p pre && '${gitsby}' -q repo clone '${origin}' pre && [[ -d pre/.git ]]"
 	## A folder given relative was shown the way it was typed, which leaves the reader to work out
-	## where it lands. The git command keeps the typed form.
+	## where it ends up. The git command keeps the typed form.
 	## Windows prints its own spelling of the path, which this fixture does not build.
 	if ! ((isWindows)); then
 		fAssertOut "[dd81f] repo clone names the folder in full"  "^Clone into \.+: ${cl//./\\.}/sub/named$" \
 			bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' sub/named"
-		fAssertOut "[dd81g] and says where it cloned in full as well"  "Cloned into '${cl//./\\.}/sub/named2'" \
+		fAssertOut "[dd81g] and says where it cloned in full as well"  "^  File: ${cl//./\\.}/sub/named2$" \
 			bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' sub/named2"
+		## The folder goes on that File line, not inside the status sentence.
+		fAssertOut "[df36e] and the status line has no path"  '^\[ Cloned\. \]$' \
+			bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' sub/named3"
 	fi
 	fAssertFail "[dab8y] repo clone over a different-url clone refused"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o3}' cl1"
+	fAssertOut "[df363] and names the folder in full on its own line"  "^  File: ${cl//./\\.}/cl1$" \
+		bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o3}' cl1 2>&1"
 
 	## connect: publish a local-only repo to a fresh empty remote; idempotent; guards
 	local cn="${work}/$1-connect"
@@ -2564,11 +2594,9 @@ fRunSuite(){
 	fAssertFail "[dab8z] repo connect an empty inited repo rejected"  bash -c "cd '${cn}/bare-repo' && '${gitsby}' -q repo connect '${cn}/remote.git'"
 	fAssert "[dab90] repo connect accepts a matching explicit url"    bash -c "cd '${cn}/proj' && '${gitsby}' -q repo connect '${cn}/remote.git'"
 
-	## The SSH identity line. Every other check here uses a local-path origin, which has no ssh
-	## identity at all - so this whole line went out untested and shipped naming the OS login.
-	## A fake ssh gives it an scp-like origin to read without leaving the box: -G defaults 'user'
-	## to the OS login when the target carries none (the real behavior, and the whole bug),
-	## -T greets as the key's account, and anything else fails so git's own fetch reports offline.
+	## The SSH identity line, through a fake ssh with an scp-like origin: -G defaults 'user' to
+	## the OS login, -T greets as the key's account, anything else fails so the fetch reads
+	## offline.
 	local sid="${work}/$1-sshid"
 	mkdir -p "${sid}/bin"
 	fStub "${sid}/bin/ssh" <<-'EOF'
@@ -2598,9 +2626,11 @@ fRunSuite(){
 	fAssertOut    "[dakp5] ssh line names the account the key authenticates as"  "SSH \.+: acmedev \("  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
 	## Anchored to the SSH line: a bare 'git@github.com' also matches the Remote line right above
 	## it, so the loose form was satisfied by the broken output too.
-	fAssertOut    "[dakp6] ssh line names the user git actually connects as"     "SSH \.+: .*\(git@github\.com,"  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	fAssertOut    "[dakp6] ssh line names the user git actually connects as"     "SSH \.+: .*\(git@github\.com\)$"  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
 	fAssertNotOut "[dakp7] ssh line never reports the OS login"                  'osuser'               bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
-	fAssertOut    "[dakp8] the key is still reported"                            "key ${sidKey}"        bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	fAssertOut    "[dakp8] the key is still reported"                            "^ +: File: ${sidKey}$"  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	## A long key path wrapped the SSH line when it sat in the parentheses.
+	fAssertNotOut "[df36f] and not inside the SSH line"                          "^SSH .*key"           bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
 	fAssertOut    "[dakp9] a mutating pre-flight names the account too"          "SSH \.+: acmedev \("  bash -c "${sidRun} '${gitsby}' -q -NoFetch update 'ssh id probe' 2>&1"
 	## The target comes from origin, which is anybody's to write: without '--' a host spelled like
 	## an option is read as one.
@@ -2680,7 +2710,7 @@ fRunSuite(){
 	## owner/name targets: the gh path, driven by a deterministic fake gh (no network). Covers
 	## 'repo create' (repo absent), 'repo connect' remote-add (present but empty, https + ssh),
 	## the refuse-nonempty guard, and the create/connect division of labour. Add-mode github URLs are rewritten onto a local bare via insteadOf so
-	## the push lands offline; create-mode wiring is done inside the stub.
+	## the push works offline; create-mode wiring is done inside the stub.
 	local gh="${work}/$1-gh"
 	mkdir -p "${gh}/bin"
 	fStub "${gh}/bin/gh" <<'GHEOF'
@@ -2691,10 +2721,10 @@ fRunSuite(){
 case "$1 $2" in
 	"api user")    ## Whose token gh is holding - the exported one when there is one, like the real
 	               ## thing. A probe run after the switch can then only ever answer with the account
-	               ## it just switched to, which is what the pre-switch probe exists to avoid.
+	               ## it switched to, which is what the pre-switch probe exists to avoid.
 	               if [[ "${FAKE_MEET:-}" == net ]]; then fake-meet "gh api user"; fi
 	               if [[ -n "${GH_TOKEN:-}" ]]; then echo "${GH_TOKEN#tok_}"; else echo "${FAKE_GH_LOGIN:-ghuser}"; fi ;;
-	"auth token")  ## accounts gh holds, space separated; exit 1 for anyone else, like the real thing
+	"auth token")  ## accounts gh has, space separated; exit 1 for anyone else, like the real thing
 	               if [[ "${FAKE_MEET:-}" == token ]]; then fake-meet "gh auth token $4"; fi
 	               case " ${FAKE_GH_ACCOUNTS:-} " in *" $4 "*) echo "tok_$4" ;; *) exit 1 ;; esac ;;
 	"repo view")   ## Real gh distinguishes these on stderr, and gitsby now reads it: a name that
@@ -2716,10 +2746,10 @@ case "$1 $2" in
 	               echo "${FAKE_GH_HEAD:-$(git branch --show-current)}"     ## the PR's own head branch
 	               echo "${FAKE_GH_STATE:-OPEN}" ;;                          ## ... and whether it is still open
 	"pr diff")     echo "diff --git a/work.txt b/work.txt" ;;
-	"pr merge")    ## Land the branch on the base, then drop it from the remote. Real gh does the delete
+	"pr merge")    ## Merge the branch into the base, then drop it from the remote. Real gh does the delete
 	               ## over the API, so the caller's origin/* copy survives it - restore the ref to match.
 	               ## FAKE_GH_HEAD lets a check merge a PR whose branch isn't the one we're standing on.
-	               ## It merges what ORIGIN holds, not the local branch - the whole point of the
+	               ## It merges what ORIGIN has, not the local branch - the whole point of the
 	               ## unpushed-commit guard - and deletes the local copy too, with -D, like gh does.
 	               prBranch="${FAKE_GH_HEAD:-$(git branch --show-current)}"
 	               prKeep="$(git rev-parse "refs/remotes/origin/${prBranch}")"
@@ -2813,11 +2843,8 @@ GHEOF
 	fAssertOut  "[dadvn] and points at repo create"  'repo create me/proj'      bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=notfound '${gitsby}' -q repo connect me/proj 2>&1 || true"
 	fAssertFail "[dadvp] repo create refuses an existing empty repo"            bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=empty '${gitsby}' -q repo create me/proj"
 	fAssertOut  "[dadvq] and points at repo connect"  'repo connect me/proj'    bash -c "cd '${gh}/split' && PATH='${ghp}' FAKE_GH_VIEW=empty '${gitsby}' -q repo create me/proj 2>&1 || true"
-	## gh exits nonzero for a name that resolves to nothing and for an API it can't reach alike.
-	## Taking the second as the first sent you off to create a repo you already have - and these two
-	## commands skip the pre-command fetch (no origin yet), so this is where offline surfaces.
-	## Its own directory: a build that does NOT refuse here would create a remote and set an origin,
-	## and every check after it would then be about a connected repo instead.
+	## gh exits nonzero alike for no repo and no network, and these 2 skip the fetch, so offline
+	## shows up here. Its own folder, since a build that doesn't refuse would connect it.
 	mkdir -p "${gh}/offl"; echo x > "${gh}/offl/x.txt"
 	fAssertFail "[dbfgb] repo create refuses when it can't reach GitHub"   bash -c "cd '${gh}/offl' && PATH='${ghp}' FAKE_GH_VIEW=offline '${gitsby}' -q repo create me/proj"
 	fAssertOut  "[dbfgc] and says that, not that the repo is missing"  'no telling whether it exists' \
@@ -2828,12 +2855,9 @@ GHEOF
 	fAssertNotOut "[dbfgf] and does not point at repo create"  'repo create me/proj' \
 		bash -c "cd '${gh}/offl' && PATH='${ghp}' FAKE_GH_VIEW=offline '${gitsby}' -q repo connect me/proj 2>&1"
 	fAssertFail "[dadvr] repo create refuses a plain url"                       bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create '${gh}/backing-https.git'"
-	## Keep the insteadOf rewrite: this dir's origin is a real github.com URL, and the
-	## pre-command fetch runs before the refusal we're testing for.
-	## The account is resolved from origin, and these two have none yet - but the repo they are
-	## about to publish to is on the command line, and it is that owner's account that should do the
-	## publishing. The late re-selection was a no-op behind the already-applied guard, so it went
-	## out as gh's own account instead, silently.
+	## Keep the insteadOf rewrite: origin is a real github.com URL, and the fetch runs before the
+	## refusal. These 2 have no origin yet, so the account comes from the owner on the command
+	## line.
 	mkdir -p "${gh}/rc-acct"; echo x > "${gh}/rc-acct/x.txt"
 	fAssert "[dbfgg] repo create publishes as the account that owns the target" \
 		bash -c "cd '${gh}/rc-acct' && PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_PROTO=https FAKE_GH_LOGIN=other FAKE_GH_ACCOUNTS='other acme' FAKE_GH_LOG='${gh}/rc-acct.log' FAKE_GH_REMOTE='${gh}/rc-acct.git' '${gitsby}' -q repo create acme/proj && grep -q 'repo create.*GH_TOKEN=tok_acme' '${gh}/rc-acct.log'"
@@ -2859,7 +2883,7 @@ GHEOF
 		git push --quiet -u origin prfeat
 	)
 	fAssertPlan "[dacyp] pr ok plans the branch switch"  'git checkout dev'  bash -c "cd '${prc}' && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7"
-	fAssert    "[dacyq] pr ok landed on the merge target"  bash -c "cd '${prc}' && [[ \"\$(git branch --show-current)\" == dev ]]"
+	fAssert    "[dacyq] pr ok ended on the merge target"  bash -c "cd '${prc}' && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssert    "[dacyr] pr ok pulled the merged work"      bash -c "cd '${prc}' && git ls-tree --name-only dev | grep -qx work.txt"
 	fAssert    "[dacys] the merged branch is gone from origin"  bash -c "cd '${prc}' && ! git ls-remote --heads origin prfeat | grep -q prfeat"
 
@@ -2924,6 +2948,8 @@ GHEOF
 	fAssertFail "[dbfgp] pr ok refuses unpushed commits with no upstream to notice them"  bash -c "cd '${pnu}' && ${pnuEnv} '${gitsby}' -q pr ok 7"
 	fAssertOut  "[dbfgq] and names the branch"  "'nofeat' has commits that never reached origin" \
 		bash -c "cd '${pnu}' && ${pnuEnv} '${gitsby}' -q pr ok 7 2>&1"
+	fAssertOut  "[df35t] and gives the push on a line of its own"  '^  git push origin nofeat$' \
+		bash -c "cd '${pnu}' && ${pnuEnv} '${gitsby}' -q pr ok 7 2>&1"
 	fAssert     "[dbfgr] and the commit is still reachable"  bash -c "cd '${pnu}' && git log -1 --pretty=%s nofeat | grep -qx 'never pushed'"
 
 	## pr create: parks the work, then opens the PR against the merge target. Same fake gh.
@@ -2949,7 +2975,7 @@ GHEOF
 		git checkout --quiet -b pnfeat2 && echo more > more.txt && git add --all && git commit --quiet -m "Commit subject"
 	)
 	fAssert "[dadsx] pr create takes an explicit title"  bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prnew2.log' '${gitsby}' -q pr create 'Explicit title' && grep -q -- '--title Explicit title' '${gh}/prnew2.log'"
-	## A hotfix lands on the default branch, so its PR is based there, not on dev.
+	## A hotfix merges into the default branch, so its PR is based there, not on dev.
 	( cd "${pnc}" && git checkout --quiet -b hotfix/prfix main && echo fix > fix.txt && git add --all && git commit --quiet -m "Fix it" )
 	fAssert "[dd5ch] pr create from a hotfix bases the PR on the default branch" \
 		bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prhf.log' '${gitsby}' -q pr create && grep -q -- '--base main ' '${gh}/prhf.log'"
@@ -2982,12 +3008,8 @@ GHEOF
 	fAssertOut  "[dbfgv] and says why"  'reads it as an option'  bash -c "cd '${dsh}/c' && '${gitsby}' -q pullcom 'x' 2>&1"
 	fAssert     "[dbfgw] but status still reports the repo it is wrong about"  bash -c "cd '${dsh}/c' && '${gitsby}' -q status >/dev/null"
 
-	## Identity: which account a remote-touching command acts as. gh keeps one active account for the
-	## whole host, so against a remote owned by somebody else it acts as the wrong one.
-	## The origin really is a github.com url here, because the owner is parsed from what
-	## 'git remote get-url' returns and that applies url.*.insteadOf - pointing it at a local bare to
-	## stay offline would hand gitsby a local path and test nothing. --no-fetch keeps it off the
-	## network instead: gh is stubbed, and a read never probes ssh, so nothing reaches github.com.
+	## Identity: which account a remote-touching command acts as. A real github.com origin, since
+	## the owner is parsed after insteadOf. --no-fetch and a stub gh keep it off the network.
 	local idn="${gh}/ident"
 	mkdir -p "${idn}"
 	git init --quiet --bare -b main "${idn}/backing.git"
@@ -2998,7 +3020,7 @@ GHEOF
 		git remote set-url origin git@github.com:acme/proj.git
 	)
 	local idEnv="PATH='${ghp}' FAKE_GH_LOGIN=someoneelse"
-	fAssert "[daxht] gh acts as the remote's owner when it holds that account" \
+	fAssert "[daxht] gh acts as the remote's owner when it has that account" \
 		bash -c "cd '${idn}/c' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse acme' FAKE_GH_LOG='${idn}/held.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_acme' '${idn}/held.log'"
 	## A fork or an org we have no account for is ordinary - it must not be touched, and must not refuse.
 	fAssert "[daxhv] gh is left alone when it has no account for the owner" \
@@ -3017,12 +3039,8 @@ GHEOF
 	)
 	fAssert "[dayqr] a configured account wins over the remote's owner" \
 		bash -c "cd '${idn}/cfg' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse acme configured' FAKE_GH_LOG='${idn}/cfg.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_configured' '${idn}/cfg.log'"
-	## No origin at all: nothing to parse an owner from, so only the configured account can answer.
-	## Asked through 'raw gh' rather than 'pr': a repo with no remote has nowhere to propose a pull
-	## request to, and pr now says so before it selects anything. Which is the right answer, and
-	## makes it the wrong vehicle for a question about account selection. 'identity' is no good
-	## either - its gh probe deliberately runs BEFORE the token lands, so the log never sees one.
-	## 'raw gh' is the documented scripted surface and runs as whatever was selected.
+	## No origin, so only the configured account can answer. Asked through 'raw gh', since pr
+	## refuses with no remote and whoami probes before the token is set.
 	mkdir -p "${idn}/noremote"
 	(
 		cd "${idn}/noremote" || exit 1
@@ -3034,12 +3052,8 @@ GHEOF
 	## And the refusal itself, which is what makes the line above the right shape.
 	fAssertOut "[dbg5d] pr refuses outright with no remote to propose to"  'No .origin. remote' \
 		bash -c "cd '${idn}/noremote' && ${idEnv} '${gitsby}' -q -NoFetch pr 2>&1"
-	## The token file covers a box where that account was never logged in to gh. Absent, unreadable
-	## and empty must all fall back to gh's own account rather than fail - a checkout that was never
-	## set up this way still has to work.
-	## Written into the GLOBAL config, which is where 'account apply' puts it and the only scope
-	## gitsby reads it from: the value names any readable file, and its contents go into GH_TOKEN
-	## for every child - so a repo you cloned from a stranger does not get to choose it.
+	## The token file: absent, unreadable and empty fall back to gh's own account. In the global
+	## config, the only scope gitsby reads it from.
 	local idnGlobal="${idn}/gcfg"; : > "${idnGlobal}"
 	local idTok="GIT_CONFIG_GLOBAL='${idnGlobal}'"
 	printf 'tok_fromfile\n' > "${idn}/token.txt"
@@ -3058,8 +3072,8 @@ GHEOF
 	fAssert "[dayqx] gh's own account outranks the token file" \
 		bash -c "cd '${idn}/cfg' && ${idTok} git config --global gitsby.ghTokenFile '${idn}/token.txt' && ${idTok} ${idEnv} FAKE_GH_ACCOUNTS='someoneelse configured' FAKE_GH_LOG='${idn}/pref.log' '${gitsby}' -q -NoFetch pr && grep -q 'GH_TOKEN=tok_configured' '${idn}/pref.log'"
 	( cd "${idn}/cfg" && git config --unset gitsby.ghTokenFile )
-	## Naming the account this run replaced has to be asked BEFORE the token lands, or the probe
-	## answers as the token just exported and the line can only ever say what it already knows.
+	## Naming the account this run replaced has to be asked BEFORE the token is set, or the probe
+	## answers as the token exported and the line can only ever say what it already knows.
 	fAssertOut "[dbfgy] the identity block names the account gh was on before the switch"  "gh's active account is 'someoneelse'" \
 		bash -c "cd '${idn}/cfg' && ${idEnv} FAKE_GH_ACCOUNTS='someoneelse configured' '${gitsby}' -q -NoFetch identity 2>&1"
 	## gh's config names its own login, but a token already in the environment outranks it, and
@@ -3123,11 +3137,11 @@ GHEOF
 	)
 	fAssertOut "[daxhy] the ssh probe asks as the key git pushes with" 'SSH \.+: keyowner' \
 		bash -c "cd '${idn}/keyed' && ${idEnv} '${gitsby}' -NoFetch status"
-	fAssertOut "[daxhz] and the key it names is that one, not ssh's default" 'key /keys/keyowner' \
+	fAssertOut "[daxhz] and the key it names is that one, not ssh's default" '^ +: File: /keys/keyowner$' \
 		bash -c "cd '${idn}/keyed' && ${idEnv} '${gitsby}' -NoFetch status"
 
 	## Hotfix branches target the default branch instead of dev, because they correct what is
-	## already published. Landing one must also carry it back to dev, or the next release undoes it.
+	## already published. A br land on one must also merge it back to dev, or the next release undoes it.
 	local hf="${work}/$1-hotfix"
 	git init --quiet --bare -b main "${hf}/origin.git"
 	git clone --quiet "${hf}/origin.git" "${hf}/c" 2>/dev/null
@@ -3144,10 +3158,10 @@ GHEOF
 	fAssert    "[daena] off the default branch, not dev"  bash -c "cd '${hfc}' && git merge-base --is-ancestor origin/main HEAD"
 	## -q still prints the plan, it only skips the prompt - so one run proves both.
 	## (Non-quiet can't be used here: with no tty gitsby fails closed before printing anything.)
-	fAssertPlan "[daenb] br land plans and lands it on the default branch"  'git checkout main' \
+	fAssertPlan "[daenb] br land plans and merges it into the default branch"  'git checkout main' \
 		bash -c "cd '${hfc}' && echo 'readme v2' > README.md && '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; '${gitsby}' -q -NoFetch br land 'Reword' 2>&1"
 	fAssert    "[daenc] it reached the default branch" bash -c "cd '${hfc}' && [[ \"\$(git show origin/main:README.md)\" == 'readme v2' ]]"
-	fAssert    "[daend] and was carried back to dev"   bash -c "cd '${hfc}' && [[ \"\$(git show origin/dev:README.md)\" == 'readme v2' ]]"
+	fAssert    "[daend] and was merged back to dev"   bash -c "cd '${hfc}' && [[ \"\$(git show origin/dev:README.md)\" == 'readme v2' ]]"
 	fAssert    "[daene] the branch is gone both sides" bash -c "cd '${hfc}' && [[ -z \"\$(git branch --list 'hotfix/*')\" ]] && [[ -z \"\$(git ls-remote --heads origin 'hotfix/*')\" ]]"
 	## The back-merge takes origin's copy of the default branch by name, and a tag spelled the
 	## same, on an older commit, is what git merge would read first.
@@ -3160,20 +3174,20 @@ GHEOF
 		git tag origin/main
 		git checkout --quiet -b dev && git push --quiet -u origin dev
 	)
-	fAssert    "[dd5cj] the back-merge carries the hotfix, not a tag named like origin's branch" \
+	fAssert    "[dd5cj] the back-merge brings the hotfix, not a tag named like origin's branch" \
 		bash -c "cd '${hft}/c' && '${gitsby}' -q -NoFetch br hotfix tagged >/dev/null 2>&1 && echo 'readme v2' > README.md && '${gitsby}' -q -NoFetch br land 'Tagged' >/dev/null 2>&1; [[ \"\$(git -C '${hft}/origin.git' show refs/heads/main:README.md)\" == 'readme v2' ]] && git -C '${hft}/origin.git' merge-base --is-ancestor refs/heads/main refs/heads/dev"
-	## A hotfix that changes shipped code leaves main ahead of every tag - say so.
-	fAssertOut "[daenf] a hotfix touching the shipped source warns about the release"  'changes more than documentation' \
+	## A hotfix that changes released code leaves main ahead of every tag - say so.
+	fAssertOut "[daenf] a hotfix touching the released source warns about the release"  'changes more than documentation' \
 		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix code >/dev/null 2>&1; echo v2 > '${hfc}/src-go/main.go'; '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; '${gitsby}' -q -NoFetch br land 'Fix' 2>&1"
 	## The warning reads the branch tip, and 'br land' is what commits the working tree - so an
 	## uncommitted edit to it (the ordinary way of making one) has to be checked for after that.
-	fAssertOut "[daepj] a hotfix warns about shipped code even when the edit is uncommitted"  'changes more than documentation' \
+	fAssertOut "[daepj] a hotfix warns about released code even when the edit is uncommitted"  'changes more than documentation' \
 		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix uncommitted >/dev/null 2>&1; echo v3 > '${hfc}/src-go/main.go'; '${gitsby}' -q -NoFetch br land 'Fix uncommitted' 2>&1"
 	## Every other check here runs from the top of the tree. A pathspec is read relative to the
 	## current directory, so from anywhere else it matched nothing, git exited 0 with no output,
 	## and the warning went missing on exactly the commands you run from wherever you are working.
 	mkdir -p "${hfc}/docs"
-	fAssertOut "[dbfwx] the shipped-code warning survives being run from a subdirectory"  'changes more than documentation' \
+	fAssertOut "[dbfwx] the released-code warning survives being run from a subdirectory"  'changes more than documentation' \
 		bash -c "cd '${hfc}/docs' && '${gitsby}' -q -NoFetch br hotfix subdir >/dev/null 2>&1; echo v4 > '${hfc}/src-go/main.go'; '${gitsby}' -q -NoFetch br land 'Fix from below' 2>&1"
 	fAssert    "[daeng] a docs-only hotfix says nothing about releases"  \
 		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix docs >/dev/null 2>&1; echo 'readme v3' > README.md; '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1; out=\"\$('${gitsby}' -q -NoFetch br land 'Docs' 2>&1)\"; ! grep -q 'changes more than documentation' <<< \"\${out}\""
@@ -3212,7 +3226,7 @@ GHEOF
 	fAssertOut "[ddf4b] a back-merge whose abort fails says dev is still mid-merge"  "^  Why:  'git merge --abort' failed, so 'dev' is still mid-merge\.$" \
 		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix clash2 >/dev/null 2>&1 && echo hf2text > README.md && '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1 && env PATH='${abortShim}':\"\${PATH}\" '${gitsby}' -q -NoFetch br land Clash2 > '${abortShim}/back.out' 2>&1; echo \"rc=\$?\" >> '${abortShim}/back.out'; cat '${abortShim}/back.out'"
 	fAssertOut "[ddf4c] and fails rather than ending in Done"  '^rc=1$'  cat "${abortShim}/back.out"
-	fAssertOut "[ddf81] but says the hotfix itself landed"  "^  Kept: The hotfix landed on 'main' - that part is done\." cat "${abortShim}/back.out"
+	fAssertOut "[ddf81] but says the hotfix itself is in"  "^  Kept: The hotfix is in 'main' - that part is done\." cat "${abortShim}/back.out"
 	( cd "${hfc}" || exit 1; git merge --abort 2>/dev/null || true )
 	## The forward merge left the tree in conflict and the merge open, on a bare step failure.
 	local fm="${work}/$1-mergeclash"
@@ -3230,7 +3244,9 @@ GHEOF
 	fAssert     "[dcnqb] and backs the merge out"         bash -c "cd '${fm}/c' && [[ ! -e .git/MERGE_HEAD ]] && [[ -z \"\$(git status --porcelain)\" ]]"
 	fAssert     "[dcnqc] and leaves dev as it was"        bash -c "cd '${fm}/c' && [[ \"\$(git show dev:f.txt)\" == theirs && \"\$(git show origin/dev:f.txt)\" == theirs ]]"
 	fAssert     "[dcnqd] and goes back to the branch"     bash -c "cd '${fm}/c' && [[ \"\$(git branch --show-current)\" == clash ]]"
-	fAssertOut  "[dcnqe] and names the commands to settle it"  "git merge dev, then '.*br merge'"  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch br merge Clash 2>&1"
+	fAssertOut  "[dcnqe] and names the commands to settle it"  '^          git merge dev$'  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch br merge Clash 2>&1"
+	## Each command on a line of its own, so a paste runs it. It was "git merge dev, then 'gitsby br merge'".
+	fAssertOut  "[df35r] and the one to run after, on its own line"  '^          gitsby br merge$'  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch br merge Clash 2>&1"
 	fAssertOut    "[ddf4d] a br merge whose abort fails says dev is still mid-merge"  "^  Why:  'git merge --abort' failed, so 'dev' is still mid-merge\.$" \
 		bash -c "cd '${fm}/c' && env PATH='${abortShim}':\"\${PATH}\" '${gitsby}' -q -NoFetch br merge Clash > '${abortShim}/merge.out' 2>&1; cat '${abortShim}/merge.out'"
 	fAssertNotOut "[ddf4e] and never says dev is as it was"  'as it was'  cat "${abortShim}/merge.out"
@@ -3240,6 +3256,8 @@ GHEOF
 	( cd "${fm}/c" || exit 1; git merge --abort 2>/dev/null || true; git checkout --quiet main && echo mainside > f.txt && git commit --quiet -am mainside && git push --quiet && git checkout --quiet clash )
 	fAssertFail "[dcnqf] a release whose dev won't merge into main refuses"  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch release v1.0.0"
 	fAssert     "[dcnqg] and backs it out, cuts no tag, and goes back"  bash -c "cd '${fm}/c' && [[ ! -e .git/MERGE_HEAD ]] && ! git rev-parse -q --verify refs/tags/v1.0.0 >/dev/null && [[ \"\$(git branch --show-current)\" == clash ]]"
+	fAssertOut  "[df35s] and names the commands to settle it, each on its own line"  '^          git merge main$'  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch release v1.0.0 2>&1"
+	fAssertOut  "[df35v] and the release to run after, with the version typed"  '^          gitsby release v1\.0\.0$'  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch release v1.0.0 2>&1"
 	## Feature branches must be untouched by all of this.
 	fAssert    "[daenk] br create still branches off dev"  \
 		bash -c "cd '${hfc}' && git checkout --quiet dev && git checkout --quiet -- . 2>/dev/null; '${gitsby}' -q -NoFetch br create feat1 && git merge-base --is-ancestor origin/dev HEAD"
@@ -3265,9 +3283,9 @@ GHEOF
 	fAssertNotOut "[dams4] status claims no new branch at all"  'New branch' \
 		bash -c "cd '${hfc}' && '${gitsby}' -q status 2>&1"
 
-	## A work branch is shown against what it lands on; main/master/dev are off nothing, so they
+	## A work branch is shown against what it merges into; main/master/dev are off nothing, so they
 	## stay bare - "dev :: dev" would be noise, and "main :: dev" is only true at release time.
-	fAssertOut "[dams5] a feature branch shows the base it lands on"  '^Current branch: dev :: base3' \
+	fAssertOut "[dams5] a feature branch shows the base it merges into"  '^Current branch: dev :: base3' \
 		bash -c "cd '${hfc}' && git checkout --quiet base3 && '${gitsby}' -q status 2>&1"
 	fAssertOut "[dams6] a hotfix branch shows the default branch instead"  '^Current branch: main :: hotfix/base1' \
 		bash -c "cd '${hfc}' && git checkout --quiet hotfix/base1 && '${gitsby}' -q status 2>&1"
@@ -3300,7 +3318,7 @@ GHEOF
 	cp "${gh}/bin/gh" "${id}/bin/gh"; fStubShim "${id}/bin/gh"
 	## insteadOf is no good here: 'git remote get-url' returns the REWRITTEN url, so there would be
 	## no ssh url left to probe. Instead the stub doubles as the transport, so origin stays an
-	## scp-style url while every push and fetch lands in a local bare.
+	## scp-style url while every push and fetch goes to a local bare.
 	fStub "${id}/bin/ssh" <<-'EOF'
 		#!/usr/bin/env bash
 		[[ -n "${FAKE_SSH_LOG:-}" ]] && echo "$*" >> "${FAKE_SSH_LOG}"
@@ -3369,11 +3387,9 @@ GHEOF
 	fAssertOut  "[daepm] and it still names both accounts"  "acts as 'alice'.*authenticates as 'bob'" \
 		bash -c "cd '${idc}' && ${idEnv} FAKE_SSH_NOISE=1 FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -q -NoFetch pr create 'T' 2>&1 || true"
 
-	## repo create has no origin yet, but the one gh is about to set IS knowable - gh never uses a
-	## host alias, so it is 'git@github.com:owner/name.git'. Check it before creating anything.
-	## Note this runs from a plain directory, where the preceding repo probe fails: the gh login
-	## must not be read from a stale exit status (the PowerShell port got this wrong once).
-	## ssh protocol, or gh would hand git an https url and there would be no ssh identity at all.
+	## repo create has no origin yet, but gh's is knowable: 'git@github.com:owner/name.git'. Run
+	## from a plain folder, so a stale exit status can't stand in for the login. ssh protocol, or
+	## there'd be no ssh identity.
 	local rcEnv="PATH='${idp}' FAKE_GH_VIEW=notfound FAKE_GH_PROTO=ssh"
 	mkdir -p "${id}/rc-bad"; echo x > "${id}/rc-bad/x.txt"
 	fAssertFail "[dae9d] repo create refuses a mismatched identity before creating anything" \
@@ -3464,7 +3480,7 @@ GHEOF
 	fAssert     "[dadt1] pr ok kept the unpushed commit"  bash -c "cd '${pgc}' && git log -1 --pretty=%s | grep -qx unpushed"
 	fAssert     "[dadt2] pr ok proceeds once synced"  bash -c "cd '${pgc}' && git push --quiet && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7"
 
-	## Which branch a PR lands on, and whether it's a hotfix, belong to the PR - not to wherever
+	## Which branch a PR merges into, and whether it's a hotfix, belong to the PR - not to wherever
 	## you happen to be standing. 'pr ok <n>' is routinely run from dev, on someone else's branch.
 	local pk="${gh}/prhead"
 	git init --quiet --bare -b main "${pk}/origin.git"
@@ -3482,7 +3498,7 @@ GHEOF
 	fAssertPlan "[daepn] pr ok plans the back-merge for a hotfix PR accepted from dev"  'git merge origin/main' \
 		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=hotfix/api FAKE_GH_BASE=main '${gitsby}' -q pr ok 7 2>&1"
 	fAssert    "[daepp] and the hotfix reached the default branch"  bash -c "cd '${pkc}' && [[ \"\$(git show origin/main:README.md)\" == 'readme v2' ]]"
-	fAssert    "[daepq] and was carried back to dev"               bash -c "cd '${pkc}' && [[ \"\$(git show origin/dev:README.md)\" == 'readme v2' ]]"
+	fAssert    "[daepq] and was merged back to dev"               bash -c "cd '${pkc}' && [[ \"\$(git show origin/dev:README.md)\" == 'readme v2' ]]"
 	## The converse: standing on a hotfix branch must not make someone else's feature PR one.
 	(
 		cd "${pkc}" || exit 1
@@ -3520,8 +3536,8 @@ GHEOF
 	done
 	## macOS pins /bin/bash at 3.2 forever, so installing a newer one only helps via PATH.
 	fAssert "[daepx] gitsby resolves bash through PATH, not /bin/bash"  bash -c "head -1 '${root}/legacy/bin/gitsby' | grep -qx '#!/usr/bin/env bash'"
-	## A hotfix starts from the v2.1.0 tag, so anything else added here would never ship.
-	fAssert "[deyvs] legacy/ holds the six frozen deliverables and its README, and nothing else" \
+	## A hotfix starts from the v2.1.0 tag, so anything else added here would never be released.
+	fAssert "[deyvs] legacy/ has the six frozen deliverables and its README, and nothing else" \
 		test "$(cd "${root}" && git ls-files legacy | tr '\n' ' ')" = 'legacy/README.md legacy/bin/gitsby legacy/bin/gitsby.ps1 legacy/install-dev.bash legacy/install-dev.ps1 legacy/install.bash legacy/install.ps1 '
 
 	## Installer options. These run once, not per implementation, and never reach the network:
@@ -3532,7 +3548,7 @@ GHEOF
 	fAssertOut  "[daf79] and documents --release"                   '--release dev[|]stable'    bash -c "bash '${inst}' --help"
 	fAssertOut  "[daf7a] and documents --target"                    '--target user[|]system'    bash -c "bash '${inst}' --help"
 	fAssertOut  "[daf7b] and documents --arch"                      '--arch x64[|]amd64[|]arm64' bash -c "bash '${inst}' --help"
-	## Assert the reason, not just the failure: an installer that never heard of --target also
+	## Assert the reason, not only the failure: an installer that never heard of --target also
 	## exits nonzero here, so a bare exit-code check would pass with the option missing entirely.
 	fAssertFail "[daf7c] installer exits nonzero on a bad --target"  bash -c "bash '${inst}' --target bogus"
 	fAssertOut  "[daf7d] installer refuses a bad --target"           "--target takes"            bash -c "bash '${inst}' --target bogus"
@@ -3583,12 +3599,9 @@ GHEOF
 		## prefix keeps the -File path converting as normal. Ignored off Windows.
 		fAssertOut  "[dafr8] ps installer refuses an absolute -Ref"    'not a path' \
 			env MSYS2_ARG_CONV_EXCL='/etc' pwsh -NoProfile -File "${instPs}" -Yes -Ref '/etc/passwd'
-		## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
-		## file - so -File coverage alone says nothing about them. Both must bind their
-		## parameters, refuse without a tty, and leave the calling session alive and unaltered.
-		## These reach the confirmation prompt, so it has to REFUSE rather than wait: stdin at
-		## EOF, and nothing to fall back to - setsid where there is one, and on Windows just the
-		## redirect, since Read-Host reads that and never reaches for a terminal.
+		## The documented one-liners, 'iex' and a scriptblock, aren't script files. Both must
+		## bind, refuse without a tty and leave the session alive. setsid where there is one; on
+		## Windows the redirect is enough.
 		if ((canNoTty)); then
 			local instDev="${root}/legacy/install-dev.ps1"
 			## These paths are read by .NET, not by the shell, so they need native spelling.
@@ -3600,12 +3613,8 @@ GHEOF
 			## still discriminates - a user-target plan names AppData\Local\Programs instead.
 			local sysBinPat='/usr/local/bin'
 			((isWindows)) && sysBinPat='Program Files'
-			## Decode the bytes ourselves rather than Get-Content, which quietly drops a BOM.
-			## irm doesn't, so a BOM'd file reaches iex with U+FEFF glued to the shebang and
-			## the first line stops being a comment - which is how a BOM sat here undetected.
-			## With no -Ref the installer looks up the latest release first. The stubs answer the
-			## redirect with a tag, the way github.com did before the repo moved to the org. Now
-			## it redirects to the org's URL instead, so the real lookup always fell back to the API.
+			## Decode the bytes, since Get-Content drops a BOM and irm doesn't. With no -Ref the
+			## installer looks up the latest release; the stubs answer the redirect with a tag.
 			local readInst="function Invoke-WebRequest { [pscustomobject]@{ Headers = @{ Location = 'https://github.com/jim-collier/gitsby/releases/tag/v2.1.0' } } }; function Invoke-RestMethod { throw 'no network in the suite' }; \$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instPsNative}'))"
 			fAssertOut "[dafr9] iex form reaches the plan"          'gitsby installer'  fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 			fAssertOut "[dafra] and refuses without a tty"          'CAUGHT: Aborted'   fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
@@ -3631,11 +3640,9 @@ GHEOF
 			bash -c "grep -q 'byte\[\]' '${instPs}'"
 	fi
 
-	## The shipping installers, at the repo root. What they fetch is a per-platform binary, so
-	## everything below the argument parse - the release lookup, SHA256SUMS, the plan - needs the
-	## network. These checks stop short of it: parsing, the refusals, and the pins on the parts a
-	## live run would have to reach. The download-checksum-run contract itself is proved by
-	## release.bash phase 3, against a real published release.
+	## The published installers. Past the argument parse they need the network, so these stop
+	## short: parsing, refusals and pins. release.bash phase 3 proves the download against a real
+	## release.
 	local goInst="${root}/install.bash"
 	fAssert     "[dbfk5] go installer --help works"                   bash -c "bash '${goInst}' --help"
 	fAssertOut  "[dbfk6] and documents --target"                      '--target user[|]system'   bash -c "bash '${goInst}' --help"
@@ -3675,7 +3682,7 @@ GHEOF
 	printf '#!/usr/bin/env bash\necho MINGW64_NT-10.0-22631\n' > "${wg}/bin/uname"; chmod +x "${wg}/bin/uname"
 	fAssertOut  "[dbfkk] go installer sends Windows to install.ps1"    'use the PowerShell installer' \
 		bash -c "PATH='${wg}/bin:${PATH}' bash '${goInst}' -y"
-	## The release lookup, with the network stood in for. Under 'set -e' an assignment carries
+	## The release lookup, with the network stood in for. Under 'set -e' an assignment takes on
 	## its command's status, so both of these used to end the run silently at the lookup - no
 	## message, no fallback, and an exit code straight from curl or wget.
 	local lk="${work}/lookup"; mkdir -p "${lk}/bin"
@@ -3690,7 +3697,7 @@ GHEOF
 		bash -c "PATH='${lk}/bin:${PATH}' bash '${goInst}' -y"
 	## wget-only box: wget answers a declined redirect with exit 8 even though the header it was
 	## sent for is right there, so success looked like failure. curl has to be genuinely absent
-	## to reach that arm, hence a PATH of just the tools the installer gets that far on.
+	## to reach that arm, hence a PATH of only the tools the installer gets that far on.
 	local farm="${work}/nocurl"; mkdir -p "${farm}"
 	local farmTool="" farmPath=""
 	for farmTool in bash uname tr sed head cut cat mktemp rm paste sha256sum shasum openssl; do
@@ -3842,7 +3849,7 @@ GHEOF
 	fAssertOut "[dcntx] and names an upper-case platform it doesn't take"  'It publishes: plan9-mips' \
 		bash -c "env HOME='${eu}/h3' PATH='${ei}/bin:${PATH}' FAKE_SUMS='${eu}/other' FAKE_ASSET='${ei}/asset' bash '${goInst}' -y 2>&1"
 	## A head reading the hash lookup quit at the first line, and sed died writing the rest once
-	## there was more than a pipe holds.
+	## there was more than a pipe buffers.
 	awk '{ for (i = 0; i < 2000; i++) print }' "${ei}/SHA256SUMS" > "${eu}/repeated"
 	fAssertOut "[ddf3w] and reads a long SHA256SUMS to the end"  'gitsby v1\.2\.3 \(stand-in\)' \
 		bash -c "env HOME='${eu}/h7' PATH='${ei}/bin:${PATH}' FAKE_SUMS='${eu}/repeated' FAKE_ASSET='${ei}/asset' bash '${goInst}' -y 2>&1"
@@ -4011,7 +4018,7 @@ GHEOF
 		fAssertOut  "[dbfkv] -Ref still binds as -Tag"                  'not a path' \
 			pwsh -NoProfile -File "${goInstPs}" -Yes -Ref '../../evil/repo/main'
 		## Byte 0 must be the shebang: a BOM ahead of it means the kernel won't run the file
-		## directly either, and irm carries it into iex where it stops the first line being a comment.
+		## directly either, and irm passes it into iex where it stops the first line being a comment.
 		fAssert "[dbfkw] install.ps1 starts with a shebang, no BOM" \
 			bash -c "[[ \"\$(head -c2 '${goInstPs}')\" == '#!' ]]"
 		## GitHub serves SHA256SUMS as octet-stream and Invoke-WebRequest hands back bytes for
@@ -4059,7 +4066,7 @@ GHEOF
 		## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
 		## file - so -File coverage alone says nothing about them. Both must bind their
 		## parameters, refuse by throwing rather than exiting, and leave the calling session
-		## alive and unaltered. -Release dev is the refusal that lands before any network does.
+		## alive and unaltered. -Release dev is the refusal that comes before any network call.
 		if ((canNoTty)); then
 			local goInstPsNative=""; goInstPsNative="$( fWinPath "${goInstPs}" )"
 			## Decode the bytes ourselves rather than Get-Content, which quietly drops a BOM.
@@ -4113,7 +4120,7 @@ GHEOF
 			PSEOF
 			## On 5.1 the redirect was never read, and the list it fell back to came back as one
 			## item, which gave a tag made of every tag name. With no full release, 5.1's 404
-			## holds a WebHeaderCollection, where reading Location as a property is an error under
+			## has a WebHeaderCollection, where reading Location as a property is an error under
 			## strict mode, and that error ended the run inside the catch.
 			fAssertOut "[dcnsy] go ps installer reads the redirect on 5.1"  'gitsby v1\.2\.3 \(stand-in\)' \
 				fPsInstall "${psi}" "${psi}/h51" 51 "${goInstPs}" -Yes
@@ -4301,7 +4308,7 @@ GHEOF
 	fi
 
 	## PowerShell only. Set-Location moves PowerShell's own location, not the process cwd, so a
-	## script that starts git itself must pass the working directory or reads and writes land in
+	## script that starts git itself must pass the working directory or reads and writes end up in
 	## different repos. Every other check cds in bash before starting pwsh, which hides it.
 
 	## A pull whose autostash reapply conflicts still exits 0, so nothing downstream noticed and
@@ -4328,7 +4335,7 @@ GHEOF
 	fAssert "[dab71] br create with no remote"  bash -c "cd '${nr}' && '${gitsby}' -q br create nb && [[ \"\$(git branch --show-current)\" == nb ]]"
 	( cd "${nr}" && echo b > b.txt )
 	fAssert "[dab72] br land with no remote"   bash -c "cd '${nr}' && '${gitsby}' -q br land 'merge nb'"
-	fAssert "[dab73] landed on main"        bash -c "cd '${nr}' && [[ \"\$(git branch --show-current)\" == main ]] && [[ -f b.txt ]]"
+	fAssert "[dab73] merged into main"        bash -c "cd '${nr}' && [[ \"\$(git branch --show-current)\" == main ]] && [[ -f b.txt ]]"
 
 	## A default branch that is neither main nor master. Nothing may fall back to the literal
 	## 'main' here: that branch doesn't exist, so it would be checked out, protected and merged
@@ -4353,18 +4360,14 @@ GHEOF
 	fAssert     "[dafqw] and committed nothing"  bash -c "cd '${tu}' && [[ \"\$(git rev-list --count mainline)\" == 1 ]]"
 	## status is the command you run to find out what is wrong, so it must still work - and must
 	## not print a name it couldn't resolve.
-	fAssertOut  "[dafqx] status still runs and admits it doesn't know, and why"  'Default branch: \(unknown - no origin/HEAD, no main, master or trunk, and more than one local branch\)'  bash -c "cd '${tu}' && '${gitsby}' -q status"
+	fAssertOut  "[dafqx] status still runs and admits it doesn't know, and why"  'Default branch: \(unknown - no origin/HEAD, no main, master, or trunk, and more than one local branch\)'  bash -c "cd '${tu}' && '${gitsby}' -q status"
 	fAssert     "[damxt] br list still runs there too"  bash -c "cd '${tu}' && '${gitsby}' -q br list >/dev/null 2>&1"
 	fAssertOut  "[damxv] and lists the branches with the same admission"  'Default branch: \(unknown - no origin/HEAD'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
 	fAssertOut  "[damxw] including the ambiguous ones"  '(^|[ /])other'  bash -c "cd '${tu}' && '${gitsby}' -q br list"
 
-	## Folder accounts. Which GitHub account a command acts as is decided by where the repo lives,
-	## so the whole block turns on one config file and two directory trees. HOME is faked, and a
-	## stub gh holds a token for exactly one of the two accounts - no network, no real credentials.
-	## Note on what the checks below can and cannot prove: every "must NOT say X" check passes
-	## trivially against a build predating accounts, since that build says nothing at all. Same for
-	## a bare exit-code refusal - that build refuses the whole command as unknown. Those are kept as
-	## regression guards and each is paired with a check on the message, which is what discriminates.
+	## Folder accounts: one config file and 2 trees, a fake HOME, and a stub gh with a token for
+	## one account. A "must NOT say" check passes on a build with no accounts, so each is paired
+	## with a message check.
 	local ac="${work}/$1-acct"
 	mkdir -p "${ac}/home/${confRel}" "${ac}/bin" "${ac}/trees/work" "${ac}/trees/home"
 	fStub "${ac}/bin/gh" <<-'EOF'
@@ -4378,12 +4381,8 @@ GHEOF
 		esac
 		exit 1
 	EOF
-	## The rules go in written the way a user on this platform would write them. That matters on
-	## Windows: '/tmp' is an entry in THIS shell's mount table, so the Bash build resolves it and
-	## the PowerShell build - which has no such table - cannot, and never could. A rule spelled
-	## that way would match on one leg only, and the block would look like a port bug instead of
-	## a fixture that named a path half of it can't see. The drive forms a user would actually
-	## type ('C:/x', '/c/x') already resolve the same in both.
+	## The rules are written the way a user here would, since '/tmp' on Windows is this shell's
+	## mount and only the bash build could resolve it.
 	local acCanon="${ac}"
 	((isWindows)) && acCanon="$( cd "${ac}" && pwd -W )"
 	cat > "${ac}/home/${confRel}/config.shcl" <<-EOF
@@ -4403,14 +4402,9 @@ GHEOF
 		git init --quiet -b main "${acRepo}"
 		( cd "${acRepo}" && echo a > a.txt && git add --all && git commit --quiet -m init )
 	done
-	## Every check runs with the fake HOME and the stub gh in front. GIT_CONFIG_GLOBAL is pointed at
-	## a real file rather than /dev/null, because 'account apply' writes to exactly that.
-	## PATH is expanded HERE, not left for the inner shell: single quotes are what stop a path with
-	## a space in it from splitting when 'bash -c' re-parses the line, and they would equally stop
-	## a '${PATH}' left in place from ever expanding - which silently empties PATH and fails every
-	## check in this block for want of git.
-	## acNoDiscovery empties every config-file input the file scope pinned: this block is where
-	## discovery through HOME is the thing under test.
+	## Fake HOME and stub gh first, and GIT_CONFIG_GLOBAL a real file, since 'account apply'
+	## writes it. PATH is expanded here, since the quotes would stop it in 'bash -c'.
+	## acNoDiscovery, since discovery through HOME is under test.
 	local acEnv="${acNoDiscovery} HOME='${ac}/home' GIT_CONFIG_GLOBAL='${ac}/home/.gitconfig' PATH='${ac}/bin:${PATH}'"
 	## The two identity checks below need one more thing: this file exports GIT_AUTHOR_NAME/EMAIL
 	## for hermeticity, and 'git var GIT_AUTHOR_IDENT' - what the Author line reads - takes those
@@ -4428,11 +4422,8 @@ GHEOF
 	## physical lines and no plain grep can see it whole.
 	fAssertOut "[db009] and which rule chose it"                  'because its folder rule covers this directory' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status | sed 's/^ *: *//' | tr '\\n' ' ' | tr -s ' '"
-	## "(from config 'work')" named neither the file nor which config - and there are two in play,
-	## since 'gitsby.ghAccount' is a git config key and the account blocks are not. An account that
-	## applied cleanly says where to go and look, same as one that didn't.
-	## In full, never folded back to '~': the folder rules under it print in full, and one screen
-	## spelling home two ways reads as two places.
+	## The account's source names the file, in full and never as '~', since the folder rules under
+	## it print in full.
 	fAssertOut "[dbhcb] and names the file that rule is written in"  "File: ${ac//./\\.}/home/${confRe}/config\\.shcl" \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fAssertOut "[db00a] a sibling tree resolves to the other one" "Account \.+: homeacct"       bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
@@ -4499,12 +4490,8 @@ GHEOF
 		fAssertOut "[dbjjj] and with none set, ~/.config is still found"  'Account \.+: workacct' \
 			bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	fi
-	## APPDATA is Windows' own answer to this question and means nothing anywhere else, just as
-	## XDG_CONFIG_HOME means nothing on Windows. Each used to be tried on every platform, which put
-	## a variable a Wine or Samba setup can leave lying around on the list of places a Linux run
-	## reads credentials from, and let an MSYS shell answer for a Windows one. Asked with a home
-	## that holds no config, so the answer is APPDATA's file or nothing - with the usual one still
-	## in place both platforms would read that instead and the check could not tell them apart.
+	## APPDATA only on Windows, XDG_CONFIG_HOME only off it. Asked with a home that has no config,
+	## so the answer is APPDATA's file or nothing.
 	mkdir -p "${ac}/nohome"
 	: > "${ac}/nohome/.gitconfig"
 	local acAppdataEnv="${acNoDiscovery} HOME='${ac}/nohome' GIT_CONFIG_GLOBAL='${ac}/nohome/.gitconfig'"
@@ -4540,11 +4527,8 @@ GHEOF
 	## command whose job is to say who a push will go out as.
 	fAssertOut "[db5wf] a bare login still gets an identity line"  '^Account .*barelogin' \
 		bash -c "cd '${acAway}' && env ${acEnv} GITSBY_ACCOUNT=barelogin '${gitsby}' -q -NoFetch status"
-	## An account the file defines but that names no GitHub login of its own - a commit identity
-	## and an ssh key and nothing else, which is a whole way of holding a second one. A folder rule
-	## has always applied such an account; naming the same one through GITSBY_ACCOUNT read it as a
-	## bare login instead, so none of it applied and the ACCOUNT's own name was reported as the
-	## GitHub login the run acts as - asking for it by name got you less than not asking.
+	## An account the file defines with no GitHub login, only an identity and an ssh key. Through
+	## GITSBY_ACCOUNT it must apply as the folder rule does, not read as a bare login.
 	cat > "${ac}/keysonly.shcl" <<-EOF
 		account.keysonly.name  = Keys Only
 		account.keysonly.email = keys@example.com
@@ -4564,7 +4548,7 @@ GHEOF
 	fAssertOut "[dd5ea] a repo-local login keeps the identity of a folder account that names none"  'No Login <nologin@example\.com>' \
 		bash -c "cd '${acWork}' && env ${acEnvIdent} '${gitsby}' -q -NoFetch --config '${ac}/nologin.shcl' status"
 	( cd "${acWork}" && git config --unset gitsby.ghAccount )
-	## A byte-order mark is what a Windows editor writes by default. It lands on the first key in
+	## A byte-order mark is what a Windows editor writes by default. It ends up on the first key in
 	## the file, which then reads as one nothing understands - and the line reporting those printed
 	## the mark along with it, so the only diagnostic named a key that looks exactly right.
 	printf '\xef\xbb\xbf' > "${ac}/bom.shcl"
@@ -4583,11 +4567,11 @@ GHEOF
 		bash -c "cd '${acAway}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	( cd "${acAway}" && git remote remove origin )
 	## Which folder decides, for the one command whose folder is not the one you are standing in. A
-	## clone lands somewhere else, and it is the rules for THERE that pick the account; reading the
+	## clone goes somewhere else, and it is the rules for THERE that pick the account; reading the
 	## current directory's answered for whatever repo you happened to be sitting inside.
 	git init --quiet --bare -b main "${ac}/src.git"
 	( cd "${acWork}" && git push --quiet "${ac}/src.git" HEAD:refs/heads/main )
-	fAssertOut    "[dbfja] a clone takes the account of the folder it lands in"  "Account \.+: workacct" \
+	fAssertOut    "[dbfja] a clone takes the account of the folder it goes into"  "Account \.+: workacct" \
 		bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q repo clone '${ac}/src.git' '${ac}/trees/work/c1'"
 	fAssertNotOut "[dbfjb] and not the one it was launched from"  'homeacct' \
 		bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q repo clone '${ac}/src.git' '${ac}/trees/work/c2'"
@@ -4615,20 +4599,10 @@ GHEOF
 	## case simply missed, silently, and the run went out as gh's own identity.
 	fAssertOut "[db5y4] an account name matches whatever case you type"  'altacct' \
 		bash -c "cd '${acWork}' && env ${acEnv} GITSBY_ACCOUNT=ALT '${gitsby}' -q -NoFetch --config '${ac}/alt.shcl' status"
-	## A folder rule has to resolve to the same tree whichever build reads it, and whichever way the
-	## path was spelled. On Windows the PowerShell build resolved the drive letter only AFTER asking
-	## the filesystem - and .NET reads this shell's '/c/...' against the current drive, so nothing
-	## resolved, short names and junctions were left as written, and the same rule matched in one
-	## build and not the other. Silently: a rule that does not match reads exactly like no rule.
-	## Only spellings BOTH builds can express. The harness works under a temp directory, which this
-	## shell reaches through its own mount table as '/tmp/...' - a spelling with no meaning to the
-	## native build, and none it could be given without depending on Git Bash existing. That is a
-	## documented limit, not a defect, and 'account' marks such a rule rather than letting it look
-	## like no rule at all. cicd/parity.bash covers the drive-letter spellings across both builds.
-	## 'pathContains' names a run of folder names rather than a tree on this machine, so one config
-	## file can be synced between machines whose roots differ. Two fake "machines" here, same
-	## trailing structure under different roots, and one decoy: whole folder names only, so
-	## 'jim-collier' must never match a directory called 'jim-collier-old'.
+	## A folder rule has to resolve to the same tree in either build, however spelled, but only in
+	## spellings both can use; '/tmp/...' isn't one, and 'account' marks it. parity.bash covers
+	## drive letters. 'pathContains' is a run of whole folder names, so 'jim-collier' never
+	## matches 'jim-collier-old'.
 	local acRoot=""
 	for acRoot in mA mB; do
 		mkdir -p "${ac}/${acRoot}/github.com/alice/proj"
@@ -4690,7 +4664,7 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/spell.shcl' status"
 	## The identity block used to name the account it RESOLVED, whether or not anything could act as
 	## it. With no token found, gh goes on using its own account - so the one command whose job is
-	## answering "who does this go out as" gave the wrong name. The stub gh holds no token for this
+	## answering "who does this go out as" gave the wrong name. The stub gh has no token for this
 	## one, so it is the not-applied case.
 	cat > "${ac}/notoken.shcl" <<-EOF
 		account.nt.path      = ${acCanon}/trees/work
@@ -4710,7 +4684,7 @@ GHEOF
 	fAssertFail "[db5y5] --config naming a directory is refused"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}' status"
 	fAssertOut  "[db5y6] and says it isn't a file"  "isn't a file"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}' status 2>&1"
 	## 'account apply' writes one fragment per account into a directory beside the config file.
-	## Blocked, that surfaced as a raw shell or .NET error - a different one in each build - part
+	## Blocked, that showed up as a raw shell or .NET error - a different one in each build - part
 	## way through the run, which reads as a crash rather than as something to act on.
 	mkdir -p "${ac}/blocked"
 	cat > "${ac}/blocked/config.shcl" <<-EOF
@@ -4718,13 +4692,9 @@ GHEOF
 		account.b.ghAccount = bacct
 	EOF
 	: > "${ac}/blocked/accounts"
-	## git applies includes in file order and the LAST match wins; gitsby takes the LONGEST matching
-	## folder. Written in declaration order, a tree nested inside another account's tree got
-	## whichever account was declared later - so plain git and gitsby disagreed about one directory,
-	## which is the whole thing 'apply' exists to prevent. 'outer' is declared second on purpose.
-	## A real repo, not just a directory: 'includeIf.gitdir' matches on where the .git is, so in a
-	## plain folder no include fires at all and 'git config user.email' answers nothing - which
-	## would fail this check for a reason that has nothing to do with rule ordering.
+	## git takes the last include that matches and gitsby the longest folder, so 'outer' is
+	## declared second on purpose. A real repo, since 'includeIf.gitdir' matches on where the .git
+	## is.
 	mkdir -p "${ac}/nesthome"
 	git init --quiet -b main "${ac}/trees/work/nested"
 	cat > "${ac}/nested.shcl" <<-EOF
@@ -4783,11 +4753,8 @@ GHEOF
 		bash -c "env ${acVarEnv} git config --global --get-regexp '^includeif\.'"
 	fAssertOut "[dcq9w] and gives the ssh command a key its shell expands"  '^ssh -i ~/\.ssh/id_var -o IdentitiesOnly=yes$' \
 		bash -c "cd '${ac}/varhome/trees/varproj' && env ${acVarEnv} git config core.sshCommand"
-	## A trailing '# ...' is a comment, not part of the value - the documented example config writes
-	## them. Folded in, a path became a rule that could never match any directory, and a rule that
-	## never matches reads exactly like no rule at all: the command went out as gh's own account.
-	## Ahead of 'account apply' on purpose - that writes gitsby.ghAccount into the repo, which
-	## outranks any folder rule, so after it this check can no longer see what it is asking about.
+	## A trailing '# ...' is a comment, not part of the value. Ahead of 'account apply', since
+	## that writes gitsby.ghAccount into the repo, which outranks any folder rule.
 	cat > "${ac}/trailing.shcl" <<-EOF
 		account.cmt.path      = ${acCanon}/trees/work   # the tree this one owns
 		account.cmt.ghAccount = cmtacct                 # who to act as
@@ -4838,7 +4805,7 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/backslash.shcl' status"
 	## A key indented under another key is that key's child, and nothing reads a key from there. It
 	## is listed by the path that reaches it, and the key above it still applies. A stacked list
-	## holds its items as the key's value, so it lists nothing.
+	## has its items as the key's value, so it lists nothing.
 	cat > "${ac}/nested.shcl" <<-EOF
 		protocol: https
 		    sshkey: ~/.ssh/id_proto
@@ -4868,11 +4835,15 @@ GHEOF
 	cp "${ac}/hier.shcl" "${ac}/hier-set.shcl"
 	fAssertOut "[dbsrh] 'account set' names the block and the key it adds"  'add: +account\[hw\]\.host: gitea\.example' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw host gitea.example 2>&1"
-	fAssertOut "[dbsrj] and the block now holds it"  '^ +host: gitea\.example$'  cat "${ac}/hier-set.shcl"
+	fAssertOut "[dbsrj] and the block now has it"  '^ +host: gitea\.example$'  cat "${ac}/hier-set.shcl"
 	fAssertOut "[dbsrk] with the comment above it kept"  '^# blocks$'  cat "${ac}/hier-set.shcl"
 	fAssertOut "[dbsrm] and an existing key is shown before and after"  'was: +ghaccount: hieracct' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw ghaccount other 2>&1"
-	## A file created from nothing carries a header naming the keys and a footer naming the format,
+	fAssertOut "[df36v] and says it wrote the file with no path in the status line"  '^\[ Wrote the accounts file\. \]$' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw ghaccount other2 2>&1"
+	fAssertOut "[df36w] and names it on a File line"  "^  File: ${ac//./\\.}/hier-set\\.shcl$" \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw ghaccount other3 2>&1"
+	## A file created from nothing has a header naming the keys and a footer naming the format,
 	## and is readable by nobody else: it names accounts and points at token files.
 	local acNew="${ac}/newhome"; mkdir -p "${acNew}"
 	fAssertOut "[dbsrn] 'account set' creates the file where the next run looks"  "create ${acNew//./\\.}/${confRe}/config\\.shcl" \
@@ -5036,7 +5007,7 @@ GHEOF
 	printf 'account: esc\n\tpath: %s/trees/work\n\tname: "n◉NEWLINE◉email ..: evil@x◉ESC◉[31m"\n\temail: e@example.com\n' "${acCanon}" > "${ac}/esc.shcl"
 	fAssertOut "[ddjz4] account list shows a control character in a value escaped, on one line"  'commits \.+: n◉NEWLINE◉email \.\.: evil@x◉ESC◉\[31m <e@example\.com>$' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/esc.shcl' account list"
-	fAssertNotOut "[ddjz5] and no line of it starts a field of its own, or holds a raw ESC"  $'^email \\.\\.|\x1b' \
+	fAssertNotOut "[ddjz5] and no line of it starts a field of its own, or has a raw ESC"  $'^email \\.\\.|\x1b' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/esc.shcl' account list"
 	## git drops the newline from an ident itself, so the Author line has only the ESC to show.
 	fAssertOut "[ddjz6] whoami's Author line shows the ESC escaped too"  '^Author \.+: [^ ]*email \.\.: evil@x◉ESC◉\[31m <e@example\.com>$' \
@@ -5045,7 +5016,7 @@ GHEOF
 	( cd "${acWork}" && env HOME="${ac}/home" GIT_CONFIG_GLOBAL="${ac}/home/.gitconfig" git config --global includeIf.gitdir:/hand/written/.path /keep/me.gitconfig )
 	fAssert "[db00v] account apply runs"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null"
 	fAssert "[db00w] and plain git now uses the account's identity"  bash -c "cd '${acWork}' && env ${acEnv} git config user.email | grep -qx work@example.com"
-	## Without a username a credential manager answers with any entry it holds for the host.
+	## Without a username a credential manager answers with any entry it has for the host.
 	fAssert "[dd5ee] and asks for the account's login over https"  bash -c "cd '${acWork}' && env ${acEnv} git config credential.https://github.com.username | grep -qx workacct"
 	fAssert "[db00x] and the sibling tree gets the other one"        bash -c "cd '${acHome}' && env ${acEnv} git config gitsby.ghAccount | grep -qx homeacct"
 	## The key reaches that repo only through the fragment the global config includes, so that is
@@ -5060,16 +5031,18 @@ GHEOF
 	fAssert "[df05w] dropping an account drops its rule"  bash -c "cd '${acWork}' && sed -i.bak '/^account: home$/,/^$/d' '${ac}/home/${confRel}/config.shcl' && rm -f '${ac}/home/${confRel}/config.shcl.bak' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 1 ]]"
 	## Fragments are named by host and login, so a renamed account leaves its old file behind. It is
 	## named, not deleted, since nothing proves gitsby wrote it.
-	fAssertOut "[ddate] and names the fragment no rule uses any more"  'Not used any more, safe to remove: .*/accounts/github\.com_homeacct\.gitconfig' \
+	fAssertOut "[ddate] and names the fragment no rule uses any more"  '^  File: .*/accounts/github\.com_homeacct\.gitconfig$' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply 2>&1"
+	## Each path goes on a File line under its status, never inside the sentence.
+	fAssertOut "[df36s] and its status line has no path"  '^\[ Not used any more, safe to remove\. \]$' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply 2>&1"
+	fAssertOut "[df36t] and so does the line for each fragment it wrote"  '^\[ Wrote an account fragment\. \]$' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply 2>&1"
 	fAssert "[ddatf] and leaves it there"  bash -c "[[ -f '${ac}/home/${confRel}/accounts/github.com_homeacct.gitconfig' ]]"
 
-	## The helper git is handed has to carry the token even when gh is ALREADY that account. The
-	## export used to sit inside the "this replaces a different account" branch while the helper
-	## install sat outside it, so git got an empty password - and the reset ahead of the helper had
-	## already evicted whatever credential manager would otherwise have answered. Every https push
-	## by a single-account user went out that way, which is the case needing no configuration.
-	fAssertOut "[db5wk] the credential helper carries a token when gh is already that account"  'password=gho_faketoken' \
+	## The helper has to have the token even when gh is already that account, the case needing no
+	## config.
+	fAssertOut "[db5wk] the credential helper has a token when gh is already that account"  'password=gho_faketoken' \
 		bash -c "cd '${acWork}' && printf 'protocol=https\nhost=github.com\n\n' | env FAKE_GH_ACTIVE=workacct ${acEnv} '${gitsby}' -q raw git credential fill"
 
 	## A folder path with a space in it. The managed-includes scan split each config line at the
@@ -5118,7 +5091,7 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acHostEnv} git config credential.https://gitea.example.com.helper"
 	## Plain git over https after 'account apply'. gh's own helper only answers for its active
 	## account, so a bare push in another account's folder had nothing to push with. The fake gh is
-	## active as otheracct and holds a token for workacct only.
+	## active as otheracct and has a token for workacct only.
 	mkdir -p "${ac}/credhome"
 	: > "${ac}/credhome/.gitconfig"
 	git init --quiet "${ac}/trees/work/credproj"
@@ -5134,10 +5107,10 @@ GHEOF
 	fAssertOut "[df1s0] after apply, plain git gets the folder account's token from gh"  '^password=gho_faketoken$' \
 		bash -c "cd '${acWork}' && env ${acCredEnv} '${gitsby}' -q -NoFetch --config '${ac}/cred.shcl' account apply >/dev/null && ${acFillGh}"
 	fAssertOut "[df1s1] as that account"  '^username=workacct$'  bash -c "cd '${acWork}' && ${acFillGh}"
-	fAssertOut "[df1s2] and from its token file where gh holds none for it"  '^password=tok_home_file$'  bash -c "cd '${acHome}' && ${acFillGh}"
+	fAssertOut "[df1s2] and from its token file where gh has none for it"  '^password=tok_home_file$'  bash -c "cd '${acHome}' && ${acFillGh}"
 	: > "${ac}/credhome/gh.log"
 	fAssertOut "[df1s3] on another host, the token file"  '^password=tok_gitea_file$'  bash -c "cd '${ac}/trees/away/credproj' && ${acFillGt}"
-	fAssertFail "[df1s4] and gh is not asked, though it holds that account's ghAccount"  grep -q 'auth token' "${ac}/credhome/gh.log"
+	fAssertFail "[df1s4] and gh is not asked, though it has that account's ghAccount"  grep -q 'auth token' "${ac}/credhome/gh.log"
 	fAssertOut "[df1s5] with a stand-in username where the account names none"  '^username=x$'  bash -c "cd '${ac}/trees/away/credproj' && ${acFillGt}"
 	## A credential manager the global config already lists answers ahead of ours.
 	{ printf '[credential]\n\thelper = "!f(){ echo password=mgrtok; }; f"\n'; cat "${ac}/credhome/.gitconfig"; } > "${ac}/credhome/mgr.gitconfig"
@@ -5161,11 +5134,9 @@ GHEOF
 	fAssert "[dd80k] and account apply gives plain git the same rule" \
 		bash -c "cd '${acAway}' && env ${acRootEnv} '${gitsby}' -q -NoFetch --config '${ac}/root.shcl' account apply >/dev/null && env ${acRootEnv} git config gitsby.ghAccount | grep -qx rootacct"
 
-	## A folder rule typed relative. 'path: .' went out as 'gitdir/i:./', which git measures from
-	## the folder holding the global git config, so every repo under home took the account while
-	## gitsby matched it nowhere. That base is GIT_CONFIG_GLOBAL's folder, so the repo that would
-	## show the leak sits under it and the bound one outside it. The hand-written files use printf:
-	## the block layout needs its tabs, and a <<- heredoc strips them.
+	## A folder rule typed relative: git measures 'gitdir/i:./' from GIT_CONFIG_GLOBAL's folder,
+	## so the leak shows in a repo under it. printf, since the blocks need tabs and <<- strips
+	## them.
 	local acRel="${ac}/rel"
 	mkdir -p "${acRel}/home/other" "${acRel}/trees/work/proj" "${acRel}/cfg"
 	git init --quiet -b main "${acRel}/home/other"
@@ -5294,7 +5265,7 @@ GHEOF
 		account.bk.ghAccount = bkacct
 		account.bk.sshKey    = /keys/k; touch ${ac}/pwned
 	EOF
-	fAssertOut    "[dbfh6] an sshKey carrying shell characters is refused"  'Ignored keys \.+:.*sshkey' \
+	fAssertOut    "[dbfh6] an sshKey with shell characters is refused"  'Ignored keys \.+:.*sshkey' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/badkey.shcl' account"
 	fAssertNotOut "[dbfh7] and never becomes this folder's key"  '/keys/k' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/badkey.shcl' account"
@@ -5330,7 +5301,7 @@ GHEOF
 	fAssertFail "[db017] a transport that isn't one is refused"  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url ftp"
 	## Each build names itself in its own syntax lines, so the pattern has to allow both spellings.
 	fAssertOut  "[db32j] and names the two that are"  'Syntax: gitsby(\.ps1)? repo url'  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url ftp 2>&1"
-	## Whoever reads a Syntax: line just typed the command wrong, so each placeholder is defined under it.
+	## Whoever reads a Syntax: line typed the command wrong, so each placeholder is defined under it.
 	fAssertOut  "[dcq73] and says what leaving it off does"  '^  \[https[|]ssh\]  +Switches origin .* Without it'  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo url ftp 2>&1"
 	fAssertOut  "[dcq74] repo clone with no URL defines both of its placeholders"  '^  \[directory\]  +The folder'  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch repo clone 2>&1"
 	fAssertOut  "[dcq75] br hotfix with no name says what the name becomes"  '^ +created as hotfix/<name>'  bash -c "cd '${ru}' && '${gitsby}' -q -NoFetch br hotfix 2>&1"
@@ -5341,6 +5312,8 @@ GHEOF
 	fAssertOut  "[db018] a non-github origin has no other spelling"  'no other spelling'  bash -c "cd '${acAway}' && '${gitsby}' -q -NoFetch repo url"
 	fAssertFail "[db01m] and converting it is refused"                                    bash -c "cd '${acAway}' && '${gitsby}' -q -NoFetch repo url https"
 	fAssertOut  "[db32k] for that reason and not another"  'no other spelling'            bash -c "cd '${acAway}' && '${gitsby}' -q -NoFetch repo url https 2>&1"
+	fAssertOut  "[df364] and names the origin folder on its own line"  "^  File: ${ru//./\\.}-local\\.git$" \
+		bash -c "cd '${acAway}' && '${gitsby}' -q -NoFetch repo url https 2>&1"
 
 	## The nudge to convert. It exists to be seen exactly once per situation that warrants it, so
 	## what matters as much as showing it is the two cases where it must stay quiet. Needs a
@@ -5355,7 +5328,7 @@ GHEOF
 	git init --quiet -b main "${acSsh}"
 	( cd "${acSsh}" && echo a > a.txt && git add --all && git commit --quiet -m init \
 		&& git remote add origin git@github.com:workacct/thing.git )
-	fAssertOut "[db01n] an ssh remote whose account holds a token is offered the conversion"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	fAssertOut "[db01n] an ssh remote whose account has a token is offered the conversion"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
 	## Was written as a check, but it only ran git - it could not fail and said nothing about gitsby.
 	( cd "${acSsh}" && git remote set-url origin https://github.com/workacct/thing.git )
 	fAssertNotOut "[db01p] converting it silences the offer"  "repo url https' switches it"  bash -c "cd '${acSsh}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
@@ -5394,12 +5367,9 @@ GHEOF
 		bash -c "cd '${rh}' && env ${acEnv} '${goBin}' raw git -c user.name=t -c user.email=t@example.com commit -q -m one"
 	fAssert    "[de8ph] and its raw gets git's answer and nothing else"  bash -c "[[ \"\$(cat '${rh}.out')\" == main ]]"
 	fAssertOut "[de8pj] an alias that runs raw git under raw git works too"  '^main$'  bash -c "cd '${rh}' && env ${acEnv} '${goBin}' raw git nest"
-	## A tool on PATH that leads back to gitsby looped forever: a link to the binary, or a wrapper
-	## that runs 'raw <tool>' again. The wrapper then got refused; now it reaches the tool after it
-	## on PATH. Each wrapper counts its starts and quits past 8, so a loop that comes back stays
-	## small. A gh call of gitsby's own takes 3 behind it, and 'pr' and 'whoami' make 2. With only
-	## the link on PATH the shim can't find bash, so those run the build directly. No links on
-	## Windows, so it sits that one out.
+	## A tool on PATH that leads back to gitsby, by link or by a 'raw <tool>' wrapper, must reach
+	## the next one, not loop. Each wrapper quits past 8 starts. With only the link on PATH the
+	## build runs directly. No links on Windows.
 	if (( ! isWindows )); then
 		local rl="${ac}/rawloop" rlTool=""
 		# shellcheck disable=SC2016  ## the wrapper expands these, not us
@@ -5483,29 +5453,21 @@ GHEOF
 	## An option that really is unknown must still be refused - and by its own name.
 	fAssertOut "[db5yc] an unknown option before raw names itself"  'bogus' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q --bogus raw git status 2>&1"
-	## '--' is git's pathspec separator, so 'raw git log -- path' has to work. Bash takes it
-	## directly; PowerShell's binder reads a bare '--' as an empty parameter name and dies before
-	## the script runs at all, so there it is spelled '`--' and unescaped on the way to git.
-	## Asserted against a path that does NOT exist: a separator that was dropped would still list
-	## the commit, so only the empty result proves git actually received one.
+	## '--' is git's pathspec separator. PowerShell's binder dies on a bare '--', so there it's
+	## '`--'. A path that doesn't exist, so only an empty result proves git got it.
 	local sep="--"
 	fAssertOut    "[db5yd] raw passes a pathspec separator through"  '^init$' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s '${sep}' a.txt 2>/dev/null"
 	fAssertNotOut "[db5ye] and it really separates - an absent path lists nothing"  'init' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw git log --format=%s '${sep}' nosuchfile.txt 2>/dev/null"
 
-	## How release.bash reads the changelog, which nothing else here reaches. changelog.md opens
-	## with a commented-out template whose headings are shaped exactly like real ones, and a
-	## first-match search has landed on that decoy three times now. The last one would have
-	## retitled the template, left the real section saying vNEXT, published the empty template as
-	## the release body, and warned about none of it. Two independent guards, either enough on its
-	## own. Pinned in the source because exercising it for real means cutting a release; bash leg
-	## only, since neither file belongs to an implementation.
+	## How release.bash reads the changelog, past its commented-out template. Pinned in the
+	## source, since running it means cutting a release.
 	local relBash="${root}/cicd/release.bash" clMd="${root}/changelog.md"
 	fAssertFail "[db6y4] the changelog's template heading can't pass for a real one" \
 		grep -qE '^## vNEXT - DATE' "${clMd}"
 	## A release commit has the dated heading there instead, and the gate runs on that commit too.
-	fAssert "[db6y5] and the real vNEXT section, or the release just cut, is the first heading below the template" \
+	fAssert "[db6y5] and the real vNEXT section, or the newly cut release, is the first heading below the template" \
 		awk '/^-->/{p=1; next} p && /^## /{n = /^## (vNEXT|v[0-9]+\.[0-9]+\.[0-9]+[-.0-9A-Za-z]* - [0-9]{4}-[0-9]{2}-[0-9]{2})$/; exit} END{exit !n}' "${clMd}"
 	fAssert "[db6y6] release.bash reads the changelog from past the template" \
 		grep -q 'fpChangelogStart' "${relBash}"
@@ -5585,7 +5547,7 @@ GHEOF
 		fAssert "[dd5er] and HEAD, the tags and origin are as they were"  test "${relState}" = "$(fRelState)"
 		fRelRun --dry-run v1.3.0-beta.1
 		fAssert "[dd5es] a suffixed version says it publishes as a pre-release" \
-			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'v1.3.0-beta.1 carries a semver suffix, so it publishes as a pre-release.' '${relOut}' && grep -qF 'would: gh release create v1.3.0-beta.1 as a pre-release with ' '${relOut}'"
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'v1.3.0-beta.1 has a semver suffix, so it publishes as a pre-release.' '${relOut}' && grep -qF 'would: gh release create v1.3.0-beta.1 as a pre-release with ' '${relOut}'"
 		## v3.0.0-beta.1 stopped at the gated push to main, with the bump already merged. --publish
 		## picks up from a tag pushed by hand.
 		fRelRun --dry-run --publish v1.2.3
@@ -5651,7 +5613,7 @@ GHEOF
 		git -C "${relRepo}" checkout -q -- .
 		## Phase 3, which no dry run reaches. releases/latest can't be reached, and the build's own
 		## --version exits 3, and either one ended the run with nothing said. The published binary
-		## prints its version and then more than a pipe holds, which a grep -q reading it would
+		## prints its version and then more than a pipe buffers, which a grep -q reading it would
 		## cut off, failing the proof under pipefail.
 		echo 'https://github.com/yottacore/gitsby/pull/7' > "${rel}/pr-url"
 		mkdir -p "${rel}/served"
@@ -5853,16 +5815,12 @@ GHEOF
 	fAssert "[dd815] release.bash builds the published bytes from an export of the tag" \
 		bash -c 'grep -qF -- "$1" "$3" && grep -qF -- "$2" "$3"' _ "${relPinExport}" "${relPinBuild}" "${root}/cicd/release.bash"
 
-	## Recursive removal. demo-repo.bash is the only script here that removes a path someone else
-	## named, so it gets real checks; the rest only ever remove what mktemp just handed them, and
-	## that is pinned in the source. None of these files belong to an implementation, which is why
-	## they outlived the leg they used to ride. A Ctrl-C mid-probe can't be staged on every platform
-	## (a native child defers the signal), so the probe's own cleanup is asserted where it lives.
-	## The single quotes in the searches below are the point - they look for literal source text,
-	## so each one turns off the expansion warning for itself.
+	## Recursive removal. demo-repo.bash removes a path someone else named, so it gets real
+	## checks; the rest remove only what mktemp gave, pinned in the source. The single quotes look
+	## for literal source text.
 	local demoRepo="${root}/cicd/utility/demo/demo-repo.bash" rmWork="${work}/rmsafe"
 	mkdir -p "${rmWork}/notmine/keep"; echo keepme > "${rmWork}/notmine/keep/file.txt"
-	## On the message, not just the exit code: a build that refuses for some unrelated reason
+	## On the message, not only the exit code: a build that refuses for some unrelated reason
 	## later on exits nonzero too, and two of these passed against the unguarded script on
 	## that alone.
 	fAssertFail "[db70t] demo-repo refuses a root it did not build" \
@@ -5979,6 +5937,10 @@ GHEOF
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[df034] the pipeline scripts' errors go through fDie or fUsage, never a bare echo to stderr" \
 		bash -c 'cd "$1" && [[ -z "$(grep -nE "echo .*>&2" "${@:2}")" ]]' _ "${root}" "${helperScripts[@]}"
+	## Run on its own, config.bash says so on stderr, with nothing on stdout.
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[df33s] config.bash run directly prints its error to stderr only, and exits 1" \
+		bash -c 'rc=0; out="$(bash "$1" 2>"$2")" || rc=$?; [[ "${rc}" == 1 && -z "${out}" ]] && grep -q "meant to be sourced" "$2"' _ "${root}/cicd/config.bash" "${work}/config-direct.err"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[df035] every pipeline script and installer has its license line" \
 		bash -c 'cd "$1" && [[ -z "$(grep -L "SPDX-License-Identifier" install.bash install.ps1 $(find cicd -type f \( -name "*.bash" -o -name "*.sh" -o -name "*.ps1" -o -name "*.py" \)))" ]]' _ "${root}"
@@ -5996,13 +5958,13 @@ GHEOF
 	## to exercise, it pins the thing in the source and says so.
 
 	## Version-control stamps go into a Go binary by default, and the release builds its assets
-	## before it cuts the tag - so the published binaries carried the previous revision and
+	## before it cuts the tag - so the published binaries had the previous revision and
 	## nobody, us included, could rebuild them to the checksums we publish.
 	fAssert "[dbft0] the build flags keep version control out of the binary" \
 		bash -c "grep -q 'buildvcs=false' '${root}/cicd/config.bash'"
 	## Built here rather than read off the suite's own binary: that one may have come from a
-	## hand-run 'go build', which legitimately carries the stamps.
-	fAssert "[dbft1] and a build with them carries no revision stamp" \
+	## hand-run 'go build', which legitimately has the stamps.
+	fAssert "[dbft1] and a build with them has no revision stamp" \
 		bash -c "cd '${root}/src-go' && go build -trimpath -buildvcs=false -o '${work}/vcsprobe' . && ! go version -m '${work}/vcsprobe' | grep -q 'vcs\.revision'"
 	## Size and start time come first for the binary. One crypto import pulls in Go's FIPS module,
 	## whose random generator alone is 32 MiB of BSS, and the data today is about 250 KB. nm counts
@@ -6015,7 +5977,7 @@ GHEOF
 	fAssert "[df04r] nothing in the build imports encoding/json" \
 		bash -c "cd '${root}/src-go' && ! grep -qx 'encoding/json' <<< \"\$(go list -deps .)\""
 	## The build number is minutes since 2000, Crockford base32, lower case. Built here with a
-	## fixed stamp: the suite's own binary carries whatever the last build gave it.
+	## fixed stamp: the suite's own binary has whatever the last build gave it.
 	fAssertOut "[dbshs] a stamped build reports minutes since 2000 in Crockford base32"  '^gitsby v9\.9\.9 build dbd05$' \
 		bash -c "cd '${root}/src-go' && go build -ldflags '-X main.version=9.9.9 -X main.buildEpoch=1787000000' -o '${work}/bnprobe' . && '${work}/bnprobe' --version"
 	## A number invented from the clock would say the opposite of what a build number means, so
@@ -6044,7 +6006,7 @@ GHEOF
 	## would belong to a commit the tag does not point at.
 	fAssert "[dbshx] the release rebuilds its assets from the tagged commit" \
 		bash -c "[[ \"\$(grep -c 'fpCrossBuild ' '${root}/cicd/release.bash')\" == 2 ]]"
-	fAssert "[dbshy] and the release notes carry the build number" \
+	fAssert "[dbshy] and the release notes have the build number" \
 		bash -c "grep -q 'buildLine' '${root}/cicd/release.bash'"
 	fAssert "[dbft2] every build site shares one set of flags" \
 		bash -c "[[ \"\$(grep -c 'GO_BUILD_FLAGS\[@\]' '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | awk -F: '{t+=\$2} END{print t}')\" == 4 ]]"
@@ -6218,11 +6180,9 @@ GHEOF
 	## and the sponsor links, each one reads what it shows from the repo, the Go version included.
 	fAssert "[dd812] the README's badges read what they show from the repo" \
 		bash -c "grep -q 'shields\.io/github/go-mod/go-version/yottacore/gitsby?filename=src-go%2Fgo\.mod' '${root}/README.md' && ! grep 'img\.shields\.io/badge/' '${root}/README.md' | grep -vE 'badge/(License|Sponsor|Ko--fi)-'"
-	## The step itself, against a build that starts three processes per command and a baseline
-	## that says none, so every command reads as a rise. Needs strace, like the step. The stub
-	## names its shell by path: env would try each PATH entry in turn, and every try is counted,
-	## so its count would follow PATH and could pass the lowest limit.
-	## Without strace, a SKIP under its ID for each command, and nothing else.
+	## The step, against a build that starts 3 processes per command and a baseline of none. Needs
+	## strace. The stub names its shell by path, since env's PATH walk would count. No strace: a
+	## SKIP per command.
 	mkdir -p "${work}/scn/cicd/utility/include"
 	cp "${root}/cicd/config.bash" "${work}/scn/cicd/"
 	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/safe-rm.bash" "${work}/scn/cicd/utility/include/"
@@ -6261,6 +6221,14 @@ GHEOF
 		chmod +x "${sc}/cicd/utility/spawn-count-near.bash"
 		fAssert "[ddf82] and passes a count one over its expected one" \
 			bash -c "out=\$('${sc}/cicd/utility/spawn-count-near.bash' 2>&1) && grep -qE '^  PASS dbftf status: 4\$' <<< \"\$out\""
+		## A record from the image an hour ago, in UTC. A run on a box west of UTC is newer, so it's
+		## the one left as latest, not named hours before the image's.
+		cp -R "${sc}" "${work}/sctz"
+		find "${work}/sctz/cicd/artifacts/spawn" -mindepth 1 -delete
+		local tzImage; tzImage="$(date -u -d '-1 hour' +%Y%m%d-%H%M%S)"
+		sed -n 's/^fMeasure "\[[^]]*\] \([^"]*\)".*/\1\t0/p' "${root}/cicd/utility/spawn-count.bash" > "${work}/sctz/cicd/artifacts/spawn/spawn_${tzImage}.tsv"
+		fAssert "[df385] and names its record in UTC, so a run west of UTC is newer than the image's before it" \
+			bash -c "TZ='<-08>8' '${work}/sctz/cicd/utility/spawn-count.bash' -q --record && last=\$(ls '${work}/sctz/cicd/artifacts/spawn' | tail -n 1) && [[ \"\${last}\" == spawn_*_latest.tsv && \"\${last}\" > 'spawn_${tzImage}' && \$(ls '${work}/sctz/cicd/artifacts/spawn' | wc -l | tr -d ' ') == 2 ]]"
 		## The baseline's counts go into arithmetic, as the report's do.
 		# shellcheck disable=SC2016  ## As above, for the script to refuse.
 		printf 'status\tBASH_VERSINFO[$(touch %s/ran)0]\n' "${sc}" > "${sc}/cicd/artifacts/spawn/spawn_20991231-000000.tsv"
@@ -6376,8 +6344,8 @@ GHEOF
 	echo 'aaaab went with the command it tested.' >> "${bi}/project/backlog.md"
 	fAssertOut "[dd5kx] and passes once the backlog names it by ID"  '\(1 removed since dev\)' \
 		"${bi}/cicd/utility/backlog-check.bash"
-	## Every check and Go test carries an ID, dated from when it was written, and no two share one.
-	fAssert "[dd5kr] every suite check and Go test carries its own ID"  "${root}/cicd/utility/test-id.bash" --check -q
+	## Every check and Go test has an ID, dated from when it was written, and no two share one.
+	fAssert "[dd5kr] every suite check and Go test has its own ID"  "${root}/cicd/utility/test-id.bash" --check -q
 	local ti="${work}/test-id" ok=fOk no=fFail
 	mkdir -p "${ti}/cicd" "${ti}/src-go"
 	printf '%s "[aaaaa] has one" true\n%s "no id" true\n%s "[aaaaa] the same one again" true\n' "${chk}" "${chk}" "${chk}" > "${ti}/cicd/test.bash"
@@ -6510,7 +6478,7 @@ GHEOF
 	fAssert "[dcnwb] the Windows resource takes its copyright years from the program" \
 		bash -c "grep -q 'copyrightYear' '${root}/cicd/utility/gen-winres.bash' && ! grep -qE 'LegalCopyright.*© [0-9]' '${root}/cicd/utility/gen-winres.bash'"
 	## Explorer shows it on the Properties tab, so the identity marker stays out of it.
-	fAssertFail "[dd5fd] and carries no identity marker" \
+	fAssertFail "[dd5fd] and has no identity marker" \
 		grep -qE 'LegalCopyright.*ID:' "${root}/cicd/utility/gen-winres.bash"
 	## The demo scenario is what the gif is rendered from, so a command renamed in the product
 	## and not there means the next render publishes the old name.
@@ -6602,16 +6570,13 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 	for winExe in amd64 arm64; do
 		fAssert "[dbftt] windows/${winExe} builds with the resource beside it" \
 			bash -c "cd '${root}/src-go' && CGO_ENABLED=0 GOOS=windows GOARCH=${winExe} go build -trimpath -buildvcs=false -o '${work}/winres-${winExe}.exe' ."
-		fAssert "[dbftv] and the .exe carries version details" \
+		fAssert "[dbftv] and the .exe has version details" \
 			fBinHas "${work}/winres-${winExe}.exe" 'VS_VERSION_INFO'
 		fAssert "[dbftw] and an icon" \
 			bash -c "LC_ALL=C grep -aq \$'\x89PNG' '${work}/winres-${winExe}.exe'"
 	done
-	## The terminal test is per-platform, and the fallback that answered for everything but Linux
-	## and Windows was a character-device test - which passes for /dev/null, the one case the
-	## no-terminal rule exists for. macOS and FreeBSD are published targets, so they get the real
-	## query. Built rather than pinned: a build constraint that excludes the wrong set compiles
-	## two isTTY into one package, or none.
+	## The terminal test is per platform; a character-device test passes for /dev/null. Built
+	## rather than pinned, since a wrong build constraint compiles 2 isTTY or none.
 	local bsdTarget=""
 	for bsdTarget in darwin/arm64 darwin/amd64 freebsd/amd64; do
 		fAssert "[dbfvw] ${bsdTarget} builds with its own terminal test" \
@@ -6628,7 +6593,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 
 	## vcsprobe above is this same tree built for the host. A resource named without the
 	## GOOS_GOARCH suffix would link into every platform, which is a bigger mistake than
-	## shipping none at all.
+	## linking none at all.
 	fAssert "[dbftx] nothing but windows picks the resource up" \
 		fBinLacks "${work}/vcsprobe" 'VS_VERSION_INFO'
 	fAssertFail "[ddg8y] a file that can't be read is not one without the string" \
@@ -6641,7 +6606,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 			bash -c "[[ -s '${root}/src-go/resource_windows_${winArch}.syso' ]]"
 		## The committed resource as well as the script that writes it. The strings are UTF-16, and
 		## dropping the NULs reads them without grep -P, which not every grep has.
-		fAssert "[dd5fe] and carries a copyright string" \
+		fAssert "[dd5fe] and has a copyright string" \
 			fBinHas "${root}/src-go/resource_windows_${winArch}.syso" 'Copyright '
 		fAssert "[dd5ff] with no identity marker in it" \
 			fBinLacks "${root}/src-go/resource_windows_${winArch}.syso" '[ID:'
@@ -6649,7 +6614,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 	fAssertFail "[dbftz] and the two are not one file copied twice" \
 		cmp -s "${root}/src-go/resource_windows_amd64.syso" "${root}/src-go/resource_windows_arm64.syso"
 	## Six sizes, 16 through 256. Windows synthesizes the rest, badly.
-	fAssert "[dbfv0] the icon holds the six sizes it is generated with" \
+	fAssert "[dbfv0] the icon has the six sizes it is generated with" \
 		bash -c "[[ \"\$(head -c 6 '${root}/assets/gitsby.ico' | od -An -tu1 | xargs)\" == '0 0 1 0 6 0' ]]"
 	fAssert "[dbfv1] the pipeline checks the resource against the newest tag" \
 		bash -c "grep -q 'WINRES_CMD' '${root}/cicd/cicd.bash' && grep -q 'WINRES_CMD' '${root}/cicd/config.bash'"
@@ -6660,13 +6625,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 	fAssert "[dbfv3] and phase 1 puts it back afterwards" \
 		bash -c "grep -q 'checkout -q -- \"\${GO_MODULE_DIR}\"/\*.syso' '${root}/cicd/release.bash'"
 
-	## Hermeticity, the half that pinning the config FILES does not cover. Two inputs reach a
-	## harness from an ordinary working terminal and outrank everything it does set:
-	## GIT_CONFIG_COUNT/KEY_n beat every config file including a repo-local one, and an
-	## inherited GH_TOKEN is what the fake gh reports back. A run carrying either still reports
-	## a count and a list of names - the checks are simply no longer about what they say.
-	## The bracketed last letter keeps the pattern from matching this line when the file being
-	## searched is this one, which would pass against a harness that dropped the isolation.
+	## Hermeticity: an inherited GIT_CONFIG_COUNT/KEY_n or GH_TOKEN outranks what a harness sets.
+	## The bracketed last letter keeps the pattern from matching this line.
 	local hermScript
 	for hermScript in cicd/test.bash cicd/fuzz.bash cicd/parity.bash; do
 		fAssert "[db7gn] ${hermScript} drops env-injected git config" \
@@ -6676,10 +6636,22 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dd5fg] ${hermScript} pins its own accounts file" \
 			grep -qE '^export GITSBY_CONFI[G]=' "${root}/${hermScript}"
 	done
+	## The lines that drop it, run against a count that hides a command in a subscript. Each
+	## script's own lines, so a loop on the count coming back fails here.
+	local hermLines="" hermRig=""
+	for hermScript in cicd/test.bash cicd/fuzz.bash cicd/parity.bash cicd/utility/spawn-count.bash; do
+		hermLines="$(grep -E '^[[:space:]]*(for|unset|fUnsetInheritedGitConfig)[[:space:](].*GIT_CONFIG_(COUNT|KEY_)' "${root}/${hermScript}" || true)"
+		hermRig="${work}/herm_${hermScript##*/}"; mkdir -p "${hermRig}"
+		# shellcheck disable=SC2016  ## the inner shell does the expanding.
+		fAssert "[df34d] ${hermScript} drops env-injected git config without running its count" \
+			env GIT_CONFIG_COUNT='GIT_CONFIG_KEY_0[$(: > canary)]' GIT_CONFIG_KEY_0=k GIT_CONFIG_VALUE_0=v GIT_CONFIG_KEY_3=k \
+			bash -uc 'cd "$1" || exit 1; eval "$2"; ! declare -F fUnsetInheritedGitConfig >/dev/null || fUnsetInheritedGitConfig; [[ -n "$2" && ! -e canary && -z "${GIT_CONFIG_KEY_0:-}${GIT_CONFIG_VALUE_0:-}${GIT_CONFIG_KEY_3:-}${GIT_CONFIG_COUNT:-}" ]]' \
+			_ "${hermRig}" "${hermLines}"
+	done
 	## Runtime companions to the pins above. Regression guards, not discriminating checks: on a
-	## clean machine they pass just as well against a harness that isolates nothing.
+	## clean machine they pass as well against a harness that isolates nothing.
 	# shellcheck disable=SC2016  ## the inner shell has to do the expanding, not this one.
-	fAssert "[db7gq] this run carries no env-injected git config"  bash -c '[[ -z "${GIT_CONFIG_COUNT:-}" ]]'
+	fAssert "[db7gq] this run has no env-injected git config"  bash -c '[[ -z "${GIT_CONFIG_COUNT:-}" ]]'
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[db7gr] and no inherited gh token"                    bash -c '[[ -z "${GH_TOKEN:-}" ]]'
 
@@ -6692,7 +6664,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fMakeGateFixture
 		fAssert "[dcmak] the gate passes a clean tree without asking anything"  fGateStatus 0 --no-container --gate
 		## Only the leak-shaped rules, and go test never from its cache.
-		fAssert "[de54d] and runs ruff's leak rules over the demo script" \
+		fAssert "[de54d] and runs ruff's leak rules over the Python files" \
 			fGateCalled '^ruff check --isolated --no-cache --quiet --select B019,SIM115,B006 cicd/utility/demo/gen-demo-gif\.py cicd/utility/codeql-findings\.py$'
 		fAssert "[df06k] and then ruff under the project's ruff.toml" \
 			fGateCalled '^ruff check --no-cache --quiet cicd/utility/demo/gen-demo-gif\.py cicd/utility/codeql-findings\.py$'
@@ -6771,10 +6743,12 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[de54a] a soak test that fails stops the run"  fGateLeakStops soak
 		fAssert "[de54h] and so does one that skipped, since it measured nothing"  fGateLeakStops soak-skip
 		fAssert "[de54j] the newest 20 soak runs are kept, and a folder with anything else in it is left alone"  fGateLeakPrune
+		fAssert "[df386] a run west of UTC names its soak folder in UTC"  fGateStampUtc
 		fAssert "[de54b] --gate refuses --leakcheck"  fGateSays 2 'takes no stage options \(got: --leakcheck\)' --gate --leakcheck
 		fAssert "[de54c] cicd.bash --help lists --leakcheck and --no-leakcheck" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--leakcheck ' <<< \"\$out\" && grep -qE -- '^ +--no-leakcheck ' <<< \"\$out\""
 		fAssert "[de5m8] a run's temp files are gone once it ends, stopped or not"  fGateRunTmp
+		fAssert "[df33r] Ctrl+C, which stops the run log's tee too, still closes the step with FAIL and removes the run folder"  fGateCtrlC
 		fAssert "[dee4y] --list prints the steps and each one's test IDs, and runs nothing"  fGateList
 		fAssert "[defmr] each step opens and closes with its time, numbered out of the steps that run, under a rule 79 wide"  fGateSteps
 		fAssert "[defms] a step that fails closes with FAIL"  fGateStepFail
@@ -6826,6 +6800,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dedq3] and capped at the run's core budget, at a low weight"  fGateContainerQuota
 		fAssert "[df2tk] every container a run starts is capped at a third of the RAM or CICD_MEM_CAP, with no swap, first in line for the OOM killer"  fGateMemCap
 		fAssert "[df2tm] the run goes in a user scope with the same cap, once, where systemd-run --user works"  fGateMemScope
+		fAssert "[df350] a CICD_MEM_CAP with no unit, or under 1g, stops the run before it starts anything"  fGateMemCapUnit
+		fAssert "[df351] the scope's probe passes the run's properties, so a systemd that refuses one runs as before"  fGateMemScopeProbe
 		fAssert "[de4bx] and --quick goes in with them"  fGateContainerQuick
 		fAssert "[de549] and --leakcheck too, and the soak test runs only in there"  fGateContainerLeak
 		fAssert "[de5ma] and --no-leakcheck"  fGateContainerNoLeak
@@ -6850,7 +6826,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dcmbk] cicd.bash --install-hook installs the hook and runs no stage"  fGateInstallHook
 
 		## The PowerShell lint with the real pwsh and the repo's settings file, on a fixture of its
-		## own. The settings carry the 5.1 rule, and a file that won't parse must fail whatever
+		## own. The settings have the 5.1 rule, and a file that won't parse must fail whatever
 		## severity they ask for. The fixture's HOME hides a module installed for the user, so the
 		## runs are told where it is.
 		local gatePsModules=""
@@ -6929,7 +6905,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 			case "\${1:-} \${2:-}" in
 				"version -m") for s in ${gatePipeTools}; do [[ "\${s%%=*}" != "\$(basename "\${3:-}")" ]] || printf 'mod\tx\t%s\th1:x\n' "\${s#*=}"; done; exit 0 ;;
 				"env GOPATH") echo '${gateDir}/gopath'; exit 0 ;;
-				"test -list") echo FuzzA; exit 0 ;;
+				"test -list") [[ ! -e '${gateFail}/go-testlist' ]] || { echo 'a_test.go:3:1: syntax error' >&2; exit 1; }
+					[[ -e '${gateFail}/go-testlist-none' ]] || echo FuzzA; printf 'ok  \tgitsby\t0.01s\n'; exit 0 ;;
 				"test -race") if [[ -e '${gateFail}/go-test' ]]; then printf -- '--- FAIL: TestA (0.00s)\n    a_test.go:4: boom\n'
 					else printf -- '=== RUN   TestA\n--- PASS: TestA (0.00s)\n    --- PASS: TestA/sub (0.00s)\n--- PASS: TestC (0.00s)\n'; fi ;;
 			esac
@@ -6976,6 +6953,33 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dd5fp] stage 3 runs the fuzz harness, fuzzes each target the module lists, and counts spawns" \
 			fGateRanCalling 0 '^fuzz\.bash' '^go test -run \^\$ -fuzz \^FuzzA\$ -fuzztime 5s -parallel [0-9]+ \.$' '^spawn-count\.bash'
 		fAssert "[dd6g0] and prints each target on a line of its own, with its test ID"  fGateRanSaying 0 '^  PASS aaaaa FuzzA$'
+		## With no test step, fuzz.bash and the spawn counts ran whatever build was on disk.
+		fAssert "[df340] and builds first when the test step is off" \
+			awk '/^go build /{b=NR} /^fuzz\.bash/{f=NR} /^spawn-count\.bash/{c=NR} END{exit !(b && f > b && c > b)}' "${gateCalls}"
+		fGateOnly parity
+		fAssert "[df341] the parity step builds first when the test step is off" \
+			bash -c "[[ '${gateRc}' == 0 ]] && awk '/^go build /{b=NR} /^parity\\.bash/{p=NR} END{exit !(b && p > b)}' '${gateCalls}'"
+		fGateOnly "test fuzz parity" --no-leakcheck
+		fAssert "[df342] and a run with all three steps builds once" \
+			bash -c "[[ '${gateRc}' == 0 && \"\$(grep -c '^go build ' '${gateCalls}')\" == 1 ]]"
+		## Its failure and an empty list both went to a loop of no passes, which printed OK.
+		: > "${gateFail}/go-testlist"
+		fGateOnly fuzz --no-leakcheck
+		rm -f -- "${gateFail:?}/go-testlist"
+		fAssert "[df343] the native fuzzing fails when go test -list fails, with what go said" \
+			bash -c "[[ '${gateRc}' == 1 ]] && grep -qF 'go test -list failed' '${gateOut}' && grep -qF 'a_test.go:3:1: syntax error' '${gateOut}' && ! grep -qF 'OK: native fuzz targets' '${gateOut}'"
+		: > "${gateFail}/go-testlist-none"
+		fGateOnly fuzz --no-leakcheck
+		rm -f -- "${gateFail:?}/go-testlist-none"
+		fAssert "[df344] and when it lists no target"  fGateRanSaying 1 'go test -list found no fuzz targets'
+		## With no build to run, parity.bash said it was skipping, and passed.
+		local parNo="${work}/parity-nobuild"
+		mkdir -p "${parNo}/cicd/utility/include" "${parNo}/legacy/bin" "${parNo}/src-go"
+		cp "${root}/cicd/parity.bash" "${root}/cicd/config.bash" "${parNo}/cicd/"
+		cp "${root}/cicd/utility/include/safe-rm.bash" "${parNo}/cicd/utility/include/"
+		: > "${parNo}/legacy/bin/gitsby"
+		fAssert "[df345] parity.bash fails when there is no build to compare" \
+			bash -c "out=\$('${parNo}/cicd/parity.bash' 2>&1); [[ \$? == 1 ]] && grep -qF 'parity: no build at src-go/gitsby' <<< \"\${out}\""
 		: > "${gateFail}/go-fuzz"
 		fGateOnly fuzz
 		rm -f -- "${gateFail:?}/go-fuzz"
@@ -7182,7 +7186,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dcmbj] a push from a subdirectory with a relative --work-tree is gated all the same" \
 			bash -c "[[ '${hookRc}' != 0 ]] && grep -qF '${hookSnap}|--gate|fail|' '${hookLog}' && [[ \"\$(git -C '${hookRepo}' ls-remote origin refs/heads/main)\" == '${hookRemote}' ]]"
 		## git hands a hook GIT_DIR from a linked worktree. Passed on, the gate worktree's checkout
-		## would land on this worktree instead, and detach it.
+		## would end up on this worktree instead, and detach it.
 		local hookLinked="${hookDir}/linked"
 		git -C "${hookRepo}" worktree add --quiet -b linkedb "${hookLinked}" main~1
 		hookRc=0; fHookPush "${hookLinked}" origin +linkedb:refs/heads/main || hookRc=$?
@@ -7267,11 +7271,9 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dee56] a commit from before --merge-gate keeps the --gate it had" \
 			bash -c "[[ '${hookRc}' == 0 ]] && grep -qF '${hookSnap}|--gate|b16|' '${hookLog}' && ! grep -qF -- '--merge-gate' '${hookLog}'"
 
-		## The Mac and Windows harness, against an ssh that answers per host after printing what
-		## the Mac's login prints, a lock that refuses a box when a marker says it is held, and a
-		## go that writes what it is asked to build. Each stub fails on a marker named for what it
-		## stands in for and the host. The Mac's setup command runs for real, in a home of its
-		## own, since it is what removes the old copy there.
+		## The Mac and Windows harness, against an ssh that answers per host, a lock that refuses
+		## a box on a marker, and a go that writes what it builds. Each stub fails on a marker for
+		## what it stands in for and the host. The Mac setup runs for real.
 		local rt="${work}/remote" rtBin="${work}/remote-bin" rtHome="${work}/remote-home" rtMac="${work}/remote-mac"
 		local rtLog="${work}/remote-calls.log" rtFail="${work}/remote-fail" rtOut="${work}/remote-out.txt" rtRc=0 rtMacBin="${work}/remote-macbin" rtHost=""
 		local rtLock="${rtHome}/synced/0-0/common/exec/util/linux/bash/x_windows-host-lock.bash"
@@ -7372,7 +7374,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 			bash -c "grep -qF 'cd \"\$d/tree\" && PATH=/usr/local/bin:\"\$PATH\" \$lo /usr/local/bin/bash cicd/test.bash' '${rtLog}'"
 		## The tests there run with no core limit and at full priority otherwise.
 		fAssert "[dedq5] each Mac and Unix box runs its Go tests and test.bash on its own core budget, at low priority"  fRemoteBudgetUsed
-		fAssert "[ddg8e] that copy is marked as the stage's, and holds the git dir, both builds and the fetched modules" \
+		fAssert "[ddg8e] that copy is marked as the stage's, and has the git dir, both builds and the fetched modules" \
 			bash -c "cd '${rtMac}/gitsby-remote-tests' && [[ -f .gitsby-remote-tests && -f tree/src-go/gitsby-test && \"\$(cat tree/src-go/gitsby)\" == mac ]] && git -C tree ls-files --error-unmatch src-go/a_test.go >/dev/null && grep -qx 'go mod download' '${rtLog}'"
 		fAssert "[ddg8f] the Windows box gets a folder under %TEMP% for the run, removed after"  fRemoteWinCleaned b29w
 		## The Mac's old trees go through the guard there, so an old.* that is a link is left, with a note.
@@ -7681,7 +7683,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 	fAssert "[dbfs2] the pre-command fetch names origin, not the branch's own remote" \
 		bash -c "cd '${dr}/fetchr' && '${gitsby}' -q status >/dev/null 2>&1; git -C '${dr}/fetchr' show-ref --verify --quiet refs/remotes/origin/brandnew"
 
-	## br merge holds its remote delete back while origin is unreachable; prune had no such
+	## br merge puts off its remote delete while origin is unreachable; prune had no such
 	## check, so each push failed and was reported as "already gone" - blaming the branch for a
 	## network problem, with a summary that read as if it had finished.
 	git init --quiet --bare -b main "${dr}/p-origin.git"
@@ -7712,7 +7714,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		git push --quiet other main && git push --quiet other feature
 		git branch --quiet -D feature && git fetch --quiet --all
 	)
-	fAssert "[dbfs5] br switch works with two remotes carrying the branch" \
+	fAssert "[dbfs5] br switch works with two remotes with the branch" \
 		bash -c "cd '${dr}/two' && '${gitsby}' -q -NoFetch br switch feature && [[ \"\$(git branch --show-current)\" == feature ]]"
 
 	## Two accounts claiming one folder produce the same includeIf key twice. --unset-all takes
@@ -7798,15 +7800,12 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 	fi
 
 	##••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-	## Other git hosts. gitsby was a GitHub program that reached for gh whenever it wanted anything from
-	## a remote; most of what it does is git, and git does not care whose server it is. What is
-	## covered here is the seam: the host decides the tool, the tool is only reached for once the
-	## host is known to be one it serves, and everything that never needed a git host CLI keeps working
-	## without one. A '.test' host is reserved and resolves nowhere, so -NoFetch keeps it all local.
+	## Other git hosts. The host decides the tool, the tool is reached only for a host it serves,
+	## and what never needed a host CLI works without one. A '.test' host resolves nowhere.
 	##••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 	local fg="${work}/$1-githost"
 	mkdir -p "${fg}/bin" "${fg}/debbin"
-	## A deterministic tea. Logs every call the way the gh stub does, so a check can see not just
+	## A deterministic tea. Logs every call the way the gh stub does, so a check can see not only
 	## that a pull request was asked for but which vocabulary it was asked in.
 	fStub "${fg}/bin/tea" <<'TEAEOF'
 #!/usr/bin/env bash
@@ -7821,7 +7820,7 @@ case "$1 $2" in
 esac
 exit 0
 TEAEOF
-	## The same program under the name Debian ships it as. Looking for one spelling finds it only on
+	## The same program under the name Debian packages it as. Looking for one spelling finds it only on
 	## the machines that happen to use that one.
 	fStub "${fg}/debbin/tea-cli" <<'TEAEOF'
 #!/usr/bin/env bash
@@ -7854,11 +7853,8 @@ GHEOF
 	)
 	local fgPath="${fg}/bin:${PATH}"
 	local fgDeb="${fg}/debbin:${PATH}"
-	## A path with git on it and no git host CLI at all. Not an empty directory: that takes git away
-	## too, and then 'Not found in path: git' comes first and the refusal under test never runs -
-	## the exit-code check passes for a reason that has nothing to do with what it is checking.
-	## Linked, not wrapped: a '#!/usr/bin/env bash' wrapper needs bash found on the very PATH we are
-	## emptying, so it fails to start and the run reads as "not a git repository" instead.
+	## A path with git and no host CLI. Not empty, or git is missing first. Linked, not wrapped,
+	## since an env bash wrapper can't find bash here.
 	mkdir -p "${fg}/gitonly"
 	local fgBare="${fg}/gitonly"
 	## bash as well as git: ${gitsby} is itself a '#!/usr/bin/env bash' shim, so emptying the PATH of
@@ -7907,17 +7903,17 @@ GHEOF
 	## had no answer at all - it printed nothing rather than saying it could not tell.
 	fAssertOut "[dbg5r] the identity block names the git host"  'Git host .*git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch identity 2>&1"
-	fAssertOut "[dbg5s] and who tea holds a login for there"      'giteauser' \
+	fAssertOut "[dbg5s] and who tea has a login for there"      'giteauser' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch identity 2>&1"
 	fAssertNotOut "[dbg5t] and prints no GitHub line for it"      'GitHub .gh.' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch identity 2>&1"
 	## A tea that fails has said nothing about logins. "No login" would send someone off to add one
 	## they may already have.
-	fAssertOut    "[dcmp5] a tea that fails is not read as holding no login"  "unknown - couldn't ask tea: tea config is unreadable" \
+	fAssertOut    "[dcmp5] a tea that fails is not read as holding no login"  "\(unknown - couldn't ask tea: tea config is unreadable\)" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_FAIL='tea config is unreadable' '${gitsby}' -q -NoFetch identity 2>&1"
 	fAssertNotOut "[dcmp6] and does not say tea has no login"  'has no login for this host' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_FAIL='tea config is unreadable' '${gitsby}' -q -NoFetch identity 2>&1"
-	fAssertOut    "[dcmp7] a tea with no login for the host still says so"  "unknown - 'tea login add' has no login for this host" \
+	fAssertOut    "[dcmp7] a tea with no login for the host still says so"  "\(unknown - 'tea login add' has no login for this host\)" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_URL='https://other.example.test' '${gitsby}' -q -NoFetch identity 2>&1"
 
 	## A token is a credential for the git host that issued it. An account that banks at github.com must
@@ -8041,12 +8037,8 @@ GLEOF
 	fAssertOut "[df047] with the reason and the fix as notes under it"  "^  Fix:  Update tea, or run it anyway with --any-identity\.$" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_USER=someoneelse '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
 
-	## An account that never named a host is TAKEN to be a github.com one, which is right for every
-	## config written before the key existed - but it is an assumption, not something the file said.
-	## Reported in the same words as a host somebody actually typed, it sends them through the config
-	## looking for a line that was never there. This account also names no GitHub login, which is the
-	## ordinary shape of a Gitea one: reading 'ghAccount' alone reported it as "(no GitHub account
-	## named)" - true, and no answer at all to the question the line asks.
+	## An account with no host is taken to be github.com, and must say so apart from a typed host.
+	## It also names no GitHub login, as a Gitea one wouldn't.
 	cat > "${fg}/nohost.shcl" <<-EOF
 		account.work.path = $(fWinPath "${fgRepo}")
 		account.work.user = giteauser
@@ -8111,11 +8103,11 @@ GLEOF
 	## The whole round trip, because either half alone proves nothing - the command has to write a
 	## line the loader then reads back, and the diagnostic has to stop once it has.
 	cp "${fg}/nohost.shcl" "${fg}/fixme.shcl"
-	## This fixture is in the old flat layout, so the first edit rewrites it whole in the current one
-	## - and says so, since the file comes back a different shape from the one that was typed.
+	## The fixture was typed in the old flat layout. The reads above converted it, so the edit goes
+	## into the current one, and the rest has to have come through.
 	fAssertOut "[dbhfy] 'account set' says which file it will edit, and how"  'add: +account\[work\]\.host: git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set work host git.example.test 2>&1"
-	fAssertOut "[dbhfz] and the file now holds that key, in the block"  '^	host: git\.example\.test$' \
+	fAssertOut "[dbhfz] and the file now has that key, in the block"  '^	host: git\.example\.test$' \
 		cat "${fg}/fixme.shcl"
 	fAssertOut "[dbsrt] and the rest came through the change of layout"  '^	user: giteauser$' \
 		cat "${fg}/fixme.shcl"
@@ -8217,13 +8209,13 @@ GLEOF
 		bash -c "cd '${fl}' && env ${flEnv} '${gitsby}' --config '${fl}/part/config.shcl' account list </dev/null 2>&1"
 	fAssert "[df064] and is left alone" \
 		bash -c "set -- '${fl}/part'/*; [[ \$# == 1 ]] && cmp -s '${fl}/part/config.shcl' '${fl}/part.shcl'"
-	## A key the loader ignores, written past this command, lands in the file and is dropped on every
+	## A key the loader ignores, written past this command, goes in the file and is dropped on every
 	## read - so the file says one thing and every command does another. Refuse it at the door, and
 	## name the keys that ARE read while refusing.
 	fAssertOut "[dbhg1] a key nothing reads is refused, not written"  "isn't an account key gitsby reads" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set work hostname git.example.test 2>&1"
 	## 'host' and 'user' are interpolated into the credential helper, which git hands to a shell. The
-	## loader drops one carrying a shell character; refusing to WRITE it is what keeps the file and
+	## loader drops one with a shell character; refusing to WRITE it is what keeps the file and
 	## the behavior from disagreeing.
 	fAssertOut "[dbhg2] and so is a shell character in a host name"  "isn't a plain host name" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set work host 'git.example.test; id' 2>&1"
@@ -8264,7 +8256,7 @@ GLEOF
 	fAssertOut "[dcnrm] and the one for every account too"  'Ignored keys \.*: protocol \(not https or ssh\)' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/badproto.shcl' account list 2>&1"
 	## Three placeholders are the whole interface. Naming them without saying what they are answers
-	## nothing for the one reader who ever sees this - the one who just typed the command wrong.
+	## nothing for the one reader who ever sees this - the one who typed the command wrong.
 	fAssertOut "[dbjkh] the syntax block says what '<account>' is"  '<account>  A string you define for one login' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set 2>&1"
 	## '<key>' is a closed list, and the command that lists it is this one - a reader sent looking
@@ -8283,13 +8275,17 @@ GLEOF
 	printf 'account: work\n    host: gitea.com\n    email: w@example.com\n' > "${fg}/unset.shcl"
 	fAssertPlan "[dd83p] 'account unset' names the line it removes"  'remove: +host: gitea\.com' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work host 2>&1"
-	fAssertNotOut "[dd83q] and the file no longer holds it"  'host' \
+	fAssertNotOut "[dd83q] and the file no longer has it"  'host' \
 		cat "${fg}/unset.shcl"
 	fAssertOut "[dd83r] and the rest of the file is as typed"  '^    email: w@example\.com$' \
 		cat "${fg}/unset.shcl"
 	## A second run is a success with nothing to do, so a script can run it without checking first.
 	fAssert "[dd83s] a key already gone is nothing to do, not a failure" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work host 2>&1 | grep -q 'nothing to do'"
+	fAssertOut "[df365] and names the file on its own line, not in the sentence"  '^\[ account\[work\] has no .host. in the accounts file; nothing to do\. \]$' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work host 2>&1"
+	fAssertOut "[df368] with the file on a File line under it"  '^  File: /.*/unset\.shcl$' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work host 2>&1"
 	## It removes every line of the key, so a value after it would read as a narrower request than
 	## the one carried out.
 	fAssertOut "[dd83t] a value after the key is refused"  "\\(got '/a' too\\)" \
@@ -8324,11 +8320,8 @@ GLEOF
 	fAssertOut "[dbh6w] and prints the host-neutral login beside the GitHub one"  'login \.+: giteauser' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' account list 2>&1"
 
-	## The identity gate, on a host that is not GitHub. Two accounts disagreeing about who you are is
-	## the same outward-facing mistake wherever it happens, and keying the check on 'ghAccount' - a
-	## GitHub login, which says nothing about who you are anywhere else - left it silently uncovered.
-	## The ssh stub answers with GITEA's greeting, not GitHub's: close enough to look handled by the
-	## existing pattern and different enough not to be.
+	## The identity gate on a host that isn't GitHub. The ssh stub greets as Gitea does, close to
+	## GitHub's but not the same.
 	fStub "${fg}/bin/ssh" <<'SSHEOF'
 #!/usr/bin/env bash
 mode=""
@@ -8577,3 +8570,7 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261107 JC: br merge pushes the merge and deletes origin's copy in 1 atomic push, [df06m], [df06n] and [df06p]. 1864 -> 1867.
 ##		- 20261107 JC: A Format 3 file from before the move to v3.0.0-beta1 has its escapes re-spelled, [df08w], [df08x] and [df08y]. 1867 -> 1870.
 ##		- 20261108 JC: account apply gives each account a credential helper for plain git over https, [df1s0] to [df1s8] and [df1sa]. 1874 -> 1884.
+##		- 20261109 JC: Ctrl+C with the run log on, [df33r]. config.bash run directly, [df33s].
+##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript. [df34d] runs each harness's lines against such a count. 1896 -> 1899.
+##		- 20261109 JC: CICD_MEM_CAP needs a unit and 1g at least, [df350]. The memory scope's probe passes the run's properties, [df351].
+##		- 20261109 JC: spawn-count.bash and cicd.bash name their records in UTC, [df385] [df386].

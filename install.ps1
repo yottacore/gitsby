@@ -60,11 +60,8 @@ function Install-Gitsby {
     Set-StrictMode -Version Latest
     $ErrorActionPreference = 'Stop'
 
-    # Windows PowerShell 5.1 is what a fresh Windows install actually has, and that is the
-    # machine most likely to be running this for the first time - so the documented one-liner
-    # has to work there. The syntax in here is 5.1-clean already; what 5.1 lacks is these
-    # three variables (7 defines them; 5.1 only ever runs on Windows), TLS 1.2 switched on,
-    # and the response parser -UseBasicParsing selects. Nothing else below is conditional.
+    # Windows PowerShell 5.1 is what a fresh Windows has, so the one-liner has to work there. It
+    # lacks these 3 variables, TLS 1.2 on, and -UseBasicParsing.
     $isPS7 = $PSVersionTable.PSVersion.Major -ge 6
     $onWindows = if ($isPS7) { [bool]$IsWindows } else { $true }
     $onMac = if ($isPS7) { [bool]$IsMacOS } else { $false }
@@ -102,7 +99,7 @@ function Install-Gitsby {
     if ($Release -and $Release -ne 'stable') {
         throw "-Release takes only 'stable' now, which is the default; use '-Tag TAG' for a specific release."
     }
-    # The tag lands in a download URL, so a path-shaped one walks out of this repo and installs
+    # The tag goes in a download URL, so a path-shaped one walks out of this repo and installs
     # somebody else's binary while the plan on screen still names ours. ValidatePattern admits
     # '..' and a leading '/', so both are checked here. Reads as a harmless version selector,
     # which is exactly why the confirm prompt is no protection.
@@ -118,12 +115,12 @@ function Install-Gitsby {
     # is named by. Anything else falls through to the SHA256SUMS lookup below, which is the
     # authority on what this release actually published.
     $goOs = if ($onWindows) { 'windows' } elseif ($onMac) { 'darwin' } else { 'linux' }
-    # Detection lands in its own variable rather than back in $Arch: assigning to a parameter
+    # Detection goes in its own variable rather than back in $Arch: assigning to a parameter
     # re-runs its ValidateSet, so an x86 or 32-bit ARM box would die with a binder error
     # instead of being told what this release does publish.
     $archName = if ($Arch) { $Arch } else {
         # RuntimeInformation arrived in .NET Framework 4.7.1, so an older 5.1 box falls back to
-        # the environment. Both spellings land on the same two names below.
+        # the environment. Both spellings end up as the same two names below.
         $osArch = try { [string][Runtime.InteropServices.RuntimeInformation]::OSArchitecture }
         catch { [string]$env:PROCESSOR_ARCHITECTURE }
         switch ($osArch) {
@@ -154,11 +151,8 @@ function Install-Gitsby {
     function Assert-PlainTag([string]$name) {
         if ($name -notmatch '^[A-Za-z0-9._/-]+$' -or (Test-PathTag $name)) { throw "The resolved release tag ('${name}') isn't a plain git tag; aborting." }
     }
-    # SHA256SUMS decides two things at once, and it is a few hundred bytes: whether a release
-    # publishes a binary for this platform, and what that binary should hash to. It is fetched
-    # before the plan, so the plan can promise a specific file before anything large is
-    # downloaded. Every install path here is a release asset, so every one is verified - there
-    # is no unverified route left to fall back to.
+    # SHA256SUMS says whether a release has a binary for this platform and what it should hash to,
+    # and is fetched before the plan. Every install path is verified.
     function Get-ChecksumText([string]$name) {
         try {
             # GitHub serves SHA256SUMS as application/octet-stream, and Invoke-WebRequest returns
@@ -178,20 +172,14 @@ function Install-Gitsby {
         return [bool]($sumsText -match '(?m)^[0-9a-fA-F]{64}\s+\*?gitsby-\S+\r?$')
     }
 
-    # No -Tag: the newest full release that publishes a gitsby binary, or while none does, the
-    # newest pre-release that does.
-    # Resolved into its own variable for the same reason as $archName: a scraped tag assigned
-    # back to $Tag re-runs its ValidatePattern, which turns the check below into dead code and
-    # reports a malformed tag as whatever the surrounding catch happens to say.
+    # No -Tag: the newest full release with a gitsby binary, or while none has one, the newest
+    # such pre-release. Its own variable, since assigning to $Tag re-runs its ValidatePattern.
     $tagName = $Tag
     $sums = ''
     $sumsFor = ''
     if (-not $tagName) {
-        # releases/latest first: a redirect, so no auth and no API rate limit. It is the newest
-        # full release, and when its SHA256SUMS lists a binary that is the answer.
-        # 7's headers have Location as a property and no string indexer. 5.1's are a
-        # WebHeaderCollection, where the indexer works and the property is an error under strict
-        # mode. Anything unreadable counts as no answer, so the list lookup below still runs.
+        # releases/latest first: a redirect, so no auth and no rate limit. 7's headers have
+        # Location as a property; 5.1's need the indexer. Unreadable is no answer.
         function Read-LocationHeader($response) {
             try {
                 $headers = $response.Headers
@@ -239,11 +227,9 @@ function Install-Gitsby {
             # so @() around the call made a list of one, and every tag name came out as one tag.
             $releases = @($releaseList)
             $withBinary = @($releases | Where-Object { @($_.assets | Where-Object { [string]$_.name -like 'gitsby-*' }).Count -gt 0 })
-            # Highest version wins, not newest-listed: the list is ordered by publish date, so a
-            # backported fix cut after a newer release would otherwise be taken. The numeric
-            # fields decide; Sort-Object is stable, so a tie keeps the newer-listed entry. Two
-            # pre-releases of one version tie, and release.bash publishes them in order. A full
-            # release is never weighed against a pre-release.
+            # Highest version wins, not newest listed, so a backported fix isn't taken.
+            # Sort-Object is stable, so a tie keeps the newer listed. A full release is never
+            # weighed against a pre-release.
             $tagVersion = {
                 $v = ($_.tag_name -replace '^[vV]', '') -replace '[-+].*$', ''
                 $parsed = [version]'0.0'
@@ -368,11 +354,8 @@ function Install-Gitsby {
         Write-Host ''
         Write-Host "[ Installing to ${destPath} ... ]"
         New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-        # Staged in the destination directory and renamed over the target, never written in
-        # place. Move-Item from the system temp is only atomic within one filesystem, and the
-        # temp dir and the install dir usually are not the same one - so an interrupt mid-copy
-        # left a truncated executable where the real one should be, one that had passed its
-        # checksum under another name.
+        # Staged in the destination folder and renamed over the target, since a move from the temp
+        # dir isn't atomic across filesystems and left a truncated exe.
         $staged = Join-Path -Path $destDir -ChildPath ('.gitsby.install.' + [IO.Path]::GetRandomFileName())
         try {
             Copy-Item -LiteralPath $tmpFile -Destination $staged -Force
@@ -410,11 +393,8 @@ function Install-Gitsby {
             if ($onWindows) {
                 # Persist it, as promised in the plan.
                 $pathScope = if ($installSystemWide) { 'Machine' } else { 'User' }
-                # Straight at the registry rather than [Environment]::GetEnvironmentVariable,
-                # which hands back the EXPANDED PATH: writing that back would bake entries like
-                # %USERPROFILE%\bin in as literals, permanently, for a PATH we only meant to
-                # append to. Reading it raw and putting back the kind it already had leaves
-                # every other entry exactly as it was.
+                # Straight at the registry, since GetEnvironmentVariable expands PATH and writing
+                # that back bakes in literals. The kind it had is kept.
                 $pathKeyPath = if ($installSystemWide) { 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' } else { 'HKCU:\Environment' }
                 try {
                     $pathKey = Get-Item -LiteralPath $pathKeyPath
@@ -484,11 +464,8 @@ try {
         } @args
     }
 } catch {
-    # Run from a file: report plainly and exit nonzero, so callers and CI see the failure -
-    # a parameter-binding error against @args would otherwise leave the exit code at 0.
-    # Evaluated as text (iex / scriptblock): rethrow, because 'exit' would end the session.
-    # A blank line either side, like every other block of output. Rethrown, PowerShell prints
-    # the error itself, so only the line before it is ours.
+    # From a file: report and exit nonzero, or a binding error leaves exit 0. As text (iex):
+    # rethrow, since 'exit' ends the session, and PowerShell prints the error.
     [Console]::Error.WriteLine('')
     if ($PSCommandPath) {
         [Console]::Error.WriteLine("install.ps1: $($_.Exception.Message)")

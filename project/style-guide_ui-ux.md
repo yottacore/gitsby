@@ -107,7 +107,7 @@ Continue? (y|n):
 
 ## Status lines and warnings
 
-- A line reporting progress or an outcome is bracketed: `[ Cloned into 'app'. ]`. A mutating run that worked ends with `[ Done. ]`.
+- A line reporting progress or an outcome is bracketed: `[ Cloned. ]`, with the folder on a `File:` line under it. A mutating run that worked ends with `[ Done. ]`.
 
 - A warning starts with `WARNING:`. It says what was skipped or kept, and what to run later if anything. A warning a step prints as it runs is a status line, so it is bracketed. One inside a plan or a listing sits in that block unbracketed, like the lines around it.
 

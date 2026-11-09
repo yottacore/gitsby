@@ -1,6 +1,6 @@
 // The blank-line rhythm and the framing each ending prints. Both are contracts:
 // the suite compares whole transcripts, so a blank that collapses where it used
-// to land is a visible change.
+// to print is a visible change.
 
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 // Licensed under The MIT License (MIT). Full text at:
@@ -90,7 +90,7 @@ func TestUsageErrorFraming(t *testing.T) { // [dbfrc]
 	}
 }
 
-// The errors the scripts raise inside a command substitution land with one
+// The errors the scripts raise inside a command substitution print with one
 // trailing blank, because the subshell swallowed the wrapping ones.
 func TestUsageSubErrorFraming(t *testing.T) { // [dbfrd]
 	p, out, errOut := testPrinter()
@@ -188,7 +188,7 @@ func TestCachedRemembersAnEmptyAnswer(t *testing.T) { // [dbfrj]
 // A capture read as a whole and then split kept the interior carriage returns:
 // only the very end of the string had been trimmed. 'pr ok' read the PR's head
 // branch out of a two-line answer that way, so on a host that writes CRLF the
-// branch name carried one and matched no ref anywhere.
+// branch name had one and matched no ref anywhere.
 func TestSplitLines(t *testing.T) { // [dbfx4]
 	tests := []struct {
 		in   string
@@ -274,5 +274,28 @@ func TestEveryLineOutIsEscaped(t *testing.T) { // [ddk41]
 	mustUsage(t, accountUnsetUsage()).report(p)
 	if n := strings.Count(errOut.String(), "\n"); n < 5 || strings.Contains(errOut.String(), `\n`) {
 		t.Errorf("the syntax help lost its lines: %q", errOut.String())
+	}
+}
+
+// The first line of a syntax error or a refusal often quotes what was typed, and
+// those leads were built outside the escaping constructors. 2026110912215205.
+func TestLeadsAreEscaped(t *testing.T) { // [df35w]
+	evil := "1.0\x1b[31mX\nSyntax: y"
+	opt := defaultOptions()
+	_, _, rawErr := scanPassthrough([]string{"raw", "--bogus" + evil}, &opt)
+	errs := []error{
+		(&app{cmd: command{arg: evil}}).resolveRelease(),
+		rawErr,
+		syntaxUsage("'"+evil+"' is not a version.", "release [version]"),
+		refusalBlock("'"+evil+"' would not merge cleanly.", [][]string{noteLines("Why", evil), {"Fix:  " + evil}}, nil),
+		configFileRefusal("'"+evil+"' can't be used.", "/h/c.shcl"),
+	}
+	for i, err := range errs {
+		p, _, errOut := testPrinter()
+		mustUsage(t, err).report(p)
+		got := errOut.String()
+		if strings.ContainsRune(got, '\x1b') || strings.Contains(got, "\nSyntax: y") || !strings.Contains(got, "◉ESC◉") {
+			t.Errorf("error %d let a control character through:\n%q", i, got)
+		}
 	}
 }

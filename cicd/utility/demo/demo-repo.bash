@@ -39,12 +39,8 @@ source "${demoHere}/../include/safe-rm.bash"
 APP_NAME="$(source "${demoHere}/../../config.bash" && printf '%s' "${APP_NAME}")"
 fSafeRm_Init || exit 1
 
-##	HOME is the root itself, so the paths the demo prints and the "~/..." in its prompt
-##	are the same place - the folder rules below are the point of the demo, and they read
-##	as a lie if the two disagree.
-##	The two trees differ from the first folder down ("dev" vs "code"). That is deliberate:
-##	the account rules match on "github.com/<owner>" alone, so a demo whose trees shared a
-##	root would not show that the match is a run of folder names anywhere in the path.
+##	HOME is the root, so the printed paths and the prompt's "~/..." agree. The 2 trees differ from
+##	the first folder down, to show the match is a run of folder names anywhere in the path.
 work="${root}/dev/github.com/acme-corp/acme-api"
 side="${root}/code/github.com/mika-rivers/dotfiles"
 bare="${root}/acme-api-origin.git"
@@ -76,7 +72,7 @@ stamp="${root}/.gitsby-demo-root"
 if [[ -e "${root}" ]]; then
 	##	A root built before the stamp existed is still recognizably ours - nothing else puts a
 	##	demo.env beside an acme-api-origin.git. Without that second reading, the first run after
-	##	this guard landed would refuse the directory the previous run had made itself.
+	##	this guard went in would refuse the directory the previous run had made itself.
 	ours=0
 	if [[ -d "${root}" && ! -L "${root}" ]]; then
 		if   [[ -f "${stamp}" ]]; then                             ours=1
@@ -113,13 +109,8 @@ printf 'gho_demo111111111111111111111111111111111\n' > "${XDG_CONFIG_HOME}/gitsb
 ##	spend a line of every scene saying so about its own fixture.
 chmod 600 "${XDG_CONFIG_HOME}/gitsby"/*.token
 
-##	A stub gh, first on PATH. Two reasons, and the second is the important one:
-##	  - gitsby asks GitHub whose token a tokenFile holds. A made-up token gets no answer, so
-##	    every scene carried a line saying the token could not be checked.
-##	  - the real gh would have answered as whoever is logged in on the rendering machine, which
-##	    is a real name in a deliberately anonymized demo.
-##	It answers only the two calls the scenario reaches and fails everything else, so a command
-##	that grew a new gh call shows up as a visible failure rather than a plausible fake answer.
+##	A stub gh, first on PATH, so the token check answers and no real login shows in the anonymized
+##	demo. It answers only the 2 calls the scenario makes, so a new gh call fails visibly.
 mkdir -p "${root}/bin"
 cat > "${root}/bin/gh" <<-'EOF'
 	#!/usr/bin/env bash
