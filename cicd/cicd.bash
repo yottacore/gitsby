@@ -250,13 +250,9 @@ elif [[ "${CICD_CONTAINER:-0}" == 1 ]]; then
 	else containerNote="WARNING: docker isn't usable here, so ${inImage} on this box, with its own tool versions"; fi
 fi
 if ((installHook)); then exec "${here}/utility/pre-push.bash" --install; fi
-## The memory cap, from config.bash's fMemCap: memArgs goes on every docker run. Then the whole run
-## goes in a user scope with the same cap, once, so the steps it runs here are capped too. The
-## containers are dockerd's children, not this run's, so they're capped apart. Not in the image,
-## and not where systemd-run --user doesn't work, such as a bare CI runner, or where its systemd
-## doesn't know one of the properties; it runs as before there. The probe passes the same ones,
-## since systemd-run refuses one it doesn't know. OOMPolicy continue, so a step the kernel kills
-## fails, and the cleanup still runs. A step killed at the cap exits 137.
+## The memory cap, from config.bash's fMemCap: memArgs on every docker run, and the whole run in a
+## user scope with the same cap where systemd-run --user works. OOMPolicy continue, so the cleanup
+## still runs. A step killed at the cap exits 137.
 memCap=""; memArgs=()
 fMemCap || exit 1
 memScope=(systemd-run --user --scope --quiet -p "MemoryMax=${memCap^^}" -p MemorySwapMax=0 -p OOMPolicy=continue)
@@ -282,11 +278,8 @@ unset GITSBY_CICD_IMAGE GITSBY_CICD_RUN GITSBY_CICD_KEEP_TEMP GITSBY_CICD_STEPS 
 if [[ -n "${handsOff}" ]]; then doSync=0; DOGFOOD_TARGETS=(); GIT_PUBLISH=(); fi
 [[ -z "${aliasNote}" ]] || { fEcho_Clean; fEcho_Clean "${aliasNote}"; }
 
-## One folder for the run's temp files, ${HOST_TEMP}/<app>/<start time>_<NNN>, so a run stopped
-## partway leaves none behind. TMPDIR, TEMP and TMP point into it, so the harnesses' folders and
-## the tools' files go in it too. Its run.pid marks it as a run's, and is checked again before the
-## removal. --keep-temp keeps it, and the files the steps would have removed from it, and says
-## where it is and which containers were kept. --list makes none.
+## One folder for the run's temp files, ${HOST_TEMP}/<app>/<start time>_<NNN>, with TMPDIR, TEMP
+## and TMP pointed in. Its run.pid marks it as a run's. --keep-temp keeps it; --list makes none.
 runTmp=""; runName=""; runRe='^[0-9]{8}-[0-9]{6}_[0-9]{3}$'
 ## What the run removed, for the one line at its end, and about how many bytes that freed.
 tidyGone=(); declare -i tidyFreed=0
@@ -326,12 +319,9 @@ fModCachePrune(){
 		"${root}/src-go/go.mod" "${root}/src-go/go.sum" 2>/dev/null)" || return 0
 	[[ ! "${n}" =~ ^[1-9][0-9]*$ ]] || gone+=("${n} Go module version(s)")
 }
-## At the end of a run that used the image, passed or not: the run's containers, the project's
-## dangling images, its older image tags once a newer one has passed, and the Go cache volume when
-## it's over 2 GB, or else on a pass its module cache's versions go.sum doesn't name. Only what
-## has the project's label. The build cache is docker's default
-## builder, which every project shares, so the daemon's builder.gc trims it, not a run here. The
-## run's end line says what went and about what it freed.
+## At the end of a run that used the image: its containers, the project's dangling images and
+## older tags, and the Go cache volume when over 2 GB or on a pass its unused module versions.
+## Only what has the project's label. The shared build cache is left to the daemon's builder.gc.
 fDockerTidy(){
 	local passed="$1" before after ids id ref seen=0 vol="${APP_NAME}-cicd-cache" size
 	local -a gone=()
@@ -581,11 +571,8 @@ fStageLint(){
 	## Keyed off the module, not a glob - the tools walk it themselves. A missing
 	## toolchain is fatal now rather than a warning: it is what builds the product.
 	command -v go >/dev/null 2>&1 || fDie "go toolchain not installed - nothing in this pipeline can run without it"
-	## Which version of each tool is about to gate this run. A tool that moved on its own is
-	## the usual reason a finding appears - or stops appearing - on a tree nobody touched.
-	## Warned about only: this pipeline installs nothing, and a version skew is a thing to
-	## know rather than a reason to refuse to build.
-	## A tool that is missing altogether is warned about by the step that needs it.
+	## Which version of each tool gates this run, since a tool that moved is the usual reason a
+	## finding comes or goes on an untouched tree. Warned only.
 	toolDrift=()
 	for toolSpec in "${GO_TOOL_VERSIONS[@]}"; do
 		toolName="${toolSpec%%=*}"; toolWant="${toolSpec#*=}"
@@ -719,11 +706,9 @@ for name in sys.argv[2:]:
         shutil.copyfile(f, dest / f.relative_to(site))
 ' "$1/vendor" "${PY_AUDIT_DISTS[@]}"
 }
-## CodeQL reports only on source under the database's root, so it runs over a scratch copy of the
-## module with its dependencies vendored in, the tree left as it was. Tests and vendor/ are both
-## off by default in the Go extractor. It sees one OS's files at a time, so it runs once for each
-## OS a release is built for. Python's run is one more, over a scratch copy of its own. The
-## reports are kept beside the soak runs, newest 20.
+## CodeQL reports only on source under the database's root, so it runs over a scratch copy with
+## the dependencies vendored, once per release OS, plus one for Python. Reports kept beside the
+## soak runs, newest 20.
 fCodeQL(){
 	local leakDir="${root}/${LEAKCHECK_DIR}" cqDir="" cqWork="" log="" rc=0 goos="" old=""
 	local -a cqFiles=() cqOses=() sarifs=() cqIgnore=()
@@ -1233,11 +1218,8 @@ elif command -v govulncheck >/dev/null 2>&1; then
 else
 	fEcho "WARNING: govulncheck skipped (not installed: go install golang.org/x/vuln/cmd/govulncheck@latest)"
 fi
-## The demo's Python libraries, at the versions installed here. Most come from Debian's archive
-## rather than pip, so pip-audit gets a list of pins, not an environment. Debian patches a hole
-## without moving the upstream version, so it can report one already fixed; PIP_AUDIT_IGNORE in
-## config.bash lists those, each with the backlog item that checks it. Off the container a box's
-## own old Pillow fails here on purpose; it is the copy that box renders with.
+## The demo's Python libraries at the versions installed here, mostly from Debian, so pip-audit
+## gets pins. PIP_AUDIT_IGNORE in config.bash lists holes Debian patched without a version bump.
 if [[ -z "${PY_AUDIT_DISTS+x}" ]] || ((! doFuzz || ! ${#PY_AUDIT_DISTS[@]})); then
 	:
 elif ((quick)); then
@@ -1288,12 +1270,9 @@ if ((doParity)); then
 	fStepEnd
 fi
 
-## Stage 5: dogfood. Cross-build each configured target and copy it to the first existing,
-## writable dir in that target's list. No sudo fallback on purpose - an unwritable dest is a
-## warning, not an unattended privilege escalation. A cross-build failure is fatal: it means
-## the tree stopped being portable, which is worth finding here rather than at a release.
-## Builds target $1 (goos/goarch) to the file $2, with the image's Go when the run uses it. Stage 7
-## builds the Mac one this way too, so the Mac tests run against the same build dogfood installs.
+## Stage 5: dogfood. Cross-build each target and copy it to the first writable dir in its list. No
+## sudo fallback: an unwritable dest is a warning. A cross-build failure is fatal. fCrossBuild
+## builds target $1 to file $2, with the image's Go when the run uses it.
 fCrossBuild(){
 	local target="$1" out="$2" arch part
 	local -a arches parts=()
@@ -1334,11 +1313,8 @@ if ((${#DOGFOOD_TARGETS[@]})); then
 	fStepEnd
 fi
 
-## Stage 6: demo gif. Types the scenario into a fake terminal, runs each command
-## against a build of its own, stamped with the newest release, renders the
-## animated loop. A failure is a warning, never a stop. When the render differs
-## from the committed copy, a timestamped original is kept (GFS-pruned) out of
-## tree, then moved in-repo.
+## Stage 6: demo gif, against a build stamped with the newest release. A failure is a warning. A
+## changed render keeps a timestamped original out of tree (GFS-pruned), then moves in.
 ((! DO_DEMOGIF)) || fStep demogif
 if ((! DO_DEMOGIF)); then
 	:
@@ -1410,13 +1386,9 @@ else
 fi
 fStepEnd
 
-## Stage 7: the Go tests on a Mac, a Windows box and the other Unix boxes, and the regression
-## suite on the Mac and the Unix boxes against the build for each. The Linux arm64 box also runs
-## the windows/arm64 Go tests under Wine. Nothing else runs the tests on
-## those platforms, and Windows-only breaks went unnoticed for weeks before this. A box that is off, unreachable or taken by someone else
-## is skipped with a note rather than waited for. Slow, and on other hosts, so --quick only
-## builds the Unix boxes' targets, which takes seconds and finds one that stopped compiling.
-## --no-remote leaves those out too, and the run in the container always gets it.
+## Stage 7: the Go tests on a Mac, Windows and the other Unix boxes, and the regression suite on
+## the Mac and Unix ones. A box that's off or taken is skipped with a note. --quick only builds
+## the Unix targets; --no-remote and the container run skip it.
 if ((doRemote || (quick && ! noRemote))); then fStep remote; fi
 if ((! doRemote)); then
 	if ((quick && ! noRemote)); then
