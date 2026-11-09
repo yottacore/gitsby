@@ -6497,6 +6497,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 #### Done - Features and enhancements
 
+- ✅ The repo's blurb, homepage and topics still describe the Bash and PowerShell product.
+	- Closed: 20261109
+	- Opened: 20260819-142046
+	- They name both scripts and give the old command count, and the topics say `bash` rather than `go`.
+	- Deferred until the Go build is released on `main`. Until then the description would be ahead of what a visitor can actually download, which is worse than being behind.
+	- One command when the time comes: `gh repo edit --description ... --homepage ... --add-topic go --remove-topic bash`.
+	- 2026-11-09: Done after v3.0.0-beta.1. The description says ten commands, as the README does. Topics gained `go`, `gitlab` and `gitea`, and lost `bash` and `powershell`. No homepage, since there is none to name.
+
 - ✅ Move the shcl module from its pinned `dev` commit to the tagged 3.0 release.
 	- Closed: 20261106-085637
 	- Opened: 20260924-132324
@@ -7349,12 +7357,6 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 ### Deferred
 
 Waiting on hardware, an upstream module, or a decision.
-
-- ✋ The repo's blurb, homepage and topics still describe the Bash and PowerShell product.
-	- Opened: 20260819-142046
-	- They name both scripts and give the old command count, and the topics say `bash` rather than `go`.
-	- Deferred until the Go build is released on `main`. Until then the description would be ahead of what a visitor can actually download, which is worse than being behind.
-	- One command when the time comes: `gh repo edit --description ... --homepage ... --add-topic go --remove-topic bash`.
 
 - ✋ macOS signing and quarantine on real ARM hardware: does a terminal download need either?
 	- Opened: 20260817-115422
