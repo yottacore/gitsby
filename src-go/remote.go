@@ -34,11 +34,8 @@ func (a *app) coreSSHCommand() string {
 	return a.git.coreSSHCommand.get(func() string { return runOut("git", "config", "--get", "core.sshCommand") })
 }
 
-// identityMismatchText says why the two identities disagree, or nothing. Only a
-// mismatch both sides KNOW about counts: '?' on either side means we couldn't
-// tell, which is not the same as being wrong. The tool is named rather than
-// assumed - a message about what 'gh' is doing, printed for a run going through
-// tea, sends you to check an account that had nothing to do with it.
+// identityMismatchText says why the 2 identities disagree, or nothing. '?' on either
+// side is unknown, not wrong. The tool is named, since it may be tea.
 func identityMismatchText(cli, cliWho, sshWho string) string {
 	if cli == "" {
 		cli = "the host's CLI"
@@ -120,15 +117,9 @@ func sshConnectTarget(url string) string {
 	return host
 }
 
-// gitSSHCommand is the ssh command git itself would run, so probes ask as the key
-// git actually pushes with. Without this a per-repo 'core.sshCommand' (the usual
-// way to hold two GitHub accounts on one box) is invisible: the probe answers
-// with the default key's account while git pushes as someone else - and two wrong
-// halves that happen to agree read as a clean bill of health. Precedence is git's
-// own: GIT_SSH_COMMAND beats core.sshCommand. Split, never shelled - a config
-// value is not a place to run shell - so a quoted path degrades to a plain 'ssh'
-// probe (which answers for the default key, and a wrong '?' is safer than a wrong
-// name) rather than misparse.
+// gitSSHCommand is the ssh command git would run, so probes ask as the key git pushes
+// with. GIT_SSH_COMMAND beats core.sshCommand. Split, never shelled, so a quoted path
+// gives plain 'ssh'.
 func (a *app) gitSSHCommand() string {
 	cmd := a.rawSSHCommand()
 	// Blank is as good as unset. A lone space split into nothing, and reading the
@@ -146,16 +137,9 @@ func (a *app) rawSSHCommand() string {
 	return a.coreSSHCommand()
 }
 
-// remoteEnv is the environment every command that reaches origin runs under: no
-// auth prompts (this happens before our own checks, so an https remote we can't
-// authenticate to would stop and ask for a username mid-command), and a connect
-// timeout on the ssh side so a dead remote can't hang for minutes. The timeout
-// composes onto whatever ssh command git would use, INCLUDING the one the account
-// selector set from a config sshKey - gating on the variable merely being present
-// dropped the timeout for exactly the multi-account setups it was written for.
-// A GIT_SSH_COMMAND the caller chose is left alone. So is a quoted one: the plain
-// 'ssh' the probe falls back to would outrank it and drop its key, so git runs
-// its own, without the timeout.
+// remoteEnv is the environment every command that reaches origin runs under: no auth
+// prompts, and an ssh connect timeout added to whatever ssh command git would use. A
+// GIT_SSH_COMMAND the caller chose is left alone, and so is a quoted one.
 func (a *app) remoteEnv() []string {
 	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	if !a.userSSHCommand && !strings.ContainsAny(a.rawSSHCommand(), `"'`) {
@@ -173,11 +157,8 @@ var sshGreetingREs = []*regexp.Regexp{
 	regexp.MustCompile(`^Hi there, ([A-Za-z0-9_.-]+)!`),
 }
 
-// sshLogin names the account this remote's ssh key authenticates as. GitHub
-// answers 'Hi <user>!' and always exits 1, so parse the greeting, not the status.
-// BatchMode + a connect timeout: never prompt, never hang. '?' for https/local
-// remotes, no agent, or anything else unresolvable - and a deploy key answers
-// with a repo name, which simply won't match any login. Unknown is not wrong.
+// sshLogin names the account this remote's ssh key authenticates as, from GitHub's
+// greeting, since it always exits 1. '?' for anything unresolvable. Unknown isn't wrong.
 func (a *app) sshLogin(url string) string {
 	if who, asked := a.remote.sshLogins[url]; asked {
 		return who
@@ -235,13 +216,8 @@ func probeSSHLogin(ctx context.Context, env []string, url, sshCommand string) st
 	return "?"
 }
 
-// fetchRemote fetches with --prune (stale origin/* refs would fool the existence
-// checks) and heals origin/HEAD (missing on git < 2.47, stale after an upstream
-// default-branch rename). ssh gets a connect timeout so a dead remote can't hang
-// every command for minutes; https relies on git's own timeouts. Never clobbers a
-// user-set GIT_SSH_COMMAND, and never prompts for auth - this runs before any of
-// our own checks, so an https remote we can't authenticate to would stop and ask
-// for a username mid-command.
+// fetchRemote fetches with --prune and heals origin/HEAD, missing on git < 2.47 or stale
+// after a rename. Runs under remoteEnv, so no auth prompt and no hang.
 func (a *app) fetchRemote() {
 	// The one thing that moves a ref without being a step, so the runners' own
 	// invalidation never covers it. Only what reads origin/*: ahead-behind, the
@@ -272,13 +248,9 @@ func (a *app) fetchRemote() {
 	}
 }
 
-// askOriginHeads asks origin itself where its branches point, for br prune's
-// delete-time check. Every branch in one answer rather than a pattern per
-// candidate: git matches patterns on this side, after origin has sent every ref
-// anyway, and a long list of them can pass Windows' command-line limit. Same
-// environment as the fetch, so no credential prompt and a connect timeout, and
-// git's own reason goes to the terminal. false means origin was not asked, which
-// says nothing about any branch.
+// askOriginHeads asks origin where its branches point, for br prune's delete check. One
+// answer for all, since a pattern list can pass Windows' command-line limit. false: not
+// asked.
 func (a *app) askOriginHeads() (map[string]string, bool) {
 	ask := toolCmd("git", "ls-remote", "--heads", "origin")
 	ask.Env = a.remoteEnv()
@@ -296,11 +268,8 @@ func (a *app) askOriginHeads() (map[string]string, bool) {
 // and pushes still go out.
 func (a *app) isOffline() bool { return a.remote.offline }
 
-// ghProtocol: which transport gh hands to git for github.com ('ssh' or 'https').
-// Host-specific, not the global default - they can disagree, and the host one is
-// what github.com operations use. Only asked for a host gh actually serves: gh's
-// preference says nothing about somebody else's git host, and asking it anyway spends
-// a process to mis-answer a question about a machine gh has never heard of.
+// ghProtocol: the transport gh hands git for this host, from the host setting, not the
+// global one. Only for a host gh serves.
 func (a *app) ghProtocol(host string) string {
 	if !isGitHubHost(host) {
 		return "https"
@@ -313,11 +282,8 @@ func (a *app) ghProtocol(host string) string {
 	})
 }
 
-// preferredProtocol: which transport a remote we set should use. The config file
-// wins because that is where the accounts live, and choosing https there is what
-// makes a second account work with no ssh key at all; gh's own setting is the
-// answer when nothing says otherwise, so an unconfigured machine behaves exactly
-// as it did before any of this existed.
+// preferredProtocol: which transport a remote we set should use. The config file wins,
+// then gh's own setting.
 func (a *app) preferredProtocol() string {
 	return a.protocolFor(a.originHost())
 }
