@@ -86,7 +86,8 @@ jobs:
 
       # The published universal binary, fetched the way a terminal install fetches it, under the
       # stock bash 3.2. curl sets no quarantine flag, so Gatekeeper never looks; Apple silicon
-      # still runs nothing without a valid signature, which the ad-hoc one has to be.
+      # still runs nothing without a valid signature, which the ad-hoc one has to be. Go signs
+      # only the arm64 half; Intel needs none.
       - name: Release binary
         env:
           GH_TOKEN: ${{ github.token }}
@@ -97,7 +98,8 @@ jobs:
           bin="${home}/.local/bin/gitsby"
           lipo -archs "${bin}"
           if xattr -p com.apple.quarantine "${bin}" 2>/dev/null; then echo "quarantined"; exit 1; fi
-          codesign -v --verbose=2 "${bin}"
+          codesign -v --verbose=2 --arch arm64 "${bin}"
+          echo "running on $(uname -m)"
           "${bin}" --version
 
       - name: test.bash
