@@ -36,9 +36,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash hangs on Windows at [df1s7]: Git for Windows' askpass opens a password dialog
 	- ID: 2026110814215941
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261108-142159
+	- Closed: 20261109
 	- Opened by: jim-collier
 	- Related IDs: 2026110810100400
 	- Target OS: Windows
@@ -48,6 +49,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 20261108 on vm925w, Git for Windows 2.55.0, with the same checks run outside test.bash. That login shell sets SSH_ASKPASS=/mingw64/bin/git-askpass.exe.
 	- Possible cause [Bug]: test.bash pins GIT_TERMINAL_PROMPT=0 for these checks but never unsets SSH_ASKPASS or GIT_ASKPASS, and git asks an askpass ahead of that check. Unsetting both in test.bash's env pins fixed it there.
 	- Estimated effort: Low
+	- Progress log:
+		- 2026-11-09: test.bash unsets GIT_ASKPASS and SSH_ASKPASS with its other inherited env, so no git call in the suite can reach an askpass, not only [df1s7].
+	- Branch: askpass
+	- Test case: [df31s] in test.bash, a `git credential fill` no helper answers must fail.
+		- Verified: run with SSH_ASKPASS exported and the unset removed, [df31s] fails, since git takes the askpass's answer. With the unset, test.bash 1887/0 with the same SSH_ASKPASS exported.
+	- Acceptance signoff: Self-closed. The unset was shown to clear the hang on vm925w when the bug was filed.
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300

@@ -97,6 +97,9 @@ fUnsetInheritedGitConfig(){
 }
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE
+## git asks an askpass before it checks GIT_TERMINAL_PROMPT. Git for Windows' login shell sets
+## SSH_ASKPASS, and over ssh its dialog waits forever for a password nobody can type.
+unset GIT_ASKPASS SSH_ASKPASS
 
 ## Output helpers, the same family as cicd.bash's: fEcho_Clean prints a line as given and
 ## collapses repeated blanks, and fUsage refuses the command line.
@@ -5145,6 +5148,8 @@ GHEOF
 	( cd "${ac}/trees/work/credproj" && git config --local gitsby.ghAccount "\$(touch '${ac}/credhome/CANARY')" && git config --local gitsby.ghTokenFile "${acCanon}/credhome/repo.tok" )
 	fAssertNotOut "[df1s7] a repo's own token file is not read"  'tok_repo_local'  bash -c "cd '${ac}/trees/work/credproj' && ${acFillGh}"
 	fAssertFail "[df1s8] and a login holding shell text runs nothing"  test -e "${ac}/credhome/CANARY"
+	fAssertFail "[df31s] a fill no helper answers fails, with no askpass asked" \
+		bash -c "printf 'protocol=https\nhost=nobody.example\n\n' | env ${acCredEnv} git credential fill"
 	## A rule for the root covers every folder. It looked for the rule plus a slash, '//', and
 	## covered none, and the includeIf git got had the same extra slash.
 	mkdir -p "${ac}/roothome"
