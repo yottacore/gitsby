@@ -232,17 +232,6 @@ func (mig *formatMigration) formatName() string {
 	return "SHCL " + strconv.Itoa(mig.from) + ".x format"
 }
 
-// readAs names what read the file that way, for the notice that it still does.
-func (mig *formatMigration) readAs() string {
-	switch {
-	case mig.flat:
-		return "v2.1.0"
-	case mig.escapes:
-		return "the earlier module"
-	}
-	return strconv.Itoa(mig.from) + ".x"
-}
-
 // replaceOldFormat keeps the file as read under its backup name, then writes the
 // converted text over it. Under the same lock 'account set' takes, and only while
 // the file still holds what was read: another run may have converted it already.
@@ -304,7 +293,7 @@ func (a *app) reportMigration() {
 	file := nativePath(a.cfg.file)
 	notes := noteLines("File", file)
 	if !mig.done {
-		a.out.errorf("The accounts file is in the %s and couldn't be converted. This run read it the way %s did. 'account set' and 'account unset' refuse until it is converted.", mig.formatName(), mig.readAs())
+		a.out.errorf("The accounts file is in the %s and couldn't be converted. This run read it in that format. 'account set' and 'account unset' refuse until it is converted.", mig.formatName())
 		a.out.notes(append(notes, noteLines("Why", mig.why+".")...))
 		return
 	}

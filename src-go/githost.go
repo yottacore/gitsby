@@ -271,7 +271,7 @@ func (a *app) teaAsAccount(cli string) (bool, error) {
 	if !gave {
 		why = "The account has no token for " + a.acct.credHost + "."
 		fix = noteLines("Fix", "Point the account at a file holding a "+a.acct.credHost+" token, or run it anyway with --any-identity:",
-			"  "+meName+" account set "+a.acct.name+" tokenFile <file>")
+			"  "+meName+" account set "+a.acct.name+" tokenfile <file>")
 	}
 	if a.opt.quiet {
 		return false, refusalBlock("tea would act as '"+printable(got)+"', its own login for "+a.acct.credHost+", not as '"+printable(want)+"'.", [][]string{noteLines("Why", why), fix}, nil)

@@ -161,14 +161,14 @@ func (a *app) showHostLine() {
 		// glab runs on the account's token, so it has no login of its own to name.
 		line += " (" + cli + ")"
 	case a.isOffline():
-		line += " (" + cli + ") - offline, so who it acts as is unknown"
+		line += " (" + cli + "): (unknown - offline, so " + cli + " wasn't asked)"
 	default:
 		who, failure := a.hostLogin(cli, host)
 		switch {
 		case failure != "":
-			line += " (" + cli + "): unknown - couldn't ask " + cli + ": " + failure
+			line += " (" + cli + "): (unknown - couldn't ask " + cli + ": " + failure + ")"
 		case who == "":
-			line += " (" + cli + "): unknown - '" + cli + " login add' has no login for this host"
+			line += " (" + cli + "): (unknown - '" + cli + " login add' has no login for this host)"
 		default:
 			line += " (" + cli + "): " + who
 		}
@@ -456,7 +456,7 @@ func (a *app) showAccountNoToken() {
 			return
 		}
 		a.showAccountFix("Run 'gh auth login' as "+who+", or point this block at a file holding its token:",
-			"  "+meName+" account set "+a.acct.name+" tokenFile <file>")
+			"  "+meName+" account set "+a.acct.name+" tokenfile <file>")
 		return
 	}
 	a.showAccountNote("Why", "An account is applied by handing git its access token, and "+meName+
@@ -466,7 +466,7 @@ func (a *app) showAccountNoToken() {
 		return
 	}
 	a.showAccountFix("Point this block at a file holding a "+a.accountHost()+" token for it:",
-		"  "+meName+" account set "+a.acct.name+" tokenFile <file>")
+		"  "+meName+" account set "+a.acct.name+" tokenfile <file>")
 }
 
 // showAccountLine leads the block, because it explains the lines under it: the key

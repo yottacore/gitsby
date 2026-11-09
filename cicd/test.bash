@@ -2503,6 +2503,8 @@ fRunSuite(){
 	fAssert "[dab8a] repo clone runs"                bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' cl1"
 	fAssert "[dab8b] repo clone checked out dev"     bash -c "cd '${cl}/cl1' && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssert "[dab8c] repo clone again (already cloned) ok"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' cl1"
+	fAssertOut "[df362] and names the folder in full on its own line"  "^  File: ${cl//./\\.}/cl1$" \
+		bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' cl1"
 	fAssert "[dab8d] repo clone derives dir from url"       bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' && [[ -d origin/.git ]]"
 	fAssertFail "[dab8e] repo clone into non-empty dir rejected"  bash -c "cd '${cl}' && mkdir -p other && touch other/x && '${gitsby}' -q repo clone '${origin}' other"
 	fAssertFail "[dab8f] repo clone with no url rejected"         bash -c "cd '${cl}' && '${gitsby}' -q repo clone"
@@ -2523,6 +2525,8 @@ fRunSuite(){
 			bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' sub/named2"
 	fi
 	fAssertFail "[dab8y] repo clone over a different-url clone refused"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o3}' cl1"
+	fAssertOut "[df363] and names the folder in full on its own line"  "^  File: ${cl//./\\.}/cl1$" \
+		bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o3}' cl1 2>&1"
 
 	## connect: publish a local-only repo to a fresh empty remote; idempotent; guards
 	local cn="${work}/$1-connect"
@@ -5390,6 +5394,8 @@ GHEOF
 	fAssertOut  "[db018] a non-github origin has no other spelling"  'no other spelling'  bash -c "cd '${acAway}' && '${gitsby}' -q -NoFetch repo url"
 	fAssertFail "[db01m] and converting it is refused"                                    bash -c "cd '${acAway}' && '${gitsby}' -q -NoFetch repo url https"
 	fAssertOut  "[db32k] for that reason and not another"  'no other spelling'            bash -c "cd '${acAway}' && '${gitsby}' -q -NoFetch repo url https 2>&1"
+	fAssertOut  "[df364] and names the origin folder on its own line"  "^  File: ${ru//./\\.}-local\\.git$" \
+		bash -c "cd '${acAway}' && '${gitsby}' -q -NoFetch repo url https 2>&1"
 
 	## The nudge to convert. It exists to be seen exactly once per situation that warrants it, so
 	## what matters as much as showing it is the two cases where it must stay quiet. Needs a
@@ -8009,11 +8015,11 @@ GHEOF
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch identity 2>&1"
 	## A tea that fails has said nothing about logins. "No login" would send someone off to add one
 	## they may already have.
-	fAssertOut    "[dcmp5] a tea that fails is not read as holding no login"  "unknown - couldn't ask tea: tea config is unreadable" \
+	fAssertOut    "[dcmp5] a tea that fails is not read as holding no login"  "\(unknown - couldn't ask tea: tea config is unreadable\)" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_FAIL='tea config is unreadable' '${gitsby}' -q -NoFetch identity 2>&1"
 	fAssertNotOut "[dcmp6] and does not say tea has no login"  'has no login for this host' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_FAIL='tea config is unreadable' '${gitsby}' -q -NoFetch identity 2>&1"
-	fAssertOut    "[dcmp7] a tea with no login for the host still says so"  "unknown - 'tea login add' has no login for this host" \
+	fAssertOut    "[dcmp7] a tea with no login for the host still says so"  "\(unknown - 'tea login add' has no login for this host\)" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_URL='https://other.example.test' '${gitsby}' -q -NoFetch identity 2>&1"
 
 	## A token is a credential for the git host that issued it. An account that banks at github.com must
@@ -8386,6 +8392,10 @@ GLEOF
 	## A second run is a success with nothing to do, so a script can run it without checking first.
 	fAssert "[dd83s] a key already gone is nothing to do, not a failure" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work host 2>&1 | grep -q 'nothing to do'"
+	fAssertOut "[df365] and names the file on its own line, not in the sentence"  '^\[ account\[work\] has no .host. in the accounts file; nothing to do\. \]$' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work host 2>&1"
+	fAssertOut "[df368] with the file on a File line under it"  '^  File: /.*/unset\.shcl$' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work host 2>&1"
 	## It removes every line of the key, so a value after it would read as a narrower request than
 	## the one carried out.
 	fAssertOut "[dd83t] a value after the key is refused"  "\\(got '/a' too\\)" \

@@ -33,6 +33,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- The SSH line puts the key's path inside parentheses
+	- ID: 2026110914001448
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-140014
+	- Opened by: jim-collier
+	- Related IDs: 2026110912215207
+	- Incorrect behavior [Bug]: status and whoami print the key file inside the SSH line's parentheses, as `SSH ..........: <account> (git@host via alias 'x', key /home/pat/.ssh/id_work)` (show.go showSSHLine). A long path wraps the line.
+	- Expected behavior [Bug]: UI guide: a path goes on its own labeled line, never inside a sentence or parentheses. Found in the 2026110912215207 sweep and left, since it changes the identity block's layout, its pinned checks and the demo.
+	- Reproduced [Bug]: No. By reading.
+	- Origin: show.go's key on the SSH line from 2fcc6c06 (2026-08-21). The 20261107 and 20261109 sweeps didn't reach it. Confirmed.
+	- Estimated effort: Low
+
 - Code Review 20261109 item 1: A failed `account apply` empties a working account fragment that the global config still includes
 	- ID: 2026110912215201
 	- Type: Bug
@@ -208,7 +222,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 7: Output still breaks 4 UI guide rules that Code Review 20261107 item 6 fixed elsewhere
 	- ID: 2026110912215207
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -224,6 +238,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Notes:
 		- This class has come back twice now. Per the review rules it gets a table in design.md, one row per rule, so the next sweep checks each row.
 	- Estimated effort: Avg
+	- Actual cause [Bug]: Item 6's sweep searched for the quoted word and for `usagef` with a path, so a status line, a refusal built another way, a Fix literal and a second name for the old format were never in its list.
+	- Actual fix [Bug]:
+		- The Git host line says `(unknown - why)` for no login, a tea that failed, and offline, which said "who it acts as is unknown".
+		- Paths on File lines: the fragment git won't write, `account unset`'s 2 "nothing to do" lines, `repo url` on a local origin, and the clone folder that is already a clone or isn't one, in full through `cloneDirShown()`. "Wrote" names the fragment through `nativePath`. A status line takes notes under it through `printer.statusNotes`.
+		- The 3 Fix notes and accounts.md say `tokenfile`, and so does the changelog's vNEXT.
+		- The conversion notice says "This run read it in that format." `readAs` is gone.
+		- design.md -> UI -> "Output sweep" has the table, one row per rule with what to search.
+	- Decisions:
+		- `repo url` on an origin that isn't a local path names it on a `URL:` line, since a URL isn't a file. A local one is a `File:` line, as folders are elsewhere.
+		- The fragment refusal keeps its wording, with the path moved to a File line.
+		- 2026-11-09: test asserts given new values for this change. Go [dcpv4] and test.bash [dcmp5] and [dcmp7]: `unknown - ...` is now `(unknown - ...)`.
+		- Left as they are: `Cloned into '<folder>'.` in main.go, which the UI guide gives as its status line example; the `account set` value refusals, which quote back what was typed, as item 6 left them; and the `raw` PATH entry, settled on 2026101916533300. The SSH line's key path in parentheses is filed as 2026110914001448.
+	- Branch: round-20261109
+	- Test case: Go [dcpv4] (with an offline case), [df366] every `account set <name> <key>` literal in the source names a key `account set` takes, [df367] the conversion notice names the old format one way, and the File line in TestAccountApplyFailureKeepsTheFragment. test.bash [df362] [df363] the clone folder, [df364] the local origin, [df365] [df368] `account unset`'s File line, and the updated [dcmp5] [dcmp7].
+	- Verified: The Go checks fail against the code before the fix, and test.bash fails exactly the 7 new or changed checks with the old build (1903 passed). All pass after.
+	- Swept: every `unknown` and `none found` literal in src-go; every `usagef`, `usageSubf`, `errorf`, `status` and `warn` with a path, file, folder or fragment argument; every `" (" +` join; every `account set` literal; `tokenFile` in README.md, accounts.md, changelog.md and the UI guide.
+	- Acceptance signoff: Self-closed. Its new checks fail before the fix and pass after.
+	- Closed: 20261109-140040
 
 - Code Review 20261109 item 8: Two package-level caches break the code guide's rule on package state
 	- ID: 2026110912215208

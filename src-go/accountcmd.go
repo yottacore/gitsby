@@ -559,7 +559,8 @@ func (a *app) writeAccountFragment(dir, file, name string) (err error) {
 	}()
 	write := func(key, value string) error {
 		if !a.inheritOK("git", "config", "--file", newFragment, key, value) {
-			return usagef("Couldn't write %s into '%s'; it was left as it was, and nothing further was applied.", key, fragment)
+			return refusalBlock("Couldn't write "+key+" into an account fragment; it was left as it was, and nothing further was applied.",
+				[][]string{noteLines("File", nativePath(fragment))}, nil)
 		}
 		return nil
 	}
@@ -601,7 +602,7 @@ func (a *app) writeAccountFragment(dir, file, name string) (err error) {
 			fragmentKept, "Check permissions on it and on the folder it is in, then run this again.",
 			noteLines("File", nativePath(fragment)))
 	}
-	a.out.status("Wrote " + fragment)
+	a.out.status("Wrote " + nativePath(fragment))
 	return nil
 }
 
@@ -1306,7 +1307,7 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 		if len(names) > 0 {
 			has = "it has " + strings.Join(names, ", ")
 		}
-		a.out.status("No " + t.disp + " in " + nativePath(t.file) + " (" + has + "); nothing to do.")
+		a.out.statusNotes("No "+t.disp+" in the accounts file ("+has+"); nothing to do.", noteLines("File", nativePath(t.file)))
 		a.out.clean("")
 		return t, true, nil
 	}
@@ -1335,7 +1336,7 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 		}
 	}
 	if len(t.gone) == 0 {
-		a.out.status(t.disp + " has no '" + t.field + "' in " + nativePath(t.file) + "; nothing to do.")
+		a.out.statusNotes(t.disp+" has no '"+t.field+"' in the accounts file; nothing to do.", noteLines("File", nativePath(t.file)))
 		a.out.clean("")
 		return t, true, nil
 	}

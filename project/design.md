@@ -32,6 +32,7 @@ This is a decision log, not a specification. Each entry says what was decided an
 - [Architecture](#architecture)
 	- [Software stack](#software-stack)
 	- [UI](#ui)
+		- [Output sweep](#output-sweep)
 	- [Testing](#testing)
 	- [Demo](#demo)
 	- [Release policy](#release-policy)
@@ -564,6 +565,17 @@ The rules these entries lead to are collected in [style-guide_ui-ux.md](style-gu
 	- Where a value came from is named the same way, on its own line, and in terms that can be gone and looked at - the variable, the Git config key, or the account block and its file. "config" alone is ambiguous wherever a program reads more than one.
 
 - A path is printed as it is, never re-spelled to save room. One gitsby worked out itself - the accounts file it found, the directory it is standing in - prints in full, and one that came from the config file prints the way the file writes it. Folding a leading home back to `~` was dropped on 2026-09-16: it shortened one line while the folder rules under it printed in full, and a screen that spells the same prefix two ways costs more than the width it saved. That reverses the display half of the Windows fix which had taught that fold to match either slash.
+
+#### Output sweep
+
+These 4 output rules came back after 2 sweeps, each time at sites the sweep's grep didn't reach. A sweep of the output checks every row, with the search in its second column, not just the sites a review named.
+
+| Rule                                           | What to search
+| :---                                           | :---
+| `(unknown - why)`, and `(none)`                | Every string literal holding `unknown` or `none found`, not only the quoted word.
+| A path on its own labeled line, in full        | Every path, file, folder or origin passed to `usagef`, `usageSubf`, `errorf` or `status`, or joined into a string. Each goes through `nativePath`, or `cloneDirShown` for a clone's folder.
+| A config key spelled the way the file takes it | Every `account set` literal in the Go source, which a Go test checks, and every key named in accounts.md, README.md and the changelog's vNEXT section.
+| One word per thing                             | Every name for the same thing in output: labels, the accounts file, and the old config formats.
 
 ### Testing
 

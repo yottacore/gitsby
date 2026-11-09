@@ -198,7 +198,11 @@ func (a *app) settleRepoURL() (bool, error) {
 		// host never hears about, and refusing it anywhere else was the parser's limit
 		// showing through as a rule. A local path still has nothing to re-spell.
 		if remoteTarget(current) == "" || a.originHost() == "" {
-			return false, usagef("origin (%s) has no host and 'owner/name' to re-spell, so there is no other spelling of it to switch to.", maskURL(current))
+			where := noteLines("URL", maskURL(current))
+			if isLocalPath(current) {
+				where = noteLines("File", nativePath(current))
+			}
+			return false, refusalBlock("origin has no host and 'owner/name' to re-spell, so there is no other spelling of it to switch to.", [][]string{where}, nil)
 		}
 		if hostURL(a.originHost(), remoteTarget(current), a.cmd.arg) == current {
 			a.out.status("origin already uses " + a.cmd.arg + "; nothing to do.")
@@ -256,13 +260,14 @@ func (a *app) settleRepoClone() (bool, error) {
 	if pathExists(a.tgt.cloneDir) {
 		existingURL := runOut("git", "-C", a.tgt.cloneDir, "remote", "get-url", "origin")
 		if pathExists(a.tgt.cloneDir+"/.git") && sameRemote(existingURL, a.tgt.cloneURL) {
-			a.out.status("'" + a.tgt.cloneDir + "' is already a clone of that URL; nothing to do.")
+			a.out.statusNotes("Already a clone of that URL; nothing to do.", noteLines("File", a.cloneDirShown()))
 			a.out.clean("")
 			return true, nil
 		}
 		// An empty dir is fine (git allows it); anything else would clobber.
 		if !isDir(a.tgt.cloneDir) || !dirEmpty(a.tgt.cloneDir) {
-			return false, usagef("'%s' already exists and isn't a clone of that URL.", a.tgt.cloneDir)
+			return false, refusalBlock("The clone's folder already exists and isn't a clone of that URL.",
+				[][]string{noteLines("File", a.cloneDirShown())}, nil)
 		}
 	}
 	return false, nil

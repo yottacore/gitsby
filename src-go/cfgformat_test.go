@@ -528,3 +528,20 @@ func TestOldPinRespelling(t *testing.T) { // [df08q]
 		}
 	}
 }
+
+// The notice names the old format one way, in both its sentences. "The earlier
+// module" meant nothing to anyone who never built gitsby.
+func TestFormatNoticeOneName(t *testing.T) { // [df367]
+	for _, mig := range []formatMigration{
+		{from: 3, escapes: true, why: "the folder is read-only"},
+		{from: 3, escapes: true, done: true, backup: "/h/old.shcl"},
+	} {
+		p, _, stderr := testPrinter()
+		a := newApp(p)
+		a.cfg = &config{file: "/h/config.shcl", migration: &mig, values: map[string]string{}}
+		a.reportMigration()
+		if got := stderr.String(); !strings.Contains(got, "earlier SHCL 3 spelling") || strings.Contains(got, "module") {
+			t.Errorf("done=%v: %q", mig.done, got)
+		}
+	}
+}

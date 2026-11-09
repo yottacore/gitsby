@@ -1483,6 +1483,9 @@ func TestAccountApplyFailureKeepsTheFragment(t *testing.T) { // [df35e]
 		if err == nil || !strings.Contains(err.Error(), "left as it was") {
 			t.Fatalf("apply: %v", err)
 		}
+		if !strings.Contains(err.Error(), "\n  File: "+nativePath(fragment)) {
+			t.Errorf("the fragment isn't on its own File line: %v", err)
+		}
 		kept(t, fragment)
 	})
 	t.Run("a stale lock beside it", func(t *testing.T) {

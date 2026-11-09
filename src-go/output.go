@@ -67,6 +67,15 @@ func (p *printer) status(s string) {
 	p.clean("[ " + s + " ]")
 }
 
+// statusNotes is a status line with labeled notes under it, such as the File line
+// for a path, which never goes inside the sentence.
+func (p *printer) statusNotes(s string, notes []string) {
+	p.status(s)
+	for _, l := range notes {
+		p.clean("  " + l)
+	}
+}
+
 // warn writes one line to stderr, unprefixed, for a warning that sits in the
 // stdout flow just above the prompt.
 func (p *printer) warn(s string) {

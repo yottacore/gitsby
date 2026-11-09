@@ -12,6 +12,8 @@ package main
 
 import (
 	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -307,16 +309,19 @@ func TestHostCLIWho(t *testing.T) { // [dcpv3]
 
 // A tea that failed is not a tea with no login, and only a login tea named is
 // compared with the ssh key's account. "No login" is not a login called that.
+// Every unknown is "(unknown - why)", the SSH line's form.
 func TestShowHostLine(t *testing.T) { // [dcpv4]
 	tests := []struct {
-		name   string
-		answer hostAnswer
-		has    string
-		lacks  []string
+		name    string
+		answer  hostAnswer
+		offline bool
+		has     string
+		lacks   []string
 	}{
-		{"a login", hostAnswer{user: "gitfriend"}, "(tea): gitfriend  <-- NOT the ssh key's account ('alice')", nil},
-		{"no login", hostAnswer{}, "(tea): unknown - 'tea login add' has no login for this host", []string{"NOT the ssh key"}},
-		{"tea failed", hostAnswer{failure: "tea config is unreadable"}, "(tea): unknown - couldn't ask tea: tea config is unreadable", []string{"login add", "NOT the ssh key"}},
+		{"a login", hostAnswer{user: "gitfriend"}, false, "(tea): gitfriend  <-- NOT the ssh key's account ('alice')", nil},
+		{"no login", hostAnswer{}, false, "(tea): (unknown - 'tea login add' has no login for this host)\n", []string{"NOT the ssh key"}},
+		{"tea failed", hostAnswer{failure: "tea config is unreadable"}, false, "(tea): (unknown - couldn't ask tea: tea config is unreadable)\n", []string{"login add", "NOT the ssh key"}},
+		{"offline", hostAnswer{user: "gitfriend"}, true, "(tea): (unknown - offline, so tea wasn't asked)\n", []string{"gitfriend"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -327,6 +332,7 @@ func TestShowHostLine(t *testing.T) { // [dcpv4]
 			a.host.login.set(tc.answer)
 			a.remote.isWrite, a.remote.probeURL = true, "git@git.example.test:acme/proj.git"
 			a.remote.sshLogins = map[string]string{a.remote.probeURL: "alice"}
+			a.remote.offline = tc.offline
 			a.showHostLine()
 			if !strings.Contains(out.String(), tc.has) {
 				t.Errorf("%q does not say %q", out, tc.has)
@@ -497,5 +503,34 @@ func TestReadGlabMR(t *testing.T) { // [df04m]
 		if ok != c.ok || got != c.want {
 			t.Errorf("readGlabMR(%q, %v) = %+v, %v; want %+v, %v", c.in, c.list, got, ok, c.want, c.ok)
 		}
+	}
+}
+
+// A Fix that names an account key spells it the way 'account set' and the file
+// take it. tokenFile came back in 3 notes after the key went lower case.
+func TestFixKeysAreSetFields(t *testing.T) { // [df366]
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyRE := regexp.MustCompile(`account set "\s*\+[^+]+\+\s*" (\w+)`)
+	seen := 0
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		body, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range keyRE.FindAllStringSubmatch(string(body), -1) {
+			seen++
+			if !slices.Contains(accountSetFields, m[1]) {
+				t.Errorf("%s: 'account set <name> %s' isn't a key 'account set' takes", f, m[1])
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no 'account set <name> <key>' literal found; the pattern no longer matches the source")
 	}
 }
