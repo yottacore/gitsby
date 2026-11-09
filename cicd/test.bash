@@ -90,11 +90,9 @@ unset NO_PROXY no_proxy
 ##     "gh was left alone" check read as "gh was handed a token".
 ## Neither shows up as a failure you can act on: the suite just reports checks that were never
 ## about the thing they name.
-fUnsetInheritedGitConfig(){
-	local -i i=0
-	for (( i = 0; i < ${GIT_CONFIG_COUNT:-0}; i++ )); do unset "GIT_CONFIG_KEY_${i}" "GIT_CONFIG_VALUE_${i}"; done
-	unset GIT_CONFIG_COUNT
-}
+## By name rather than by GIT_CONFIG_COUNT, since arithmetic on an inherited count runs a
+## command hidden in an array subscript.
+fUnsetInheritedGitConfig(){ unset GIT_CONFIG_COUNT "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"; }
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE
 ## git asks an askpass before it checks GIT_TERMINAL_PROMPT. Git for Windows' login shell sets
@@ -6697,6 +6695,18 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dd5fg] ${hermScript} pins its own accounts file" \
 			grep -qE '^export GITSBY_CONFI[G]=' "${root}/${hermScript}"
 	done
+	## The lines that drop it, run against a count that hides a command in a subscript. Each
+	## script's own lines, so a loop on the count coming back fails here.
+	local hermLines="" hermRig=""
+	for hermScript in cicd/test.bash cicd/fuzz.bash cicd/parity.bash cicd/utility/spawn-count.bash; do
+		hermLines="$(grep -E '^[[:space:]]*(for|unset|fUnsetInheritedGitConfig)[[:space:](].*GIT_CONFIG_(COUNT|KEY_)' "${root}/${hermScript}" || true)"
+		hermRig="${work}/herm_${hermScript##*/}"; mkdir -p "${hermRig}"
+		# shellcheck disable=SC2016  ## the inner shell does the expanding.
+		fAssert "[df34d] ${hermScript} drops env-injected git config without running its count" \
+			env GIT_CONFIG_COUNT='GIT_CONFIG_KEY_0[$(: > canary)]' GIT_CONFIG_KEY_0=k GIT_CONFIG_VALUE_0=v GIT_CONFIG_KEY_3=k \
+			bash -uc 'cd "$1" || exit 1; eval "$2"; ! declare -F fUnsetInheritedGitConfig >/dev/null || fUnsetInheritedGitConfig; [[ -n "$2" && ! -e canary && -z "${GIT_CONFIG_KEY_0:-}${GIT_CONFIG_VALUE_0:-}${GIT_CONFIG_KEY_3:-}${GIT_CONFIG_COUNT:-}" ]]' \
+			_ "${hermRig}" "${hermLines}"
+	done
 	## Runtime companions to the pins above. Regression guards, not discriminating checks: on a
 	## clean machine they pass just as well against a harness that isolates nothing.
 	# shellcheck disable=SC2016  ## the inner shell has to do the expanding, not this one.
@@ -8628,3 +8638,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261107 JC: A Format 3 file from before the move to v3.0.0-beta1 has its escapes re-spelled, [df08w], [df08x] and [df08y]. 1867 -> 1870.
 ##		- 20261108 JC: account apply gives each account a credential helper for plain git over https, [df1s0] to [df1s8] and [df1sa]. 1874 -> 1884.
 ##		- 20261109 JC: Ctrl+C with the run log on, [df33r]. config.bash run directly, [df33s].
+##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript. [df34d] runs each harness's lines against such a count. 1896 -> 1899.

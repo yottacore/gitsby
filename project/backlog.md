@@ -109,7 +109,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 4: The test harnesses run a command hidden in an inherited GIT_CONFIG_COUNT
 	- ID: 2026110912215204
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -121,6 +121,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Notes:
 		- The value comes from the shell that runs the suite, so it needs someone who already controls that shell.
 	- Estimated effort: Low
+	- Actual cause [Bug]: The 4 harnesses found the numbered pairs by looping up to the inherited count, so its value went through arithmetic.
+	- Actual fix [Bug]: Each one drops `GIT_CONFIG_COUNT` and every `GIT_CONFIG_KEY_*` and `GIT_CONFIG_VALUE_*` by name, with `${!prefix@}`, and never reads the count.
+	- Decisions:
+		- By name rather than checking the count for plain digits, as the expected behavior says. Nothing reads the count, a pair above a count that understates is dropped too, and a junk count still gets cleared. Same intent, fewer lines.
+	- Branch: round-20261109
+	- Test case: test.bash `[df34d]`, which runs each harness's own lines against a count that hides a command. Verified: it fails on all 4 against the scripts before the fix, with the canary made, and passes after. `--backlog-run-quick` passed: test.bash 1899/0, fuzz 313/0, parity 30/0, spawn counts OK.
+	- Swept: every `((`, `$((`, `-eq` family and `declare -i`/`local -i` on an uppercase or environment variable in cicd/, install.bash and legacy/. The 4 sites were the only ones. The others read the script's own settings, such as `DO_DEMOGIF`, or a value the test sets, such as `FAKE_MEET_COUNT`.
+	- Acceptance signoff: Self-closed. Its new check fails before the fix and passes after.
+	- Closed: 20261109-130848
 
 - Code Review 20261109 item 5: `release` and `raw` print control characters raw in their syntax errors
 	- ID: 2026110912215205

@@ -46,11 +46,9 @@ export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
 ## Pinning the config FILES is not isolation on its own: GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank
 ## every one of them, and an inherited GH_TOKEN is what the fake gh reports back. Both arrive
 ## from an ordinary working terminal, and neither shows up as a failure you can act on.
-fUnsetInheritedGitConfig(){
-	local -i i=0
-	for (( i = 0; i < ${GIT_CONFIG_COUNT:-0}; i++ )); do unset "GIT_CONFIG_KEY_${i}" "GIT_CONFIG_VALUE_${i}"; done
-	unset GIT_CONFIG_COUNT
-}
+## By name rather than by GIT_CONFIG_COUNT, since arithmetic on an inherited count runs a
+## command hidden in an array subscript.
+fUnsetInheritedGitConfig(){ unset GIT_CONFIG_COUNT "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"; }
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE
 
@@ -593,3 +591,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261026 JC: Each vector prints PASS, FAIL or SKIP, then its ID and label, and the total counts the skips.
 ##		- 20261106 JC: Its scratch folder goes through fSafeRm, made where the guard takes it.
 ##		- 20261107 JC: Each shellcheck disable says why, and 3 that silenced nothing are gone.
+##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript.

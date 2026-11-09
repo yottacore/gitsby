@@ -88,8 +88,9 @@ noAccounts="${work}/no-accounts.shcl"; : > "${noAccounts}"
 export GITSBY_CONFIG="${noAccounts}"
 mkdir -p "${work}/home"
 export HOME="${work}/home" XDG_CONFIG_HOME="" APPDATA=""
-for ((i = 0; i < ${GIT_CONFIG_COUNT:-0}; i++)); do unset "GIT_CONFIG_KEY_${i}" "GIT_CONFIG_VALUE_${i}"; done
-unset GIT_CONFIG_COUNT
+## By name rather than by GIT_CONFIG_COUNT, since arithmetic on an inherited count runs a
+## command hidden in an array subscript.
+unset GIT_CONFIG_COUNT "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE GIT_SSH_COMMAND GIT_SSH
 
 ## Nothing here reaches the network. The account folders' origins name github.com, so a fake gh
@@ -390,3 +391,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261106 JC: Each live clone's origin is its live copy, not the pristine one, which a pushing command changed for every command after it. A check after the measures fails the run if a pristine origin moved.
 ##		- 20261107 JC: Errors go through fDie and fUsage.
 ##		- 20261107 JC: A Gitea folder over ssh, with a fake tea, for status, whoami, repo url, pullcom and pr create. The fake ssh names the target's own host.
+##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript.
