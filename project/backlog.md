@@ -33,6 +33,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- The UI guide's own example status line puts a path inside the sentence
+	- ID: 2026110914045043
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-140450
+	- Opened by:
+	- Related IDs: 2026110912215207, 2026110914001448
+	- Incorrect behavior [Bug]: project/style-guide_ui-ux.md uses `Cloned into '<folder>'.` as its example status line, and main.go prints it that way. The same guide says a path goes on its own labeled line.
+	- Expected behavior [Bug]: The clone status line and the guide's example both put the folder on a `File:` line, as every other status line now does.
+	- Estimated effort: Low
+	- Decisions: The rule wins over the example. Every other path line was moved to a `File:` line in 2026110912215207, and an exception for one line would leave the guide arguing with itself.
+	- Origin: Found by the 2026110912215207 worker, who left it alone as a guide example.
+
 - The SSH line puts the key's path inside parentheses
 	- ID: 2026110914001448
 	- Type: Bug
