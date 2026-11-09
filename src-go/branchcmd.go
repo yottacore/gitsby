@@ -235,11 +235,8 @@ func (a *app) mergeDeleteRemote(branch, mergedTip string) {
 	}
 }
 
-// backOutMerge answers a merge step that failed. One stopped by conflicts is
-// aborted, so the tree isn't left mid-merge, and the run goes back to where it
-// started. Settling the conflict is raw git's, so the refusal names the commands:
-// settle merges the other way, and rerun is the command to run after.
-// Any other failure is returned as it came.
+// backOutMerge answers a failed merge step. Conflicts are aborted and the run goes back
+// where it started, naming the settle and rerun commands. Other failures pass through.
 func (a *app) backOutMerge(stepErr error, from, into, returnTo string, settle []string, rerun string) error {
 	if !runOK("git", "rev-parse", "-q", "--verify", "MERGE_HEAD") {
 		return stepErr
@@ -282,13 +279,8 @@ func literalLines(cmds ...string) []string {
 	return out
 }
 
-// backMergeRef is what the back-merge actually merges. 'pr ok' merges the hotfix on
-// the server, so the LOCAL default branch never sees it and merging that is a
-// silent no-op; the fetched remote-tracking ref is the one holding it. After 'br
-// merge' the two are the same commit, so this is right either way - and it falls
-// back to the local branch when there's no remote at all. Offline flips it back:
-// merge's push was skipped, so origin's copy is the stale one, and merging it would
-// carry the hotfix nowhere. ('pr ok' can't run offline at all.)
+// backMergeRef is what the back-merge merges: origin's copy, since 'pr ok' merges on the
+// server, or the local branch with no remote or offline, when origin's is stale.
 func (a *app) backMergeRef() string {
 	mainBranch := a.defaultBranch()
 	if !a.isOffline() && a.branchExistsRemote(mainBranch) {

@@ -1,8 +1,5 @@
-// Process running. Everything goes out as an argument list - no shell between, so
-// word splitting and expansion cannot happen to user values on the way to a tool.
-// The plain readers are free functions because they hold nothing; the announcing
-// runners hang off the run, because a step we announce is exactly the thing that
-// invalidates what the run has cached.
+// Process running. Everything goes out as an argument list, with no shell between. The
+// announcing runners hang off the run, since a step invalidates what it cached.
 
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 // Licensed under The MIT License (MIT). Full text at:
@@ -31,11 +28,8 @@ func runOut(name string, args ...string) string {
 	return out
 }
 
-// runOutOK is runOut that also says whether the command worked, for the few
-// callers that must tell "the tool failed" apart from "the answer is nothing".
-// gh in particular exits nonzero for a repo that isn't there and for a network
-// that is down, and stating the first when it was the second sends you off to
-// create something that already exists.
+// runOutOK is runOut that also says whether the command worked, for callers that must
+// tell a failed tool from an empty answer.
 func runOutOK(name string, args ...string) (string, bool) {
 	out, err := toolCmd(name, args...).Output()
 	if err != nil {
@@ -327,11 +321,8 @@ func rawNest(chain, name, entry string) (string, error) {
 	return strings.Join(above, " "), nil
 }
 
-// lookTool is exec.LookPath that skips any PATH entry leading back to this very
-// binary, through a symlink or a hardlink. Each candidate still goes through
-// LookPath, so PATHEXT and the exec bit work as before. A relative entry is
-// skipped, since LookPath's ErrDot never let one run. Also returns the entries
-// skipped as ours.
+// lookTool is exec.LookPath that skips any PATH entry leading back to this binary, by
+// link or hardlink, and relative entries. Also returns the entries skipped as ours.
 func lookTool(name string) (found string, ours []string) {
 	return walkTool(name, nil)
 }

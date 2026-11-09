@@ -133,14 +133,9 @@ func (a *app) releasePreflight() error {
 	if have := runLines("git", "tag", "--list", "v"+ver, ver); len(have) > 0 {
 		return usagef("Tag '%s' already exists.", have[0])
 	}
-	// An invented version on a target that would gain nothing cuts a tag for no
-	// release, and the natural re-run after a failed push cuts a second one on the
-	// same commit - so the first is stranded forever. A version you typed, and
-	// promoting a candidate, are deliberate and stay allowed. Fails open: if we
-	// can't tell, the release goes ahead. 'release' parks first, so uncommitted work
-	// or unpushed commits ARE something to release even when the branches currently
-	// look level - the guard only speaks for a settled repo. Under --staged only
-	// the index is parked, so edits left out of it are nothing to release.
+	// An invented version on a target that gains nothing cuts a tag for no release, and
+	// a re-run cuts another. Fails open. A parked tree is something to release, or under
+	// --staged the index.
 	parks := runOut("git", "status", "--porcelain") != ""
 	if a.opt.staged {
 		parks = !runOK("git", "diff", "--cached", "--quiet")

@@ -77,12 +77,8 @@ func (a *app) resolvePrune() error {
 			return err
 		}
 		a.prune.local = append(a.prune.local, branch)
-		// The remote copy goes only when origin has the merge too: a merge that
-		// hasn't been pushed yet leaves origin holding the only ref to that work.
-		// The map was built by listing refs/remotes/origin, so being in it already
-		// says the remote branch is there - no second ref lookup per branch. The
-		// value it tested is kept, since that is what origin must still hold when the
-		// delete goes out.
+		// The remote copy goes only when origin has the merge too. The tested value is
+		// kept, since origin must still hold it when the delete goes out.
 		if tip, ok := mergedRemote[branch]; ok {
 			if a.prune.remoteTip == nil {
 				a.prune.remoteTip = map[string]string{}
@@ -149,13 +145,9 @@ func sortRemoteDeletes(branches []string, tested, onOrigin map[string]string) (s
 // would come after the local deletes, and prune never lists those branches again.
 const leasePushBudget = 16384
 
-// leaseDeleteBatches builds the argument list of each delete push. Every branch is
-// leased on the value that was tested, spelled out: a bare --force-with-lease reads
-// the tracking ref and follows push.useForceIfIncludes, which refuses a delete once
-// the local branch is gone. Each delete names the full ref, since origin matches a
-// short name against its tags too, and one match too many sends none of them. A
-// batch closes before the next branch would take its arguments past budget; a
-// branch too long for any budget still goes, alone.
+// leaseDeleteBatches builds each delete push's arguments, leased on the tested value and
+// by full ref, since a bare lease refuses a delete once the local branch is gone.
+// Batches split at budget.
 func leaseDeleteBatches(branches []string, tested map[string]string, budget int) []leaseBatch {
 	const fixedLen = len("push") + len("origin") + len("--delete") + 3
 	var batches []leaseBatch

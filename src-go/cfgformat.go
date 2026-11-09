@@ -25,11 +25,9 @@ import (
 // starts '##', and comes with a Format line, which is asked first anyway.
 const shcl2Banner = "# This config file format is SHCL."
 
-// oldPinCutover is when the installed build moved to shcl v3.0.0-beta1. The
-// module before it stamped the same Format 3 line but read a backslash in
-// double quotes as an escape, where v3 reads it as text, so the two can't be
-// told apart by content. A file last written before this came from the earlier
-// module. Nobody else had a build from it.
+// oldPinCutover is when the installed build moved to shcl v3.0.0-beta1. The earlier
+// module wrote the same Format line, so a file is told by its mtime. Backlog
+// 2026110710480989.
 var oldPinCutover = time.Date(2026, 11, 7, 3, 37, 0, 0, time.UTC)
 
 // oldKind is which older layout a file was in.
@@ -53,11 +51,9 @@ type formatMigration struct {
 	reported bool
 }
 
-// oldFormat is the earlier format major a file was written in, or 0 for the
-// current one. A file with neither a Format line nor the 2.x banner reads as
-// current: one typed by hand follows the docs, and those describe this format.
-// Asking the module first also means a later module that migrates a file on its
-// own leaves nothing here to do.
+// oldFormat is the earlier format major a file was written in, or 0 for the current one.
+// With no Format line or 2.x banner it's current, since a hand-typed one follows the
+// docs.
 func oldFormat(text string) int {
 	if v, ok := shcl.FormatVersion(text); ok {
 		if v >= shcl.FormatMajor {
@@ -126,11 +122,8 @@ func changedLines(before, after string) int {
 	return n
 }
 
-// oldPinRespelled re-spells the double-quoted values the earlier module wrote
-// with escapes, so they read the same under the current rules. Only a value
-// with a backslash in it changes, and the count is the lines that did. A line
-// that module couldn't have read is left as it is. Arrays are not looked for:
-// the earlier build wrote none.
+// oldPinRespelled re-spells the double-quoted values the earlier module wrote with
+// escapes. The count is the lines changed. Arrays aren't looked for: it wrote none.
 func oldPinRespelled(text string) (string, int) {
 	lines := strings.Split(text, "\n")
 	changed := 0
