@@ -299,7 +299,7 @@ func upperFirst(text string) string {
 	return string(text[0]-32) + text[1:]
 }
 
-// showAccountNote prints one labeled explanation under the Account line, wrapped at
+// showAccountNote prints one labeled explanation under an identity line, wrapped at
 // a fixed column rather than at whatever the terminal happens to be. A line given
 // with a leading indent is a literal - a config line to type - and is printed as it
 // stands, since wrapping one would make it wrong.
@@ -640,13 +640,10 @@ func (a *app) showSSHLine(remoteURL string) {
 	if hostAlias != ssh.host {
 		line += " via alias '" + hostAlias + "'"
 	}
-	if ssh.keyFile != "" {
-		line += ", key " + nativePath(ssh.keyFile)
-	}
-	// Neither half above answers the question this line exists for: the connect
-	// user is 'git' for every GitHub account, and the key is only ssh's first
-	// readable candidate, not necessarily the one that authenticates. So ask the
-	// host who we actually are. Offline it stays unknown - the fetch already said why.
+	// Neither the connect user nor the key answers the question this line exists
+	// for: the user is 'git' for every GitHub account, and the key is only ssh's
+	// first readable candidate, not necessarily the one that authenticates. So ask
+	// the host who we actually are. Offline it stays unknown - the fetch already said why.
 	account := "(unknown - offline, so " + ssh.host + " wasn't asked)"
 	if !a.isOffline() {
 		account = "(unknown - " + ssh.host + " didn't answer with a login)"
@@ -655,6 +652,11 @@ func (a *app) showSSHLine(remoteURL string) {
 		}
 	}
 	a.out.clean("SSH ..........: " + account + " (" + line + ")")
+	// The key's path goes under the line rather than in the parentheses, where a
+	// long one wrapped it.
+	if ssh.keyFile != "" {
+		a.showAccountNote("File", nativePath(ssh.keyFile))
+	}
 }
 
 // showGhLine: gh-backed commands act as gh's account, not the ssh key's - so name

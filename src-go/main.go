@@ -707,7 +707,7 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 		// nothing
 	case a.cmd.name == "repo-clone":
 		// the after-status would show the wrong (current) directory
-		a.out.status("Cloned into '" + a.cloneDirShown() + "'.")
+		a.out.statusNotes("Cloned.", noteLines("File", a.cloneDirShown()))
 	default:
 		a.showStatus(false)
 	}

@@ -2521,8 +2521,11 @@ fRunSuite(){
 	if ! ((isWindows)); then
 		fAssertOut "[dd81f] repo clone names the folder in full"  "^Clone into \.+: ${cl//./\\.}/sub/named$" \
 			bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' sub/named"
-		fAssertOut "[dd81g] and says where it cloned in full as well"  "Cloned into '${cl//./\\.}/sub/named2'" \
+		fAssertOut "[dd81g] and says where it cloned in full as well"  "^  File: ${cl//./\\.}/sub/named2$" \
 			bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' sub/named2"
+		## The folder goes on that File line, not inside the status sentence.
+		fAssertOut "[df36e] and the status line holds no path"  '^\[ Cloned\. \]$' \
+			bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' sub/named3"
 	fi
 	fAssertFail "[dab8y] repo clone over a different-url clone refused"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o3}' cl1"
 	fAssertOut "[df363] and names the folder in full on its own line"  "^  File: ${cl//./\\.}/cl1$" \
@@ -2645,9 +2648,11 @@ fRunSuite(){
 	fAssertOut    "[dakp5] ssh line names the account the key authenticates as"  "SSH \.+: acmedev \("  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
 	## Anchored to the SSH line: a bare 'git@github.com' also matches the Remote line right above
 	## it, so the loose form was satisfied by the broken output too.
-	fAssertOut    "[dakp6] ssh line names the user git actually connects as"     "SSH \.+: .*\(git@github\.com,"  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	fAssertOut    "[dakp6] ssh line names the user git actually connects as"     "SSH \.+: .*\(git@github\.com\)$"  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
 	fAssertNotOut "[dakp7] ssh line never reports the OS login"                  'osuser'               bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
-	fAssertOut    "[dakp8] the key is still reported"                            "key ${sidKey}"        bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	fAssertOut    "[dakp8] the key is still reported"                            "^ +: File: ${sidKey}$"  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	## A long key path wrapped the SSH line when it sat in the parentheses.
+	fAssertNotOut "[df36f] and not inside the SSH line"                          "^SSH .*key"           bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
 	fAssertOut    "[dakp9] a mutating pre-flight names the account too"          "SSH \.+: acmedev \("  bash -c "${sidRun} '${gitsby}' -q -NoFetch update 'ssh id probe' 2>&1"
 	## The target comes from origin, which is anybody's to write: without '--' a host spelled like
 	## an option is read as one.
@@ -3172,7 +3177,7 @@ GHEOF
 	)
 	fAssertOut "[daxhy] the ssh probe asks as the key git pushes with" 'SSH \.+: keyowner' \
 		bash -c "cd '${idn}/keyed' && ${idEnv} '${gitsby}' -NoFetch status"
-	fAssertOut "[daxhz] and the key it names is that one, not ssh's default" 'key /keys/keyowner' \
+	fAssertOut "[daxhz] and the key it names is that one, not ssh's default" '^ +: File: /keys/keyowner$' \
 		bash -c "cd '${idn}/keyed' && ${idEnv} '${gitsby}' -NoFetch status"
 
 	## Hotfix branches target the default branch instead of dev, because they correct what is

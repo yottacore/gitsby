@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The UI guide's own example status line puts a path inside the sentence
 	- ID: 2026110914045043
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-140450
 	- Opened by:
@@ -44,13 +44,25 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: project/style-guide_ui-ux.md uses `Cloned into '<folder>'.` as its example status line, and main.go prints it that way. The same guide says a path goes on its own labeled line.
 	- Expected behavior [Bug]: The clone status line and the guide's example both put the folder on a `File:` line, as every other status line now does.
 	- Estimated effort: Low
-	- Decisions: The rule wins over the example. Every other path line was moved to a `File:` line in 2026110912215207, and an exception for one line would leave the guide arguing with itself.
+	- Actual cause [Bug]: 2026110912215207 left the clone line alone because the UI guide used it as its example.
+	- Decisions:
+		- The rule wins over the example. Every other path line was moved to a `File:` line in 2026110912215207, and an exception for one line would leave the guide arguing with itself.
+		- The status line is `[ Cloned. ]`, with the folder in full on a `File:` line under it, the way `Already a clone of that URL; nothing to do.` prints it.
+		- 2026-11-09: test asserts given new values for this change. test.bash [dd81g]: `Cloned into '<folder>'` is now the `File: <folder>` line under the status.
+		- No demo frame changes: the demo clones nothing.
 	- Origin: Found by the 2026110912215207 worker, who left it alone as a guide example.
+	- Actual fix [Bug]: main.go prints the clone status through `printer.statusNotes` with a `File:` line. The UI guide's example and the changelog's vNEXT say the same.
+	- Branch: round-20261109
+	- Test case: test.bash [dd81g] the File line, [df36e] the status line is `[ Cloned. ]` alone.
+	- Verified: Both fail with the build before the change and pass after. The quick run passes with every area: test.bash 1912/0, fuzz 314/0, parity 30/0.
+	- Swept: every `status(` and `statusNotes(` in src-go joined to a path. Left as they are: the `Wrote <file>` lines and `Not used any more, safe to remove: <folder>`, where the path is the whole object at the line's end, as 2026110912215207 left `Wrote`.
+	- Acceptance signoff: Self-closed. Its new checks fail before the fix and pass after.
+	- Closed: 20261109-141301
 
 - The SSH line puts the key's path inside parentheses
 	- ID: 2026110914001448
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-140014
 	- Opened by: jim-collier
@@ -60,6 +72,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: No. By reading.
 	- Origin: show.go's key on the SSH line from 2fcc6c06 (2026-08-21). The 20261107 and 20261109 sweeps didn't reach it. Confirmed.
 	- Estimated effort: Low
+	- Actual cause [Bug]: The 2026110912215207 sweep searched for `" (" +` joins, and the key was joined on with `", key " +`, inside parentheses opened on another line.
+	- Actual fix [Bug]: The SSH line ends at the host and alias. The key goes on a `File:` note under it, in the identity block's column, through `showAccountNote`.
+	- Decisions:
+		- `File:`, not a new `Key:` label. The UI guide gives `File:` the job of saying where, and the token file note in the same block uses it.
+		- 2026-11-09: test asserts given new values for this change. test.bash [dakp6]: `(git@github.com,` is now `(git@github.com)` at the line's end. [dakp8] and [daxhz]: `key <file>` is now the `File: <file>` line.
+		- No demo frame changes: the demo's remote is a local path, so it prints no SSH line.
+	- Branch: round-20261109
+	- Test case: test.bash [dakp8] and [daxhz] the File line, [dakp6] the SSH line ends at the host, [df36f] the SSH line names no key.
+	- Verified: All 4 fail with the build before the change and pass after. The quick run passes with every area: test.bash 1912/0, fuzz 314/0, parity 30/0.
+	- Swept: every `" (" +` join in show.go. The Git host line's parentheses hold the CLI name and `(unknown - why)`, no path.
+	- Acceptance signoff: Self-closed. Its new checks fail before the fix and pass after.
+	- Closed: 20261109-141301
 
 - Code Review 20261109 item 1: A failed `account apply` empties a working account fragment that the global config still includes
 	- ID: 2026110912215201
