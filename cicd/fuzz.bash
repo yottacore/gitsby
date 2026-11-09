@@ -94,7 +94,15 @@ __runOut=""; declare -i __runCode=0
 fRun(){
 	local -r dir="$1"; shift
 	__runOut="$( { cd "${dir}" && "${gitsby}" "$@"; } </dev/null 2>&1 )" && __runCode=0 || __runCode=$?
+	[[ "${__runOut}" != *"couldn't be converted"* ]] || cfgKeptFlat+=1
 }
+
+## The config vectors are in v2.1.0's flat layout, which this build converts on its first read.
+## The old copy is named for the second it was made, so a path converted twice in one second keeps
+## its second write flat, and which reader ran would follow the clock. Each check gets its own file.
+declare -i cfgSeq=0 cfgKeptFlat=0
+__cfg=""
+fNewCfg(){ cfgSeq+=1; __cfg="${work}/cfg/${cfgSeq}.shcl"; mkdir -p "${work}/cfg"; }
 fIsCrash(){ grep -qE "${crashRe}" <<< "${__runOut}" || ((__runCode >= 2)); }
 
 ## Must survive (accept or refuse - either is fine) without an internal crash.
@@ -343,22 +351,22 @@ GHEOF
 
 	## 'path' is the same kind of VALUE. One that isn't absolute is listed as ignored rather than
 	## matched, and junk matches nothing either way: nothing fires and nothing crashes.
-	local pathCfg="${work}/path-fuzz.shcl" pathVal
+	local pathVal
+	fPathCfg(){ fNewCfg; { printf 'account.f.path = %s\n' "${pathVal}"; printf 'account.f.ghAccount = fuzzacct\n'; } > "${__cfg}"; }
 	for pathVal in "${inject[@]}" '.' '..' './x' 'dev/work' '~' '~nobody/x' 'C:work' '\work'; do
-		{ printf 'account.f.path = %s\n' "${pathVal}"; printf 'account.f.ghAccount = fuzzacct\n'; } > "${pathCfg}"
-		fSurvive "[dcmep] path inert: '${pathVal}'" "${repo2}" -q --no-fetch --config "${pathCfg}" status
-		fSurvive "[dcmeq] path inert in account: '${pathVal}'" "${repo2}" -q --no-fetch --config "${pathCfg}" account
+		fPathCfg; fSurvive "[dcmep] path inert: '${pathVal}'" "${repo2}" -q --no-fetch --config "${__cfg}" status
+		fPathCfg; fSurvive "[dcmeq] path inert in account: '${pathVal}'" "${repo2}" -q --no-fetch --config "${__cfg}" account
 	done
 
 	## 'pathContains' is a config VALUE that reaches a native command twice over: it is compared
 	## against the current path, and 'account apply' builds a git config key out of it. A rule that
 	## matches nothing is the ordinary answer for junk, so what is asserted here is that nothing
 	## fires and nothing crashes - never that it is refused.
-	local segCfg="${work}/seg-fuzz.shcl" seg
+	local seg
+	fSegCfg(){ fNewCfg; { printf 'account.f.pathContains = %s\n' "${seg}"; printf 'account.f.ghAccount = fuzzacct\n'; } > "${__cfg}"; }
 	for seg in "${inject[@]}" '../..' '/' '**' '.'; do
-		{ printf 'account.f.pathContains = %s\n' "${seg}"; printf 'account.f.ghAccount = fuzzacct\n'; } > "${segCfg}"
-		fSurvive "[db63z] pathContains inert: '${seg}'" "${repo2}" -q --no-fetch --config "${segCfg}" status
-		fSurvive "[db640] pathContains inert in account: '${seg}'" "${repo2}" -q --no-fetch --config "${segCfg}" account
+		fSegCfg; fSurvive "[db63z] pathContains inert: '${seg}'" "${repo2}" -q --no-fetch --config "${__cfg}" status
+		fSegCfg; fSurvive "[db640] pathContains inert in account: '${seg}'" "${repo2}" -q --no-fetch --config "${__cfg}" account
 	done
 
 	## No-mutate: a refused command leaves HEAD and branch exactly as they were.
@@ -402,20 +410,22 @@ fCredentialHelperVectors(){
 	)
 	echo tok_fuzz > "${ch}/token"; chmod 600 "${ch}/token" 2>/dev/null || true
 	local vector=""
+	fCredCfg(){ fNewCfg; cat > "${__cfg}" <<-EOF
+			account.v.path      = ${ch}/proj
+			account.v.ghAccount = ${vector}
+			account.v.tokenFile = ${ch}/token
+		EOF
+	}
 	## Single quotes throughout: these are the literal text of an attack, not something to expand.
 	# shellcheck disable=SC2016  ## the vectors are literal text, by design.
 	for vector in '; touch '"${ch}"'/CANARY-ghaccount; echo x' \
 	              '`touch '"${ch}"'/CANARY-backtick`' \
 	              '$(touch '"${ch}"'/CANARY-subshell)' \
 	              '" ; touch '"${ch}"'/CANARY-quote ; "' ; do
-		cat > "${ch}/v.shcl" <<-EOF
-			account.v.path      = ${ch}/proj
-			account.v.ghAccount = ${vector}
-			account.v.tokenFile = ${ch}/token
-		EOF
+		fCredCfg
 		## 'credential fill' makes git invoke the helper for real.
 		( cd "${ch}/proj" && printf 'protocol=https\nhost=github.com\n\n' | \
-			"${gitsby}" -q -NoFetch --config "${ch}/v.shcl" raw git credential fill ) >/dev/null 2>&1 || true
+			"${gitsby}" -q -NoFetch --config "${__cfg}" raw git credential fill ) >/dev/null 2>&1 || true
 	done
 	## GIT_CONFIG_COUNT is the one environment value gitsby reads and numbers its own
 	## config entries on from, so a junk count must be refused rather than treated as
@@ -425,7 +435,8 @@ fCredentialHelperVectors(){
 	local badCount="" why=""
 	# shellcheck disable=SC2016  ## the $(...) is the attack text, not for this shell.
 	for badCount in 'x[$(touch '"${ch}"'/CANARY-count)]' '-1' '1e3'; do
-		GIT_CONFIG_COUNT="${badCount}" fRun "${ch}/proj" -q -NoFetch --config "${ch}/v.shcl" raw git credential fill
+		fCredCfg
+		GIT_CONFIG_COUNT="${badCount}" fRun "${ch}/proj" -q -NoFetch --config "${__cfg}" raw git credential fill
 		why=""
 		if fIsCrash; then why="crashed (exit ${__runCode})"; elif ((__runCode == 0)); then why="accepted"; fi
 		if [[ -z "${why}" ]]; then fOk "[ddjyg] junk GIT_CONFIG_COUNT refused: '${badCount}'"
@@ -435,7 +446,8 @@ fCredentialHelperVectors(){
 	## The helper git holds must carry no login text at all - the name is read from the
 	## environment when it runs, the same way the token is.
 	local helper=""
-	helper="$( cd "${ch}/proj" && "${gitsby}" -q -NoFetch --config "${ch}/v.shcl" raw git config --get credential.https://github.com.helper 2>/dev/null )"
+	fCredCfg
+	helper="$( cd "${ch}/proj" && "${gitsby}" -q -NoFetch --config "${__cfg}" raw git config --get credential.https://github.com.helper 2>/dev/null )"
 	# shellcheck disable=SC2016  ## matching the literal variable reference, not its value
 	if [[ "${helper}" == *'${GITSBY_HOST_USER}'* && "${helper}" != *touch* ]]; then
 		fOk "[dbg6e] the credential helper reads its username from the environment"
@@ -518,11 +530,11 @@ fSshKeyInert(){
 	## trails them on the reconstructed command line.
 	local key="" why=""
 	for key in "${dir}/k;>${dir}/CANARY-sshkey" "${dir}/k\$(touch ${dir}/CANARY-sshkey)" "${dir}/k\`touch ${dir}/CANARY-sshkey\`"; do
-		printf 'account.s.path = %s\naccount.s.sshKey = %s\n' "${dir}/proj" "${key}" > "${dir}/s.shcl"
+		fNewCfg; printf 'account.s.path = %s\naccount.s.sshKey = %s\n' "${dir}/proj" "${key}" > "${__cfg}"
 		## ls-remote against an unreachable host exits nonzero by design, so the exit code says
 		## nothing here - only the canary does, and a gitsby-internal crash would still show in
 		## the output pattern.
-		PATH="${dir}/bin:${PATH}" fRun "${dir}/proj" -q -NoFetch --config "${dir}/s.shcl" raw git ls-remote origin
+		PATH="${dir}/bin:${PATH}" fRun "${dir}/proj" -q -NoFetch --config "${__cfg}" raw git ls-remote origin
 		why=""
 		if grep -qE "${crashRe}" <<< "${__runOut}"; then why="crashed"
 		elif [[ -e "${dir}/CANARY-sshkey" ]]; then why="reached ssh"; fi
@@ -562,6 +574,14 @@ EOF
 }
 fAccountApplyVectors
 
+## Each config vector got its own file, so every run converted it or read it flat by design. A run
+## that met a backup of the same name, made earlier in the same second, would say so here.
+if ((cfgKeptFlat == 0)); then
+	fOk "[df34q] no config vector was kept flat by a conversion clash"
+else
+	fFail "[df34q] ${cfgKeptFlat} config vector runs couldn't convert their file"
+fi
+
 ## The security assertion: no vector ever caused a side-effect to run.
 if [[ -z "$(find "${work}" -name 'CANARY*' -print -quit)" ]]; then
 	fOk "[dabek] no injection canary fired"
@@ -591,4 +611,5 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261026 JC: Each vector prints PASS, FAIL or SKIP, then its ID and label, and the total counts the skips.
 ##		- 20261106 JC: Its scratch folder goes through fSafeRm, made where the guard takes it.
 ##		- 20261107 JC: Each shellcheck disable says why, and 3 that silenced nothing are gone.
+##		- 20261109 JC: Each config vector is written to its own file, since this build converts a flat file on first read, and a second conversion of one path in the same second kept it flat. 313 -> 314.
 ##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript.

@@ -136,6 +136,13 @@ fNormalize(){
 fRunNew(){ local -r d="${1}"; shift; ( cd "${d}" || exit 1; "${newBuild}" "${@}" 2>&1 || true ) | fNormalize ;}
 fRunRef(){ local -r d="${1}"; shift; ( cd "${d}" || exit 1; bash "${refBuild}" "${@}" 2>&1 || true ) | fNormalize ;}
 
+## The flat fixtures are converted by this build on its first read, and the old copy is named for
+## the second it was made. A path converted twice in one second keeps its second write flat, and
+## which reader ran would follow the clock, so each check writes its own file.
+declare -i cfgSeq=0
+__cfg=""
+fNewCfg(){ cfgSeq+=1; __cfg="${work}/cfg-${cfgSeq}.shcl"; }
+
 fSame(){
 	## One input, both builds, byte-identical answers after normalization.
 	local -r label="${1}"; local -r dir="${2}"; shift 2
@@ -258,11 +265,12 @@ else
 	spellings+=("${winPath,,}")
 fi
 for spelling in "${spellings[@]}"; do
-	cat > "${work}/spell.shcl" <<-EOF
+	fNewCfg
+	cat > "${__cfg}" <<-EOF
 		account.s.path      = ${spelling}
 		account.s.ghAccount = spellacct
 	EOF
-	fSameLead  "[db5zr] path spelled '${spelling}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/spell.shcl" status
+	fSameLead  "[db5zr] path spelled '${spelling}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${__cfg}" status
 done
 
 ## 'pathContains' names folder names rather than a machine's tree, so it is the one rule meant to
@@ -273,19 +281,19 @@ mkdir -p "${work}/mA/github.com/alice/proj" "${work}/mB/github.com/alice/proj" "
 for d in "${work}/mA/github.com/alice/proj" "${work}/mB/github.com/alice/proj" "${work}/mA/github.com/alice-old/proj"; do
 	git init --quiet -b main "${d}"
 done
-## Written again for each check, since this build converts it on the first read.
 fSegConfig(){
-	cat > "${work}/seg.shcl" <<-EOF
+	fNewCfg
+	cat > "${__cfg}" <<-EOF
 		account.seg.pathContains = github.com/alice
 		account.seg.ghAccount    = segacct
 	EOF
 }
 fSegConfig
-fSameLead  "[db62s] pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "[db62s] pathContains resolves the same under root A" '^Account' "${work}/mA/github.com/alice/proj" -q -NoFetch --config "${__cfg}" status
 fSegConfig
-fSameLead  "[db62t] pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "[db62t] pathContains resolves the same under root B" '^Account' "${work}/mB/github.com/alice/proj" -q -NoFetch --config "${__cfg}" status
 fSegConfig
-fSameLead  "[db62v] and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${work}/seg.shcl" status
+fSameLead  "[db62v] and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${__cfg}" status
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Option binding. Every build parses its own arguments, and that is where the scripted pair
@@ -367,7 +375,8 @@ fSamePlan "[ddf67] sync plans the same steps, the pull step aside"    "${pullSte
 fEcho_Clean
 fEcho_Clean "-- string case"
 for name in mixed MIXED MiXeD; do
-	cat > "${work}/case.shcl" <<-EOF
+	fNewCfg
+	cat > "${__cfg}" <<-EOF
 		account.mixed.path      = ${spellings[0]}
 		account.mixed.ghAccount = caseacct
 	EOF
@@ -375,7 +384,7 @@ for name in mixed MIXED MiXeD; do
 	## the other way this loop ran three identical commands and compared them to each other, which
 	## passes whatever either build does with the variable.
 	export GITSBY_ACCOUNT="${name}"
-	fSameLead  "[db603] GITSBY_ACCOUNT='${name}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${work}/case.shcl" status
+	fSameLead  "[db603] GITSBY_ACCOUNT='${name}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${__cfg}" status
 	unset GITSBY_ACCOUNT
 done
 
@@ -417,4 +426,5 @@ fEcho_Clean "parity passed: ${pass}, differed: ${fail}"
 ##		- 20261107 JC: The shellcheck disable says why.
 ##		- 20261107 JC: The frozen build reads first in fSameLead, and the flat fixtures are written again per check, since this build converts a flat accounts file on its first read.
 ##		- 20261109 JC: No build at src-go/gitsby fails, as in fuzz.bash, rather than skipping.
+##		- 20261109 JC: Each flat fixture is written to its own file, since a second conversion of one path in the same second kept it flat.
 ##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript.
