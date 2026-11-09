@@ -84,7 +84,7 @@ type placeholder struct{ name, means string }
 func syntaxUsage(lead, syntax string, defs ...placeholder) error {
 	var lines []string
 	if lead != "" {
-		lines = append(lines, lead)
+		lines = append(lines, printable(lead)) // often quotes what was typed
 	}
 	lines = append(lines, "Syntax: "+meName+" "+syntax)
 	width := 0

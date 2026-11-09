@@ -1847,7 +1847,7 @@ fRunSuite(){
 	## a failed push would cut a second one on the same commit, stranding the first forever.
 	fAssert     "[dafrk] bare release stands down when there is nothing new"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
 	fAssertOut  "[dafrm] and says so"  'Nothing new to release since v1\.3\.1'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
-	fAssertOut  "[dafrn] and names the tag to push if it never landed"  'push it: git push origin tag v1\.3\.1'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
+	fAssertOut  "[dafrn] and names the tag to push if it never landed"  '^    git push origin tag v1\.3\.1$'  bash -c "cd '${cloneA}' && '${gitsby}' -q release 2>&1"
 	fAssert     "[dafrp] and cut no tag doing so"  bash -c "cd '${cloneA}' && ! git rev-parse -q --verify refs/tags/v1.3.2 >/dev/null"
 	## A version you typed is deliberate, so it still works on an already-released commit.
 	fAssert     "[dafrq] an explicit version still releases the same commit"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.4.0 && git rev-parse -q --verify refs/tags/v1.4.0 >/dev/null"
@@ -2967,6 +2967,8 @@ GHEOF
 	fAssertFail "[dbfgp] pr ok refuses unpushed commits with no upstream to notice them"  bash -c "cd '${pnu}' && ${pnuEnv} '${gitsby}' -q pr ok 7"
 	fAssertOut  "[dbfgq] and names the branch"  "'nofeat' has commits that never reached origin" \
 		bash -c "cd '${pnu}' && ${pnuEnv} '${gitsby}' -q pr ok 7 2>&1"
+	fAssertOut  "[df35t] and gives the push on a line of its own"  '^  git push origin nofeat$' \
+		bash -c "cd '${pnu}' && ${pnuEnv} '${gitsby}' -q pr ok 7 2>&1"
 	fAssert     "[dbfgr] and the commit is still reachable"  bash -c "cd '${pnu}' && git log -1 --pretty=%s nofeat | grep -qx 'never pushed'"
 
 	## pr create: parks the work, then opens the PR against the merge target. Same fake gh.
@@ -3273,7 +3275,9 @@ GHEOF
 	fAssert     "[dcnqb] and backs the merge out"         bash -c "cd '${fm}/c' && [[ ! -e .git/MERGE_HEAD ]] && [[ -z \"\$(git status --porcelain)\" ]]"
 	fAssert     "[dcnqc] and leaves dev as it was"        bash -c "cd '${fm}/c' && [[ \"\$(git show dev:f.txt)\" == theirs && \"\$(git show origin/dev:f.txt)\" == theirs ]]"
 	fAssert     "[dcnqd] and goes back to the branch"     bash -c "cd '${fm}/c' && [[ \"\$(git branch --show-current)\" == clash ]]"
-	fAssertOut  "[dcnqe] and names the commands to settle it"  "git merge dev, then '.*br merge'"  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch br merge Clash 2>&1"
+	fAssertOut  "[dcnqe] and names the commands to settle it"  '^          git merge dev$'  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch br merge Clash 2>&1"
+	## Each command on a line of its own, so a paste runs it. It was "git merge dev, then 'gitsby br merge'".
+	fAssertOut  "[df35r] and the one to run after, on its own line"  '^          gitsby br merge$'  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch br merge Clash 2>&1"
 	fAssertOut    "[ddf4d] a br merge whose abort fails says dev is still mid-merge"  "^  Why:  'git merge --abort' failed, so 'dev' is still mid-merge\.$" \
 		bash -c "cd '${fm}/c' && env PATH='${abortShim}':\"\${PATH}\" '${gitsby}' -q -NoFetch br merge Clash > '${abortShim}/merge.out' 2>&1; cat '${abortShim}/merge.out'"
 	fAssertNotOut "[ddf4e] and never says dev is as it was"  'as it was'  cat "${abortShim}/merge.out"
@@ -3283,6 +3287,8 @@ GHEOF
 	( cd "${fm}/c" || exit 1; git merge --abort 2>/dev/null || true; git checkout --quiet main && echo mainside > f.txt && git commit --quiet -am mainside && git push --quiet && git checkout --quiet clash )
 	fAssertFail "[dcnqf] a release whose dev won't merge into main refuses"  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch release v1.0.0"
 	fAssert     "[dcnqg] and backs it out, cuts no tag, and goes back"  bash -c "cd '${fm}/c' && [[ ! -e .git/MERGE_HEAD ]] && ! git rev-parse -q --verify refs/tags/v1.0.0 >/dev/null && [[ \"\$(git branch --show-current)\" == clash ]]"
+	fAssertOut  "[df35s] and names the commands to settle it, each on its own line"  '^          git merge main$'  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch release v1.0.0 2>&1"
+	fAssertOut  "[df35v] and the release to run after, with the version typed"  '^          gitsby release v1\.0\.0$'  bash -c "cd '${fm}/c' && '${gitsby}' -q -NoFetch release v1.0.0 2>&1"
 	## Feature branches must be untouched by all of this.
 	fAssert    "[daenk] br create still branches off dev"  \
 		bash -c "cd '${hfc}' && git checkout --quiet dev && git checkout --quiet -- . 2>/dev/null; '${gitsby}' -q -NoFetch br create feat1 && git merge-base --is-ancestor origin/dev HEAD"

@@ -151,7 +151,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 5: `release` and `raw` print control characters raw in their syntax errors
 	- ID: 2026110912215205
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -165,11 +165,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: release.go:61 from ddf2353, 2026-09-16. Item 2026100607545812 swept the error constructors in 47bcda3 and missed the leads built for `syntaxUsage`. Confirmed.
 	- Sweep: every `syntaxUsage` and `refusalBlock` lead built from a value.
 	- Estimated effort: Low
+	- Actual cause [Bug]: As the possible cause says. `refusalBlock` heads had the same gap: the branch names in the merge back-out and the step in `stagedRefusal` went in as they were.
+	- Actual fix [Bug]: `syntaxUsage` escapes its lead, and `refusalText` escapes the head and every note line, so `refusalBlock` and `configFileRefusal` are covered wherever a lead is built.
+	- Decisions:
+		- Escaped in the 2 builders, not at each call site, so a new lead can't miss it. `printable` leaves its own output alone, so the heads that already escaped a value don't change.
+	- Branch: round-20261109
+	- Test case: Go `TestLeadsAreEscaped` [df35w], through `resolveRelease`, `scanPassthrough`, `syntaxUsage`, `refusalBlock` and `configFileRefusal`.
+		- Verified: it fails for all 5 against the code before the fix, and passes after. `--backlog-run-quick` passed: test.bash 1905/0, fuzz 314/0, parity 30/0.
+	- Swept: every `syntaxUsage` call (release.go, args.go, and the constant ones in repo.go, pr.go and main.go), every `refusalBlock` head (branchcmd.go, staged.go, accountcmd.go, githost.go), `configFileRefusal`, and every other `usageError` built by hand (2 constant syntax blocks in accountcmd.go, main.go's, which escapes already).
+	- Acceptance signoff: Self-closed. Its new check fails before the fix and passes after.
+	- Closed: 20261109-134949
 
 - Code Review 20261109 item 6: Fix lines give commands that won't paste
 	- ID: 2026110912215206
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -181,6 +191,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: show.go:484 from 76e1cd3, 2026-11-07, the Code Review 20261107 item 6 fix. The accountcmd.go lines from 457a31b4, ca76d60c and 81e2d472, 2026-09-14 and 09-15. The back-out from b34a25c, ef2b917 and a71263d, 2026-09-15 to 10-04. No earlier round saw this. Confirmed for the quoting, Plausible for the back-out.
 	- Sweep: every Fix literal built by string concatenation.
 	- Estimated effort: Low
+	- Actual cause [Bug]: Each Fix line pasted the path between 2 single quotes. The accountcmd.go ones already left the command out for a path with an apostrophe, so they gave no command rather than a broken one. show.go's gave the broken one. The back-out took its settle text as one string.
+	- Actual fix [Bug]: `shellQuote` in exec.go, which `shellWord` and `typedArg` now share, quotes the 4 paths, so each Fix gives its command whatever the path holds. The back-out takes the settle commands and the rerun command apart, and prints each on its own line under its note. A clean back-out says "Stopped with nothing merged." with a Fix note, in place of the commands after a colon. The dev back-merge, the tag to push, and pr ok's push put the command on its own line. Every branch name and the tag go through `typedArg`.
+	- Decisions:
+		- Single quotes always for a path, as before, so a plain path prints as it did. An apostrophe comes out as `'\''`. Not `shellWord`'s double quotes, which would re-spell every plain path's line.
+		- The release rerun line keeps the version typed, such as `gitsby release v1.0.0`. Without it a rerun picks the next patch version, which may not be what was asked for.
+		- Left as they are: the commands after a colon with no value in them, such as "Connect one first: gitsby repo connect <url | owner/name>" and "Cut a patch release when you're ready: gitsby release". They paste as shown, and the placeholders make them templates rather than literals.
+		- 2026-11-09: test asserts given new values for this change. [dcmjz], [dcmpq] and [dcnkc]: a path with an apostrophe got a sentence with no command, and now gets the quoted command. [dafrn]: `push it: git push origin tag v1.3.1` is now its own line. [dcnqe]: `git merge dev, then '...br merge'` is now `git merge dev` on its own line.
+	- Branch: round-20261109
+	- Test case: Go `TestFixLiteralsPaste` [df35x], which reads each Fix command back as sh would, for paths with an apostrophe, a space, `$`, a backtick and a backslash. test.bash [df35r], [df35s], [df35v] and [df35t] for the back-out and pr ok lines, and the updated [dafrn] and [dcnqe].
+		- Verified: [df35x] fails against the code before the fix (no command for an apostrophe path), and the back-out checks find nothing in the old build's output. All pass after. `--backlog-run-quick` passed: test.bash 1905/0, fuzz 314/0, parity 30/0.
+	- Swept: every Fix or literal line built by concatenation in src-go: the account set lines (account names and hosts are held to plain characters), `leaseDeleteLine`, the abort-failed back-out, the dev back-merge, release.go, and pr.go's 2 push lines. pr.go:552 and the other "first: gitsby ..." lines hold no value.
+	- Acceptance signoff: Self-closed. Its new checks fail before the fix and pass after.
+	- Closed: 20261109-134949
 
 - Code Review 20261109 item 7: Output still breaks 4 UI guide rules that Code Review 20261107 item 6 fixed elsewhere
 	- ID: 2026110912215207

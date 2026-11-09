@@ -907,11 +907,12 @@ func refusalBlock(head string, notes [][]string, cause error) error {
 }
 
 // refusalText lays a refusal out as its first line with the labeled notes under it.
+// Each line is escaped here, since a head often quotes a value as typed.
 func refusalText(head string, notes [][]string) string {
-	lines := []string{head}
+	lines := []string{printable(head)}
 	for _, note := range notes {
 		for _, l := range note {
-			lines = append(lines, "  "+l)
+			lines = append(lines, "  "+printable(l))
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -968,11 +969,9 @@ func unreadableFix(goos, file string, cause error) []string {
 		return []string{"Run this again once it can be read."}
 	case goos == "windows":
 		return []string{"Give your account read access to it, then run this again."}
-	case strings.Contains(file, "'"):
-		return []string{"Make it readable, then run this again."}
 	}
 	// A leading space makes it a literal line: indented, never wrapped.
-	return []string{"Make it readable, then run this again:", "  chmod u+r '" + file + "'"}
+	return []string{"Make it readable, then run this again:", "  chmod u+r " + shellQuote(file)}
 }
 
 // lookupFix is the Fix for a place that couldn't be looked in. The command is given
@@ -985,14 +984,12 @@ func lookupFix(goos, file string, cause error) []string {
 		return []string{"Run this again once it can be looked up."}
 	case goos == "windows":
 		return []string{"Give your account access to the folder it is in, then run this again."}
-	case strings.Contains(dir, "'"):
-		return []string{"Make the folder it is in searchable, then run this again."}
 	}
 	if _, err := os.Lstat(dir); err != nil {
 		return []string{"Make the folders above it searchable, then run this again."}
 	}
 	// A leading space makes it a literal line: indented, never wrapped.
-	return []string{"Make the folder it is in searchable, then run this again:", "  chmod u+x '" + dir + "'"}
+	return []string{"Make the folder it is in searchable, then run this again:", "  chmod u+x " + shellQuote(dir)}
 }
 
 // createNew makes a file that must not exist yet and writes it through one
@@ -1081,11 +1078,11 @@ func lockAccountsFile(file string, wait time.Duration) (func(), error) {
 // testable from either.
 func lockFix(goos, lock string) []string {
 	const stale = "If no other " + meName + " is running, a run that was stopped left it behind. Remove it, then run this again"
-	if goos == "windows" || strings.Contains(lock, "'") {
+	if goos == "windows" {
 		return []string{stale + "."}
 	}
 	// A leading space makes it a literal line: indented, never wrapped.
-	return []string{stale + ":", "  rm '" + lock + "'"}
+	return []string{stale + ":", "  rm " + shellQuote(lock)}
 }
 
 // changedRefusal: the file no longer holds what the plan read. Saving would put

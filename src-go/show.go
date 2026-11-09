@@ -481,7 +481,7 @@ func (a *app) showAccountLine() {
 	if a.acct.looseTokenFile != "" {
 		a.out.clean(acctCont + "WARNING: the token file is readable by other users on this machine.")
 		a.showAccountNote("File", nativePath(a.acct.looseTokenFile))
-		a.showAccountFix("Keep it to yourself:", "  chmod 600 '"+a.acct.looseTokenFile+"'")
+		a.showAccountFix("Keep it to yourself:", "  chmod 600 "+shellQuote(a.acct.looseTokenFile))
 	}
 	// This repo could authenticate with the account's token instead of a key, and
 	// doesn't. Worth one line, because it is the whole point of configuring accounts

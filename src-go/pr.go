@@ -11,6 +11,7 @@ package main
 
 import (
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -556,10 +557,10 @@ func (a *app) prAcceptPreflight(prBranch string) error {
 	// and the commits went with the branch.
 	if a.branchExistsLocal(a.pr.headBranch) {
 		if !a.branchExistsRemote(a.pr.headBranch) {
-			return usagef("'%s' is here but not on origin, so PR #%s holds none of it - and it would be deleted. Push it first: git push -u origin %s", a.pr.headBranch, a.pr.num, a.pr.headBranch)
+			return usagef("'%s' is here but not on origin, so PR #%s holds none of it - and it would be deleted. Push it first:\n  git push -u origin %s", a.pr.headBranch, a.pr.num, typedArg(a.pr.headBranch, runtime.GOOS))
 		}
 		if branchHasUnpushed(a.pr.headBranch) {
-			return usagef("'%s' has commits that never reached origin, so PR #%s can't include them - and it would be deleted. Push them first: git push origin %s", a.pr.headBranch, a.pr.num, a.pr.headBranch)
+			return usagef("'%s' has commits that never reached origin, so PR #%s can't include them - and it would be deleted. Push them first:\n  git push origin %s", a.pr.headBranch, a.pr.num, typedArg(a.pr.headBranch, runtime.GOOS))
 		}
 	}
 	return nil

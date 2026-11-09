@@ -11,6 +11,7 @@ package main
 
 import (
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -172,7 +173,8 @@ func (a *app) releasePreflight() error {
 	}
 	if relExisting := runOut("git", "describe", "--exact-match", "--tags", relTarget); relExisting != "" {
 		a.out.status("Nothing new to release since " + relExisting + ".")
-		a.out.clean("  If that tag never reached origin, push it: git push origin tag " + relExisting)
+		a.out.clean("  If that tag never reached origin, push it:")
+		a.out.clean("    git push origin tag " + typedArg(relExisting, runtime.GOOS))
 		a.out.clean("")
 		return errDone
 	}
@@ -216,8 +218,12 @@ func (a *app) cmdRelease() error {
 		}
 		// By full ref: git merge reads a tag of the same name ahead of the branch.
 		if err := a.step("git", "merge", "--no-ff", "refs/heads/"+devBranch, "-m", mergeMessage); err != nil {
+			rerun := meName + " release"
+			if a.cmd.arg != "" {
+				rerun += " " + typedArg(a.cmd.arg, runtime.GOOS)
+			}
 			return a.backOutMerge(err, devBranch, mainBranch, startBranch,
-				"git checkout "+devBranch+" && git merge "+mainBranch+", then '"+meName+" release'")
+				[]string{"git checkout " + typedArg(devBranch, runtime.GOOS), "git merge " + typedArg(mainBranch, runtime.GOOS)}, rerun)
 		}
 	}
 	if err := a.step("git", "tag", "-a", a.rel.tag, "-m", a.rel.tag); err != nil {

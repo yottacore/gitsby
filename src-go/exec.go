@@ -135,6 +135,12 @@ func shellWord(s string, always bool) string {
 	if !strings.ContainsAny(s, "\"$`\\!") {
 		return `"` + s + `"`
 	}
+	return shellQuote(s)
+}
+
+// shellQuote single-quotes a word for sh, apostrophes included, so a path in a
+// Fix line pastes as one word whatever it holds.
+func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 

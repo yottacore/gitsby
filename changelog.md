@@ -27,6 +27,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A failed `account apply` no longer empties an account's fragment that your global git config already includes. Each fragment is written to a new file beside it, which replaces it only once every key is in. A full disk or a permissions error leaves the old one as it was, and a lock file git left beside it no longer stops the run.
 
+- A Fix line that names a path with an apostrophe in it gives a command that pastes. The `chmod 600` for a loose token file gave one the shell couldn't read, and the others gave none. When `br merge` or `release` stops on a conflict, each command to settle it is on a line of its own, with the branch names quoted where a shell needs it.
+
+- A syntax error from `release` or `raw` that quotes what was typed shows a control character by name, as every other error does, so an escape typed by mistake no longer changes the terminal's colors.
+
 ## v3.0.0-beta.1 - 2026-11-08
 
 ### Notes

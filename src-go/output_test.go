@@ -276,3 +276,26 @@ func TestEveryLineOutIsEscaped(t *testing.T) { // [ddk41]
 		t.Errorf("the syntax help lost its lines: %q", errOut.String())
 	}
 }
+
+// The first line of a syntax error or a refusal often quotes what was typed, and
+// those leads were built outside the escaping constructors. 2026110912215205.
+func TestLeadsAreEscaped(t *testing.T) { // [df35w]
+	evil := "1.0\x1b[31mX\nSyntax: y"
+	opt := defaultOptions()
+	_, _, rawErr := scanPassthrough([]string{"raw", "--bogus" + evil}, &opt)
+	errs := []error{
+		(&app{cmd: command{arg: evil}}).resolveRelease(),
+		rawErr,
+		syntaxUsage("'"+evil+"' is not a version.", "release [version]"),
+		refusalBlock("'"+evil+"' would not merge cleanly.", [][]string{noteLines("Why", evil), {"Fix:  " + evil}}, nil),
+		configFileRefusal("'"+evil+"' can't be used.", "/h/c.shcl"),
+	}
+	for i, err := range errs {
+		p, _, errOut := testPrinter()
+		mustUsage(t, err).report(p)
+		got := errOut.String()
+		if strings.ContainsRune(got, '\x1b') || strings.Contains(got, "\nSyntax: y") || !strings.Contains(got, "◉ESC◉") {
+			t.Errorf("error %d let a control character through:\n%q", i, got)
+		}
+	}
+}

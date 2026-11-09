@@ -225,7 +225,7 @@ func typedArg(word, goos string) string {
 	if plain {
 		return word
 	}
-	return "'" + strings.ReplaceAll(word, "'", `'\''`) + "'"
+	return shellQuote(word)
 }
 
 // pruneNothingToDo says WHY the plan is empty - "no branch is merged" would be a

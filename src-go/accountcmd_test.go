@@ -930,7 +930,7 @@ func TestUnreadableFix(t *testing.T) { // [dcmjz]
 		want       []string
 	}{
 		{"linux", "/h/c.shcl", fs.ErrPermission, []string{"Make it readable, then run this again:", "  chmod u+r '/h/c.shcl'"}},
-		{"linux", "/h/it's.shcl", fs.ErrPermission, []string{"Make it readable, then run this again."}},
+		{"linux", "/h/it's.shcl", fs.ErrPermission, []string{"Make it readable, then run this again:", `  chmod u+r '/h/it'\''s.shcl'`}},
 		{"windows", "C:/c.shcl", fs.ErrPermission, []string{"Give your account read access to it, then run this again."}},
 		{"linux", "/h/c.shcl", errors.New("input/output error"), []string{"Run this again once it can be read."}},
 	}
@@ -1073,18 +1073,22 @@ func TestAccountSetProtocol(t *testing.T) { // [dcnrq]
 }
 
 func TestLookupFix(t *testing.T) { // [dcmpq]
+	quoted := filepath.Join(t.TempDir(), "it's")
+	if err := os.Mkdir(quoted, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct {
 		goos, file string
 		cause      error
-		want       string
+		want       []string
 	}{
-		{"linux", "/h/c.shcl", errors.New("input/output error"), "Run this again once it can be looked up."},
-		{"windows", "C:/h/c.shcl", fs.ErrPermission, "Give your account access to the folder it is in, then run this again."},
-		{"linux", "/h/it's/c.shcl", fs.ErrPermission, "Make the folder it is in searchable, then run this again."},
-		{"linux", "/nonexistent-top/h/c.shcl", fs.ErrPermission, "Make the folders above it searchable, then run this again."},
+		{"linux", "/h/c.shcl", errors.New("input/output error"), []string{"Run this again once it can be looked up."}},
+		{"windows", "C:/h/c.shcl", fs.ErrPermission, []string{"Give your account access to the folder it is in, then run this again."}},
+		{"linux", filepath.Join(quoted, "c.shcl"), fs.ErrPermission, []string{"Make the folder it is in searchable, then run this again:", "  chmod u+x " + shellQuote(quoted)}},
+		{"linux", "/nonexistent-top/h/c.shcl", fs.ErrPermission, []string{"Make the folders above it searchable, then run this again."}},
 	}
 	for _, tc := range tests {
-		if got := lookupFix(tc.goos, tc.file, tc.cause); len(got) != 1 || got[0] != tc.want {
+		if got := lookupFix(tc.goos, tc.file, tc.cause); !slices.Equal(got, tc.want) {
 			t.Errorf("lookupFix(%s, %s, %v) = %q, want %q", tc.goos, tc.file, tc.cause, got, tc.want)
 		}
 	}
@@ -1214,7 +1218,7 @@ func TestLockFix(t *testing.T) { // [dcnkc]
 	}{
 		{"linux", "/h/c.shcl.lock", []string{"If no other gitsby is running, a run that was stopped left it behind. Remove it, then run this again:", "  rm '/h/c.shcl.lock'"}},
 		{"windows", "C:/h/c.shcl.lock", []string{"If no other gitsby is running, a run that was stopped left it behind. Remove it, then run this again."}},
-		{"linux", "/h/it's/c.shcl.lock", []string{"If no other gitsby is running, a run that was stopped left it behind. Remove it, then run this again."}},
+		{"linux", "/h/it's/c.shcl.lock", []string{"If no other gitsby is running, a run that was stopped left it behind. Remove it, then run this again:", `  rm '/h/it'\''s/c.shcl.lock'`}},
 	}
 	for _, tc := range tests {
 		if got := lockFix(tc.goos, tc.lock); !slices.Equal(got, tc.want) {
@@ -1595,5 +1599,67 @@ func TestAbsPathValueKeepsTheReasonTheFolderIsGone(t *testing.T) { // [ddf4a]
 	_, err := absPathValue("tok.txt", "file")
 	if err == nil || !strings.Contains(err.Error(), "since finding the current folder failed with: getwd: no such file or directory") {
 		t.Errorf("err = %v, want the reason the current folder couldn't be found", err)
+	}
+}
+
+// shWord reads s as one sh word: plain characters, '...' and backslash escapes.
+// ok is false for anything a shell would split or expand.
+func shWord(s string) (word string, ok bool) {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '\'':
+			end := strings.IndexByte(s[i+1:], '\'')
+			if end < 0 {
+				return "", false
+			}
+			b.WriteString(s[i+1 : i+1+end])
+			i += end + 1
+		case c == '\\' && i+1 < len(s):
+			i++
+			b.WriteByte(s[i])
+		case strings.IndexByte(" \t\n;&|$`\"()<>*?[#~\\", c) >= 0:
+			return "", false
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String(), true
+}
+
+// A Fix command pastes as shown, whatever the path holds. An apostrophe in one
+// closed the quote early, or the command was left out. 2026110912215206.
+func TestFixLiteralsPaste(t *testing.T) { // [df35x]
+	base := t.TempDir()
+	for _, name := range []string{"o'brien", "a b", "$HOME `x` \\y", "''", "it's \"q\""} {
+		dir := filepath.Join(base, name)
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		file := filepath.Join(dir, "c.shcl")
+		for cmd, lines := range map[string][]string{
+			"chmod u+r": unreadableFix("linux", file, fs.ErrPermission),
+			"chmod u+x": lookupFix("linux", file, fs.ErrPermission),
+			"rm":        lockFix("linux", file+".lock"),
+		} {
+			want := map[string]string{"chmod u+x": dir, "rm": file + ".lock"}[cmd]
+			if want == "" {
+				want = file
+			}
+			if len(lines) != 2 {
+				t.Errorf("%s: no command for %q: %q", cmd, want, lines)
+				continue
+			}
+			arg, found := strings.CutPrefix(lines[1], "  "+cmd+" ")
+			if got, ok := shWord(arg); !found || !ok || got != want {
+				t.Errorf("%s line %q reads as %q, want %q", cmd, lines[1], got, want)
+			}
+		}
+	}
+	// The loose token file's chmod line quotes through the same helper.
+	for _, path := range []string{"/h/o'brien/tok", "''", "a'b'c"} {
+		if got, ok := shWord(shellQuote(path)); !ok || got != path {
+			t.Errorf("shellQuote(%q) reads back as %q", path, got)
+		}
 	}
 }

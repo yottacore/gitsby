@@ -116,7 +116,7 @@ func (a *app) cmdMerge() error {
 	// remote delete below is leased on the branch's tip.
 	if err := a.step("git", "merge", "--no-ff", "refs/heads/"+workBranch, "-m", mergeMessage); err != nil {
 		return a.backOutMerge(err, workBranch, targetBranch, workBranch,
-			"git merge "+targetBranch+", then '"+meName+" br merge'")
+			[]string{"git merge " + typedArg(targetBranch, runtime.GOOS)}, meName+" br merge")
 	}
 	// Read before the push and the local delete: whether origin has a copy, and the tip that was
 	// merged, which is all origin's copy may hold when it goes.
@@ -237,9 +237,10 @@ func (a *app) mergeDeleteRemote(branch, mergedTip string) {
 
 // backOutMerge answers a merge step that failed. One stopped by conflicts is
 // aborted, so the tree isn't left mid-merge, and the run goes back to where it
-// started. Settling the conflict is raw git's, so the refusal names the commands.
+// started. Settling the conflict is raw git's, so the refusal names the commands:
+// settle merges the other way, and rerun is the command to run after.
 // Any other failure is returned as it came.
-func (a *app) backOutMerge(stepErr error, from, into, returnTo, settle string) error {
+func (a *app) backOutMerge(stepErr error, from, into, returnTo string, settle []string, rerun string) error {
 	if !runOK("git", "rev-parse", "-q", "--verify", "MERGE_HEAD") {
 		return stepErr
 	}
@@ -250,7 +251,9 @@ func (a *app) backOutMerge(stepErr error, from, into, returnTo, settle string) e
 		if returnTo != "" && returnTo != into {
 			fix = []string{"Drop the merge, then go back to '" + returnTo + "':", "  git merge --abort", "  git checkout " + typedArg(returnTo, runtime.GOOS)}
 		}
-		fix = append(fix, "Then settle the conflict by hand, and run it again:", "  "+settle)
+		fix = append(fix, "Then merge the other way, and settle the conflict by hand:")
+		fix = append(fix, literalLines(settle...)...)
+		fix = append(fix, "Commit that, and run it again:", "  "+rerun)
 		return refusalBlock("'"+from+"' would not merge cleanly into '"+into+"', and backing the merge out failed.", [][]string{
 			noteLines("Why", "'git merge --abort' failed, so '"+into+"' is still mid-merge."),
 			noteLines("Kept", "Nothing was committed to '"+into+"'."),
@@ -264,7 +267,19 @@ func (a *app) backOutMerge(stepErr error, from, into, returnTo, settle string) e
 			return err
 		}
 	}
-	return usagef("Stopped with nothing merged. Settle the conflict by hand, then run it again: %s", settle)
+	fix := append([]string{"Merge the other way, and settle the conflict by hand:"}, literalLines(settle...)...)
+	return refusalBlock("Stopped with nothing merged.", [][]string{
+		noteLines("Fix", append(fix, "Commit that, and run it again:", "  "+rerun)...),
+	}, nil)
+}
+
+// literalLines indents commands as literal lines of a note: never wrapped.
+func literalLines(cmds ...string) []string {
+	out := make([]string, len(cmds))
+	for i, c := range cmds {
+		out[i] = "  " + c
+	}
+	return out
 }
 
 // backMergeRef is what the back-merge actually merges. 'pr ok' lands the hotfix on
@@ -321,13 +336,15 @@ func (a *app) backMergeToDev() error {
 			noteLines("Why", "'git merge --abort' failed, so '"+devBranch+"' is still mid-merge."),
 			noteLines("Kept", "The hotfix landed on '"+mainBranch+"' - that part is done. Nothing was committed to '"+devBranch+"'."),
 			noteLines("Fix", "Settle the conflict by hand and commit it, which carries the hotfix across. Or drop the merge for now:", "  git merge --abort",
-				"Then carry it across by hand later:", "  git merge "+mergeRef),
+				"Then carry it across by hand later:", "  git merge "+typedArg(mergeRef, runtime.GOOS)),
 		}, nil)
 	}
 	a.out.resetBlank()
 	a.out.status("WARNING: '" + mainBranch + "' would not merge cleanly into '" + devBranch + "'; left '" + devBranch + "' untouched.")
 	a.out.clean("  The hotfix landed on '" + mainBranch + "' - that part is done.")
-	a.out.clean("  Carry it across by hand: git checkout " + devBranch + " && git merge " + mergeRef)
+	a.out.clean("  Carry it across by hand:")
+	a.out.clean("    git checkout " + typedArg(devBranch, runtime.GOOS))
+	a.out.clean("    git merge " + typedArg(mergeRef, runtime.GOOS))
 	return nil
 }
 
