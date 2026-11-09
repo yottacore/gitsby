@@ -806,6 +806,7 @@ func TestAccountSetRefusesAPlaceItCantLookIn(t *testing.T) { // [dcmpn]
 	if err := os.Chmod(dir, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// TempDir's cleanup needs it back, and says so if this fails.
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 	if err := a.cfg.load(a.opt); err != nil {
 		t.Fatalf("load: %v", err)
@@ -1336,6 +1337,7 @@ func TestAccountUnsetRefusesAnUnreadableFile(t *testing.T) { // [dd83k]
 	if err := os.Chmod(file, 0o200); err != nil {
 		t.Fatal(err)
 	}
+	// Put back so nothing left over is unreadable; a failed restore changes no result.
 	t.Cleanup(func() { _ = os.Chmod(file, 0o600) })
 	if err := a.cfg.load(a.opt); err != nil {
 		t.Fatalf("load: %v", err)
@@ -1468,10 +1470,14 @@ func TestAccountApplyFailureKeepsTheFragment(t *testing.T) { // [df35e]
 	}
 	kept := func(t *testing.T, fragment string) {
 		t.Helper()
+		// A failed read is empty, which fails the check too.
 		if got, _ := os.ReadFile(fragment); string(got) != old {
 			t.Errorf("the fragment changed on a failed apply:\n%s", got)
 		}
-		left, _ := filepath.Glob(fragment + ".*")
+		left, err := filepath.Glob(fragment + ".*")
+		if err != nil {
+			t.Fatal(err)
+		}
 		if len(left) != 0 {
 			t.Errorf("left behind: %v", left)
 		}
@@ -1496,6 +1502,7 @@ func TestAccountApplyFailureKeepsTheFragment(t *testing.T) { // [df35e]
 		if err := a.cmdAccountApply(); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
+		// A failed read is empty, which fails the check too.
 		if got, _ := os.ReadFile(fragment); !strings.Contains(string(got), "b@example.com") {
 			t.Errorf("fragment:\n%s", got)
 		}

@@ -562,6 +562,7 @@ func (c *config) load(o options) error {
 			replaceOldFormat(file, string(data), converted, c.migration)
 			if c.migration.done {
 				c.raw = converted
+				// Only Strict can fail: Standard skips and diagnoses a bad line, keeping the rest.
 				doc, _ := shcl.ParseKeepLines(converted, shcl.Standard)
 				c.loadDoc(doc)
 				return nil

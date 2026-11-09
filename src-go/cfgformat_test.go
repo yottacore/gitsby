@@ -152,6 +152,7 @@ func TestOldFormatUnwritable(t *testing.T) { // [ddf02]
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
+	// TempDir's cleanup needs it back, and says so if this fails.
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 	var stderr bytes.Buffer
 	p := newPrinter()
@@ -364,6 +365,7 @@ func TestFlatFileUnwritable(t *testing.T) { // [df067]
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
+	// TempDir's cleanup needs it back, and says so if this fails.
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 	var stderr bytes.Buffer
 	p := newPrinter()

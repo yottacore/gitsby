@@ -90,6 +90,7 @@ func TestRawRefusesInsideRaw(t *testing.T) { // [de89e]
 		if err == nil || err.Error() != silentExit(0).Error() {
 			t.Errorf("passing over: %v", err)
 		}
+		// A failed read is empty, which fails the check too.
 		if got, _ := os.ReadFile(ran); string(got) != "real\n" {
 			t.Errorf("the next gh didn't run: %q", got)
 		}

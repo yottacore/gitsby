@@ -497,7 +497,7 @@ func (a *app) cmdAccountApply() error {
 		written := slices.Collect(maps.Values(files))
 		for _, e := range entries {
 			if strings.HasSuffix(e.Name(), ".gitconfig") && !slices.Contains(written, e.Name()) {
-				a.out.status("Not used any more, safe to remove: " + nativePath(dir+"/"+e.Name()))
+				a.out.statusNotes("Not used any more, safe to remove.", noteLines("File", nativePath(dir+"/"+e.Name())))
 			}
 		}
 	}
@@ -602,7 +602,7 @@ func (a *app) writeAccountFragment(dir, file, name string) (err error) {
 			fragmentKept, "Check permissions on it and on the folder it is in, then run this again.",
 			noteLines("File", nativePath(fragment)))
 	}
-	a.out.status("Wrote " + nativePath(fragment))
+	a.out.statusNotes("Wrote an account fragment.", noteLines("File", nativePath(fragment)))
 	return nil
 }
 
@@ -1411,7 +1411,7 @@ func (a *app) cmdAccountSet() error {
 		opened, err := createNew(t.file, t.doc.ToCanonical(), 0o600)
 		switch {
 		case err == nil:
-			a.out.status("Wrote " + nativePath(t.file))
+			a.out.statusNotes("Wrote the accounts file.", noteLines("File", nativePath(t.file)))
 			return nil
 		case opened:
 			return refusalBlock("Couldn't finish writing the accounts file, so it may be incomplete.", [][]string{
@@ -1442,6 +1442,6 @@ func (a *app) cmdAccountSet() error {
 			"Nothing was written.", "Make the folder it is in writable, then run this again.",
 			noteLines("File", nativePath(t.file)))
 	}
-	a.out.status("Wrote " + nativePath(t.file))
+	a.out.statusNotes("Wrote the accounts file.", noteLines("File", nativePath(t.file)))
 	return nil
 }

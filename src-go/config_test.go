@@ -1073,6 +1073,7 @@ func TestProbeConfigCandidate(t *testing.T) { // [dcmk1]
 	if err := os.Chmod(shut, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// TempDir's cleanup needs it back, and says so if this fails.
 	t.Cleanup(func() { _ = os.Chmod(shut, 0o700) })
 	if state, _, err := probeConfigCandidate(filepath.Join(shut, "config.shcl")); state != candidateUnknown || !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("in a folder that can't be searched: state = %d, err = %v, want unknown, with a permission error", state, err)

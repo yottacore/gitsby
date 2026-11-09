@@ -4930,6 +4930,10 @@ GHEOF
 	fAssertOut "[dbsrk] with the comment above it kept"  '^# blocks$'  cat "${ac}/hier-set.shcl"
 	fAssertOut "[dbsrm] and an existing key is shown before and after"  'was: +ghaccount: hieracct' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw ghaccount other 2>&1"
+	fAssertOut "[df36v] and says it wrote the file with no path in the status line"  '^\[ Wrote the accounts file\. \]$' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw ghaccount other2 2>&1"
+	fAssertOut "[df36w] and names it on a File line"  "^  File: ${ac//./\\.}/hier-set\\.shcl$" \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw ghaccount other3 2>&1"
 	## A file created from nothing carries a header naming the keys and a footer naming the format,
 	## and is readable by nobody else: it names accounts and points at token files.
 	local acNew="${ac}/newhome"; mkdir -p "${acNew}"
@@ -5118,7 +5122,12 @@ GHEOF
 	fAssert "[df05w] dropping an account drops its rule"  bash -c "cd '${acWork}' && sed -i.bak '/^account: home$/,/^$/d' '${ac}/home/${confRel}/config.shcl' && rm -f '${ac}/home/${confRel}/config.shcl.bak' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 1 ]]"
 	## Fragments are named by host and login, so a renamed account leaves its old file behind. It is
 	## named, not deleted, since nothing proves gitsby wrote it.
-	fAssertOut "[ddate] and names the fragment no rule uses any more"  'Not used any more, safe to remove: .*/accounts/github\.com_homeacct\.gitconfig' \
+	fAssertOut "[ddate] and names the fragment no rule uses any more"  '^  File: .*/accounts/github\.com_homeacct\.gitconfig$' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply 2>&1"
+	## Each path goes on a File line under its status, never inside the sentence.
+	fAssertOut "[df36s] and its status line holds no path"  '^\[ Not used any more, safe to remove\. \]$' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply 2>&1"
+	fAssertOut "[df36t] and so does the line for each fragment it wrote"  '^\[ Wrote an account fragment\. \]$' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply 2>&1"
 	fAssert "[ddatf] and leaves it there"  bash -c "[[ -f '${ac}/home/${confRel}/accounts/github.com_homeacct.gitconfig' ]]"
 

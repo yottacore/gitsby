@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `account apply` still puts paths inside its Wrote and safe-to-remove lines
 	- ID: 2026110914151101
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-141511
 	- Opened by:
@@ -44,8 +44,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: accountcmd.go prints `Wrote <file>` and `Not used any more, safe to remove: <folder>` with the path in the sentence.
 	- Expected behavior [Bug]: Each puts the path on a `File:` line under a short status, like the clone line.
 	- Estimated effort: Low
-	- Decisions: They follow the rule. `Cloned into '<folder>'` had the same verb-plus-path form and moved, so keeping these inline would be an exception a later review files again.
 	- Origin: Left alone by the 2026110912215207 and 2026110914045043 workers as lines whose whole object is the path.
+	- Actual effort: Low
+	- Actual fix [Bug]: `account apply` prints `[ Wrote an account fragment. ]` and `[ Not used any more, safe to remove. ]`, each with the path on a `File:` line under it, through `printer.statusNotes`. Changelog vNEXT says so.
+	- Decisions:
+		- They follow the rule. `Cloned into '<folder>'` had the same verb-plus-path form and moved, so keeping these inline would be an exception a later review files again.
+		- `account set` and `account create` printed the same `Wrote <file>` for the accounts file, so they say `[ Wrote the accounts file. ]` with a `File:` line too. Leaving the twin would have the same rule broken one command over.
+		- The `[ git config ... ]` lines that echo a command as it runs keep their paths, since they show the command itself.
+		- 2026-11-09: test assert given a new value for this change. test.bash [ddate]: `Not used any more, safe to remove: <file>` is now the `File: <file>` line under the status.
+	- Branch: round-20261109
+	- Test case: test.bash [ddate] the File line, [df36s] the unused fragment's status line, [df36t] the fragment's Wrote line, [df36v] [df36w] `account set`'s Wrote line and its File line.
+	- Verified: all 5 fail with the build before the change and pass after. The quick run passes with every area: test.bash 1916/0, fuzz 314/0, parity 30/0.
+	- Swept: every `status(` in src-go joined to a path or file. `"Wrote "` is left only in output_test.go's escape test, which builds its own line.
+	- Acceptance signoff: Self-closed. Its new checks fail before the fix and pass after.
+	- Closed: 20261109-142800
 
 - The UI guide's own example status line puts a path inside the sentence
 	- ID: 2026110914045043
@@ -335,7 +347,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 9: Go errors are still discarded with `_` and no comment
 	- ID: 2026110912215209
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -345,6 +357,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: config.go:565 from 14750db, 2026-11-07, 2 hours after Code Review 20261107 item 7 closed, so a regression of its class. The test sites from 2026-09-14 to 09-28, which item 7's sweep of non-test files didn't reach. Confirmed by grep.
 	- Sweep: `grep -nE ', _ :?=|_ = |_, _' src-go/*.go`, test files included.
 	- Estimated effort: Low
+	- Actual effort: Low
+	- Actual fix [Bug]: config.go:565 has the reason :599 gives. The 5 Chmod cleanups with none have one. 3 test reads that discard `os.ReadFile`'s error say a failed read fails the check too, and the `filepath.Glob` in TestAccountApplyFailureKeepsTheFragment now fails the test on an error, where it passed with nothing listed.
+	- Decisions:
+		- 3 of the 8 Chmod sites named, config_test.go:1095 and :1128 and accountcmd_test.go:758, already had a reason on the line above, which a one-line grep doesn't show. Left as they were.
+		- The other matches the sweep finds discard no error or already give a reason: `strings.Cut`'s bool, `findTool`'s second path, `buildSecs`' bool, printer writes under output.go's header comment, and the `Atoi` and `runOut` sites.
+	- Branch: round-20261109
+	- Test case: Not applicable; comments, and a test that now fails on an error it dropped.
+	- Verified: `go vet` clean, Go tests pass, and the quick run passes with every area.
+	- Swept: every match of the sweep grep in src-go, test files included, with the line above each read for a reason.
+	- Acceptance signoff: Self-closed: comments and test strictness.
+	- Closed: 20261109-142800
 
 - Code Review 20261109 item 10: Output text and comments use words the writing rules ban
 	- ID: 2026110912215210
