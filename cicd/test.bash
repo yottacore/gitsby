@@ -673,6 +673,22 @@ fGateRunTmp(){
 	rm -f -- "${gateFail:?}/hang"
 	[[ -z "$(ls -A "${t}/gitsby")" ]]
 }
+## Ctrl+C reaches the whole foreground group, the run log's tee with it. The run still closes its
+## step with FAIL, says what it removed, exits 130 and leaves no folder. Job control gives the run
+## a group of its own, and keeps INT live, which a background job otherwise starts out ignoring.
+fGateCtrlC(){
+	local t="${gateDir}/tmp-ctrlc" pid="" i=0 rc=0
+	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}"
+	: > "${gateFail}/hang"; rm -f -- "${gateFail:?}/hung"
+	set -m
+	( cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" HOST_TEMP="" GITSBY_CICD_MEM_SCOPE=fixture CICD_MEM_CAP="" exec ./cicd/cicd.bash -y --no-container --quick --no-sync --no-publish --no-dogfood ) </dev/null >"${gateOut}" 2>&1 &
+	pid=$!
+	set +m
+	for ((i = 0; i < 100; i++)); do [[ -e "${gateFail}/hung" ]] && break; sleep 0.05; done
+	kill -INT -- "-${pid}"; wait "${pid}" 2>/dev/null || rc=$?
+	rm -f -- "${gateFail:?}/hang"
+	[[ "${rc}" == 130 && -z "$(ls -A "${t}/gitsby")" ]] && grep -qE '; FAIL ' "${gateOut}" && grep -qx 'Cleanup: removed the run folder' "${gateOut}"
+}
 ## --list prints the plan and the IDs in each step that runs, from the suites and the Go tests,
 ## and runs nothing: no tool but docker's probe, and no temp folder. The suite's check and the Go
 ## test are written so this file doesn't hold them as tests of its own.
@@ -5979,6 +5995,10 @@ GHEOF
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[df034] the pipeline scripts' errors go through fDie or fUsage, never a bare echo to stderr" \
 		bash -c 'cd "$1" && [[ -z "$(grep -nE "echo .*>&2" "${@:2}")" ]]' _ "${root}" "${helperScripts[@]}"
+	## Run on its own, config.bash says so on stderr, with nothing on stdout.
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[df33s] config.bash run directly prints its error to stderr only, and exits 1" \
+		bash -c 'rc=0; out="$(bash "$1" 2>"$2")" || rc=$?; [[ "${rc}" == 1 && -z "${out}" ]] && grep -q "meant to be sourced" "$2"' _ "${root}/cicd/config.bash" "${work}/config-direct.err"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[df035] every pipeline script and installer has its license line" \
 		bash -c 'cd "$1" && [[ -z "$(grep -L "SPDX-License-Identifier" install.bash install.ps1 $(find cicd -type f \( -name "*.bash" -o -name "*.sh" -o -name "*.ps1" -o -name "*.py" \)))" ]]' _ "${root}"
@@ -6775,6 +6795,7 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[de54c] cicd.bash --help lists --leakcheck and --no-leakcheck" \
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--leakcheck ' <<< \"\$out\" && grep -qE -- '^ +--no-leakcheck ' <<< \"\$out\""
 		fAssert "[de5m8] a run's temp files are gone once it ends, stopped or not"  fGateRunTmp
+		fAssert "[df33r] Ctrl+C, which stops the run log's tee too, still closes the step with FAIL and removes the run folder"  fGateCtrlC
 		fAssert "[dee4y] --list prints the steps and each one's test IDs, and runs nothing"  fGateList
 		fAssert "[defmr] each step opens and closes with its time, numbered out of the steps that run, under a rule 79 wide"  fGateSteps
 		fAssert "[defms] a step that fails closes with FAIL"  fGateStepFail
@@ -8577,3 +8598,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261107 JC: br merge pushes the merge and deletes origin's copy in 1 atomic push, [df06m], [df06n] and [df06p]. 1864 -> 1867.
 ##		- 20261107 JC: A Format 3 file from before the move to v3.0.0-beta1 has its escapes re-spelled, [df08w], [df08x] and [df08y]. 1867 -> 1870.
 ##		- 20261108 JC: account apply gives each account a credential helper for plain git over https, [df1s0] to [df1s8] and [df1sa]. 1874 -> 1884.
+##		- 20261109 JC: Ctrl+C with the run log on, [df33r]. config.bash run directly, [df33s].

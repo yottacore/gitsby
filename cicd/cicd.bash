@@ -1109,7 +1109,9 @@ fi
 ## Inside the container the outer run's log already has all of it.
 if [[ -n "${LINT_LOG_DIR:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && mkdir -p "${root}/${LINT_LOG_DIR}" 2>/dev/null; then
 	gfs_rotate "${root}/${LINT_LOG_DIR}" run log >/dev/null 2>&1 || true
-	exec > >(tee "${root}/${LINT_LOG_DIR}/run_${stamp}.log") 2>&1
+	## tee ignores INT and TERM: Ctrl+C reaches the whole group, and with tee gone the exit
+	## trap's first line would take SIGPIPE before any cleanup ran.
+	exec > >(trap '' INT TERM; exec tee "${root}/${LINT_LOG_DIR}/run_${stamp}.log") 2>&1
 	## Wait for tee to drain on exit, else the shell prompt returns mid-flush and
 	## the last output lands after it (looks like the prompt "came back").
 	teePid=$!
@@ -1510,3 +1512,4 @@ fEcho_Clean
 ##		- 2026-11-06 JC: A run that passed in the image cuts the cache volume's Go module cache to what go.sum names, when no other run's container is up.
 ##		- 2026-11-07 JC: Lint runs ruff with the project's ruff.toml too, after the leak rules.
 ##		- 2026-11-09 JC: A memory cap with no swap, CICD_MEM_CAP, on every container a run starts, first in line for the OOM killer, and on the run itself in a user scope.
+##		- 2026-11-09 JC: The run log's tee ignores INT and TERM, so Ctrl+C still runs the exit trap's cleanup.

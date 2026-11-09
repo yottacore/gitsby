@@ -55,7 +55,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 2: Ctrl+C on a cicd.bash run skips its cleanup
 	- ID: 2026110912215202
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -65,6 +65,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: A run with `LINT_LOG_DIR` set tees its output (cicd.bash:1112), and Ctrl+C kills tee too. The exit trap's first line of output then kills bash with SIGPIPE. The bash traps notes list this trap and its fix.
 	- Origin: the tee from bbce553, 2026-07-22. The INT trap and its comment from 637c182, 2026-10-25. No earlier round saw this. Confirmed.
 	- Estimated effort: Low
+	- Actual cause [Bug]: As given. Ctrl+C reaches the whole foreground group, so tee died with bash, and the exit trap's first line took SIGPIPE. A TERM to the group does the same.
+	- Actual effort: Low
+	- Actual fix [Bug]: The run log's tee is started as `>(trap '' INT TERM; exec tee ...)`, so it lives until the exit trap closes its pipe and waits for it.
+	- Decisions:
+		- The test gives the run a process group of its own with `set -m`, since a background job in a script starts with INT ignored, and bash can't trap it then.
+	- Branch: round-20261109
+	- Test case: test.bash [df33r]
+	- Verified: [df33r] fails on the unfixed cicd.bash, with no FAIL line, no `Cleanup:` line and the run folder left, and passes after, exit 130. `--backlog-run-quick` passed: test.bash 1889/0, fuzz 313/0, parity 30/0.
+		- Swept: the only `tee` in the cicd scripts and installers.
+	- Acceptance signoff: Self-closed: its test runs passed.
+	- Closed: 20261109-124440
 
 - Code Review 20261109 item 3: Two pipeline steps can pass having checked nothing
 	- ID: 2026110912215203
@@ -205,7 +216,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 11: config.bash's sourced-only guard prints its error to stdout with `echo -e`
 	- ID: 2026110912215211
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -213,6 +224,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: style-guide.md:109: errors go to stderr through the error helper, printed with printf. `[df034]` looks only for `echo ... >&2`, so it can't see this one.
 	- Origin: bbce553, 2026-07-22. The 20261003 round read the file in full and didn't file it. gfs-rotate.bash:213 has the same line, in the shared upstream file. Confirmed by reading.
 	- Estimated effort: Low
+	- Actual effort: Low
+	- Actual fix [Bug]: The guard prints with printf to stderr, and names the file by parameter expansion rather than `basename`.
+	- Decisions:
+		- A plain printf rather than an error helper, since a helper defined in a sourced settings file would land in the script that sources it.
+		- gfs-rotate.bash is the shared file, so it's left as it is here. Its patch and issue text are drafted in the round's upstream folder, under `2026110912215211/`.
+	- Branch: round-20261109
+	- Test case: test.bash [df33s]
+	- Verified: [df33s] fails on HEAD's config.bash, which wrote the error to stdout, and passes after. `--backlog-run-quick` passed: test.bash 1889/0.
+		- Swept: every sourced-only guard and `echo -e` in the live scripts. Only gfs-rotate.bash:213 has the same line.
+	- Acceptance signoff: Self-closed: its test runs passed.
+	- Closed: 20261109-124440
 
 - Code Review 20261109 enhancement 1: Add spawn gate rows for `br merge`, glab `pr create` and `--staged br switch`
 	- ID: 2026110912215212

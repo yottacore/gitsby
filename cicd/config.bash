@@ -16,9 +16,10 @@
 ##	SPDX-License-Identifier: MIT
 
 
-## Only allow running 'sourced'.
+## Only allow running 'sourced'. A plain printf, not an error helper: one defined here would
+## land in the script that sources this.
 declare -i isSourced_t6wqf=0; [[ "${BASH_SOURCE[0]}" == "${0}" ]] || isSourced_t6wqf=1
-((isSourced_t6wqf)) || { echo -e "\nError in $(basename "${BASH_SOURCE[0]}"): This script is meant to be 'sourced' from within another script.\n"; exit 1; }
+((isSourced_t6wqf)) || { printf '\nError in %s: This script is meant to be sourced from within another script.\n\n' "${BASH_SOURCE[0]##*/}" >&2; exit 1; }
 
 
 ## Identity
@@ -417,3 +418,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-25 JC: BUILD_JOBS rounds down, and drops to a quarter on a busy box. HEAVY_JOBS for the hard steps, and fLowPriority.
 ##		- 2026-10-25 JC: MERGE_GATE_SKIP, the paths a push to main may change and still skip the pre-push hook's --merge-gate.
 ##		- 2026-11-09 JC: fMemCap, a memory cap with no swap from CICD_MEM_CAP, for every container a run starts and the run itself.
+##		- 2026-11-09 JC: The sourced-only guard prints its error to stderr with printf.
