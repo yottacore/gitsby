@@ -319,15 +319,9 @@ func TestAccountListPrintsRulesAsWritten(t *testing.T) { // [dcq9x]
 // setApp builds a run pointed at a real accounts file, for the writer below.
 func setApp(t *testing.T, body, name, key, value string) (*app, string) {
 	t.Helper()
-	file := filepath.Join(t.TempDir(), "config.shcl")
-	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	a := newApp(newPrinter())
-	a.opt.configFile, a.opt.configGiven, a.opt.quiet = file, true, true
-	if err := a.cfg.load(a.opt); err != nil {
-		t.Fatalf("load: %v", err)
-	}
+	a.opt.quiet = true
+	file := loadConfigFile(t, a.cfg, &a.opt, body)
 	a.cmd = command{name: "account-set", arg: name, arg2: key, arg3: value, mutating: true}
 	return a, file
 }
@@ -454,21 +448,18 @@ func TestAccountSetKeepsTheDottedForm(t *testing.T) { // [dbss0]
 	}
 }
 
-// A file in the old layout is rewritten in the current one on its first edit,
-// comments and all. The mark a Windows editor wrote and its line endings go, since
-// the module writes one shape.
-func TestAccountSetConvertsAFlatFile(t *testing.T) { // [dbss1]
+// A file in the old layout is in the current one by the time it is edited,
+// comments and all, converted as it was read. The mark a Windows editor wrote and
+// its line endings go, since the module writes one shape.
+func TestAccountSetOnAConvertedFlatFile(t *testing.T) { // [dbss1]
 	body := utf8BOM + "# mine\r\naccount.work.path = C:/work   # tree\r\naccount.work.ghAccount = \"a#b\"\r\nprotocol = https\r\n"
 	a, file := setApp(t, body, "work", "host", "gitea.com")
 	plan, err := a.accountSetPlan()
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
-	// Off since 2026-11-07: a whole v2.1.0 file is converted on read now, so the
-	// plan has nothing left to convert.
-	// if !plan.converts || plan.exists {
-	if plan.exists {
-		t.Errorf("plan = %+v, want a conversion adding a key", plan)
+	if plan.converts || plan.exists {
+		t.Errorf("plan = %+v, want a key added and nothing left to convert", plan)
 	}
 	if err := a.cmdAccountSet(); err != nil {
 		t.Fatalf("set: %v", err)
@@ -488,12 +479,12 @@ func TestAccountSetConvertsAFlatFile(t *testing.T) { // [dbss1]
 	}
 	// A drive path is a folder on Windows alone; anywhere else it is listed as ignored.
 	if isWindows() {
-		if got := cfg.foldersOf("work"); len(got) != 1 || got[0] != "c:/work" {
+		if got := ruleMatches(cfg.paths, "work"); len(got) != 1 || got[0] != "c:/work" {
 			t.Errorf("folders = %v", got)
 		}
 		return
 	}
-	if got := cfg.foldersOf("work"); len(got) != 0 {
+	if got := ruleMatches(cfg.paths, "work"); len(got) != 0 {
 		t.Errorf("folders = %v, want none off Windows", got)
 	}
 	if want := "account[work].path (not an absolute folder: C:/work)"; !slices.Contains(cfg.unknown, want) {
@@ -1353,16 +1344,13 @@ func TestAccountUnsetRefusesAnUnreadableFile(t *testing.T) { // [dd83k]
 	}
 }
 
-// A flat file comes out in the current layout without the key, as a set would
-// leave it.
-func TestAccountUnsetConvertsAFlatFile(t *testing.T) { // [dd83m]
+// A flat file converted on read comes out without the key, as a set would leave
+// it.
+func TestAccountUnsetOnAConvertedFlatFile(t *testing.T) { // [dd83m]
 	a, file := unsetApp(t, "# old\naccount.work.email = a@x\naccount.work.name = Al\n", "work", "name")
 	plan, done, err := a.accountUnsetPlan()
-	// Off since 2026-11-07: a whole v2.1.0 file is converted on read now, so the
-	// plan has nothing left to convert.
-	// if err != nil || done || !plan.converts {
-	if err != nil || done {
-		t.Fatalf("plan: converts = %v, done = %v, err = %v", plan.converts, done, err)
+	if err != nil || done || plan.converts {
+		t.Fatalf("plan: converts = %v, done = %v, err = %v; want nothing left to convert", plan.converts, done, err)
 	}
 	a.set = &plan
 	if err := a.cmdAccountSet(); err != nil {

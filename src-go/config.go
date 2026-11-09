@@ -558,7 +558,7 @@ func (c *config) load(o options) error {
 		// that can't be done, or where a line is not one v2.1.0 could read.
 		if wholeFlat(text) {
 			converted := flatToSHCL(text)
-			c.migration = &formatMigration{flat: true}
+			c.migration = &formatMigration{kind: oldFlat}
 			replaceOldFormat(file, string(data), converted, c.migration)
 			if c.migration.done {
 				c.raw = converted
@@ -574,7 +574,7 @@ func (c *config) load(o options) error {
 	}
 	if from := oldFormat(text); from > 0 {
 		converted, m := migrateText(string(data))
-		c.migration = &formatMigration{from: from, changed: changedLines(string(data), m.Text), lost: m.Lost}
+		c.migration = &formatMigration{kind: oldMajor, from: from, changed: changedLines(string(data), m.Text), lost: m.Lost}
 		replaceOldFormat(file, string(data), converted, c.migration)
 		if c.migration.done {
 			c.raw = converted
@@ -586,7 +586,7 @@ func (c *config) load(o options) error {
 		// the earlier module, whose double-quoted escapes v3 reads as text. The
 		// time is read before anything writes the file, since a write moves it.
 		if converted, n := oldPinRespelled(string(data)); n > 0 {
-			c.migration = &formatMigration{escapes: true, changed: n}
+			c.migration = &formatMigration{kind: oldPinned, changed: n}
 			replaceOldFormat(file, string(data), converted, c.migration)
 			if c.migration.done {
 				c.raw = converted

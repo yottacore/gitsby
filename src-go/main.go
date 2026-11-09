@@ -878,7 +878,7 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 		who = a.accountWho(a.acct.credHost)
 	}
 	if !a.opt.quiet && !a.acct.bypassed && !warned && who != "" && a.accountDecidedSomething() {
-		a.out.errorf("acting as %s (from %s)", who, a.accountSourceText())
+		a.out.errorf("acting as %s (from %s)", who, a.acct.source)
 	}
 	// For the arguments handed over, which glab's may not be, so a wrapper's raw
 	// finds its run on the chain.

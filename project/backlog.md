@@ -507,7 +507,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 enhancement 2: The last rounds left Go duplicates and leftovers
 	- ID: 2026110912215213
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -519,6 +519,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Tests: cfgformat_test.go has 3 copies of the backup lookup, at :310, :436 and the original from 37f4843. It compares against today's date, so it can fail at midnight. `[dbss1]` `TestAccountSetConvertsAFlatFile` and `[dd83m]` keep names and messages for a conversion that no longer happens, and so does test.bash's comment above `[dbhfy]`.
 	- Origin: c4fa47c, 14750db and 4ed8289 (2026-11-07), 0ad1374, 4918b5b, de99951 and 1ed0f3a. Confirmed by reading and grep.
 	- Estimated effort: Low
+	- Actual effort: Low
+	- Decisions:
+		- `formatMigration` has a `kind` (`oldMajor`, `oldFlat`, `oldPinned`), and `from` holds the major for `oldMajor` only. The 2.x notice now builds its format name through `formatName()`, with the same text.
+		- `accountSourceText()` is gone; its 2 callers read `a.acct.source`.
+		- `foldersOf`, `segmentsOf` and `matchesOf` are gone. The tests read the same values through `ruleMatches`, a test helper over `rulesOf`.
+		- New helpers for the duplicates: `appendKeyDef` for the key wrap, `accountNameArg` for the name refusal, `askGhTarget` for the unknown and has-commits arms, and `loadConfigFile` for what `setApp` and `writeConfig` share. Output is the same.
+		- `backupIn` is the 1 backup lookup. It reads the stamp in the name and takes any time from the last 2 hours, so a run across midnight passes.
+		- `[dbss1]` and `[dd83m]` are now `TestAccountSetOnAConvertedFlatFile` and `TestAccountUnsetOnAConvertedFlatFile`. Their commented-out `plan.converts` checks came back the other way round: the plan has nothing left to convert.
+	- Branch: round-20261109
+	- Test case: none new. Dedupe and test cleanup with the same output, so the suites staying green is the test. `[ddf00]`, `[df367]`, `[dbss1]`, `[dd83m]`, `[dbhfy]` and `[dbsrt]` cover the changed lines.
+		- Verified: go vet and go test pass. The quick gate with every area passed (test.bash 1918/0, fuzz 314/0, parity 30/0).
+		- Swept: other copies of the account name refusal, the has-commits and unknown messages, the 57-column key wrap, and the removed names in src-go, cicd and the docs. None left.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261109-151831
 
 - Code Review 20261109 enhancement 3: Some comments no longer match the code
 	- ID: 2026110912215214

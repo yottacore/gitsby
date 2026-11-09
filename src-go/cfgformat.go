@@ -32,11 +32,19 @@ const shcl2Banner = "# This config file format is SHCL."
 // module. Nobody else had a build from it.
 var oldPinCutover = time.Date(2026, 11, 7, 3, 37, 0, 0, time.UTC)
 
+// oldKind is which older layout a file was in.
+type oldKind int
+
+const (
+	oldMajor  oldKind = iota // an older SHCL format major, the one in from
+	oldFlat                  // v2.1.0's flat 'key = value' layout
+	oldPinned                // Format 3 from the earlier module, escapes and all
+)
+
 // formatMigration is what the load did with a file in an older format.
 type formatMigration struct {
-	from     int    // the format major the file was in
-	flat     bool   // the file was in v2.1.0's flat 'key = value' layout instead
-	escapes  bool   // the file was Format 3 from the earlier module, escapes and all
+	kind     oldKind
+	from     int    // the format major, for oldMajor
 	backup   string // where the file as it was went; empty when nothing was written
 	changed  int    // lines re-spelled so they mean what they did
 	lost     int    // lines that set something under the old rules and set nothing now
@@ -212,10 +220,10 @@ func backupName(file string, mig *formatMigration, now time.Time) string {
 	base := filepath.Base(file)
 	base = strings.TrimSuffix(base, filepath.Ext(base))
 	format := "v" + strconv.Itoa(mig.from)
-	switch {
-	case mig.flat:
+	switch mig.kind {
+	case oldFlat:
 		format = "flat"
-	case mig.escapes:
+	case oldPinned:
 		format = "v3old"
 	}
 	return filepath.Join(filepath.Dir(file), base+"_backup_"+now.Format("20060102-150405")+"_format-"+format+".shcl")
@@ -223,10 +231,10 @@ func backupName(file string, mig *formatMigration, now time.Time) string {
 
 // formatName names the old format for a notice.
 func (mig *formatMigration) formatName() string {
-	switch {
-	case mig.flat:
+	switch mig.kind {
+	case oldFlat:
 		return "flat 'key = value' layout of v2.1.0"
-	case mig.escapes:
+	case oldPinned:
 		return "earlier SHCL 3 spelling"
 	}
 	return "SHCL " + strconv.Itoa(mig.from) + ".x format"
@@ -298,12 +306,14 @@ func (a *app) reportMigration() {
 		return
 	}
 	notes = append(notes, noteLines("From", nativePath(mig.backup))...)
-	msg := "Converted the accounts file from the SHCL " + strconv.Itoa(mig.from) + ".x format, which reads some values differently. The old file is kept."
-	switch {
-	case mig.flat:
+	var msg string
+	switch mig.kind {
+	case oldFlat:
 		msg = "Converted the accounts file from the " + mig.formatName() + " to SHCL. The old file is kept."
-	case mig.escapes:
+	case oldPinned:
 		msg = "Converted the accounts file from the " + mig.formatName() + ", which read a backslash in double quotes as an escape. The old file is kept."
+	default:
+		msg = "Converted the accounts file from the " + mig.formatName() + ", which reads some values differently. The old file is kept."
 	}
 	if mig.changed > 0 {
 		msg += " " + strconv.Itoa(mig.changed) + " line(s) were re-spelled to keep their values."

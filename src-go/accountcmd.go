@@ -65,35 +65,12 @@ func (c *config) accountNames() []string {
 	return seen
 }
 
-// foldersOf: the folder rules belonging to one account, as canonical paths.
-func (c *config) foldersOf(name string) []string {
-	return matchesOf(c.paths, name)
-}
-
-// segmentsOf: the 'pathContains' rules belonging to one account. Kept apart from
-// the folder rules because they are a different claim: those name a tree on this
-// machine, these name a run of folder names on any machine, which is what lets one
-// config file be synced between them.
-func (c *config) segmentsOf(name string) []string {
-	return matchesOf(c.segments, name)
-}
-
-// rulesOf is matchesOf with the whole rule, for a caller that prints one.
+// rulesOf: the rules in one list that belong to one account.
 func rulesOf(rules []acctRule, name string) []acctRule {
 	var out []acctRule
 	for _, r := range rules {
 		if r.acct == name && r.match != "" {
 			out = append(out, r)
-		}
-	}
-	return out
-}
-
-func matchesOf(rules []acctRule, name string) []string {
-	var out []string
-	for _, r := range rules {
-		if r.acct == name && r.match != "" {
-			out = append(out, r.match)
 		}
 	}
 	return out
@@ -309,7 +286,7 @@ func (a *app) cmdAccountList() {
 	switch {
 	case resolvedLine != "":
 		if a.acct.source != "" {
-			resolvedLine += " (from " + a.accountSourceText() + ")"
+			resolvedLine += " (from " + a.acct.source + ")"
 		}
 	case a.acct.name != "":
 		resolvedLine = "'" + a.acct.name + "' - it names no login" + a.accountFallbackNote()
@@ -673,11 +650,7 @@ func accountSetUsage() error {
 		accountSetIndent + "Writes '<key>: <value>' into the <account> block of the accounts file.",
 		accountSetPad + "<account>  A string you define for one login; e.g. 'work', 'personal'.",
 	}
-	key := wrapWords("The setting to change. One of: "+strings.Join(accountSetFields, ", ")+".", 57)
-	lines = append(lines, accountSetPad+"<key>      "+key[0])
-	for _, rest := range key[1:] {
-		lines = append(lines, accountSetCont+rest)
-	}
+	lines = appendKeyDef(lines, "The setting to change. One of: "+strings.Join(accountSetFields, ", ")+".")
 	lines = append(lines,
 		accountSetPad+"<value>    What to set it to. Quote it if it has spaces.",
 		accountSetIndent+"Examples:",
@@ -698,16 +671,22 @@ func accountUnsetUsage() error {
 		accountSetIndent + "Removes '<key>' from the <account> block of the accounts file, every line of it.",
 		accountSetPad + "<account>  The account to change; e.g. 'work', 'personal'.",
 	}
-	key := wrapWords("The setting to remove. One of: "+strings.Join(accountSetFields, ", ")+", or any other key the block has.", 57)
-	lines = append(lines, accountSetPad+"<key>      "+key[0])
-	for _, rest := range key[1:] {
-		lines = append(lines, accountSetCont+rest)
-	}
+	lines = appendKeyDef(lines, "The setting to remove. One of: "+strings.Join(accountSetFields, ", ")+", or any other key the block has.")
 	lines = append(lines,
 		accountSetIndent+"Example:",
 		accountSetPad+"Go back to the default host for an account:",
 		accountSetPad+accountSetIndent+meName+" account unset gitea.com_my-login host")
 	return &usageError{msg: strings.Join(lines, "\n")}
+}
+
+// appendKeyDef adds the '<key>' line of either usage, wrapped under its column.
+func appendKeyDef(lines []string, def string) []string {
+	key := wrapWords(def, 57)
+	lines = append(lines, accountSetPad+"<key>      "+key[0])
+	for _, rest := range key[1:] {
+		lines = append(lines, accountSetCont+rest)
+	}
+	return lines
 }
 
 // canonAccountField maps whatever casing was typed onto the documented spelling,
@@ -1101,21 +1080,30 @@ func changedRefusal(file string, cause error) error {
 	}, cause)
 }
 
+// accountNameArg is the account the set and unset commands were given, folded
+// to the case the file keeps.
+func (a *app) accountNameArg() (string, error) {
+	name := strings.ToLower(a.cmd.arg)
+	if !acctNameOK.MatchString(name) {
+		return "", usagef("'%s' isn't a usable account name; letters, digits, '.', '_' and '-' only.", a.cmd.arg)
+	}
+	return name, nil
+}
+
 // accountSetPlan resolves what 'account set' would do without doing any of it.
 // The value is validated here rather than at write time, so a refusal happens
 // before the plan is shown rather than after it has been agreed to.
 func (a *app) accountSetPlan() (accountSetTarget, error) {
 	var t accountSetTarget
-	name := strings.ToLower(a.cmd.arg)
-	if !acctNameOK.MatchString(name) {
-		return t, usagef("'%s' isn't a usable account name; letters, digits, '.', '_' and '-' only.", a.cmd.arg)
+	name, err := a.accountNameArg()
+	if err != nil {
+		return t, err
 	}
 	t.field = canonAccountField(a.cmd.arg2)
 	if t.field == "" {
 		return t, usagef("'%s' isn't an account key %s reads. One of: %s.", a.cmd.arg2, meName, strings.Join(accountSetFields, ", "))
 	}
 	t.value, t.disp = a.cmd.arg3, "account["+name+"]"
-	var err error
 	switch t.field {
 	case "path":
 		t.value, err = absPathValue(t.value, "folder")
@@ -1271,9 +1259,9 @@ func lostRefusal(t accountSetTarget, kept bool) error {
 // one would keep the setting in force after the plan said it was gone. done means
 // there was nothing to take out, and that has been said.
 func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
-	name := strings.ToLower(a.cmd.arg)
-	if !acctNameOK.MatchString(name) {
-		return t, false, usagef("'%s' isn't a usable account name; letters, digits, '.', '_' and '-' only.", a.cmd.arg)
+	name, err := a.accountNameArg()
+	if err != nil {
+		return t, false, err
 	}
 	t.unset, t.disp = true, "account["+name+"]"
 	if a.cfg.file == "" {

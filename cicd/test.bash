@@ -8246,8 +8246,8 @@ GLEOF
 	## The whole round trip, because either half alone proves nothing - the command has to write a
 	## line the loader then reads back, and the diagnostic has to stop once it has.
 	cp "${fg}/nohost.shcl" "${fg}/fixme.shcl"
-	## This fixture is in the old flat layout, so the first edit rewrites it whole in the current one
-	## - and says so, since the file comes back a different shape from the one that was typed.
+	## The fixture was typed in the old flat layout. The reads above converted it, so the edit goes
+	## into the current one, and the rest has to have come through.
 	fAssertOut "[dbhfy] 'account set' says which file it will edit, and how"  'add: +account\[work\]\.host: git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/fixme.shcl' account set work host git.example.test 2>&1"
 	fAssertOut "[dbhfz] and the file now has that key, in the block"  '^	host: git\.example\.test$' \

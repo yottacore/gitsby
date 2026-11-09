@@ -261,14 +261,6 @@ func (a *app) accountSubject() string {
 	return "the account asked for"
 }
 
-// accountSourceText says where this run's account came from, in terms somebody can
-// go and look at. "(from config 'acme')" named neither the file nor which config -
-// and there are two configs in play here, since 'gitsby.ghAccount' is a git config
-// key and the account blocks are not.
-func (a *app) accountSourceText() string {
-	return a.acct.source
-}
-
 // showAccountFrom names where the account came from, and which file that is, under
 // the line they explain. Their own lines rather than a parenthetical: the true
 // answer names a path, and a path is what makes a line wrap. Printed even when the

@@ -64,17 +64,34 @@ func TestSplitAccountKey(t *testing.T) { // [dbfqz]
 
 func writeConfig(t *testing.T, body string) *config {
 	t.Helper()
+	cfg := &config{values: map[string]string{}}
+	opt := defaultOptions()
+	loadConfigFile(t, cfg, &opt, body)
+	return cfg
+}
+
+// loadConfigFile writes body to a new accounts file and loads it into cfg, with
+// opt pointed at it. The file's path comes back.
+func loadConfigFile(t *testing.T, cfg *config, opt *options, body string) string {
+	t.Helper()
 	file := filepath.Join(t.TempDir(), "config.shcl")
 	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := &config{values: map[string]string{}}
-	opt := defaultOptions()
 	opt.configFile, opt.configGiven = file, true
-	if err := cfg.load(opt); err != nil {
+	if err := cfg.load(*opt); err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	return cfg
+	return file
+}
+
+// ruleMatches is the canonical match of each rule one account has in a list.
+func ruleMatches(rules []acctRule, name string) []string {
+	var out []string
+	for _, r := range rulesOf(rules, name) {
+		out = append(out, r.match)
+	}
+	return out
 }
 
 // madeSymlink is os.Symlink, then a look for the link. Wine says yes and makes
@@ -570,10 +587,10 @@ bad = line
 	if got := cfg.value("Dotted", "ghAccount"); got != "dottedlogin" {
 		t.Errorf("dotted ghAccount = %q", got)
 	}
-	if got := cfg.foldersOf("block"); !slices.Equal(got, []string{driveRule("/srv/a"), driveRule("/srv/b c"), driveRule("/srv/d")}) {
+	if got := ruleMatches(cfg.paths, "block"); !slices.Equal(got, []string{driveRule("/srv/a"), driveRule("/srv/b c"), driveRule("/srv/d")}) {
 		t.Errorf("block folders = %v", got)
 	}
-	if got := cfg.segmentsOf("block"); !slices.Equal(got, []string{"github.com/alice"}) {
+	if got := ruleMatches(cfg.segments, "block"); !slices.Equal(got, []string{"github.com/alice"}) {
 		t.Errorf("block segments = %v", got)
 	}
 	if got := cfg.value("2024", "host"); got != "gitea.example" {
@@ -598,7 +615,7 @@ func TestConfigLoadHierarchicalNames(t *testing.T) { // [dbss3]
 	if !cfg.knowsAccount("bare") {
 		t.Error("a block with no keys is not an account")
 	}
-	if cfg.knowsAccount("../../evil") || len(cfg.foldersOf("../../evil")) != 0 {
+	if cfg.knowsAccount("../../evil") || len(ruleMatches(cfg.paths, "../../evil")) != 0 {
 		t.Error("a traversal name became an account")
 	}
 	if !slices.Contains(cfg.unknown, "account[../../evil]") {
@@ -676,7 +693,7 @@ func wantProtocol(t *testing.T, cfg *config, want string) {
 
 func wantFolders(t *testing.T, cfg *config, acct string, want ...string) {
 	t.Helper()
-	if got := cfg.foldersOf(acct); !slices.Equal(got, want) {
+	if got := ruleMatches(cfg.paths, acct); !slices.Equal(got, want) {
 		t.Errorf("folders = %v, want %v", got, want)
 	}
 }
@@ -965,7 +982,7 @@ func TestConfigIgnoresARelativePath(t *testing.T) { // [dcmfa]
 		if !slices.Equal(cfg.unknown, tc.unknown) {
 			t.Errorf("%s: unknown = %q, want %q", tc.name, cfg.unknown, tc.unknown)
 		}
-		if got := cfg.foldersOf("work"); !slices.Equal(got, tc.folders) {
+		if got := ruleMatches(cfg.paths, "work"); !slices.Equal(got, tc.folders) {
 			t.Errorf("%s: folders = %q, want %q", tc.name, got, tc.folders)
 		}
 		if !cfg.knowsAccount("work") || !slices.Contains(cfg.accountNames(), "work") {

@@ -59,6 +59,27 @@ func dirEntries(t *testing.T, dir string) []string {
 	return names
 }
 
+// backupIn is the one backup beside config.shcl in dir, named for the format
+// given and for a time this test ran.
+func backupIn(t *testing.T, dir, format string) string {
+	t.Helper()
+	names := dirEntries(t, dir)
+	if len(names) != 2 {
+		t.Fatalf("want the file and one backup, got %v", names)
+	}
+	name := names[0]
+	if name == "config.shcl" {
+		name = names[1]
+	}
+	stamp, ok := strings.CutPrefix(name, "config_backup_")
+	stamp, ok2 := strings.CutSuffix(stamp, "_format-"+format+".shcl")
+	when, err := time.ParseInLocation("20060102-150405", stamp, time.Local)
+	if !ok || !ok2 || err != nil || time.Since(when) > 2*time.Hour || time.Until(when) > time.Second {
+		t.Errorf("backup name %q", name)
+	}
+	return filepath.Join(dir, name)
+}
+
 // A 2.x file is kept under a dated name and replaced by one the module converted,
 // with the current banner. The values are the ones 2.x read, and the next run
 // leaves it alone.
@@ -78,18 +99,7 @@ func TestOldFormatFileIsConverted(t *testing.T) { // [ddf00]
 	}
 	wantValue(t, a.cfg, "w", "email", `C:\new`)
 	wantValue(t, a.cfg, "w", "name", "Ada")
-	names := dirEntries(t, dir)
-	if len(names) != 2 {
-		t.Fatalf("want the file and one backup, got %v", names)
-	}
-	backup := filepath.Join(dir, names[0])
-	if names[0] == "config.shcl" {
-		backup = filepath.Join(dir, names[1])
-	}
-	stamp := time.Now().Format("20060102")
-	if !strings.HasPrefix(filepath.Base(backup), "config_backup_"+stamp+"-") || !strings.HasSuffix(backup, "_format-v2.shcl") {
-		t.Errorf("backup name %q", filepath.Base(backup))
-	}
+	backup := backupIn(t, dir, "v2")
 	if got := readBack(t, backup); got != shcl2Body {
 		t.Errorf("backup holds %q", got)
 	}
@@ -300,17 +310,7 @@ func TestFlatFileIsConverted(t *testing.T) { // [df065]
 	if a.cfg.values["protocol"] != "ssh" || a.cfg.flat {
 		t.Errorf("protocol %q, flat %v", a.cfg.values["protocol"], a.cfg.flat)
 	}
-	names := dirEntries(t, dir)
-	if len(names) != 2 {
-		t.Fatalf("want the file and one backup, got %v", names)
-	}
-	backup := filepath.Join(dir, names[0])
-	if names[0] == "config.shcl" {
-		backup = filepath.Join(dir, names[1])
-	}
-	if !strings.HasPrefix(filepath.Base(backup), "config_backup_"+time.Now().Format("20060102")+"-") || !strings.HasSuffix(backup, "_format-flat.shcl") {
-		t.Errorf("backup name %q", filepath.Base(backup))
-	}
+	backup := backupIn(t, dir, "flat")
 	if got := readBack(t, backup); got != utf8BOM+flatBody {
 		t.Errorf("backup holds %q", got)
 	}
@@ -427,17 +427,7 @@ func TestOldPinFileIsConverted(t *testing.T) { // [df08m]
 	wantValue(t, a.cfg, "work", "name", `O'Brien \ x`)
 	wantValue(t, a.cfg, "work", "ghaccount", "a\tb'c")
 	wantValue(t, a.cfg, "work", "email", `C:\new`)
-	names := dirEntries(t, dir)
-	if len(names) != 2 {
-		t.Fatalf("want the file and one backup, got %v", names)
-	}
-	backup := filepath.Join(dir, names[0])
-	if names[0] == "config.shcl" {
-		backup = filepath.Join(dir, names[1])
-	}
-	if !strings.HasPrefix(filepath.Base(backup), "config_backup_"+time.Now().Format("20060102")+"-") || !strings.HasSuffix(backup, "_format-v3old.shcl") {
-		t.Errorf("backup name %q", filepath.Base(backup))
-	}
+	backup := backupIn(t, dir, "v3old")
 	if got := readBack(t, backup); got != oldPinBody {
 		t.Errorf("backup holds %q", got)
 	}
@@ -535,8 +525,8 @@ func TestOldPinRespelling(t *testing.T) { // [df08q]
 // module" meant nothing to anyone who never built gitsby.
 func TestFormatNoticeOneName(t *testing.T) { // [df367]
 	for _, mig := range []formatMigration{
-		{from: 3, escapes: true, why: "the folder is read-only"},
-		{from: 3, escapes: true, done: true, backup: "/h/old.shcl"},
+		{kind: oldPinned, why: "the folder is read-only"},
+		{kind: oldPinned, done: true, backup: "/h/old.shcl"},
 	} {
 		p, _, stderr := testPrinter()
 		a := newApp(p)

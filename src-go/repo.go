@@ -318,18 +318,15 @@ func (a *app) settleRepoCreate() error {
 	if err := mustBeInPath("gh"); err != nil {
 		return err
 	}
-	a.tgt.ghTarget = a.cmd.arg
-	switch state, reason := ghRepoState(a.tgt.ghTarget); state {
-	case repoUnknown:
-		return usagef("Couldn't ask GitHub about %s, so there is no telling whether it exists: %s", a.tgt.ghTarget, reason)
-	case repoMissing:
-		a.tgt.connectMode = "create"
-		return nil
-	case repoEmpty:
-		return usagef("github.com/%s already exists and is empty; connect to it instead: %s repo connect %s", a.tgt.ghTarget, meName, a.tgt.ghTarget)
-	default:
-		return usagef("github.com/%s already has commits; clone it instead (%s repo clone), or reconcile with raw git.", a.tgt.ghTarget, meName)
+	state, err := a.askGhTarget()
+	if err != nil {
+		return err
 	}
+	if state == repoEmpty {
+		return usagef("github.com/%s already exists and is empty; connect to it instead: %s repo connect %s", a.tgt.ghTarget, meName, a.tgt.ghTarget)
+	}
+	a.tgt.connectMode = "create"
+	return nil
 }
 
 func (a *app) settleRepoConnectTo() error {
@@ -348,22 +345,33 @@ func (a *app) settleRepoConnectTo() error {
 	if err := mustBeInPath("gh"); err != nil {
 		return err
 	}
-	a.tgt.ghTarget = a.cmd.arg
-	switch state, reason := ghRepoState(a.tgt.ghTarget); state {
-	case repoUnknown:
-		return usagef("Couldn't ask GitHub about %s, so there is no telling whether it exists: %s", a.tgt.ghTarget, reason)
-	case repoMissing:
-		return usagef("github.com/%s doesn't exist, or you can't see it. To create it: %s repo create %s", a.tgt.ghTarget, meName, a.tgt.ghTarget)
-	case repoEmpty:
-		// gh never uses a host alias, so this is the canonical url. We build this one
-		// ourselves, so the config's transport applies - unlike 'repo create', where gh
-		// adds the remote and only gh's own git_protocol decides.
-		a.tgt.connectURL = githubURL(a.tgt.ghTarget, a.protocolFor("github.com"))
-		a.tgt.connectMode = "add"
-		return nil
-	default:
-		return usagef("github.com/%s already has commits; clone it instead (%s repo clone), or reconcile with raw git.", a.tgt.ghTarget, meName)
+	state, err := a.askGhTarget()
+	if err != nil {
+		return err
 	}
+	if state == repoMissing {
+		return usagef("github.com/%s doesn't exist, or you can't see it. To create it: %s repo create %s", a.tgt.ghTarget, meName, a.tgt.ghTarget)
+	}
+	// gh never uses a host alias, so this is the canonical url. We build this one
+	// ourselves, so the config's transport applies - unlike 'repo create', where gh
+	// adds the remote and only gh's own git_protocol decides.
+	a.tgt.connectURL = githubURL(a.tgt.ghTarget, a.protocolFor("github.com"))
+	a.tgt.connectMode = "add"
+	return nil
+}
+
+// askGhTarget asks gh about the owner/name given, for repo create and connect.
+// It refuses the 2 answers both refuse, so only missing and empty come back.
+func (a *app) askGhTarget() (repoExistence, error) {
+	a.tgt.ghTarget = a.cmd.arg
+	state, reason := ghRepoState(a.tgt.ghTarget)
+	switch state {
+	case repoUnknown:
+		return state, usagef("Couldn't ask GitHub about %s, so there is no telling whether it exists: %s", a.tgt.ghTarget, reason)
+	case repoMissing, repoEmpty:
+		return state, nil
+	}
+	return state, usagef("github.com/%s already has commits; clone it instead (%s repo clone), or reconcile with raw git.", a.tgt.ghTarget, meName)
 }
 
 func (a *app) cmdClone() error {
