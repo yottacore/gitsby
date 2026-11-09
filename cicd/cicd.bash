@@ -75,6 +75,9 @@
 ##	   --install-hook      install the git pre-push hook that runs --merge-gate on each commit pushed to main,
 ##	                       unless it changes only the paths MERGE_GATE_SKIP in config.bash lists
 ##	   -h, --help          show this help
+##	- Memory: every container a run starts is capped with no swap, and so is the run itself, in a
+##	  user scope where systemd-run --user works. CICD_MEM_CAP sets the cap, a docker size such
+##	  as 24g, or none. The default is a third of the RAM, 4g to 32g. A step over it exits 137.
 ##	- If neither -q/-y nor -m is given, the run prompts once for a commit message
 ##	  (blank = git editor; Ctrl+C aborts the whole run), then finishes unattended.
 ##	- Reuse: copy the cicd/ directory into another project and edit config.bash.
@@ -146,7 +149,8 @@ fStepEnd(){ [[ -n "${stepName}" ]] || return 0; fEcho "$(fStepTime): ${stepWhere
 fDie(){ { fEcho_Force "FAILED: $*"; } >&2; exit 1; }
 fUsage(){ fEcho_Clean "$*" >&2; exit 2; }
 
-## Parse options.
+## Parse options. cliArgs keeps them for the move into the memory scope.
+cliArgs=("$@")
 assumeYes=0; quiet=0; quick=0; leakcheck=0; leakOpt=""; doSync=1; doLint=1; doTest=1; doFuzz=1; doParity=1; doRemote=1; noRemote=0; cliMessage=""
 gate=0; installHook=0; stageOpts=(); containerOpt=""; gateAreas=(); handsOff=""; aliasNote=""; keepTemp=0; listOnly=0
 while (($#)); do case "$1" in
@@ -244,6 +248,20 @@ elif [[ "${CICD_CONTAINER:-0}" == 1 ]]; then
 	else containerNote="WARNING: docker isn't usable here, so ${inImage} on this box, with its own tool versions"; fi
 fi
 if ((installHook)); then exec "${here}/utility/pre-push.bash" --install; fi
+## The memory cap, from config.bash's fMemCap: memArgs goes on every docker run. Then the whole run
+## goes in a user scope with the same cap, once, so the steps it runs here are capped too. The
+## containers are dockerd's children, not this run's, so they're capped apart. Not in the image,
+## and not where systemd-run --user doesn't work, such as a bare CI runner; it runs as before
+## there. OOMPolicy continue, so a step the kernel kills fails, and the cleanup still runs. A step
+## killed at the cap exits 137.
+memCap=""; memArgs=()
+fMemCap || exit 1
+if [[ -n "${memCap}" && -z "${GITSBY_CICD_MEM_SCOPE:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && ((! listOnly)) \
+	&& command -v choom >/dev/null 2>&1 && systemd-run --user --scope --quiet true >/dev/null 2>&1; then
+	export GITSBY_CICD_MEM_SCOPE="${memCap}"
+	exec systemd-run --user --scope --quiet -p "MemoryMax=${memCap^^}" -p MemorySwapMax=0 -p OOMPolicy=continue \
+		choom -n 1000 -- bash "${here}/${BASH_SOURCE[0]##*/}" ${cliArgs[@]+"${cliArgs[@]}"}
+fi
 ## Set once the image is there. One left in the caller's environment would say otherwise.
 ## Where the run outside left off, as "<steps before this run's>/<total>".
 ## And its UTC offset, as a POSIX zone, which needs no zone files: "<-0700>+07:00".
@@ -300,7 +318,7 @@ fModCachePrune(){
 	up="$(docker ps -q --filter "label=dev.project=${APP_NAME}" 2>/dev/null)" || return 0
 	[[ -z "${up}" ]] || return 0
 	n="$(docker run --rm --init --name "${APP_NAME}-${runName}-modprune" --label "dev.project=${APP_NAME}" --label "dev.run=${runName}" \
-		--network none --cpus 1 --cpu-shares 256 --user "$(id -u):$(id -g)" -v "${APP_NAME}-cicd-cache:/cache" -v "${root}:${root}:ro" \
+		--network none --cpus 1 --cpu-shares 256 ${memArgs[@]+"${memArgs[@]}"} --user "$(id -u):$(id -g)" -v "${APP_NAME}-cicd-cache:/cache" -v "${root}:${root}:ro" \
 		"${containerImage}" nice -n 19 bash "${root}/cicd/utility/go-modcache-prune.bash" /cache/home/go/pkg/mod \
 		"${root}/src-go/go.mod" "${root}/src-go/go.sum" 2>/dev/null)" || return 0
 	[[ ! "${n}" =~ ^[1-9][0-9]*$ ]] || gone+=("${n} Go module version(s)")
@@ -833,7 +851,7 @@ fContainerRun(){
 	## in there renices itself. It works out its counts from this box's cores and load.
 	docker run ${rmOpt[@]+"${rmOpt[@]}"} --init --name "${containerName}" --label "dev.project=${APP_NAME}" --label "dev.run=${runName}" \
 		--cpus "${BUILD_JOBS}" --cpu-shares 256 -e "GITSBY_CICD_CPUS=${cpuCores}" -e "GITSBY_CICD_STEPS=${stepsBeforeBox}/${stepTotal}" \
-		-e "GITSBY_CICD_TZ=<${tzOff}>${tzSign}${tzOff:1:2}:${tzOff:3:2}" \
+		-e "GITSBY_CICD_TZ=<${tzOff}>${tzSign}${tzOff:1:2}:${tzOff:3:2}" ${memArgs[@]+"${memArgs[@]}"} \
 		--user "$(id -u):$(id -g)" "${containerMounts[@]}" -w "${root}" \
 		"${containerImage}" bash "${root}/cicd/cicd.bash" "${innerArgs[@]}" &
 	## Waited on, not run in front: bash holds a trap until a command in front ends, and docker
@@ -1491,3 +1509,4 @@ fEcho_Clean
 ##		- 2026-11-06 JC: The end of a run no longer prunes docker's build cache, which every project's builds share. The daemon's builder.gc trims it. The end line leaves out a size under a megabyte, since by then the run folder holds little more than its run.pid.
 ##		- 2026-11-06 JC: A run that passed in the image cuts the cache volume's Go module cache to what go.sum names, when no other run's container is up.
 ##		- 2026-11-07 JC: Lint runs ruff with the project's ruff.toml too, after the leak rules.
+##		- 2026-11-09 JC: A memory cap with no swap, CICD_MEM_CAP, on every container a run starts, first in line for the OOM killer, and on the run itself in a user scope.

@@ -375,6 +375,11 @@ fMakeGateFixture(){
 	fGateStub "${gateDir}/bin/codeql" codeql "[[ \"\${1:-}\" != version ]] || exit 0; [[ \"\${2:-}\" != create ]] || printf 'GOOS=%s\\n' \"\${GOOS:-}\" >> '${gateCalls}'; for a in \"\$@\"; do [[ \"\${a}\" != --output=* ]] || printf '{}' > \"\${a#--output=}\"; done
 		for a in \"\$@\"; do [[ \"\${a}\" != --source-root=* ]] || (cd \"\${a#--source-root=}\" && find . -name '*.py' | sort | sed 's/^/py: /') >> '${gateCalls}'; done"
 	fGateStub "${gateDir}/bin/gifsicle" gifsicle "cp -f -- \"\${2:-}\" \"\${4:-}\""
+	## The memory scope runs what follows its options, and choom what follows --. 'systemd-run'
+	## fails it, as on a box without a user systemd.
+	fGateStub "${gateDir}/bin/systemd-run" systemd-run "[[ ! -e '${gateFail}/systemd-run' ]] || exit 1
+		while ((\$#)); do case \"\$1\" in -p) shift 2 ;; -*) shift ;; *) break ;; esac; done; exec \"\$@\""
+	fGateStub "${gateDir}/bin/choom" choom "while ((\$#)); do case \"\$1\" in -n) shift 2 ;; --) shift; break ;; *) break ;; esac; done; exec \"\$@\""
 	## The probe answers yes whatever the marker says, so a failure is the tool's finding and
 	## not "not installed". pwsh probes for its module in the same call as the lint, and exits 3
 	## when it has none.
@@ -399,9 +404,11 @@ fMakeGateFixture(){
 ## The fixture's engine with the stubs first on PATH. HOME is the fixture's as well: the engine
 ## puts ~/.local/bin ahead of PATH, and a real markdownlint there would answer for the stub.
 ## The suite may itself run in the container, so the engine's marker for that is set only when
-## a check asks for it.
+## a check asks for it. So is the memory scope, which the box's CICD_MEM_CAP doesn't reach.
 fGateRun(){ (
 	if [[ -n "${gateNested:-}" ]]; then export GITSBY_CICD_IN_CONTAINER=1; else unset GITSBY_CICD_IN_CONTAINER; fi
+	if [[ -n "${gateScope:-}" ]]; then unset GITSBY_CICD_MEM_SCOPE; else export GITSBY_CICD_MEM_SCOPE=fixture; fi
+	if [[ -n "${gateMemCap:-}" ]]; then export CICD_MEM_CAP="${gateMemCap}"; else unset CICD_MEM_CAP; fi
 	## A run's folder follows TMPDIR then, as each check sets it, and never the box's own.
 	if [[ -n "${gateHostTemp:-}" ]]; then export HOST_TEMP="${gateHostTemp}"; else unset HOST_TEMP; fi
 	cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" ./cicd/cicd.bash "$@"
@@ -445,6 +452,49 @@ fGateContainerQuota(){
 	fGateSays 0 'OK: the container run' -y --no-fuzz --no-demogif --no-remote --no-sync --no-publish --no-dogfood \
 		&& fGateCalled '^docker run --rm --init --name gitsby-[^ ]+ --label [^ ]+ --label [^ ]+ --cpus [1-9][0-9]* --cpu-shares 256 -e GITSBY_CICD_CPUS=[1-9][0-9]* ' \
 		&& grep -qE '^Cores \.+: [1-9][0-9]* of [1-9][0-9]*, [1-9][0-9]* for the hard steps' "${gateOut}"
+}
+## Every container a run starts gets the memory cap with no swap, first in line for the OOM
+## killer: a third of the RAM, 4g to 32g, or CICD_MEM_CAP. none drops it. Anything else stops the
+## run before it starts one, and what the value holds never runs. $1 the cap the calls carry, or
+## none.
+fGateMemCapCalls(){
+	local runs=""
+	runs="$(grep '^docker run ' "${gateCalls}")" || return 1
+	[[ "$(grep -c . <<< "${runs}")" -ge 3 ]] || return 1
+	if [[ "$1" == none ]]; then grep -qE -- ' --(memory|memory-swap|oom-score-adj) ' <<< "${runs}" && return 1
+	else grep -vqF -- " --memory $1 --memory-swap $1 --oom-score-adj 1000 --user " <<< "${runs}" && return 1; fi
+	return 0
+}
+fGateMemCap(){
+	local rc=0 kb="" def=0 bad="" args=(-y --no-fuzz --no-demogif --no-sync --no-publish)
+	kb="$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)"
+	def=$(( kb / 3 / 1048576 )); (( def <= 32 )) || def=32; (( def >= 4 )) || def=4
+	mkdir -p "${gateDir}/home/.local/bin"
+	fGateSays 0 'PASS Remote tests \]$' "${args[@]}" && fGateMemCapCalls "${def}g" || rc=1
+	gateMemCap=7G fGateSays 0 'PASS Remote tests \]$' "${args[@]}" && fGateMemCapCalls 7g || rc=1
+	gateMemCap=none fGateSays 0 'PASS Remote tests \]$' "${args[@]}" && fGateMemCapCalls none || rc=1
+	for bad in 24gb -1g 0 "1[\$(: > ${gateFail}/memcap-ran)]"; do
+		gateMemCap="${bad}" fGateSays 1 "^\[ FAILED: CICD_MEM_CAP '.+' isn't a size like 24g, or none \]\$" "${args[@]}" \
+			&& ! fGateCalled '^docker run ' '^(systemd-run|choom) ' && [[ ! -e "${gateFail}/memcap-ran" ]] || rc=1
+	done
+	((rc == 0))
+}
+## The run goes in a user scope with the same cap, once, where systemd-run --user works, and runs
+## as before where it doesn't, with none, in the image, or for --list.
+fGateMemScope(){
+	local rc=0 q=(--no-container --backlog-run-quick lint)
+	local want="^systemd-run --user --scope --quiet -p MemoryMax=7G -p MemorySwapMax=0 -p OOMPolicy=continue choom -n 1000 -- bash ${gateDir}/cicd/cicd\.bash --no-container --backlog-run-quick lint\$"
+	gateScope=1 gateMemCap=7g fGateSays 0 'backlog quick run: passed\.' "${q[@]}" \
+		&& fGateCalled '^systemd-run --user --scope --quiet true$' "${want}" '^choom -n 1000 -- bash ' \
+		&& [[ "$(grep -c '^systemd-run .*MemoryMax=' "${gateCalls}")" == 1 ]] || rc=1
+	: > "${gateFail}/systemd-run"
+	gateScope=1 gateMemCap=7g fGateSays 0 'backlog quick run: passed\.' "${q[@]}" \
+		&& fGateCalled '^systemd-run --user --scope --quiet true$' && ! fGateCalled '^choom ' || rc=1
+	rm -f -- "${gateFail:?}/systemd-run"
+	gateScope=1 gateMemCap=none fGateSays 0 'backlog quick run: passed\.' "${q[@]}" && ! fGateCalled '^(systemd-run|choom) ' || rc=1
+	gateScope=1 gateNested=1 fGateSays 0 'backlog quick run: passed\.' --backlog-run-quick lint && ! fGateCalled '^(systemd-run|choom) ' || rc=1
+	gateScope=1 fGateStatus 0 --list && ! fGateCalled '^(systemd-run|choom) ' || rc=1
+	((rc == 0))
 }
 ## --quick is handed to the run in there, which is where it skips the suite.
 fGateContainerQuick(){
@@ -612,7 +662,7 @@ fGateRunTmp(){
 	rm -f -- "${gateFail:?}/go-test"
 	((rc == 0)) && [[ -z "$(ls -A "${t}/gitsby")" ]] || return 1
 	: > "${gateFail}/hang"; rm -f -- "${gateFail:?}/hung"
-	( cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" HOST_TEMP="" exec ./cicd/cicd.bash -y --no-container --quick --no-sync --no-publish --no-dogfood ) </dev/null >"${gateOut}" 2>&1 &
+	( cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" HOST_TEMP="" GITSBY_CICD_MEM_SCOPE=fixture CICD_MEM_CAP="" exec ./cicd/cicd.bash -y --no-container --quick --no-sync --no-publish --no-dogfood ) </dev/null >"${gateOut}" 2>&1 &
 	pid=$!
 	for ((i = 0; i < 100; i++)); do [[ -e "${gateFail}/hung" ]] && break; sleep 0.05; done
 	[[ -n "$(compgen -G "${t}/gitsby/[0-9]*_[0-9][0-9][0-9]")" ]] || { rm -f -- "${gateFail:?}/hang"; kill "${pid}" 2>/dev/null; wait "${pid}" 2>/dev/null; return 1; }
@@ -762,7 +812,7 @@ fGateDockerTidy(){
 	## Stopped partway, with its container still running.
 	: > "${gateFail}/docker-hang"; rm -f -- "${gateFail:?}/hung"; : > "${gateCalls}"
 	## Not the suite's own marker, when it runs in the image, or the run would take itself for inside.
-	( unset GITSBY_CICD_IN_CONTAINER; cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" HOST_TEMP="" exec ./cicd/cicd.bash --backlog-run-quick lint ) </dev/null >"${gateOut}" 2>&1 &
+	( unset GITSBY_CICD_IN_CONTAINER; cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" HOST_TEMP="" GITSBY_CICD_MEM_SCOPE=fixture CICD_MEM_CAP="" exec ./cicd/cicd.bash --backlog-run-quick lint ) </dev/null >"${gateOut}" 2>&1 &
 	pid=$!
 	for ((i = 0; i < 100; i++)); do [[ -e "${gateFail}/hung" ]] && break; sleep 0.05; done
 	kill -TERM "${pid}"; wait "${pid}" 2>/dev/null || true
@@ -6769,6 +6819,8 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[ddrp7] a plain run hands stages 1-4 to the image and runs none of them here"  fGateContainerRun
 		fAssert "[debj1] its container is named and labeled for the run, and the output names it"  fGateContainerName
 		fAssert "[dedq3] and capped at the run's core budget, at a low weight"  fGateContainerQuota
+		fAssert "[df2tk] every container a run starts is capped at a third of the RAM or CICD_MEM_CAP, with no swap, first in line for the OOM killer"  fGateMemCap
+		fAssert "[df2tm] the run goes in a user scope with the same cap, once, where systemd-run --user works"  fGateMemScope
 		fAssert "[de4bx] and --quick goes in with them"  fGateContainerQuick
 		fAssert "[de549] and --leakcheck too, and the soak test runs only in there"  fGateContainerLeak
 		fAssert "[de5ma] and --no-leakcheck"  fGateContainerNoLeak

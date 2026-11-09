@@ -124,6 +124,34 @@ fLowPriority(){
 	renice 19 -p "$$" >/dev/null 2>&1 || true
 	if command -v ionice >/dev/null 2>&1; then ionice -c 3 -p "$$" >/dev/null 2>&1 || true; fi
 }
+## Memory, per the same rules. A runaway step has to die alone, before the OOM killer reaches the
+## desktop: on 2026-11-08 another project's analyzer took 67 GB plus 18 GB of swap on b23, and
+## earlyoom killed the user's session first. Every container a run starts gets the cap with no
+## swap, first in line for the OOM killer, and cicd.bash puts its whole run in a user scope with
+## the same cap where systemd-run --user works. A step killed at the cap exits 137, and fails.
+## CICD_MEM_CAP is a docker size such as 24g, or none for no cap. The default is a third of the
+## RAM, 4g to 32g. No step needs more: the peaks on b23 over the 2 weeks to 2026-11-09 were the
+## checks container 10.0 GB, the quick run's 4.4 GB, go test -c 0.7 GB and a build 0.3 GB, page
+## cache included. fMemCap sets memCap, empty for none, and memArgs for docker run, and on
+## anything else says so and fails.
+fMemCap(){
+	local kb=""
+	memCap="${CICD_MEM_CAP:-}"; memArgs=()
+	if [[ "${memCap}" == none ]]; then memCap=""; return 0; fi
+	if [[ -z "${memCap}" ]]; then
+		kb="$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || true)"
+		[[ "${kb}" =~ ^[0-9]{1,12}$ ]] || kb=0
+		memCap=$(( kb / 3 / 1048576 )); (( memCap <= 32 )) || memCap=32; (( memCap >= 4 )) || memCap=4
+		memCap+="g"
+	fi
+	## Matched, never read as arithmetic, so x[$(cmd)] can't run.
+	if [[ ! "${memCap}" =~ ^[1-9][0-9]{0,14}[kmgKMG]?$ ]]; then
+		printf '%s\n' "[ FAILED: CICD_MEM_CAP '${CICD_MEM_CAP}' isn't a size like 24g, or none ]" >&2
+		memCap=""; return 1
+	fi
+	memCap="${memCap,,}"
+	memArgs=(--memory "${memCap}" --memory-swap "${memCap}" --oom-score-adj 1000)
+}
 
 ## Stage 1: lint. Go first (gofmt is the arbiter of format, vet and staticcheck gate),
 ## then every first-party shell file (globs, expanded by the engine). shellcheck is
@@ -388,3 +416,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-10-25 JC: Stage 7 tries b29w before vm925w, adds vmKt6m beside b26, and keeps each box's copy of the tree under its temp root. REMOTE_MAC_NEEDS.
 ##		- 2026-10-25 JC: BUILD_JOBS rounds down, and drops to a quarter on a busy box. HEAVY_JOBS for the hard steps, and fLowPriority.
 ##		- 2026-10-25 JC: MERGE_GATE_SKIP, the paths a push to main may change and still skip the pre-push hook's --merge-gate.
+##		- 2026-11-09 JC: fMemCap, a memory cap with no swap from CICD_MEM_CAP, for every container a run starts and the run itself.

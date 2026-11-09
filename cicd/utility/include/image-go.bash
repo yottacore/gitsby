@@ -10,9 +10,9 @@
 ## stage 7 hands it on to remote-tests.bash. Without it, go is this box's. The tree and OUT_DIR
 ## are mounted at their own paths, and the Go caches are the named volume the full run uses.
 ## The container gets the caller's BUILD_JOBS as its quota, and go runs niced in there, since
-## the caller's nice stops at the docker client. Uses the caller's root and APP_NAME. The
-## container is labeled and named for the run's folder, GITSBY_CICD_RUN, so cicd.bash can remove
-## what a stopped run left.
+## the caller's nice stops at the docker client. It gets config.bash's memory cap too, from
+## fMemCap. Uses the caller's root and APP_NAME. The container is labeled and named for the
+## run's folder, GITSBY_CICD_RUN, so cicd.bash can remove what a stopped run left.
 ##	History: At bottom of script.
 
 ##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
@@ -21,14 +21,16 @@
 ##	SPDX-License-Identifier: MIT
 
 fImageGo(){
-	local dir="$1" outDir="$2" name="" n=0
-	local -a vars=() dockerVars=() mounts=() rmOpt=(--rm)
+	# shellcheck disable=SC2034  ## fMemCap sets it.
+	local dir="$1" outDir="$2" name="" n=0 memCap=""
+	local -a vars=() dockerVars=() mounts=() rmOpt=(--rm) memArgs=()
 	shift 2
 	while (($#)) && [[ "$1" =~ ^[A-Z_][A-Z0-9_]*= ]]; do vars+=("$1"); dockerVars+=(-e "$1"); shift; done
 	if [[ -z "${GITSBY_CICD_IMAGE:-}" ]]; then
 		(cd "${dir}" && env ${vars[@]+"${vars[@]}"} go "$@")
 		return
 	fi
+	fMemCap || return 1
 	mounts=(-v "${root:?}:${root}" -v "${APP_NAME:?}-cicd-cache:/cache" --tmpfs "/tmp:rw,exec,mode=1777")
 	[[ "${outDir}" == "${root}" || "${outDir}" == "${root}/"* ]] || mounts+=(-v "${outDir}:${outDir}")
 	## A release builds its tag from an export outside the tree.
@@ -41,7 +43,7 @@ fImageGo(){
 		[[ -n "$(docker ps -aq --filter "name=^/${name}\$" 2>/dev/null || true)" ]] || break
 	done
 	docker run ${rmOpt[@]+"${rmOpt[@]}"} --init --name "${name}" --label "dev.project=${APP_NAME}" --label "dev.run=${GITSBY_CICD_RUN:-}" \
-		--cpus "${BUILD_JOBS:-1}" --cpu-shares 256 \
+		--cpus "${BUILD_JOBS:-1}" --cpu-shares 256 ${memArgs[@]+"${memArgs[@]}"} \
 		--user "$(id -u):$(id -g)" "${mounts[@]}" ${dockerVars[@]+"${dockerVars[@]}"} -w "${dir}" \
 		"${GITSBY_CICD_IMAGE}" nice -n 19 go "$@" &
 	## So the caller's INT or TERM trap runs at once, and not when the build ends.
@@ -94,3 +96,4 @@ fImageBuild(){
 ##		- 2026-10-25 JC: fImageRecipe and fImageBuild, moved here from cicd.bash so release.bash builds with the same image. A build folder outside the tree is mounted too.
 ##		- 2026-11-06 JC: The image builds from cicd/, so the recipe can copy safe-rm.sh in, and the tag hashes it.
 ##		- 2026-11-07 JC: Header with copyright and license.
+##		- 2026-11-09 JC: The memory cap from fMemCap, with no swap and first in line for the OOM killer.
