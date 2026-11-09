@@ -45,7 +45,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: Each puts the path on a `File:` line under a short status, like the clone line.
 	- Estimated effort: Low
 	- Decisions: They follow the rule. `Cloned into '<folder>'` had the same verb-plus-path form and moved, so keeping these inline would be an exception a later review files again.
-	- Origin: Left alone by the 2026110907 and 2026110914045043 workers as lines whose whole object is the path.
+	- Origin: Left alone by the 2026110912215207 and 2026110914045043 workers as lines whose whole object is the path.
 
 - The UI guide's own example status line puts a path inside the sentence
 	- ID: 2026110914045043
