@@ -222,20 +222,12 @@ func (a *app) settleCommand(argv []string) error {
 	return nil
 }
 
-// enterRepo settles whether we are inside a work tree, and refuses the commands
-// that need one. Every command does - except the repo ones: clone works anywhere,
-// and create/connect exist precisely to turn a plain directory into one.
-// 'whoami' too: which account a folder belongs to is worth asking before there
-// is a repo in it.
+// enterRepo settles whether we are inside a work tree, and refuses the commands that
+// need one. clone, create, connect and whoami don't.
 func (a *app) enterRepo() error {
-	// One call, four answers. The exit code is no use here: rev-parse answers all
-	// of these in text and exits zero either way, so success says only that we are
-	// somewhere git understands - which a bare repo and the .git directory itself
-	// both are, and neither is a place where any of this means anything. A bare one
-	// answers true to --is-inside-git-dir as well, so it has to be named first.
-	// The top level comes fourth, for folder matching. Outside a work tree git
-	// refuses that one and exits nonzero after printing the other three, so the
-	// output is read whatever the exit code says.
+	// One call, 4 answers, read from the text, since rev-parse exits 0 in a bare repo or
+	// .git too, and nonzero outside a work tree after printing the first 3. Bare goes
+	// first.
 	out, _ := toolCmd("git", "rev-parse", "--is-inside-work-tree", "--is-inside-git-dir", "--is-bare-repository", "--show-toplevel").Output()
 	var answers []string
 	for _, line := range splitLines(string(out)) {
@@ -264,20 +256,16 @@ func (a *app) enterRepo() error {
 	return usagef("Not inside a git repository. Change to a git project directory first.")
 }
 
-// settleAccount points this run at the account whose folder this is, before
-// anything reaches the network: the fetch afterwards authenticates, so getting
-// this wrong here gets it wrong for the whole command. It also validates
-// --config/GITSBY_CONFIG, so it stays ahead of every other refusal - the same
-// contract the scripts keep.
+// settleAccount points this run at the folder's account before anything reaches the
+// network. It also checks --config and GITSBY_CONFIG, so it stays ahead of every other
+// refusal.
 func (a *app) settleAccount() error {
 	acctDir, acctURL := a.contextDir(), a.originURL()
 	switch {
 	case a.cmd.name == "repo-clone":
-		// The clone goes somewhere else, and it is that folder's rules that pick the
-		// account - not the rules for whatever repo the cwd happens to sit inside.
-		// Nothing stands in for them here: the owner of the repo being cloned is no
-		// evidence it is ours, which is the whole difference between fetching a copy
-		// of something and owning it. Unresolved leaves gh on its own account.
+		// A clone's account comes from its destination's rules. The owner of the repo
+		// being cloned is no evidence it's ours, so unresolved leaves gh on its own
+		// account.
 		acctDir, acctURL = absDir(a.cloneDestDir()), ""
 	case acctURL == "" && (a.cmd.name == "repo-create" || a.cmd.name == "repo-connect") && a.cmd.arg != "":
 		// These have no origin to read an owner from, but the repo they are about to
@@ -309,11 +297,9 @@ func (a *app) freshenRemote() {
 	a.fetchRemote()
 }
 
-// settleBranchNames resolves the two branch names every command downstream hands
-// git. They can't change mid-command, so they settle once, post-fetch so
-// origin/HEAD is fresh. status, whoami and br list run without a resolvable
-// default branch on purpose: they mutate nothing and are the commands you run to
-// see what is wrong, so they report "unknown" instead of refusing.
+// settleBranchNames resolves the 2 branch names once, after the fetch. status, whoami
+// and br list say "unknown" with no default branch, since they're how you see what's
+// wrong.
 func (a *app) settleBranchNames() error {
 	if !a.inRepo {
 		return nil
@@ -498,12 +484,9 @@ func (a *app) settleTarget() (bool, error) {
 	return false, nil
 }
 
-// settleGh works out which commands go through gh, which of those WRITE through
-// it, and which url the ssh identity should be read from. For pr that's the origin
-// we already have. repo create and connect have no origin yet - but the one they
-// are about to set is knowable, because gh never uses a host alias: it builds
-// 'git@github.com:owner/name.git' from its own protocol setting. So the identity
-// that repo will live with afterward can be checked before we start.
+// settleGh works out which commands go through gh, which of those write through it, and
+// which url to read the ssh identity from. repo create and connect build the one gh will
+// set.
 func (a *app) settleGh() error {
 	switch a.cmd.name {
 	case "whoami":
@@ -547,11 +530,8 @@ func (a *app) settleGh() error {
 			}
 		}
 	}
-	// Start the round trips here, all at once, and read each where it is used: in
-	// turn the identity block waited on the sum of them. Only where the answer is
-	// read: the identity block names gh's account, and a write compares against it.
-	// A bare 'pr' or 'pr <n>' prints neither. tea's answer is a local file, so it
-	// is simply asked.
+	// Start the round trips at once, and read each where it's used. Only where read: the
+	// identity block names gh's account, and a write compares against it.
 	if a.remote.isCommand && (a.remote.isWrite || a.identityWillPrint()) {
 		if a.remote.tool == toolGh {
 			a.askGhLoginAhead()
@@ -608,14 +588,9 @@ func (a *app) identityGate() (identityMismatch, error) {
 			return found, usagef("%s Nothing was done. Re-run with --any-identity if that is intended.", found.text)
 		}
 	}
-	// The same question for the commands that push with git rather than write
-	// through a git host CLI - 'sync' above all, which sends your work to a remote and
-	// compared nothing at all. Asked of the account's login ON THIS HOST: 'ghAccount'
-	// is a GitHub login and says nothing about who you are anywhere else, so keying
-	// this on it alone left every non-GitHub account uncompared. Only for an account
-	// that was CONFIGURED or asked for: one inferred from the remote's owner says
-	// nothing about who you are, and would fire for every single-account user cloning
-	// somebody else's repo.
+	// The same check for commands that push with git, sync above all. Asked of the login
+	// on this host, and only for a configured or asked-for account, not one taken from
+	// the owner.
 	acctWho := a.accountWho(a.originHost())
 	if !a.pushesToRemote() || a.opt.anyIdentity || found.text != "" ||
 		acctWho == "" || (!a.acct.explicit && a.acct.name == "") {
@@ -868,11 +843,8 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 			}
 		}
 	}
-	// One line, on stderr, so a pipeline reading stdout sees only the tool.
-	// Silence is what '-q' is for.
-	// The same test the identity block uses: a name inferred from the remote's owner
-	// is not a claim that we act as them, and saying so tells a single-account user
-	// about a feature they never asked for.
+	// One line on stderr, so stdout holds only the tool. Not for a name taken from the
+	// remote's owner, the same test the identity block uses.
 	who := a.acct.ghWho
 	if who == "" {
 		who = a.accountWho(a.acct.credHost)
