@@ -23,6 +23,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `account apply` adds a credential helper for each account. With two accounts logged in to gh, plain `git push` over https in the folder of the one that isn't active used to fail, because gh's own helper only answers for the active account. The helper asks gh for that account's token when git needs it, then tries its `tokenFile`. On other hosts it tries only the `tokenFile`. No token is written to disk, and a credential manager already set up is still asked first. Re-run `gitsby account apply` to get it.
 
+### Fixed
+
+- A failed `account apply` no longer empties an account's fragment that your global git config already includes. Each fragment is written to a new file beside it, which replaces it only once every key is in. A full disk or a permissions error leaves the old one as it was, and a lock file git left beside it no longer stops the run.
+
 ## v3.0.0-beta.1 - 2026-11-08
 
 ### Notes

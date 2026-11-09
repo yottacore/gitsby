@@ -527,26 +527,39 @@ func (a *app) cmdAccountApply() error {
 // outside the repo you are standing in, so it is the one place where a discarded
 // exit code turns into a silent no-op - it said "Wrote" and exited 0 whatever
 // happened.
-func (a *app) writeAccountFragment(dir, file, name string) error {
+func (a *app) writeAccountFragment(dir, file, name string) (err error) {
 	fragment := dir + "/" + file
-	// Nothing goes into the global config until every fragment is written.
-	const fragmentKept = "Fragments written before it stay. Your global git config was not changed."
-	if err := os.WriteFile(fragment, nil, 0o600); err != nil {
+	// Nothing goes into the global config until every fragment is written, and the
+	// global config may already include this one. So the keys go into a new file
+	// that replaces it only once all of them are in.
+	const fragmentKept = "This one is as it was, and fragments written before it stay. Your global git config was not changed."
+	// The replace would take a read-only fragment, or another user's, without a
+	// word, so those are refused here, with nothing changed.
+	if f, err := os.OpenFile(fragment, os.O_WRONLY, 0); err == nil {
+		_ = f.Close() // opened only to ask; nothing went through it
+	} else if !errors.Is(err, fs.ErrNotExist) {
 		return writeRefusal("Couldn't write an account fragment.", "Writing it", err,
 			fragmentKept, "Check permissions on it and on the folder it is in, then run this again.",
 			noteLines("File", nativePath(fragment)))
 	}
-	// WriteFile only applies its mode when it creates the file, so a fragment left
-	// world-readable by an earlier run - or by a umask - stays that way through
-	// every re-apply. It names the account and points at the token file.
-	if err := os.Chmod(fragment, 0o600); err != nil && !isWindows() {
-		return writeRefusal("Couldn't make an account fragment private. It names your account and points at your token file.", "Setting its mode", err,
-			fragmentKept, "Make it yours, or remove it, then run this again.",
+	// CreateTemp makes it 0600, which git keeps through its own writes. Its name
+	// doesn't end in .gitconfig, so a crash's leftover isn't offered as a fragment.
+	tmp, err := os.CreateTemp(dir, file+".*.tmp")
+	if err != nil {
+		return writeRefusal("Couldn't write an account fragment.", "Creating its replacement", err,
+			fragmentKept, "Check permissions on the folder it is in, then run this again.",
 			noteLines("File", nativePath(fragment)))
 	}
+	newFragment := filepath.ToSlash(tmp.Name())
+	_ = tmp.Close() // git writes it, not this handle
+	defer func() {
+		if err != nil {
+			_ = os.Remove(newFragment) // the refusal is the error to report; a leftover is never read
+		}
+	}()
 	write := func(key, value string) error {
-		if !a.inheritOK("git", "config", "--file", fragment, key, value) {
-			return usagef("Couldn't write %s into '%s'; it is incomplete, and nothing further was applied.", key, fragment)
+		if !a.inheritOK("git", "config", "--file", newFragment, key, value) {
+			return usagef("Couldn't write %s into '%s'; it was left as it was, and nothing further was applied.", key, fragment)
 		}
 		return nil
 	}
@@ -582,6 +595,11 @@ func (a *app) writeAccountFragment(dir, file, name string) error {
 		if err := write("core.sshCommand", sshKeyCommand(sshKey)); err != nil {
 			return err
 		}
+	}
+	if err := os.Rename(newFragment, fragment); err != nil {
+		return writeRefusal("Couldn't write an account fragment.", "Replacing it", err,
+			fragmentKept, "Check permissions on it and on the folder it is in, then run this again.",
+			noteLines("File", nativePath(fragment)))
 	}
 	a.out.status("Wrote " + fragment)
 	return nil

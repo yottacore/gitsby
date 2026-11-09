@@ -13,6 +13,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -1427,6 +1428,87 @@ func TestAccountApplyKeepsTheReasonAFragmentFailed(t *testing.T) { // [ddf46]
 	if strings.Contains(err.Error(), "ermission") {
 		t.Errorf("refusal blames permissions:\n%s", err)
 	}
+}
+
+// A failed apply emptied a fragment the global config already included, since it
+// was cut to nothing and then written a key at a time (2026110912215201).
+func TestAccountApplyFailureKeepsTheFragment(t *testing.T) { // [df35e]
+	if isWindows() {
+		t.Skip("the fake git is a shell script")
+	}
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git")
+	}
+	const old = "[user]\n\tname = Before\n"
+	setup := func(t *testing.T) (*app, string) {
+		t.Helper()
+		global := filepath.Join(t.TempDir(), ".gitconfig")
+		if err := os.WriteFile(global, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("GIT_CONFIG_GLOBAL", global)
+		t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+		cfg := writeConfig(t, "account: b\n\tpath: /srv/b\n\tghaccount: bacct\n\tname: B\n\temail: b@example.com\n")
+		a := newApp(newPrinter())
+		a.cfg = cfg
+		dir := filepath.FromSlash(cfg.includeDir())
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		fragment := filepath.Join(dir, cfg.fragmentNames()["b"])
+		if err := os.WriteFile(fragment, []byte(old), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return a, fragment
+	}
+	kept := func(t *testing.T, fragment string) {
+		t.Helper()
+		if got, _ := os.ReadFile(fragment); string(got) != old {
+			t.Errorf("the fragment changed on a failed apply:\n%s", got)
+		}
+		left, _ := filepath.Glob(fragment + ".*")
+		if len(left) != 0 {
+			t.Errorf("left behind: %v", left)
+		}
+	}
+	t.Run("a key git won't write", func(t *testing.T) {
+		a, fragment := setup(t)
+		fakeTool(t, "git", `case " $* " in *" user.email "*) exit 1 ;; esac; exec '`+realGit+`' "$@"`)
+		err := a.cmdAccountApply()
+		if err == nil || !strings.Contains(err.Error(), "left as it was") {
+			t.Fatalf("apply: %v", err)
+		}
+		kept(t, fragment)
+	})
+	t.Run("a stale lock beside it", func(t *testing.T) {
+		a, fragment := setup(t)
+		if err := os.WriteFile(fragment+".lock", nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := a.cmdAccountApply(); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if got, _ := os.ReadFile(fragment); !strings.Contains(string(got), "b@example.com") {
+			t.Errorf("fragment:\n%s", got)
+		}
+	})
+	t.Run("a folder that takes no new file", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root writes anywhere")
+		}
+		a, fragment := setup(t)
+		dir := filepath.Dir(fragment)
+		if err := os.Chmod(dir, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Chmod(dir, 0o700) }() // TempDir's cleanup needs it back
+		err := a.cmdAccountApply()
+		if err == nil || !strings.Contains(err.Error(), "Creating its replacement failed") {
+			t.Fatalf("apply: %v", err)
+		}
+		kept(t, fragment)
+	})
 }
 
 // A lock name past the filesystem's limit said to check permissions on the folder.
