@@ -184,12 +184,9 @@ git clone --quiet "${pristine}/prune5.git" "${pristine}/prune5" 2>/dev/null
 git -C "${pristine}/repo"   remote set-url origin "${work}/live/origin.git"
 git -C "${pristine}/prune5" remote set-url origin "${work}/live/prune5.git"
 
-## Two copies of that clone whose origin is on github.com, one over ssh and one over https, each
-## covered by an account's folder rule. The Account line prints only for an account picked like
-## that, never for one guessed from the remote's owner, so this is the path a configured user
-## takes. The token comes from a file, since the fake gh has none: that is the case that reads
-## gh's own login before the token is exported, and asks who the token belongs to after. A
-## changed file gives status a list to print. Three logins, so the listing asks gh about each.
+## 2 copies of that clone on github.com, over ssh and https, each under an account's folder rule,
+## the path a configured user takes. The token comes from a file, so gh is asked before and after
+## it's exported. 3 logins, so the listing asks gh about each.
 cp -a "${pristine}/repo" "${pristine}/acct-ssh"
 cp -a "${pristine}/repo" "${pristine}/acct-https"
 git -C "${pristine}/acct-ssh"   remote set-url origin git@github.com:acme/proj.git
@@ -264,16 +261,10 @@ hasPty=0
 if command -v script >/dev/null 2>&1 && script -qec true /dev/null </dev/null >/dev/null 2>&1; then hasPty=1; fi
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## The measurement. -f follows the children, so a git that forks its own helper is counted
-## where it happens; execve is the event that costs, since that is a new program image.
+## The measurement. -f follows the children, and execve is the event that costs.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## The label starts with the test ID, which is printed but kept out of the baseline file, so
-## an older baseline still matches. Then the expected count, how it runs, and the folder:
-##   pipe  stdout to /dev/null, the way the pipeline and a script see it
-##   tty   on a pty with stdin at end of input, which is a terminal to gitsby
-## A folder starting 'acct' runs with the accounts file, and any other with the empty one.
-## Room for a git version that adds or drops a helper of its own: two more processes, or a
-## tenth again, whichever is larger. A real regression costs more than that.
+## Label: test ID (kept out of the baseline), expected count, pipe or tty, folder. A folder
+## starting 'acct' gets the accounts file. Headroom for a git that adds a helper: 2, or a tenth.
 fHeadroom(){ local n=$(( $1 / 10 )); (( n < 2 )) && n=2; echo "${n}"; }
 declare -a ids=() labels=() counts=() expects=() limits=() skipped=()
 fMeasure(){
@@ -302,11 +293,8 @@ fMeasure(){
 	skipped+=("${skip}")
 }
 
-## Expected counts are today's. --no-fetch on all but three: a fetch's cost is
-## mostly git's own (upload-pack, a maintenance run), and a github.com origin can't be fetched
-## here at all. Those with a fetch run against the local origin, restored before each. pullcom
-## is one of them because its pull step only runs after a fetch, and that step used to ask
-## origin a second time. br merge runs both ways, since a fetch adds its pull steps.
+## Expected counts are today's. --no-fetch on all but 3, since a fetch's cost is mostly git's own.
+## Those with a fetch run against the local origin, restored before each. br merge runs both ways.
 ((quiet)) || fEcho_Clean "spawn counts (${exe})"
 fMeasure "[dbftf] status"                              11 pipe repo        -q --no-fetch status
 fMeasure "[dbjeq] whoami"                               7 pipe repo        -q --no-fetch whoami

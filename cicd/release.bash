@@ -106,14 +106,10 @@ fpImageDone(){
 	done
 }
 
-## Cross-build every release target into ${assets} and checksum them. Called twice: in phase 1
-## as a compile gate, where a target that stopped building costs nothing, and again in phase 3
-## from the tagged commit - that second run produces the bytes that get uploaded. Two runs
-## because the build number comes from the commit's own date, and the tag does not exist yet
-## when phase 1 runs. Anyone checking out the tag and building gets the published bytes back.
-## <src> is the tree to build: the working tree for the gate, an export of the tag to publish.
-## darwin/universal is both Mac CPUs, built apart and joined, amd64 first. The join adds no
-## stamp of its own, so the same two builds always make the same file.
+## Cross-build every release target into ${assets} and checksum them: in phase 1 as a compile
+## gate, and in phase 3 from the tag for the uploaded bytes, since the build number comes from the
+## commit's date. <src> is the tree to build. darwin/universal joins amd64 then arm64, adding no
+## stamp.
 fpCrossBuild(){
 	local epoch="$1" src="$2" t asset arch part
 	local -a arches parts
@@ -150,15 +146,9 @@ fpAssetName(){
 	if [[ "${goos}" == windows ]]; then echo "${EXE_NAME}-${goos}-${goarch}.exe"; else echo "${EXE_NAME}-${goos}-${goarch}"; fi
 }
 
-## Phase 3's proof: one published asset fetched and checked against the published SHA256SUMS,
-## and with $2 set, run too. Reads ${base}.
-## Seconds after publication GitHub serves the tag but not yet the assets, and the installers
-## stop rather than quietly skip verification when SHA256SUMS can't be fetched - so a first
-## attempt can fail against a release that is perfectly good. It did on v2.1.0: the same check
-## passed unchanged minutes later, with elapsed time the only difference. Retry before saying
-## anything, or the one warning that would mean a broken release is the one nobody believes.
-## --version is read whole, then matched. A grep -q quits at the match, and the rest of the
-## banner then fails to write, which pipefail reports as a failed proof.
+## Phase 3's proof: one published asset fetched and checked against SHA256SUMS, and run with $2
+## set. Reads ${base}. Retried, since GitHub serves the assets a little after the tag, as on
+## v2.1.0. --version is read whole, since grep -q under pipefail fails the write.
 fpProve(){
 	local asset="$1" run="$2" attempt dir out ok=0
 	for attempt in 1 2 3; do
@@ -184,11 +174,8 @@ gitsby="${root}/${GO_MODULE_DIR}/${EXE_NAME}"; [[ -x "${gitsby}" ]] || gitsby="$
 changelog="${root}/changelog.md"
 ghRepo="yottacore/gitsby"
 
-## changelog.md opens with a commented-out template whose headings are shaped exactly like real
-## ones, so a first-match search finds the decoy and not the section it meant. That has caused
-## three separate bugs here, the last of which would have retitled the template, published an
-## empty release body and warned about none of it. Two independent guards now: the template's
-## heading is spelled TEMPLATE_vNEXT, and everything below starts reading past the '-->'.
+## changelog.md opens with a commented-out template shaped like real headings, which caused 3
+## bugs. Its heading is TEMPLATE_vNEXT, and reading starts past the '-->'.
 fpChangelogStart(){
 	## First line of the real changelog, right past the commented-out template.
 	## awk rather than grep piped into head - a pipe would leave pipefail at the mercy of SIGPIPE.
@@ -415,11 +402,8 @@ else
 
 	today="$(date +%Y-%m-%d)"
 	relBranch="rel-${version#v}"
-	## The version bump goes in through a branch and a pull request, like everything else. Committing
-	## it straight to the merge target would be the one place this project pushes its own work there -
-	## exactly what the tool refuses to do for you, so the thing that cuts the release must not do it
-	## either. 'gitsby release' below is the only push to the default branch, and that push IS the
-	## release rather than a shortcut around one.
+	## The version bump goes in through a branch and a PR, like everything else. 'gitsby release'
+	## below is the only push to the default branch.
 	if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} - ${today}', add its downloads table, and merge it through a PR"; then
 		"${gitsby}" -q br create "${relBranch}" || fDie "couldn't create ${relBranch}."
 		## The changelog heading and the downloads table under it are the whole of it. Nothing in the
@@ -543,11 +527,9 @@ if ! fWould "verify releases/latest, download and run this platform's published 
 			fEcho_Clean "WARNING: ${macAsset} did not download and verify from the published release."
 		fi
 	fi
-	## Which release the install line in the README now takes. That depends on what GitHub
-	## has, which no suite can reach, so the installer from the tag - what main now serves -
-	## runs into a throwaway home and its plan says. A full release has to be the one it takes.
-	## A pre-release is taken while no full release has a binary, and passed over for one that
-	## does; any other pick means the list it read was not the one published.
+	## Which release the README's install line now takes, from the tag's installer run into a
+	## throwaway home. A full release must be it; a pre-release only while no full release has a
+	## binary.
 	if [[ -f "${tagTree}/install.bash" ]]; then
 		lineHome="$(mktemp -d "${safeTmp}/gitsby-line.XXXXXX")"
 		lineOut="$(HOME="${lineHome}" bash "${tagTree}/install.bash" -y 2>&1 </dev/null || true)"

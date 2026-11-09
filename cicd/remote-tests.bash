@@ -336,14 +336,9 @@ if [[ -z "${lock}" ]]; then
 	fEcho_Clean "  SKIP: every box, since there is no host lock script (${REMOTE_LOCK_GLOB})"
 	exit 0
 fi
-## The lock reads its settings from variables named after its own file. It keeps two host
-## lists, and hands out only the Windows one for 'any' and 'all', so a Mac or Unix box goes in
-## the other.
-## That one starts from the lock's own, so its status still lists the rest while this runs. An
-## older lock has no other list and refuses those by name, which skips each with that note.
-## A caller with a session id is taken to be the whole session, and one that misses keeps its
-## place in line for minutes, holding the box back from others, so the lock is asked as a
-## plain process, whose place goes when it exits.
+## The lock reads settings from variables named after its file, and hands out only its Windows
+## list for 'any' and 'all', so the Mac and Unix boxes go in a second list. Asked as a plain
+## process, not a session, so a miss doesn't hold its place in line.
 lockPrefix="${lock##*/}"; lockPrefix="${lockPrefix%%_*}"; lockVar="${lockPrefix^^}"
 declare -a winNames=()
 for spec in "${REMOTE_WINDOWS_HOSTS[@]}"; do winNames+=("$(fLockName "${spec}")"); done

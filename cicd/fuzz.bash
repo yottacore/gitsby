@@ -43,11 +43,8 @@ export GIT_TERMINAL_PROMPT=0
 ## gitsby's own config decides which account a command acts as, so pin it the way test.bash does.
 export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
 
-## Pinning the config FILES is not isolation on its own: GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank
-## every one of them, and an inherited GH_TOKEN is what the fake gh reports back. Both arrive
-## from an ordinary working terminal, and neither shows up as a failure you can act on.
-## By name rather than by GIT_CONFIG_COUNT, since arithmetic on an inherited count runs a
-## command hidden in an array subscript.
+## GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank the pinned config files, and an inherited GH_TOKEN is
+## what the fake gh reports. By name, since arithmetic on an inherited count can run a command.
 fUnsetInheritedGitConfig(){ unset GIT_CONFIG_COUNT "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"; }
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE
@@ -393,12 +390,8 @@ printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "${goBin}" > "${gitsby}"
 chmod +x "${gitsby}"
 fRunFuzz "go"
 
-## The credential helper. gitsby writes it as a git config value, and git hands that value to a
-## SHELL when a push needs credentials - so anything interpolated into it is a command, not a
-## string. The login that goes in there can come from GITSBY_ACCOUNT, from a git config key, or
-## from the config file, and none of those is a place to accept shell. Driven with a real
-## 'git credential fill', because the string is inert until git actually runs it: reading the
-## config value back proves nothing about what happens when it is invoked.
+## The credential helper goes to a shell when git runs it, so the login in it must stay text.
+## Driven by a real 'git credential fill', since the value is inert until git runs it.
 fCredentialHelperVectors(){
 	local -r ch="${work}/credhelper"
 	mkdir -p "${ch}"
@@ -427,11 +420,8 @@ fCredentialHelperVectors(){
 		( cd "${ch}/proj" && printf 'protocol=https\nhost=github.com\n\n' | \
 			"${gitsby}" -q -NoFetch --config "${__cfg}" raw git credential fill ) >/dev/null 2>&1 || true
 	done
-	## GIT_CONFIG_COUNT is the one environment value gitsby reads and numbers its own
-	## config entries on from, so a junk count must be refused rather than treated as
-	## zero and numbered over the caller's entries - and a count with a command
-	## substitution must stay text, never be evaluated. Driven on the same path that
-	## actually adds config (the credential helper), which is where the count is read.
+	## A junk GIT_CONFIG_COUNT must be refused, not numbered over, and one with a command
+	## substitution must never run. Driven through the credential helper, where the count is read.
 	local badCount="" why=""
 	# shellcheck disable=SC2016  ## the $(...) is the attack text, not for this shell.
 	for badCount in 'x[$(touch '"${ch}"'/CANARY-count)]' '-1' '1e3'; do
@@ -457,11 +447,9 @@ fCredentialHelperVectors(){
 }
 fCredentialHelperVectors
 
-## Argument injection into git. A folder name, a ref, or anything else user-controlled that
-## reaches git as a leading argument must not be read as an option. 'repo clone' derives the
-## work-tree name from the URL's last path part, so a URL whose tail is option-shaped puts that
-## option in git's argument list unless gitsby separates it with '--'. A local clone runs the
-## value of '--upload-pack' through a shell, which is what makes the attempt observable here.
+## Argument injection into git. 'repo clone' takes the work-tree name from the URL's tail, so an
+## option-shaped one needs '--'. A local clone runs '--upload-pack' through a shell, which makes
+## it visible.
 fCloneArgInjection(){
 	if ((isWindows)); then
 		fSkip "[ddjyb] clone dir arg injection (path characters Win32 forbids)"
@@ -512,11 +500,8 @@ fSwitchUntouched(){
 }
 fSwitchUntouched
 
-## A config 'sshkey' becomes GIT_SSH_COMMAND, which git hands to a shell - so a key path with
-## a shell character would be re-parsed there and run. The value is dropped on load; proven by a
-## real command that would use the key, with a fake ssh on PATH so nothing reaches the network.
-## The canary is inside the key value: it fires only if the shell ever sees the string, which it
-## does not when the value is dropped and git execs ssh directly.
+## A config 'sshkey' with a shell character is dropped on load. Proven by a real command using the
+## key, a fake ssh on PATH, and a canary in the value that fires only if a shell sees it.
 fSshKeyInert(){
 	local -r dir="${work}/sshkey"
 	mkdir -p "${dir}/bin"

@@ -50,11 +50,8 @@ APP_NAME="$(source "${here}/config.bash" && printf '%s' "${APP_NAME}")"
 fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
 work="$(mktemp -d "${safeTmp}/gitsby-parity.XXXXXX")"
 trap 'fSafeRm "${work:?}" >/dev/null' EXIT
-## The same directory in the spelling native Windows understands. A folder rule has to be written
-## in a spelling BOTH builds can resolve, and an MSYS mount path such as '/tmp/...' is not one:
-## only this shell knows its own mount table, and the PowerShell build must not need Git Bash to
-## exist. 'account' marks a rule that resolves to no directory, which is what makes that visible
-## rather than silent.
+## The same directory as native Windows spells it, since an MSYS path such as '/tmp/...' resolves
+## only in this shell. 'account' marks a rule that resolves to no directory.
 workNative="${work}"
 command -v cygpath >/dev/null 2>&1 && workNative="$(cygpath -m "${work}")"
 workBack="${workNative//\//\\}"
@@ -70,11 +67,8 @@ export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test
 export GITSBY_CONFIG="${work}/no-accounts.shcl"; : > "${GITSBY_CONFIG}"
 
-## Pinning the config FILES is not isolation on its own: GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank
-## every one of them, and an inherited GH_TOKEN is what a gh call reports back. Both arrive from
-## an ordinary working terminal, and neither shows up as a failure you can act on.
-## By name rather than by GIT_CONFIG_COUNT, since arithmetic on an inherited count runs a
-## command hidden in an array subscript.
+## GIT_CONFIG_COUNT/KEY_n/VALUE_n outrank the pinned config files, and an inherited GH_TOKEN is
+## what gh reports. By name, since arithmetic on an inherited count can run a command.
 fUnsetInheritedGitConfig(){ unset GIT_CONFIG_COUNT "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"; }
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE
@@ -124,11 +118,8 @@ if [[ ! -f "${refBuild}" ]]; then
 fi
 
 fNormalize(){
-	## Only the two things the builds are ENTITLED to differ on: the program's own name, and the
-	## absolute path of whichever build produced the line. Everything else is left alone, because
-	## everything else differing is the point of this file.
-	## Every spelling of the work directory folds to one token: the two shells legitimately echo a
-	## path the way their own runtime spells it, and that is not a parity finding.
+	## Only what the builds may differ on: the program's name and the build's path. Every spelling
+	## of the work directory folds to one token.
 	sed -e 's/gitsby\.ps1/gitsby/g' -e "s|${reRoot}|<root>|g" \
 		-e "s|${reWorkBack}|<work>|gI" -e "s|${reWorkNative}|<work>|gI" -e "s|${reWork}|<work>|g"
 }
@@ -241,10 +232,8 @@ fEcho "gitsby parity: this build vs the frozen v2.1.0 script"
 fEcho_Clean
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## Path spelling. The folder rule is the feature most exposed to path handling, and this is where
-## the scripted builds diverged for real: one resolved a spelling through the filesystem and the
-## other did not, so the same rule matched in one and not the other. Silently, which is the worst
-## kind. Go resolves paths its own third way, so the question is live again.
+## Path spelling. The scripted builds once matched a folder rule in one and not the other, and Go
+## resolves paths its own way.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fEcho_Clean "-- folder rules, however the path is spelled"
 tree="${work}/tree"
@@ -296,10 +285,8 @@ fSegConfig
 fSameLead  "[db62v] and both agree it is whole folder names"     '^Account' "${work}/mA/github.com/alice-old/proj" -q -NoFetch --config "${__cfg}" status
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## Option binding. Every build parses its own arguments, and that is where the scripted pair
-## produced three separate defects: options claimed out of a passthrough, a joined '-Config=FILE'
-## binding nothing, and a bare '--' killing the process before any code ran. The Go build parses
-## by hand for exactly this reason, which is worth proving rather than assuming.
+## Option binding, where the scripted pair had 3 defects: options taken out of a passthrough, a
+## joined '-Config=FILE', and a bare '--'.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fEcho_Clean
 fEcho_Clean "-- option forms"
@@ -319,10 +306,8 @@ fSameExit "[db601] -NoFetch before 'raw' is taken by both"        "${tree}" -q -
 fSameExit "[db602] a bad 'raw' tool is refused by both"           "${tree}" -q raw curl x
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## Renamed commands. 'update' became 'pullcom' and 'br land' became 'br merge', and both old
-## spellings are permanent aliases - so the rename must have moved the name and nothing else.
-## Run outside a repository, where both builds refuse for a reason that has nothing to do with
-## the rename: what is being compared is that the old name still ROUTES, and to the same place.
+## Renamed commands. 'update' and 'br land' are permanent aliases, so the old name must still
+## route to the same place. Run outside a repo, where both builds refuse.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fEcho_Clean
 fEcho_Clean "-- renamed commands, old spellings"
@@ -353,10 +338,9 @@ fSameSpelling "[dben2] 'br merge' and 'br land' are one command" "${notRepo}" "b
 fSameSpelling "[deyw8] 'pull' and 'pullcom' are one command"     "${notRepo}" "pull"     "pullcom"
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-## Plans. The pull step changed on purpose on 2026-10-03: the fetch at the start of the command
-## already has origin's branches, so this build merges the upstream rather than pulling, which
-## asked origin again, and names it. Both spellings of that one line map to one token; every
-## other line still has to match the frozen build.
+## Plans. The pull step changed on purpose on 2026-10-03, merging the fetched upstream rather than
+## pulling. Both spellings of that line map to one token; every other line must match the frozen
+## build.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fEcho_Clean
 fEcho_Clean "-- plans"
