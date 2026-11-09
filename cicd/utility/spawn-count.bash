@@ -128,7 +128,17 @@ case "\$1 \$2" in
 	*)             printf '%s\n' "fake tea: unhandled: \$*" >&2; exit 2 ;;
 esac
 EOF
-chmod +x "${work}/bin/gh" "${work}/bin/ssh" "${work}/bin/tea"
+## glab has no login: the account's token and host come in its environment. No merge request
+## is open yet, and creating one prints its link.
+cat > "${work}/bin/glab" <<EOF
+#!${BASH}
+case "\$1 \$2" in
+	"mr list")   echo "[]" ;;
+	"mr create") echo "https://gitlab.example.test/acme/proj/-/merge_requests/1" ;;
+	*)           printf '%s\n' "fake glab: unhandled: \$*" >&2; exit 2 ;;
+esac
+EOF
+chmod +x "${work}/bin/gh" "${work}/bin/ssh" "${work}/bin/tea" "${work}/bin/glab"
 export PATH="${work}/bin:${PATH}"
 export HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 all_proxy=http://127.0.0.1:9
 unset NO_PROXY no_proxy
@@ -193,6 +203,18 @@ git -C "${pristine}/acct-gitea" checkout --quiet open-work
 git -C "${pristine}/acct-gitea" remote set-url origin git@gitea.example.test:acme/proj.git
 git -C "${pristine}/acct-gitea" remote set-url --push origin "${work}/live/origin.git"
 echo four >> "${pristine}/acct-gitea/file.txt"
+## And one on a GitLab host over ssh, the same way, for glab. Its tree is clean, so pr create
+## counts glab's part, which the tea folder's commit and push would hide.
+cp -a "${pristine}/acct-gitea" "${pristine}/acct-glab"
+git -C "${pristine}/acct-glab" remote set-url origin git@gitlab.example.test:acme/proj.git
+git -C "${pristine}/acct-glab" checkout --quiet -- file.txt
+## A feature branch to merge into dev, and one with a file staged and one left out of the commit.
+cp -a "${pristine}/repo" "${pristine}/feature"
+git -C "${pristine}/feature" checkout --quiet open-work
+cp -a "${pristine}/feature" "${pristine}/staged"
+echo staged > "${pristine}/staged/staged.txt"
+git -C "${pristine}/staged" add staged.txt
+echo unstaged > "${pristine}/staged/unstaged.txt"
 printf 'tok_acme\n' > "${work}/home/acme.token"
 printf 'tok_beta\n' > "${work}/home/beta.token"
 printf 'tok_delta\n' > "${work}/home/delta.token"
@@ -219,6 +241,12 @@ account: delta
 	user: acme
 	tokenfile: ${work}/home/delta.token
 	email: delta@example.com
+account: epsilon
+	path: ${work}/live/acct-glab
+	host: gitlab.example.test
+	user: acme
+	tokenfile: ${work}/home/delta.token
+	email: epsilon@example.com
 EOF
 
 ## What both origins hold as built. Nothing measured may write to these, or the next command
@@ -274,11 +302,11 @@ fMeasure(){
 	skipped+=("${skip}")
 }
 
-## Expected counts are today's. --no-fetch on all but two: a fetch's cost is
+## Expected counts are today's. --no-fetch on all but three: a fetch's cost is
 ## mostly git's own (upload-pack, a maintenance run), and a github.com origin can't be fetched
-## here at all. The two with a fetch run against the local origin, restored before each. pullcom
+## here at all. Those with a fetch run against the local origin, restored before each. pullcom
 ## is one of them because its pull step only runs after a fetch, and that step used to ask
-## origin a second time.
+## origin a second time. br merge runs both ways, since a fetch adds its pull steps.
 ((quiet)) || fEcho_Clean "spawn counts (${exe})"
 fMeasure "[dbftf] status"                              11 pipe repo        -q --no-fetch status
 fMeasure "[dbjeq] whoami"                               7 pipe repo        -q --no-fetch whoami
@@ -288,6 +316,9 @@ fMeasure "[dbftj] repo url"                             6 pipe repo        -q --
 fMeasure "[dbftk] pullcom"                             21 pipe repo        -q --no-fetch pullcom "spawn count"
 fMeasure "[ddf68] pullcom with a fetch"                 28 pipe repo        -q pullcom "spawn count"
 fMeasure "[dbftm] br switch"                           26 pipe repo        -q --no-fetch br switch main
+fMeasure "[df37t] br merge"                             41 pipe feature     -q --no-fetch br merge
+fMeasure "[df37v] br merge with a fetch"                52 pipe feature     -q br merge
+fMeasure "[df37w] br switch of a staged change"         37 pipe staged      -q --no-fetch --staged br switch dev
 fMeasure "[dbftn] br prune"                            31 pipe repo        -q --no-fetch br prune
 fMeasure "[deytk] br prune of five branches"           31 pipe prune5      -q --no-fetch br prune
 fMeasure "[ddf4z] status with a fetch"                 17 tty  repo        status
@@ -300,6 +331,7 @@ fMeasure "[df04t] whoami in a tea ssh folder"          12 tty  acct-gitea  --no-
 fMeasure "[df04v] repo url in a tea ssh folder"         8 pipe acct-gitea  -q --no-fetch repo url
 fMeasure "[df051] pullcom in a tea ssh folder"         27 pipe acct-gitea  -q --no-fetch pullcom "spawn count"
 fMeasure "[df052] pr create in a tea ssh folder"       37 pipe acct-gitea  -q --no-fetch pr create
+fMeasure "[df37x] pr create in a glab ssh folder"      31 pipe acct-glab   -q --no-fetch pr create
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Each count against its limit, then against the newest previous run; then record this one.
@@ -392,3 +424,4 @@ gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261107 JC: Errors go through fDie and fUsage.
 ##		- 20261107 JC: A Gitea folder over ssh, with a fake tea, for status, whoami, repo url, pullcom and pr create. The fake ssh names the target's own host.
 ##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript.
+##		- 20261109 JC: br merge, with and without a fetch, br switch with --staged, and pr create in a GitLab folder over ssh, with a fake glab.

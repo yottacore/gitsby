@@ -33,6 +33,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- spawn-count.bash names its records in local time, and the run in the image in UTC
+	- ID: 2026110914575286
+	- Type: Bug
+	- Status: Queued
+	- Opened: 20261109-145752
+	- Opened by: jim-collier
+	- Related IDs: 2026110912215212
+	- Steps to reproduce [Bug]: Run cicd.bash --backlog-run-quick (in the image), then cicd/utility/spawn-count.bash on the box, west of UTC.
+	- Incorrect behavior [Bug]: The box run is stamped hours before the image run, so it compares against the image's record as its baseline, and gfs-rotate drops its own record at once as the oldest of the hour.
+	- Expected behavior [Bug]: Every record is stamped in one zone, so the newest run is the baseline and is kept.
+	- Reproduced [Bug]: 2026-11-09 on b23 (PST). Two box runs in a row both read the image's spawn_20261109-224726 as baseline, and neither record was left.
+	- Possible cause [Bug]: stamp="$(date +%Y%m%d-%H%M%S)" is local time, and the image stays in UTC. lint-report.bash may stamp the same way.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+
 - `account apply` still puts paths inside its Wrote and safe-to-remove lines
 	- ID: 2026110914151101
 	- Type: Bug
@@ -453,7 +467,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 enhancement 1: Add spawn gate rows for `br merge`, glab `pr create` and `--staged br switch`
 	- ID: 2026110912215212
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -464,6 +478,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Level 4 of the performance rules: keep the benchmark so regressions get caught.
 	- Origin: the rows date from Code review 20261003 enhancement 1. Measured 2026-11-09 with strace, both builds against the same fixture. Confirmed.
 	- Estimated effort: Low
+	- Progress log:
+		- spawn-count.bash has df37t br merge (41), df37v br merge with a fetch (52), df37w br switch of a staged change (37) and df37x pr create in a glab ssh folder (31), with the usual limit. New fixture folders: a feature branch, the same with a file staged and one untracked, and a GitLab ssh folder with a fake glab.
+	- Decisions:
+		- The staged switch row is 37, not 31, and glab pr create is 31, not 30. Those are today's counts on this script's fixture, which the expected numbers always are. The staged switch commits and pushes the staged file before it moves, which the hand count likely didn't. The glab folder's tree is clean, so the count is glab's part, not a commit and push.
+		- The staged switch runs from open-work to dev. From dev it refuses before doing anything, since dev is protected.
+	- Branch: round-20261109
+	- Test case: spawn-count.bash [df37t], [df37v], [df37w] and [df37x].
+	- Verified: With df37t's expected count set to 30, it fails at 41 over its limit of 33. Two runs in a row gave the same 4 counts. cicd.bash --backlog-run-quick passes, test.bash 1916/0, fuzz 314/0, parity 30/0. test-id.bash --check and shellcheck pass.
+		- Swept: the test.bash spawn-count checks [defq5] and [dd5p5] read every row's label as [a-z ]+, so the staged row's label has no --.
+	- Acceptance signoff: Self-closed: its test runs passed.
+	- Closed: 20261109-145806
 
 - Code Review 20261109 enhancement 2: The last rounds left Go duplicates and leftovers
 	- ID: 2026110912215213
