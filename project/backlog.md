@@ -312,7 +312,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 8: Two package-level caches break the code guide's rule on package state
 	- ID: 2026110912215208
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -325,6 +325,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Either the guide allows a per-process cache keyed on its inputs, or both caches move onto `app`. The first is 1 line in a public doc. The second touches every caller.
 	- Estimated effort: Low
 	- Decisions: The guide changes, the code stays. A per-process cache keyed on its inputs, filled lazily and never read as repo state, is allowed at package level. Least churn, since Code Review 20261107 enhancement 2 chose package level 2 days ago, and memoizing at package level is common Go practice. Guarded if any caller runs it from a goroutine.
+	- Actual fix [Bug]: style-guide.md's package-level rule now allows a cache of a pure lookup: keyed on all its inputs, filled lazily, guarded by a sync.Mutex, never read as repo state. toolCache and sshConfigCache both fit, and both are already mutex-guarded. Code unchanged.
+	- Branch: round-20261109
+	- Test case: Not applicable, docs only.
+	- Verified: both caches read in exec.go and show.go and found locked.
+	- Acceptance signoff: Self-closed. Docs-only edit, per the Decisions row.
+	- Closed: 20261109-141557
 
 - Code Review 20261109 item 9: Go errors are still discarded with `_` and no comment
 	- ID: 2026110912215209
