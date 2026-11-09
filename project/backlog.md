@@ -615,7 +615,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 enhancement 6: Cut long code comments down to a line or 2
 	- ID: 2026110912215217
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-132000
 	- Opened by: jim-collier
@@ -631,6 +631,48 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Work file by file, 1 commit per file or 2, so a later round can tell a cut from a change in behavior.
 	- Origin: many commits since 2026-07-22. The 20261003 and 20261107 rounds passed over it, and this round first put it under "Decided against". Confirmed by counting comment blocks with a script, 2026-11-09.
 	- Estimated effort: High
+	- Actual effort: Avg
+	- Progress log:
+		- 2026-11-09: Go done, every block of 5 lines or more in the non-test files. The scripts went to child 2026110915231888, done the same day.
+	- Decisions:
+		- Scope is the blocks of 5 lines or more the item counted. Blocks of 3 or 4 lines stay as they are.
+		- Every Go block first appeared after 2026-07-23 (`git log -S` on its first line), and none reads as hand-written, so all were cut.
+		- A reason the code doesn't show stays, in a line or 2. The history of how a bug was found goes. Two now point to backlog items: `fragmentHelper` to 2026110810100400 and `oldPinCutover` to 2026110710480989.
+		- A doc comment that opened with its function's name still does, which `[ddf4k]` checks.
+	- Branch: round-20261109
+	- Commit: b6f1ace, 4821ee8, 8c7a856, a3317bf, f871612
+	- Test case: None, comments only.
+		- Verified: the quick gate with every area passed after the Go and script cuts (test.bash 1918/0, fuzz 314/0, parity 30/0, lint clean).
+		- Swept: every non-test .go file for blocks of 5 lines or more; none left.
+	- Acceptance signoff: Self-closed: comments only, and the gate passed.
+	- Closed: 20261109-154144
+
+- Code Review 20261109 enhancement 6, scripts: Cut long comments in the bash scripts down to a line or 2
+	- ID: 2026110915231888
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-152318
+	- Opened by: jim-collier
+	- Parent ID: 2026110912215217
+	- Requirements  [Feature]:
+		- The parent's script half: 88 blocks of 5 lines or more in 12 files, leaving out file headers and History footers. The longest are test.bash:4618 (14), spawn-count.bash:237 (11), lint-report.bash:88 and config.bash:127 (10 each).
+		- Same rules as the parent: check each block's author first, keep a reason the code doesn't show, point to a backlog item or design.md for the rest.
+	- Origin: split from its parent, with the parent's origin.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Decisions:
+		- Counted again, 111 blocks in 16 files, leaving out headers, History footers and shellcheck directives. The installers' `#` comments are in that count.
+		- Kept as they are: cicd.bash's output helpers block, first written 2026-07-22 and hand-written; the notes on the 2 commented-out checks in test.bash (`[dbft5]` and the segprec flat lines), since those notes are the reason the check is off; the `##•••` section rules, with only the text inside them cut; every shellcheck directive.
+		- Every other block first appeared after 2026-07-23 (`git log -S` on its first line).
+		- config.bash's memory cap note keeps the 10 GB peak as the reason for the default, and drops the 2026-11-08 incident.
+	- Branch: round-20261109
+	- Commit: 2f6d4a0, 395ff20, 988e65d, 5ddd342
+	- Test case: None, comments only. test.bash greps its own text in places, such as `[db7gn]`, so the whole suite ran.
+		- Verified: the quick gate with every area passed (test.bash 1918/0, fuzz 314/0, parity 30/0, shellcheck and PSScriptAnalyzer clean).
+		- Swept: every tracked .bash, .sh and .ps1 outside legacy/ for blocks of 5 lines or more. Left: the kept ones above, and spawn-count.bash's measurement block, 5 lines with its rules.
+	- Acceptance signoff: Self-closed: comments only, and the gate passed.
+	- Closed: 20261109-154144
 
 - test.bash hangs on Windows at [df1s7]: Git for Windows' askpass opens a password dialog
 	- ID: 2026110814215941
