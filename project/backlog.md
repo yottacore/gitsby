@@ -6497,6 +6497,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 #### Done - Features and enhancements
 
+- ✅ macOS signing and quarantine on real ARM hardware: does a terminal download need either?
+	- Closed: 20261109
+	- Opened: 20260817-115422
+	- All that is left of the old macOS item. The build half is settled and filed under done.
+	- Also untested on Apple silicon: the universal binary running at all. Its arm64 half has a valid ad-hoc signature, checked on b26 2026-10-05, but b26 is Intel.
+	- 2026-11-09: Neither is needed. The macOS workflow now installs the newest release with install.bash under the stock bash 3.2, on both hosted Macs. On macOS 26.7.2 arm64, v3.0.0-beta.1's universal binary came down with no quarantine flag, its arm64 half's ad-hoc signature verified, and it ran. The Intel half has no signature and needs none.
+	- Test case: the macOS workflow's "Release binary" step, run 42687499808 on PR #62.
+
 - ✅ The repo's blurb, homepage and topics still describe the Bash and PowerShell product.
 	- Closed: 20261109
 	- Opened: 20260819-142046
@@ -7357,11 +7365,6 @@ Go port, round one. Rationale and route: `design_docs/20260813_golang-port.md`. 
 ### Deferred
 
 Waiting on hardware, an upstream module, or a decision.
-
-- ✋ macOS signing and quarantine on real ARM hardware: does a terminal download need either?
-	- Opened: 20260817-115422
-	- All that is left of the old macOS item. The build half is settled and filed under done.
-	- Also untested on Apple silicon: the universal binary running at all. Its arm64 half has a valid ad-hoc signature, checked on b26 2026-10-05, but b26 is Intel.
 
 - ✋ GitHub Actions and platform packaging (.deb/.rpm/.exe installer), deferred to the port by decision.
 	- Opened: 20260817-115422
