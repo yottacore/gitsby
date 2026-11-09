@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 1: A failed `account apply` empties a working account fragment that the global config still includes
 	- ID: 2026110912215201
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -51,6 +51,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Notes:
 		- Writing the keys into a temp file beside it and renaming that over the fragment keeps the per-key writes the 20261003 round decided to keep.
 	- Estimated effort: Low
+	- Actual cause [Bug]: The fragment was cut to nothing first, then written a key at a time in place. Any failed key left it empty or part written, while the global config still included it.
+	- Actual effort: Low
+	- Decisions:
+		- The keys go into a new file beside the fragment, made 0600 by `os.CreateTemp`, and it is renamed over the fragment once every key is in. On a failure it is removed. Its name ends in `.tmp`, so a crash's leftover is never listed as an unused fragment.
+		- A fragment that can't be opened for writing, such as a read-only file or a folder in its place, is still refused before anything is written. A rename would replace it without a word. This keeps the "is a directory" reason `[ddf43]` and `[ddf46]` check.
+		- The separate chmod is gone. The new file is always 0600, and `[dbfvv]` still passes.
+		- A lock file left beside the fragment no longer stops the run, since git now locks the new file instead.
+		- A fragment that is a symlink is replaced by a plain file. gitsby writes these files itself, so a link there isn't expected.
+		- Changelog under Fixed.
+	- Actual fix [Bug]: `writeAccountFragment` writes to a new file and renames it over the fragment. The refusals say the fragment was left as it was.
+	- Branch: round-20261109
+	- Commit: b59aab1
+	- Test case: `TestAccountApplyFailureKeepsTheFragment` `[df35e]`: a key git won't write, a stale lock beside the fragment, and a folder that takes no new file.
+		- Verified: all 3 cases fail on the old code and pass on the fix. The quick gate with every area passed (test.bash 1901/0, fuzz 314/0, parity 30/0).
+		- Swept: every other file write in src-go. This was the only in-place write and the only `git config --file`.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261109-133919
 
 - Code Review 20261109 item 2: Ctrl+C on a cicd.bash run skips its cleanup
 	- ID: 2026110912215202
