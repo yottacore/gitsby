@@ -1,8 +1,5 @@
-// Argument parsing: the option vocabulary, the positional slots, the grouped-noun
-// collapse, and the 'raw' passthrough prescan. Options are lowercased FIRST, then
-// the dashes stripped, so no two entry points can accept different spellings of
-// the same option. Nothing here touches the repo, so all of it can be exercised
-// on its own.
+// Argument parsing. Options are lowercased first, then the dashes stripped, so no 2
+// entry points take different spellings. Nothing here touches the repo.
 
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 // Licensed under The MIT License (MIT). Full text at:
@@ -34,11 +31,9 @@ func stripDashes(s string) string {
 // normalized copy is for matching only, a file name or message keeps its case.
 func afterEq(arg string) string { return arg[strings.Index(arg, "=")+1:] }
 
-// parseArgs fills the option and positional state. 'info' names an information
-// option - help, version, about or donate - asked for from any position: '<noun>
-// <verb> --help' is the reflex every git user has, and slot 1 always has a real
-// command, so nothing can be shadowed. -v is deliberately not an option here - it
-// must not turn a mutating command into a silent no-op.
+// parseArgs fills the option and positional state. 'info' is help, version, about or
+// donate, from any position. -v is no option here, so it can't make a mutating command a
+// no-op.
 func parseArgs(argv []string) (opt options, cmd command, info string, err error) {
 	const maxPositional = 5
 	opt = defaultOptions()
@@ -130,11 +125,9 @@ func collapseCommand(cmd command) (command, error) {
 	if strings.Contains(cmd.name, "-") {
 		return cmd, usagef("Unknown command '%s'. Run '%s' with no arguments for a list.", cmd.name, meName)
 	}
-	// The one prefix ladder in the tool, and deliberately so: this is the command
-	// you type all day, and its tail is the half nobody recalls exactly. Nothing
-	// else here is prefix-tolerant - don't spread it for consistency. 'update' is
-	// the 2.1.0 name; 'pull' is safe because the bare pull command is gone, and an
-	// alias onto this one cannot skip the commit the way that one could.
+	// The one prefix ladder in the tool, since this is the command typed all day. Don't
+	// spread it. 'update' is the 2.1.0 name; 'pull' is safe, since the bare pull is
+	// gone.
 	switch cmd.name {
 	case "update", "pull", "pullc", "pullco", "pullcom", "pullcomm", "pullcommi", "pullcommit":
 		cmd.name = "pullcom"
@@ -296,12 +289,8 @@ func sortCommand(cmd command, opt *options) (command, error) {
 	return cmd, nil
 }
 
-// scanPassthrough spots 'raw <tool>' ahead of the main parser, because past the
-// tool name the arguments belong to the tool: a '-q' there is its own flag, not
-// ours. Ours come first. The whole option vocabulary is taken here, spelled and
-// normalized the same way as the main parser; the ones with nothing to act on in
-// a passthrough are inert. -h and -v fall through on purpose - they mean show
-// help or the version, which is the main parser's job.
+// scanPassthrough spots 'raw <tool>' ahead of the main parser, since past the tool name
+// the arguments are the tool's. -h and -v fall through to the main parser.
 func scanPassthrough(argv []string, opt *options) (string, []string, error) {
 	tool := ""
 	var ptArgs []string

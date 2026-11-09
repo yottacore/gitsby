@@ -34,11 +34,8 @@ var prNumRE = regexp.MustCompile(`^[0-9]+$`)
 // sortPr validates pr's own arguments - before the repo gate, same as the
 // scripts: a malformed pr call is wrong anywhere, in a repo or not.
 func (a *app) sortPr() error {
-	// Shape only. Which tool can answer used to be settled here, as 'is gh
-	// installed' - but that is a question about the HOST, and the host is not known
-	// until we are in a repo with a remote. Asked here it told a Gitea user to
-	// install a GitHub client, and told a GitHub user with no gh that their
-	// perfectly well-formed command was a syntax problem.
+	// Shape only. Which tool answers waits for the host, which isn't known until we're
+	// in a repo with a remote.
 	switch strings.ToLower(a.cmd.arg) {
 	case "ok":
 		a.pr.sub, a.pr.num = "ok", a.cmd.arg2
@@ -95,12 +92,8 @@ func (a *app) settlePrTool() error {
 		}
 		return usagef("Nothing installed here can talk to %s. %s", host, a.hostCLIHint())
 	}
-	// No host to name at all - a local path, or a URL shape we don't parse. Not a
-	// refusal: this codebase's standing rule is that a remote we don't understand
-	// never triggers one, because "we couldn't tell" and "it definitely isn't
-	// GitHub" are different answers and only one of them is ours to assert. gh gets
-	// the last word, exactly as it did before any of this existed, and explains
-	// itself in its own words if the remote turns out not to be one it serves.
+	// No host to name. Not a refusal, since a remote we don't understand never triggers
+	// one. gh gets the last word, and explains itself if the remote isn't one it serves.
 	if inPath("gh") {
 		a.pr.tool, a.pr.cli = toolGh, "gh"
 		return nil
@@ -379,11 +372,8 @@ func (j *jsonScan) skip(depth int) bool {
 // prDisp is one call written out the way the preview shows it.
 func (a *app) prDisp(args []string) string { return a.pr.cli + " " + strings.Join(args, " ") }
 
-// parseTeaTable reads tea's tabular output: one header line naming the fields,
-// then a row per record. Anything that doesn't have both comes back empty, and
-// every caller treats empty as "couldn't tell" rather than as "no such thing" -
-// the two are not the same answer, and acting on the wrong one is how a plan ends
-// up confidently about a pull request nobody asked for.
+// parseTeaTable reads tea's tabular output: a header line naming the fields, then a row
+// per record. Anything else comes back empty, which callers read as "couldn't tell".
 func parseTeaTable(out string) []map[string]string {
 	lines := splitLines(out)
 	if len(lines) < 2 {
@@ -485,11 +475,8 @@ func (a *app) openPrForBranch(prBranch string) string {
 	return runOut("gh", "pr", "list", "--head", prBranch, "--state", "open", "--json", "number", "--jq", ".[0].number // empty")
 }
 
-// readPr asks the git host which branch a PR proposes and whether it is still open.
-// The bool is "we got an answer", kept apart from the answer itself: a tool that
-// cannot say must not be read as saying the PR is closed, or as agreeing with
-// whatever branch we happen to be standing on. The caller refuses on !ok, which is
-// the whole reason this is settled before a plan rather than during one.
+// readPr asks the git host which branch a PR proposes and whether it's still open. ok is
+// "we got an answer"; the caller refuses on !ok, before the plan.
 func (a *app) readPr() (head, state string, ok bool) {
 	if a.pr.tool == toolGlab {
 		out, ran := runOutOK(a.pr.cli, a.glabArgs("mr", "view", a.pr.num, "--output", "json")...)
@@ -523,11 +510,8 @@ func (a *app) readPr() (head, state string, ok bool) {
 	return fields[0], fields[1], true
 }
 
-// prAcceptPreflight is 'pr ok <n>', which can be run from anywhere: ask gh which
-// branch the PR proposes and whether it is still open. A gh that cannot answer
-// used to fall back to the current branch, which made the plan confidently about
-// the wrong thing and killed the run after it was confirmed - the exact shape
-// preflight exists to prevent.
+// prAcceptPreflight is 'pr ok <n>', which runs from anywhere: ask gh which branch the PR
+// proposes and whether it's still open, with no fallback to the current branch.
 func (a *app) prAcceptPreflight(prBranch string) error {
 	head, state, ok := a.readPr()
 	if !ok || head == "" {

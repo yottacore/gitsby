@@ -36,13 +36,8 @@ func (r remoteRef) target() string {
 	return r.owner + "/" + r.name
 }
 
-// parseRemote splits a remote URL into host, owner and name. One parser for every
-// caller: the three that grew separately agreed on github.com and on nothing else,
-// which is exactly the asymmetry that hides until a second host shows up.
-//
-// An ssh_config alias is resolved for the ssh spellings only. An https host is
-// written literally and ssh has no say in it, so asking would spend a process to
-// be told what we were already looking at.
+// parseRemote splits a remote URL into host, owner and name, for every caller. An
+// ssh_config alias is resolved for the ssh spellings only.
 func parseRemote(url string) remoteRef {
 	ref, viaSSH := parseRemoteText(url)
 	// A host gh already serves is a real hostname, not an alias, so asking ssh about
@@ -335,11 +330,8 @@ func (a *app) glabRepoArg() string {
 	return strings.TrimSuffix(strings.TrimSuffix(strings.TrimPrefix(path, "/"), "/"), ".git")
 }
 
-// hostToolFor picks the CLI for a host. gh for GitHub and for nothing else: it is
-// a GitHub client, and pointing it at somebody else's git host gets an error in
-// GitHub's vocabulary about a repo it was never looking at. tea for any other host
-// that has it installed - it is Gitea's client, and it says so itself when the host
-// turns out not to be one.
+// hostToolFor picks the CLI for a host: gh for GitHub and nothing else, tea for any
+// other host that has it installed.
 func (a *app) hostToolFor(host string) (hostTool, string) {
 	switch {
 	case isGitHubHost(host):
@@ -383,13 +375,9 @@ type hostAnswer struct {
 	failure string
 }
 
-// hostLogin names the account tea has for a host, or nothing, plus tea's reason
-// when it failed to answer. Read from the login list rather than from 'tea whoami'
-// for two reasons: whoami reports the DEFAULT login, which on a machine with two
-// instances configured is as likely as not to be the other one; and with no login
-// at all it prints "no gitea login configured" to stdout and exits 0, so neither
-// its status nor a naive read of its output says anything. Asked once - it is live
-// enough to be worth not repeating.
+// hostLogin names the account tea has for a host, or nothing, plus tea's reason when it
+// failed. From the login list, since 'tea whoami' gives the default login and exits 0
+// with none.
 func (a *app) hostLogin(cli, host string) (user, failure string) {
 	answer := a.host.login.get(func() hostAnswer {
 		if cli == "" || host == "" {

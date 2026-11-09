@@ -110,11 +110,8 @@ func (a *app) writesAccounts() bool {
 	return false
 }
 
-// identityWillPrint: whether this run reaches showIdentity at all. Every mutating
-// command previews the block, bar the 3 that write accounts, which show the
-// account list instead; among the read-only ones only status and whoami do. It
-// gates the live probes that feed the block and nothing else, so being over-broad
-// costs a round trip and never an answer.
+// identityWillPrint: whether this run reaches showIdentity. It gates only the live
+// probes that feed the block, so over-broad costs a round trip, never an answer.
 func (a *app) identityWillPrint() bool {
 	if a.writesAccounts() {
 		return false
@@ -261,11 +258,8 @@ func (a *app) accountSubject() string {
 	return "the account asked for"
 }
 
-// showAccountFrom names where the account came from, and which file that is, under
-// the line they explain. Their own lines rather than a parenthetical: the true
-// answer names a path, and a path is what makes a line wrap. Printed even when the
-// source repeats the name on the line above - what the reader is missing there is
-// not the string, it is what KIND of thing the string is and who chose it.
+// showAccountFrom names where the account came from, and which file, on their own lines
+// under the one they explain, since a path makes a line wrap.
 func (a *app) showAccountFrom() {
 	if a.acct.source == "" {
 		return
@@ -366,11 +360,8 @@ func (a *app) showAccountKept() {
 		" still applied - that is where the "+strings.Join(lines, " and ")+tail)
 }
 
-// showAccountUnapplied covers the cases where the account did not authenticate this
-// run, and reports whether it printed. Separate from the applied line because the
-// two answer different questions: the applied line says who, and this says what
-// happened instead, why, and what to type to fix it. One line fits the first.
-// It cannot fit the other three, and the attempt read as a paragraph.
+// showAccountUnapplied covers an account that didn't authenticate this run, with what
+// happened, why and the fix, and reports whether it printed.
 func (a *app) showAccountUnapplied() bool {
 	switch {
 	case a.acct.bypassed:
@@ -611,11 +602,8 @@ func (a *app) showSSHLine(remoteURL string) {
 		return
 	}
 	ssh := readSSHConfig(sshConnectTarget(remoteURL))
-	// An '-i' in git's own ssh command outranks whatever ssh -G nominated: that is
-	// the key git hands ssh, and with IdentitiesOnly set ssh_config's candidates
-	// never get a look in. Without this the line can name the right account beside
-	// the wrong key file, which is worse than either alone - it invites you to
-	// trust the half that happens to be wrong.
+	// An '-i' in git's own ssh command outranks ssh -G's pick, since with IdentitiesOnly
+	// ssh_config's candidates never get a look in.
 	fields := strings.Fields(a.gitSSHCommand())
 	for i, arg := range fields {
 		if arg == "-i" && i+1 < len(fields) {

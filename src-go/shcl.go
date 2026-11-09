@@ -115,12 +115,8 @@ func (c *config) loadDoc(doc *shcl.Document) {
 	}
 	blocks, stray := acctBlocks(doc)
 	c.unknown = append(c.unknown, stray...)
-	// A single-valued key can reach one account more than once: repeated in a
-	// block, in a block opened again further down (the format merges the two), or
-	// in blocks whose names differ only in case. The last is read, as the flat
-	// reader always did. The earlier ones are listed, since two hosts or two emails
-	// is two accounts written as one, and reading one of them without a word is how
-	// that went unnoticed.
+	// A single-valued key given more than once for an account: the last is read, and the
+	// earlier ones listed, since 2 hosts or emails is 2 accounts written as one.
 	given := map[acctKey][]binding{}
 	var keys []acctKey
 	for _, b := range blocks {
@@ -193,11 +189,8 @@ func (c *config) lastBinding(list []binding) binding {
 	return last
 }
 
-// listNested puts every key below a path on the ignored list: nothing reads a
-// key from under another key, and a key indented one level too far is otherwise
-// gone without a word. A repeated key's children come back for every instance.
-// at is the lookup path, disp how the list names it, parent the name of the key
-// it sits under.
+// listNested puts every key below a path on the ignored list, since nothing reads one
+// there. at is the lookup path, disp its display name, parent the key above.
 func (c *config) listNested(doc *shcl.Document, at, disp, parent string) {
 	for _, name := range dedupe(doc.Children(at)) {
 		// Once per path: a repeated key with a child under each is one line to fix.
@@ -238,13 +231,8 @@ func shclValue(value string) string {
 	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(doc.ToCanonical()), "v:"))
 }
 
-// flatToSHCL respells the old layout in the current one, so the comments and
-// blank lines come through where they stood. Real blocks rather than the dotted
-// spelling: a comment attaches to the setting after it, and with every setting a
-// child of some block, a comment above an account's first line was carried into
-// the block. Written as blocks, it sits above the block it introduced. A line
-// that was not a setting stays as it was, and the module reports it the way the
-// flat reader did.
+// flatToSHCL respells the old layout in the current one, as real blocks, so a comment
+// above an account's first line stays above its block. Other lines stay as they were.
 func flatToSHCL(text string) string {
 	lines := flatLines(text)
 	var out []string

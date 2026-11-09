@@ -43,11 +43,9 @@ const (
 
 var ownerNameRE = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
-// lsRemoteAbsentRE is git's wording, and only git's, for a host that was reached
-// and said no: a path that is not a repository, a repository the host does not
-// have, and a credential the host asked for or refused. git asks for one only
-// after the host answers 401, which GitHub and Gitea both do for a repository
-// that isn't there.
+// lsRemoteAbsentRE is git's wording for a host that was reached and said no. A
+// credential prompt counts, since git asks only after a 401, as GitHub and Gitea give
+// for no repo.
 var lsRemoteAbsentRE = regexp.MustCompile(`does not appear to be a git repository|Repository not found\.|(?m:^fatal: repository '.*' not found$)|could not read (?:Username|Password) for '|Authentication failed for '`)
 
 // isLocalPath: a remote that is a directory on this machine, rather than
@@ -68,11 +66,8 @@ func isLocalPath(url string) bool {
 	return true
 }
 
-// sameRemote: whether two remote URLs name the same place. Text settles it for a
-// real URL, but git rewrites a local path into the platform's own spelling when
-// it stores one - hand it '/c/tmp/x' on Windows and it gives back 'C:/tmp/x' -
-// so comparing our own argument against git's copy said "different" for the same
-// directory, and a re-run of 'repo clone' refused itself.
+// sameRemote: whether 2 remote URLs name the same place. git stores a local path in the
+// platform's spelling, '/c/tmp/x' as 'C:/tmp/x' on Windows.
 func sameRemote(a, b string) bool {
 	if a == "" || b == "" {
 		return false
@@ -86,12 +81,9 @@ func sameRemote(a, b string) bool {
 	return canonPath(a) == canonPath(b)
 }
 
-// probeRemote is one network round-trip: does the remote exist, and does it have
-// history? No auth prompts - a bad https URL would otherwise stop and ask for
-// credentials mid-run - and the timeout composes onto git's own ssh command, so
-// a per-repo core.sshCommand still probes as the key git actually pushes with.
-// The answer is missing only when git's own words say the host was reached and
-// said no; anything else is unknown, with the reason git gave.
+// probeRemote is one round trip: does the remote exist, and does it have history? Under
+// remoteEnv. Missing only when git's words say the host said no; else unknown, with
+// git's reason.
 func (a *app) probeRemote(url string) (repoExistence, string) {
 	probe := toolCmd("git", "ls-remote", url)
 	probe.Env = a.remoteEnv()
@@ -245,11 +237,8 @@ func (a *app) settleRepoClone() (bool, error) {
 	if a.cmd.arg == "" {
 		return false, syntaxUsage("No URL given.", "repo clone <url> [directory]", repoURLDef("<url>"), repoDirDef())
 	}
-	// 'owner/name' is what create and connect take; refusing it here only after
-	// the plan was confirmed is the surprise.
-	// 'owner/name' has only ever meant github.com, so the transport question is
-	// about github.com too - not about whichever host the directory we are standing
-	// in happens to use.
+	// 'owner/name' is refused before the plan, not after. It has only ever meant
+	// github.com, so the transport is asked of github.com too.
 	if ownerNameRE.MatchString(a.cmd.arg) && !pathExists(a.cmd.arg) {
 		a.cmd.arg = githubURL(a.cmd.arg, a.protocolFor("github.com"))
 	}
@@ -443,12 +432,9 @@ func (a *app) cmdRepoURLShow() {
 	a.out.clean("Switch with '" + meName + " repo url <https|ssh>'.")
 }
 
-// showFilesToPublish: every in-repo command shows what it is about to touch; this
-// is the one that publishes a whole directory for the first time, possibly to a
-// public repo, so it owes the same. Asked through a throwaway git dir OUTSIDE the
-// work tree: that way .gitignore and core.excludesFile are honored exactly as the
-// real 'git add --all' will honor them (listing files git would skip is its own
-// kind of wrong), and answering 'n' leaves the directory as it was found.
+// showFilesToPublish lists what a first publish would add, through a throwaway git dir
+// outside the tree, so the excludes apply as 'git add --all' will and 'n' changes
+// nothing.
 func (a *app) showFilesToPublish() {
 	probeDir, err := os.MkdirTemp("", "")
 	if err != nil {
