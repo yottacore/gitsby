@@ -33,6 +33,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- `account apply` still puts paths inside its Wrote and safe-to-remove lines
+	- ID: 2026110914151101
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-141511
+	- Opened by:
+	- Related IDs: 2026110912215207, 2026110914045043
+	- Incorrect behavior [Bug]: accountcmd.go prints `Wrote <file>` and `Not used any more, safe to remove: <folder>` with the path in the sentence.
+	- Expected behavior [Bug]: Each puts the path on a `File:` line under a short status, like the clone line.
+	- Estimated effort: Low
+	- Decisions: They follow the rule. `Cloned into '<folder>'` had the same verb-plus-path form and moved, so keeping these inline would be an exception a later review files again.
+	- Origin: Left alone by the 2026110907 and 2026110914045043 workers as lines whose whole object is the path.
+
 - The UI guide's own example status line puts a path inside the sentence
 	- ID: 2026110914045043
 	- Type: Bug
