@@ -33,6 +33,260 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Code Review 20261109 item 1: A failed `account apply` empties a working account fragment that the global config still includes
+	- ID: 2026110912215201
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]:
+		- Run `gitsby account apply` once, so the global config includes an account's fragment.
+		- Leave git's lock file beside that fragment, such as `github.com_work.gitconfig.lock`, then run `account apply` again.
+	- Incorrect behavior [Bug]: It exits 1 with "Couldn't write user.name into '...'; it is incomplete". The fragment is now 0 bytes, and the global includeIf still points at it. Plain git in that folder has no name, email, sshCommand or credential helper until an apply succeeds. A full disk or a permissions error does the same.
+	- Expected behavior [Bug]: A failed apply leaves every fragment the global config includes as it was. The comment above the write says nothing goes into the global config until every fragment is written.
+	- Reproduced [Bug]: 2026-11-09 on b23, built binary with a temp HOME, XDG dirs and global git config.
+	- Possible cause [Bug]: `writeAccountFragment` (accountcmd.go:534) truncates the fragment first, then writes 1 key per `git config --file` call into it. The config file itself is written to a new file and renamed, but fragments aren't.
+	- Origin: accountcmd.go:534 from 353f5c9, 2026-08-19. Code Review 20260818 item 5 added a check on each write, not a safe replace. No earlier round saw this. Confirmed.
+	- Notes:
+		- Writing the keys into a temp file beside it and renaming that over the fragment keeps the per-key writes the 20261003 round decided to keep.
+	- Estimated effort: Low
+
+- Code Review 20261109 item 2: Ctrl+C on a cicd.bash run skips its cleanup
+	- ID: 2026110912215202
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: After Ctrl+C the run prints no FAIL step line and no `Cleanup:` line. Its run folder stays, and the container tidy-up doesn't run. `fSweepRuns` removes the folder 2 days later.
+	- Expected behavior [Bug]: The comment at cicd.bash:411 says a stop still runs the exit trap, the container's tidy-up included.
+	- Reproduced [Bug]: 2026-11-09. The trap and tee layout was copied into a probe script and SIGINT sent to its process group. The cleanup marker was never written. With the tee started as `>(trap '' INT TERM; exec tee ...)` it was, and the probe exited 130.
+	- Possible cause [Bug]: A run with `LINT_LOG_DIR` set tees its output (cicd.bash:1112), and Ctrl+C kills tee too. The exit trap's first line of output then kills bash with SIGPIPE. The bash traps notes list this trap and its fix.
+	- Origin: the tee from bbce553, 2026-07-22. The INT trap and its comment from 637c182, 2026-10-25. No earlier round saw this. Confirmed.
+	- Estimated effort: Low
+
+- Code Review 20261109 item 3: Two pipeline steps can pass having checked nothing
+	- ID: 2026110912215203
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]:
+		- A full run with `--no-test` never builds, so fuzz.bash, the spawn counts and parity test whatever `src-go/gitsby` is on disk. On a clone with no build, parity prints "nothing to compare, skipping." and the step passes.
+		- The native fuzz step gets its targets from `go test -list ... 2>/dev/null | grep '^Fuzz' || true` (cicd.bash:1200). When that fails, the loop runs 0 times and prints "OK: native fuzz targets". fuzz_test.go has 9 targets.
+	- Expected behavior [Bug]: A step with nothing to check fails, or says it was skipped. parity.bash:112 and fuzz.bash:13 both say they test the build stage 2 made. The quick run already builds for this reason (`gateBuilt`, cicd.bash:905-910).
+	- Reproduced [Bug]: 2026-11-09. The fuzz loop, run against a stub `go` that prints a build error, printed OK and exited 0. The `--no-test` path by grep: `fNativeBuild` runs only at cicd.bash:909 and :1174, and the second is inside `if ((doTest))`.
+	- Origin: parity's skip from 1928f35, 2026-08-18. The fuzz list from c943c5a, 2026-08-21. No earlier round saw them. Confirmed for the fuzz list, Plausible for the `--no-test` run end to end.
+	- Sweep: every cicd.bash step that takes its input from a list or a build that may be missing.
+	- Estimated effort: Low
+
+- Code Review 20261109 item 4: The test harnesses run a command hidden in an inherited GIT_CONFIG_COUNT
+	- ID: 2026110912215204
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: `for (( i = 0; i < ${GIT_CONFIG_COUNT:-0}; i++ ))` reads the variable as arithmetic. A value such as `GIT_CONFIG_KEY_0[$(touch CANARY)]` runs the command, as long as the named variable is set.
+	- Expected behavior [Bug]: style-guide.md:123 says arithmetic on outside input runs a command substitution hidden in an array subscript, so the value is checked for plain digits first.
+	- Reproduced [Bug]: 2026-11-09, the function copied into a probe script. The canary file was made.
+	- Origin: fuzz.bash:51, parity.bash:78 and test.bash:95 from 51fbada, 2026-08-13. spawn-count.bash:91 from 894d857, 2026-08-19. The 20261003 round checked `-eq` on outside input by grep, which can't see the `(( ))` form. Confirmed.
+	- Sweep: fuzz.bash:51, parity.bash:78, test.bash:95, spawn-count.bash:91, and any other `((` or `$((` on an environment variable in cicd/ and the installers.
+	- Notes:
+		- The value comes from the shell that runs the suite, so it needs someone who already controls that shell.
+	- Estimated effort: Low
+
+- Code Review 20261109 item 5: `release` and `raw` print control characters raw in their syntax errors
+	- ID: 2026110912215205
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Related IDs: 2026100607545812
+	- Steps to reproduce [Bug]:
+		- `gitsby -q release $'1.0\e[31mX'`, or `gitsby raw --bogus$'\e[31m'`.
+	- Incorrect behavior [Bug]: The escape byte goes to stderr as it is, and the terminal turns red.
+	- Expected behavior [Bug]: UI guide, Words and values: a control character is shown by name, and that goes for a value quoted in an error too.
+	- Reproduced [Bug]: 2026-11-09, built binary.
+	- Possible cause [Bug]: `syntaxUsage` doesn't escape its first line, and release.go:61 and args.go:323 put the value straight into it.
+	- Origin: release.go:61 from ddf2353, 2026-09-16. Item 2026100607545812 swept the error constructors in 47bcda3 and missed the leads built for `syntaxUsage`. Confirmed.
+	- Sweep: every `syntaxUsage` and `refusalBlock` lead built from a value.
+	- Estimated effort: Low
+
+- Code Review 20261109 item 6: Fix lines give commands that won't paste
+	- ID: 2026110912215206
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]:
+		- Fix notes put a path in single quotes with no escaping, so a path with an apostrophe gives a command bash can't parse: show.go:484 (`chmod 600`), accountcmd.go:957 (`chmod u+r`), :977 (`chmod u+x`) and :1070 (`rm`). `shellWord` in exec.go:131 already quotes these right.
+		- The merge back-out prints its settle text as a literal line (branchcmd.go:253, passed in at branchcmd.go:119 and release.go:220), such as `git checkout dev && git merge main, then 'gitsby release'`. That's prose inside a command. branchcmd.go:330 and release.go:175 put the command after a colon on the same line. `devBranch`, `mergeRef`, `targetBranch` and the tag go in unquoted, where `returnTo` and the branch use `typedArg`.
+	- Expected behavior [Bug]: UI guide: a fix that can be a command is given as one, and a literal to copy is indented under its note.
+	- Reproduced [Bug]: 2026-11-09. `bash -n` on `chmod 600 '/home/o'brien/tok'` fails with unexpected EOF. backlog.md:2782 names `C:\Users\O'Brien` as a real case. The back-out lines by reading.
+	- Origin: show.go:484 from 76e1cd3, 2026-11-07, the Code Review 20261107 item 6 fix. The accountcmd.go lines from 457a31b4, ca76d60c and 81e2d472, 2026-09-14 and 09-15. The back-out from b34a25c, ef2b917 and a71263d, 2026-09-15 to 10-04. No earlier round saw this. Confirmed for the quoting, Plausible for the back-out.
+	- Sweep: every Fix literal built by string concatenation.
+	- Estimated effort: Low
+
+- Code Review 20261109 item 7: Output still breaks 4 UI guide rules that Code Review 20261107 item 6 fixed elsewhere
+	- ID: 2026110912215207
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Related IDs: 2026110708000106
+	- Incorrect behavior [Bug]:
+		- The Git host line says `unknown - ...` with no parentheses at show.go:164, :169 and :171. The SSH line just above it uses `(unknown - ...)`.
+		- Paths sit inside sentences or parentheses, or skip the platform's spelling. accountcmd.go:549 has the fragment path in a `usagef`, and :586 prints `"Wrote " + fragment` with no `nativePath`, where :500 uses it. accountcmd.go:1294 and :1323 put the config path in a status sentence. repo.go:201 puts a local origin path in parentheses, and :259 and :265 print the clone folder as typed, not through `cloneDirShown()`.
+		- Fix notes teach `tokenFile` at githost.go:274 and show.go:459 and :469, and accounts.md:149 says it too. The file, the help and the key table say `tokenfile`, per the comment at accountcmd.go:629.
+		- The config conversion notice names the old format 2 ways: "the earlier SHCL 3 spelling" (cfgformat.go:225) and "the way the earlier module did" (:236). A user doesn't know the module.
+	- Expected behavior [Bug]: UI guide: `(unknown - why)`. A path goes on its own labeled line, in its platform's spelling, in full. A config key is spelled the way the file takes it. One word per thing.
+	- Reproduced [Bug]: 2026-11-09, built binary with a temp HOME and fake tea and ssh. `status` printed `gitea.com (tea): unknown - 'tea login add' has no login for this host` under `(unknown - gitea.com didn't answer with a login)`. accountcmd.go:1294 printed `[ No account[nobody] in /.../config.shcl (it has work); nothing to do. ]`. The rest by reading.
+	- Origin: show.go from 9333159 (2026-08-19) and 0465c7ff (2026-09-14). accountcmd.go and repo.go from 4918b5b, 9333159 and 1ed0f3a. The `tokenFile` lines from 9c6bda8 (2026-08-20) and 76e1cd3 (2026-11-07). cfgformat.go from 4ed8289 (2026-11-07). Item 6's sweep grepped for the quoted literal `"unknown"` and for `usagef` with a path argument, which missed these. Confirmed.
+	- Notes:
+		- This class has come back twice now. Per the review rules it gets a table in design.md, one row per rule, so the next sweep checks each row.
+	- Estimated effort: Avg
+
+- Code Review 20261109 item 8: Two package-level caches break the code guide's rule on package state
+	- ID: 2026110912215208
+	- Type: Bug
+	- Status: Waiting for answers
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Related IDs: 2026110708000113
+	- Incorrect behavior [Bug]: style-guide.md:75 says nothing at package level changes after startup. `toolCache` (exec.go:229) and `sshConfigCache` (show.go:575) are package maps filled during the run.
+	- Expected behavior [Bug]: The code and the public guide agree.
+	- Origin: `toolCache` from 26c8a425, 2026-10-21. `sshConfigCache` from c31a204, 2026-11-07, Code Review 20261107 enhancement 2, which chose package level since both callers are plain functions. No earlier round saw the conflict. Confirmed by reading.
+	- Against: Code Review 20261107 enhancement 2's choice of a package-level cache.
+	- Notes:
+		- Either the guide allows a per-process cache keyed on its inputs, or both caches move onto `app`. The first is 1 line in a public doc. The second touches every caller.
+	- Estimated effort: Low
+
+- Code Review 20261109 item 9: Go errors are still discarded with `_` and no comment
+	- ID: 2026110912215209
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Related IDs: 2026110708000107
+	- Incorrect behavior [Bug]: config.go:565 has `doc, _ := shcl.ParseKeepLines(converted, shcl.Standard)` with no reason, where the same call at :599 has one. 8 test cleanups discard `os.Chmod`'s error the same way: config_test.go:1076, :1095 and :1128, accountcmd_test.go:758, :808 and :1334, and cfgformat_test.go:155 and :367.
+	- Expected behavior [Bug]: Go style: never discard errors with `_` unless commented why.
+	- Origin: config.go:565 from 14750db, 2026-11-07, 2 hours after Code Review 20261107 item 7 closed, so a regression of its class. The test sites from 2026-09-14 to 09-28, which item 7's sweep of non-test files didn't reach. Confirmed by grep.
+	- Sweep: `grep -nE ', _ :?=|_ = |_, _' src-go/*.go`, test files included.
+	- Estimated effort: Low
+
+- Code Review 20261109 item 10: Output text and comments use words the writing rules ban
+	- ID: 2026110912215210
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]:
+		- Output a user sees: branchcmd.go:93 `landing it on`, :322 and :329 `The hotfix landed on`, :354 and :359 `will carry changes that no tag contains`, and :323, :324 and :330 `carry it across`. accountcmd.go:1118 `one carrying whitespace`. branch.go:197 `no main, master or trunk`, with no Oxford comma. release.bash:407 `Phase 2: land` and :423 `land it through a PR`.
+		- Comments: about 50 Go sites with `land`, `ship`, `surface` or `carries` for has. In the scripts, about 145 for `land`, 103 for `carry`, 21 for `ship`, 2 for `surfaces`, and `honest` at fuzz.bash:189. ruff.toml:9 says `Older owner script`.
+	- Expected behavior [Bug]: Writing style, General, which covers UI text and comments: no `lands`, `ships` or `surfaces` since 2026-09-23, no `carries` for has since 2026-10-02, no `honest`, and the Oxford comma. The tree-root rules list `owner` as a tell.
+	- Reproduced [Bug]: 2026-11-09, by grep. test.bash `[ddf81]` pins `The hotfix landed on 'main'`.
+	- Origin: many commits, from 4918b5b (2026-08-19) to 2437605 and f98c784 (2026-11-07). No earlier round filed it. Confirmed for the sites. Whether each comment uses a word in the banned sense needs a read.
+	- Notes:
+		- Lines written by hand stay as they are. Check each comment's author with `git log -S` before changing it. The permanent `br land` alias and branch names such as `landed` stay too.
+		- `holds`, about 40, and the filler `just`, about 14, are on the same list and go in the same pass.
+	- Sweep: the greps in details.md -> "Code review 20261109".
+	- Estimated effort: Avg
+
+- Code Review 20261109 item 11: config.bash's sourced-only guard prints its error to stdout with `echo -e`
+	- ID: 2026110912215211
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: Run directly, config.bash:21 prints its error with `echo -e` to stdout.
+	- Expected behavior [Bug]: style-guide.md:109: errors go to stderr through the error helper, printed with printf. `[df034]` looks only for `echo ... >&2`, so it can't see this one.
+	- Origin: bbce553, 2026-07-22. The 20261003 round read the file in full and didn't file it. gfs-rotate.bash:213 has the same line, in the shared upstream file. Confirmed by reading.
+	- Estimated effort: Low
+
+- Code Review 20261109 enhancement 1: Add spawn gate rows for `br merge`, glab `pr create` and `--staged br switch`
+	- ID: 2026110912215212
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- spawn-count.bash gets rows for br merge (41), br merge with a fetch (52), glab pr create (30) and `--staged br switch` (31), with the usual limit.
+	- Notes:
+		- Code Review 20261107 enhancements 2 and 3 cut br merge from 49 to 41, and from 60 to 52 with a fetch, and glab pr create from 32 to 30. `[df06m]` pins the 1 push but not the count. br merge has been counted by hand in 2 rounds and never got a row.
+		- Level 4 of the performance rules: keep the benchmark so regressions get caught.
+	- Origin: the rows date from Code review 20261003 enhancement 1. Measured 2026-11-09 with strace, both builds against the same fixture. Confirmed.
+	- Estimated effort: Low
+
+- Code Review 20261109 enhancement 2: The last rounds left Go duplicates and leftovers
+	- ID: 2026110912215213
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- `formatMigration` keeps 1 kind in 3 fields (cfgformat.go:37-39), and 4 switches read them. `reportMigration` builds a message for the flat and escapes cases, then overwrites it. The comment on `from` is wrong for those 2.
+		- `accountSourceText()` (show.go:268) only returns `a.acct.source`, and its doc comment describes a branch that's gone. `showAccountFrom` reads the field directly.
+		- `foldersOf`, `segmentsOf` and `matchesOf` (accountcmd.go:68-79 and 92-100) have had no caller outside the tests since 0ad1374, 2026-09-16.
+		- Duplicate blocks: the key wrap in `accountSetUsage` and `accountUnsetUsage` (accountcmd.go:657-661 and 682-686), the account name refusal (:1094-1096 and :1259-1261), the `ghRepoState` switch arms (repo.go:317-327 and 347-361), and `setApp` repeating `writeConfig`.
+		- Tests: cfgformat_test.go has 3 copies of the backup lookup, at :310, :436 and the original from 37f4843. It compares against today's date, so it can fail at midnight. `[dbss1]` `TestAccountSetConvertsAFlatFile` and `[dd83m]` keep names and messages for a conversion that no longer happens, and so does test.bash's comment above `[dbhfy]`.
+	- Origin: c4fa47c, 14750db and 4ed8289 (2026-11-07), 0ad1374, 4918b5b, de99951 and 1ed0f3a. Confirmed by reading and grep.
+	- Estimated effort: Low
+
+- Code Review 20261109 enhancement 3: Some comments no longer match the code
+	- ID: 2026110912215214
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- config.bash:220 says `--quick` skips the regression suite, which it hasn't since 2026-10-25. :224-225 say the native fuzz targets don't run under `--quick`, and they do (cicd.bash:1199).
+		- config.bash:183 says ruff runs these rules only, and :160 and cicd.bash:25 say ruff's leak rules cover the demo script. Since f98c784 a second pass runs ruff.toml's rules on both Python files.
+		- prune.go:43-45 names a per-branch re-check at delete time. `cmdPrune` replaced it with a `for-each-ref --merged` survey in c943c5a, 2026-08-21.
+	- Origin: config.bash from 81def43, 60ee294 and 5d65fcf (2026-10-19), stale since 2026-10-25 and 2026-11-07. prune.go from c5ac62c (2026-08-18), which the 20261003 round read and passed. Confirmed by reading.
+	- Estimated effort: Low
+
+- Code Review 20261109 enhancement 4: fuzz.bash's config vectors are in the v2.1.0 flat layout, which the build converts on first read
+	- ID: 2026110912215215
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- At fuzz.bash:350, :361, :413-417, :523 and :546-552 the second check of each pair, `[dcmeq]` and `[db640]`, reads the converted file, not the vector.
+		- When 2 conversions of one path fall in the same second, the second refuses with "file exists" and reads the file flat. Which reader runs depends on the clock.
+		- parity.bash got this fix in 4971b6c and rewrites the file before each check.
+	- Notes:
+		- The checks only assert no crash, so there's no false pass.
+	- Origin: the conversion from 14750db, 2026-11-07. Confirmed with a probe build.
+	- Estimated effort: Low
+
+- Code Review 20261109 enhancement 5: The memory cap's probe and size check are looser than the run
+	- ID: 2026110912215216
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-122152
+	- Opened by: jim-collier
+	- Requirements  [Feature]:
+		- cicd.bash:260 probes `systemd-run --user --scope --quiet true` without the `-p` properties the real call passes. A systemd that doesn't know one passes the probe, then the re-exec fails with "Unknown assignment". The comment says such a box runs as before.
+		- `fMemCap` (config.bash:148) takes a number with no unit, such as 512, which docker and MemoryMax both read as bytes. Docker refuses under 6 MB, and the scope kills the run at once.
+	- Origin: 2dfde3e, 2026-11-09. systemd-run's refusal of an unknown property confirmed on b23, systemd 257. No box this project uses has an older systemd, so Plausible.
+	- Estimated effort: Low
+
 - test.bash hangs on Windows at [df1s7]: Git for Windows' askpass opens a password dialog
 	- ID: 2026110814215941
 	- Type: Bug
