@@ -572,7 +572,7 @@ The rules these entries lead to are collected in [style-guide_ui-ux.md](style-gu
 
 #### Output sweep
 
-These 4 output rules came back after 2 sweeps, each time at sites the sweep's grep didn't reach. A sweep of the output checks every row, with the search in its second column, not just the sites a review named.
+The first 4 of these output rules came back after 2 sweeps, each time at sites the sweep's grep didn't reach. A sweep of the output checks every row, with the search in its second column, not just the sites a review named.
 
 | Rule                                           | What to search
 | :---                                           | :---
@@ -580,6 +580,7 @@ These 4 output rules came back after 2 sweeps, each time at sites the sweep's gr
 | A path on its own labeled line, in full        | Every path, file, folder or origin passed to `usagef`, `usageSubf`, `errorf` or `status`, or joined into a string. Each goes through `nativePath`, or `cloneDirShown` for a clone's folder.
 | A config key spelled the way the file takes it | Every `account set` literal in the Go source, which a Go test checks, and every key named in accounts.md, README.md and the changelog's vNEXT section.
 | One word per thing                             | Every name for the same thing in output: labels, the accounts file, and the old config formats.
+| One name per placeholder                       | The `usages` table in usage.go, which the help and every Syntax line read, and any placeholder written into another message. test.bash compares the README's Commands table with the help.
 
 ### Testing
 

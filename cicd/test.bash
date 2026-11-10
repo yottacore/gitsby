@@ -1573,6 +1573,14 @@ fReadmeRecipeMatches(){ local line="" both="" flags="" ld=""
 fHelpCountsTen(){ local help="" n=""; help="$("${gitsby}" --help)"
 	n="$(awk '/^Options:/{exit} /^Common commands:/{f=1} f && /^  [a-z]/{print $1}' <<< "${help}" | sort -u | wc -l)"
 	[[ "${n// /}" == "10" ]] && grep -qF 'Gitsby has ten' "${here}/../README.md" ;}
+## Each command and its placeholders, 1 per line, from the help and from the README's
+## Commands table. A help line too long for its column starts its text with them.
+fHelpSyntaxes(){ local help=""; help="$("${gitsby}" --help)" || return 1
+	awk '/^Options:/{exit} /^Common commands:/{f=1} f && /^  [a-z]/' <<< "${help}" \
+	| sed -E 's/^  //; s/^([^:]*[^ .:]) *\.*: /\1\t/' \
+	| awk -F'\t' '{ if ($1 !~ /[<[]/ && $2 ~ /^[<[]/) { sub(/\. .*/, "", $2); print $1 " " $2 } else print $1 }' | sort ;}
+fReadmeSyntaxes(){ awk '/^\| Command /{f=1; next} f && !/^\|/{exit} f && /^\| `/' "${root}/README.md" | sed 's/\\|/\x01/g' \
+	| awk -F'|' '{ c=$2; a=$3; gsub(/[` ]+$|^[` ]+/, "", c); gsub(/[` ]+$|^[` ]+/, "", a); gsub(/\x01/, "|", a); print (a == "" ? c : c " " a) }' | sort ;}
 fRunSuite(){
 	fEcho_Clean "suite: ${1} (${gitsby})"
 
@@ -1589,6 +1597,7 @@ fRunSuite(){
 	fAssertOut  "[ddk4g] help gives account set its args"       '^  account set \.*: <account> <key> <value>\. ' "${gitsby}" --help
 	fAssertOut  "[ddk4h] help gives account unset its args"     '^  account unset \.*: <account> <key>\. ' "${gitsby}" --help
 	fAssert     "[ddj3j] README's command count matches the help" fHelpCountsTen
+	fAssert     "[df4ee] README's Commands table and the help name the same commands and placeholders" diff <(fHelpSyntaxes) <(fReadmeSyntaxes)
 	## A pasted step line has to run as shown, so it quotes what the plan quotes.
 	fAssert     "[ddj3g] a step line quotes the message the way the plan does" \
 		fPlanRan 'git commit -m' bash -c "d='${work}/$1-quoted' && git init --quiet \"\${d}\" && cd \"\${d}\" && echo q > f && '${gitsby}' -q pullcom -m 'two words; here'"
@@ -5447,10 +5456,14 @@ GHEOF
 	## parser looking at a command called 'raw' - and it reported "Unknown command 'raw'", naming
 	## the one token that was not the problem. These are inert here; being taken is the point.
 	local rawOpt=""
-	for rawOpt in "-NoFetch" "-AnyIdentity" "-Public"; do
+	## Off since 2026-11-10 for -Public: an option a command doesn't read is refused, raw included.
+	## It is refused by its own name, not as an unknown 'raw', so the point above still holds. df4eh below.
+	for rawOpt in "-NoFetch" "-AnyIdentity"; do
 		fAssertOut "[db5yb] ${rawOpt} before raw is taken, not blamed"  '^main$' \
 			bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q ${rawOpt} raw git rev-parse --abbrev-ref HEAD 2>/dev/null"
 	done
+	fAssertOut "[df4eh] -Public before raw is refused by its own name"  'public works with repo create\.' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -Public raw git rev-parse --abbrev-ref HEAD 2>&1"
 	## An option that really is unknown must still be refused - and by its own name.
 	fAssertOut "[db5yc] an unknown option before raw names itself"  'bogus' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q --bogus raw git status 2>&1"
@@ -7614,8 +7627,11 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 	## legs would only prove that a frozen file is frozen.
 	local renDir="${work}/rename"
 	git clone --quiet "${origin}" "${renDir}"
-	fAssertOut "[dbefw] help leads with the new name" 'pullcom \[msg\] \.+: Pull updates'        "${gitsby}" --help
-	fAssertOut "[dbefx] and offers br merge"          'br merge \[msg\] \.+: Merge current'      "${gitsby}" --help
+	## Off since 2026-11-10: the help names the placeholder [message], as the README and the Syntax lines do. df4ej and df4ek below.
+	# fAssertOut "[dbefw] help leads with the new name" 'pullcom \[msg\] \.+: Pull updates'        "${gitsby}" --help
+	# fAssertOut "[dbefx] and offers br merge"          'br merge \[msg\] \.+: Merge current'      "${gitsby}" --help
+	fAssertOut "[df4ej] help leads with the new name" 'pullcom \[message\] \.+: Pull updates'    "${gitsby}" --help
+	fAssertOut "[df4ek] and offers br merge"          'br merge \[message\] \.+: Merge current'  "${gitsby}" --help
 	fAssertOut "[dbefy] and lists whoami"             'whoami \.+: Show account, ssh key'        "${gitsby}" --help
 	## Every accepted spelling, because a ladder is only worth having if the whole ladder is
 	## there - a missing rung reads as a typo the tool refused for no reason.

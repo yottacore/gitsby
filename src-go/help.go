@@ -53,33 +53,14 @@ func (a *app) printDonate() {
 
 func (a *app) printSyntax() {
 	a.out.clean("")
-	a.out.clean("Common commands:")
-	a.out.clean("  pullcom [msg] ......: Pull updates, then commit all local changes. Do frequently!")
-	a.out.clean("  br create <branch> .: Create a new branch off " + mergeTargetLabel + " (current work is carried or parked).")
-	a.out.clean("  br switch [branch] .: Switch to a branch (parks current work first). No arg: back to " + mergeTargetLabel + ".")
-	a.out.clean("  br [list] ..........: Fetch and list branches.")
-	a.out.clean("  status .............: Fetch and show current status.")
-	a.out.clean("One-time setup commands:")
-	a.out.clean("  repo clone <url> ...: Clone a repo you don't have yet, into [dir] (checks out dev if it has one).")
-	a.out.clean("  repo create <o/n> ..: Create GitHub repo 'owner/name' via gh, then connect this directory and push.")
-	a.out.clean("  repo connect [url] .: Connect this directory to an existing empty remote, and push. Takes a URL or owner/name.")
-	a.out.clean("  repo url [https|ssh]: Show how origin authenticates, or switch it between the two.")
-	a.out.clean("  account [list] .....: Show your configured accounts, and which one this folder uses.")
-	a.out.clean("  account set ........: <account> <key> <value>. Set one key of one account, e.g. 'account set gitea.com_my-login host gitea.com'.")
-	a.out.clean("  account unset ......: <account> <key>. Remove one key from one account, e.g. 'account unset gitea.com_my-login host'.")
-	a.out.clean("  account apply ......: Teach plain git the same folder rules, so 'git' outside gitsby matches.")
-	a.out.clean("Less common commands:")
-	a.out.clean("  sync [msg] .........: Pull, commit, and push (pullcom, plus the push). Do infrequently.")
-	a.out.clean("  whoami .............: Show account, ssh key, commit author, git host login.")
-	a.out.clean("Admin commands, e.g. for small solo projects:")
-	a.out.clean("  br merge [msg] .....: Merge current branch into " + mergeTargetLabel + " (--no-ff), push, delete it local + remote.")
-	a.out.clean("  br prune ...........: Delete branches already merged into " + mergeTargetLabel + ", local + remote.")
-	a.out.clean("  br hotfix <name> ...: Branch off the default branch, to correct what's already published.")
-	a.out.clean("  pr [create|n|ok n] .: Create, list, review, or accept a pull request (gh on GitHub, glab on GitLab, tea on Gitea).")
-	a.out.clean("  release [ver] ......: Cut a release: merge dev into main, tag, push. No ver: next after latest tag.")
-	a.out.clean("For scripts:")
-	a.out.clean("  raw git <args> .....: Run git as the account this folder belongs to. Everything after 'git' is git's.")
-	a.out.clean("  raw <prog> <args> ..: The same, for gh, tea, glab, lazygit, or tig.")
+	group := ""
+	for _, u := range usages {
+		if u.group != group {
+			group = u.group
+			a.out.clean(group)
+		}
+		a.out.clean(u.helpLine())
+	}
 	a.out.clean("Options:")
 	a.out.clean("  -m, --message MSG ....: Commit or merge message (or give it positionally).")
 	a.out.clean("  -q, -y, --quiet, --yes: Assume yes - no prompts; if committing with no message, one is generated.")

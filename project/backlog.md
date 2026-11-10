@@ -50,7 +50,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 item 1: An option a command doesn't read is taken and dropped
 	- ID: 2026111010494811
 	- Type: Bug
-	- Status: Testing
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104948
 	- Opened by: jim-collier
@@ -70,6 +70,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every option the 2 parsers took. design.md's Execution flow and the UI style guide's Commands and options say the rule.
 	- Branch: cr1110
 	- Test case: Go [df4e9] and [df4ea], test.bash [df4eb] to [df4ed], [ddht9] kept. [df4e9], [df4ea] and [ddht9] fail with the check stubbed out. [df4eb] and [df4ec] fail against the build before the fix.
+	- Checks changed: test.bash [db5yb] loops over `-NoFetch` and `-AnyIdentity` only. It pinned `-Public` ahead of `raw` being taken rather than blamed on `raw`, and `-Public` is now refused by its own name, which [df4eh] checks. The point it was written for still holds.
+	- Acceptance signoff: Quick gate passed, all areas.
+	- Closed: 20261110-1140
 
 - Code Review 20261110 item 2: The docs call -q the machine-readable mode, and its output is the same human layout
 	- ID: 2026111010494798
@@ -86,13 +89,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: design.md, the UI style guide and printBanner's comment call `-q` the unattended mode. The guide's Scripts section says what it does: answers yes, asks nothing, and leaves out the build line, with the rest of the output unchanged.
 	- Swept: every "machine-readable" in the Go source, the docs and the scripts.
 	- Branch: cr1110
-	- Test case: none, wording only. What the guide now says `-q` does is pinned by [dbfhk], [dbshr] and the no-terminal checks.
+	- Test case: none, wording only. What the guide now says `-q` does is pinned by [dbshn], [dbfhk] and the no-terminal checks.
 	- Closed: 20261110-1127
 
 - Code Review 20261110 item 3: One placeholder has several names across the help, the README and the Syntax lines
 	- ID: 2026111010494785
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
@@ -102,6 +105,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: help.go:65 from 2206206, 2026-10-05, help.go:78 from 197677f, 2026-10-22, and README.md:105 from d446496, 2026-07-26. No round saw it. Confirmed.
 	- Notes: The help's left column is 20 wide, which is why it shortens them. Widening it, or moving the arguments into the description as `account set` already does, are the 2 ways.
 	- Decided against: making the Syntax line's `e.g. 'work', 'personal'` match the `github.com_my-work-login` examples. An account name is any string, and both are valid.
+	- Actual cause [Bug]: Each Syntax line, the help's command list and the README's table wrote their placeholders out by hand. The Syntax lines disagreed with each other too: `br create <new branch name>` against `<branch>`, and `repo connect` as both `[url | owner/name]` and `<url | owner/name>`.
+	- Decisions:
+		- `[message]`, `[version]`, `[directory]` and `<number>` everywhere, the Syntax lines' names. `repo connect` takes `[<url> | <owner/name>]`, so its Syntax line names the placeholders it defines.
+		- The help lists `pr`, `pr <number>`, `pr create [title]` and `pr ok <number>` on 4 lines, the way the README does, and `raw <tool> <arguments ...>` on 1. A syntax too long for the 20-wide column moves into the line's text, as `account set` already did.
+	- Actual fix [Bug]: 1 table, `usages` in usage.go, with each command's placeholders, their meanings and its help line. Every Syntax refusal and the help's command list read it, and a noun's block, such as bare `repo`, is built from its verbs. The README's Commands table uses the same names.
+	- Swept: every `syntaxUsage` call, the 3 inline `repo connect <url | owner/name>` fix lines, app.go's comment, and the README table. design.md's Output sweep has a row for it.
+	- Checks changed: test.bash [dbefw] and [dbefx] pinned the help's `pullcom [msg]` and `br merge [msg]`, to show the renamed commands lead. They are off, and [df4ej] and [df4ek] check the same with `[message]`.
+	- Branch: cr1110
+	- Test case: Go [df4ef] and [df4eg], test.bash [df4ee]. [df4ef] and [df4eg] fail with a placeholder renamed in the table. [df4ee] fails against the README before the fix, and against the build before it.
+	- Acceptance signoff: Quick gate passed, all areas.
+	- Closed: 20261110-1140
 
 - Code Review 20261110 enhancement 1: pr takes no list, and an unknown word after it gets the Syntax block
 	- ID: 2026111010494773

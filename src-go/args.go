@@ -215,11 +215,7 @@ func collapseCommand(cmd command) (command, error) {
 		case "url":
 			cmd.name = "repo-url"
 		case "":
-			return cmd, syntaxUsage("", "repo <clone <url> [directory] | create <owner/name> | connect [url | owner/name] | url [https|ssh]>",
-				repoURLDef("<url>"),
-				repoDirDef(),
-				repoOwnerNameDef(),
-				placeholder{"[https|ssh]", "Switches origin to that kind of address. Without it, 'repo url' shows which one origin uses."})
+			return cmd, nounRefusal("repo")
 		default:
 			return cmd, usagef("Unknown 'repo' subcommand '%s'. One of: clone, create, connect, url.", cmd.arg)
 		}
@@ -374,7 +370,7 @@ scan:
 			// Past the tool name every option is the tool's, so one typed here is
 			// ours arriving too late - not a subcommand nobody has heard of.
 			if strings.HasPrefix(arg, "-") {
-				return "", nil, syntaxUsage("'"+arg+"' is an option, and "+meName+"'s own options come before 'raw'.", rawSyntax, rawDefs()...)
+				return "", nil, usageOf("raw").refuse("'" + arg + "' is an option, and " + meName + "'s own options come before 'raw'.")
 			}
 			if !slices.Contains(rawTools, arg) && arg != "tea-cli" {
 				return "", nil, usagef("Unknown 'raw' subcommand '%s'. One of: %s.", arg, strings.Join(rawTools, ", "))
@@ -398,7 +394,7 @@ scan:
 		}
 	}
 	if wantTool {
-		return "", nil, syntaxUsage("", rawSyntax, rawDefs()...)
+		return "", nil, usageOf("raw").refuse("")
 	}
 	if tool != "" {
 		if err := checkOptionsUsed("raw", *opt); err != nil {
@@ -413,12 +409,3 @@ scan:
 // which never reads the GIT_CONFIG_* the account is applied through. tea is also
 // taken as 'tea-cli', Debian's name for it.
 var rawTools = []string{"git", "gh", "tea", "glab", "lazygit", "tig"}
-
-const rawSyntax = "raw <tool> <arguments ...>"
-
-func rawDefs() []placeholder {
-	return []placeholder{
-		{"<tool>", "One of " + strings.Join(rawTools, ", ") + ", run as the account this folder belongs to."},
-		{"<arguments ...>", "Handed to that tool unchanged."},
-	}
-}

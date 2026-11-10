@@ -363,7 +363,7 @@ func (a *app) preflight() error {
 		// With no remote at all the check below never trips - there is nothing to find
 		// unreachable - and the tag would be cut, pushed nowhere, and reported as done.
 		if !a.hasOrigin() {
-			return usagef("No 'origin' remote, and a release nobody can fetch isn't one. Connect one first: %s repo connect <url | owner/name>", meName)
+			return usagef("No 'origin' remote, and a release nobody can fetch isn't one. Connect one first: %s repo connect <url> | <owner/name>", meName)
 		}
 		if err := a.requireOnline("release", "A release nobody can fetch isn't one."); err != nil {
 			return err
@@ -411,14 +411,12 @@ func (a *app) preflightBranch() error {
 	switch a.cmd.name {
 	case "br-create":
 		if a.cmd.arg == "" {
-			return syntaxUsage("No branch name given.", "br create <new branch name>",
-				placeholder{"<new branch name>", "The branch to create off " + mergeTargetLabel + ", e.g. login-form."})
+			return usageOf("br create").refuse("No branch name given.")
 		}
 		return a.checkNewBranchName(a.cmd.arg)
 	case "br-hotfix":
 		if a.cmd.arg == "" {
-			return syntaxUsage("No name given.", "br hotfix <name>",
-				placeholder{"<name>", "The fix's branch name, e.g. crash-on-start. It is created as hotfix/<name>, off the default branch."})
+			return usageOf("br hotfix").refuse("No name given.")
 		}
 		// The prefix is the marker, so put it on ourselves - and accept it if the user
 		// typed it.
