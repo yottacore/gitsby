@@ -33,6 +33,50 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Demo: add a br merge scene, and hold screens long enough to read
+	- ID: 2026111010125300
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-101253
+	- Opened by:
+	- Requirements [Feature]:
+		- The demo shows the main advertised features in use. Length is no target, and a viewer who needs a second loop is fine.
+		- A `br merge` scene after `sync`, answered on camera, so the README's typical day runs start to finish.
+		- Holds long enough to read each screen, and time to read the plan at each question.
+	- Origin: Asked 2026-11-10, answering the demo length question that timed out in September.
+	- Decisions:
+		- The merge scene scrolls at about a line per frame. At the default rate it doubled the file, about +6 MB.
+		- `[defp0]` now fails at two minutes rather than one, since design.md sets no length.
+		- The plan holds 3 seconds at each question, through a new `askpause=` step setting. It was about 1.
+		- Holds 4.0 to 5.5 seconds, up from 2.6 to 3.2.
+	- Progress log:
+		- 1118 frames, 72.0 s, 6912767 bytes, up from 902 frames, 47.7 s and 5651896 bytes. At the default scroll rate the merge scene made it 11.5 MB.
+		- Rendered twice in the image to the same bytes.
+	- Branch: demomerge
+	- Test case: test.bash [defp0], [dcq6v]; the render itself
+	- Acceptance signoff: Gate passed, test.bash 1925/0, fuzz 314/0, parity 30/0.
+	- Closed: 20261110-102000
+
+- Demo world at /tmp/gitsby-demo is never removed where HOST_TEMP is /tmp
+	- ID: 2026111010125301
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-101253
+	- Opened by:
+	- Steps to reproduce [Bug]: Render the demo in the image, or on a box with no HOST_TEMP set.
+	- Incorrect behavior [Bug]: `safe-rm: refused, not under a tmp folder, or a whole project temp folder: /tmp/gitsby-demo`, then `WARNING: left the demo's repos in place`. On a box, the next render stops at the same refusal and the gif isn't drawn.
+	- Expected behavior [Bug]: The world is removed after each render, on any box.
+	- Possible cause [Bug]: Since 2026-10-28 the guard refuses a folder right under HOST_TEMP. HOST_TEMP falls back to /tmp, as in the image.
+	- Origin: Seen 2026-11-10 rendering the demo for demomerge. b23 sets HOST_TEMP, so runs here missed it.
+	- Actual cause [Bug]: As the possible cause says. Not seen before because the image's /tmp goes with the container, and b23's HOST_TEMP is elsewhere.
+	- Actual fix [Bug]: The world is built at /tmp/gitsby-demo/home, and `--remove` also takes the folder above it once it's empty.
+	- Branch: demomerge
+	- Test case: test.bash [df4c4], [df4c5], [df4c6]
+	- Verified: [df4c4] and [df4c5] fail against dev's demo-repo.bash, and [df4c6] fails with the new builder and dev's scenario. All 3 pass on the branch. A render in the image no longer warns, and leaves no /tmp/gitsby-demo.
+	- Closed: 20261110-102000
+
 - test.bash [dee5h] fails on a box not on UTC
 	- ID: 2026110920200900
 	- Type: Bug

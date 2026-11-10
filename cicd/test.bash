@@ -5845,6 +5845,19 @@ GHEOF
 	fAssert "[deyt4] the demo's env drops an inherited commit identity" \
 		env GIT_AUTHOR_NAME=leak GIT_AUTHOR_EMAIL=leak@example.com GIT_COMMITTER_NAME=leak GIT_COMMITTER_EMAIL=leak@example.com \
 		bash -c ". '${rmWork}/demo/demo.env' && [[ -z \"\${GIT_AUTHOR_NAME:-}\${GIT_AUTHOR_EMAIL:-}\${GIT_COMMITTER_NAME:-}\${GIT_COMMITTER_EMAIL:-}\" ]]"
+	## Where HOST_TEMP is /tmp, as in the image, the guard won't remove a folder right under it,
+	## so a world at /tmp/gitsby-demo was never removed there, and a box without HOST_TEMP stopped
+	## at its own leftover one on the next render.
+	mkdir -p "${rmWork}/ht"
+	env HOST_TEMP="${rmWork}/ht" bash "${demoRepo}" "${rmWork}/ht/gitsby-demo/home" >/dev/null 2>&1 || true
+	fAssert "[df4c4] demo-repo --remove takes its world and the folder it sat in" \
+		bash -c "env HOST_TEMP='${rmWork}/ht' bash '${demoRepo}' --remove '${rmWork}/ht/gitsby-demo/home' && [[ ! -e '${rmWork}/ht/gitsby-demo' ]]"
+	local demoRoot=""
+	demoRoot="$(sed -nE 's/^root="\$\{1:-([^}]+)\}"$/\1/p' "${demoRepo}")"
+	fAssert "[df4c5] the demo's default world is one the guard removes where HOST_TEMP is /tmp" \
+		bash -c "[[ -n '${demoRoot}' ]] && source '${root}/cicd/utility/include/safe-rm.bash' && HOST_TEMP=/tmp APP_NAME=gitsby fSafeRm_Takes '${demoRoot}'"
+	fAssert "[df4c6] and every demo scene enters the world where it's built" \
+		bash -c "[[ -n '${demoRoot}' ]] && f='${root}/cicd/utility/demo/demo-scenario.toml' && n=\$(grep -c 'demo\.env' \"\${f}\") && (( n > 0 )) && [[ \$(grep -cF '${demoRoot}/demo.env' \"\${f}\") == \"\${n}\" ]]"
 	fAssert "[db710] the publish probe's dir is removed on the way out, not only in the happy path" \
 		grep -q '_probeDir' "${root}/legacy/bin/gitsby"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
@@ -6558,11 +6571,12 @@ EOF
 		## file is the one a reader sees.
 		fAssert "[dcmd8] the committed demo gif ends on three seconds of black" \
 			python3 -c 'import sys; from PIL import Image; im = Image.open(sys.argv[1]); im.seek(im.n_frames - 1); sys.exit(0 if im.info.get("duration") == 3000 and im.convert("RGB").getextrema() == ((0, 0), (0, 0), (0, 0)) else 1)' "${root}/assets/demo.gif"
-		## design.md puts the loop at about fifty seconds. It once ran past two minutes.
-		fAssert "[defp0] and loops in under a minute" \
+		## design.md sets no length, only that each scene can be read. It once ran past two
+		## minutes, on scenes that showed nothing new.
+		fAssert "[defp0] and loops in under two minutes" \
 			python3 -c 'import sys; from PIL import Image; im = Image.open(sys.argv[1]); ms = 0
 for i in range(im.n_frames): im.seek(i); ms += im.info.get("duration", 0)
-sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
+sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 	else
 		fSkipBlock "demo renderer checks (need python3 with Pillow, and fc-match)"
 	fi

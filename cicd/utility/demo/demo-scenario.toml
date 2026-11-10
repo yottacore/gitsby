@@ -17,9 +17,9 @@
 # later step re-enters it and sources the env the builder wrote, since each run= is
 # its own shell.
 #
-# Two of the five scenes are about the confirmation, which is the thing the README
-# leads with. Step 2 carries ask=/answer=, so it runs with a terminal on its stdin,
-# really stops at the question, and has the answer typed on camera. Step 3 types its
+# Three of the six scenes are about the confirmation, which is the thing the README
+# leads with. Steps 2 and 4 have ask=/answer=, so they run with a terminal on stdin,
+# really stop at the question, and have the answer typed on camera. Step 3 types its
 # own -y, which is the way past the question and worth seeing once. The rest are
 # read-only and need neither.
 #
@@ -45,8 +45,9 @@ font  = ["Monaspace Argon SemiBold"]
 end_hold  = 1.6
 end_black = 3.0
 
-# Captions appear whole rather than being typed out. Typing the five of them cost
-# 12.9 seconds of a 67.4-second loop - more than the commands they introduce.
+# Captions appear whole rather than being typed out. Typing five of them cost 12.9
+# seconds of a 67.4-second loop - more than the commands they introduce. Length is
+# no target; a pause= is as long as its screen takes to read.
 type_notes = false
 
 [[step]]
@@ -54,39 +55,55 @@ clear = true
 cwd   = "~/dev/github.com/acme-corp/acme-api"
 note  = "Fetch, then show exactly where you stand"
 show  = "{prog} status"
-run   = "bash cicd/utility/demo/demo-repo.bash >/dev/null 2>&1 && cd /tmp/gitsby-demo/dev/github.com/acme-corp/acme-api && source /tmp/gitsby-demo/demo.env && {bin} status"
-pause = 2.6
+run   = "bash cicd/utility/demo/demo-repo.bash >/dev/null 2>&1 && cd /tmp/gitsby-demo/home/dev/github.com/acme-corp/acme-api && source /tmp/gitsby-demo/home/demo.env && {bin} status"
+pause = 4.5
 
 [[step]]
 clear  = true
 cwd    = "~/dev/github.com/acme-corp/acme-api"
 note   = "New branch. It shows the git first, and asks"
 show   = "{prog} br create add-retries"
-run    = "cd /tmp/gitsby-demo/dev/github.com/acme-corp/acme-api && source /tmp/gitsby-demo/demo.env && {bin} br create add-retries"
+run    = "cd /tmp/gitsby-demo/home/dev/github.com/acme-corp/acme-api && source /tmp/gitsby-demo/home/demo.env && {bin} br create add-retries"
 ask    = "Continue? (y|n): "
 answer = "y"
-pause  = 3.2
+askpause = 3.0
+pause  = 5.0
 
 [[step]]
 clear = true
 cwd   = "~/dev/github.com/acme-corp/acme-api"
 note  = "Commit, pull and push. -y answers the question"
 show  = "{prog} sync \"Retry failed API calls\" -y"
-run   = "cd /tmp/gitsby-demo/dev/github.com/acme-corp/acme-api && source /tmp/gitsby-demo/demo.env && {bin} sync \"Retry failed API calls\" -y"
-pause = 3.2
+run   = "cd /tmp/gitsby-demo/home/dev/github.com/acme-corp/acme-api && source /tmp/gitsby-demo/home/demo.env && {bin} sync \"Retry failed API calls\" -y"
+pause = 4.5
+
+[[step]]
+clear  = true
+cwd    = "~/dev/github.com/acme-corp/acme-api"
+note   = "Merge back, push, and delete the branch"
+show   = "{prog} br merge \"Add retries\""
+run    = "cd /tmp/gitsby-demo/home/dev/github.com/acme-corp/acme-api && source /tmp/gitsby-demo/home/demo.env && {bin} br merge \"Add retries\""
+ask    = "Continue? (y|n): "
+answer = "y"
+askpause = 3.0
+pause  = 5.5
+# Its output is the longest, and bytes follow scroll frames. At this rate a line
+# arrives each frame, as a terminal prints git's output, and the plan is read at
+# the question instead.
+scrollrate = 1500
 
 [[step]]
 clear = true
 cwd   = "~/dev/github.com/acme-corp/acme-api"
 note  = "That went out as mika-at-acme. Here is why"
 show  = "{prog} account"
-run   = "cd /tmp/gitsby-demo/dev/github.com/acme-corp/acme-api && source /tmp/gitsby-demo/demo.env && {bin} account"
-pause = 2.8
+run   = "cd /tmp/gitsby-demo/home/dev/github.com/acme-corp/acme-api && source /tmp/gitsby-demo/home/demo.env && {bin} account"
+pause = 4.0
 
 [[step]]
 clear = true
 cwd   = "~/code/github.com/mika-rivers/dotfiles"
 note  = "Another tree, another root - another account"
 show  = "{prog} account"
-run   = "cd /tmp/gitsby-demo/code/github.com/mika-rivers/dotfiles && source /tmp/gitsby-demo/demo.env && {bin} account"
-pause = 3.2
+run   = "cd /tmp/gitsby-demo/home/code/github.com/mika-rivers/dotfiles && source /tmp/gitsby-demo/home/demo.env && {bin} account"
+pause = 5.0

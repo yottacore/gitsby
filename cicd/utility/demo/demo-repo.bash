@@ -14,8 +14,9 @@
 ##		  when the demo actually changes.
 ##		- Writes "$root/demo.env" holding the env the scenario steps source before each
 ##		  gitsby call.
-##	Syntax: demo-repo.bash [--remove] [ROOT]   (ROOT default: /tmp/gitsby-demo)
-##		--remove takes ROOT away, after the same check, and builds nothing.
+##	Syntax: demo-repo.bash [--remove] [ROOT]   (ROOT default: /tmp/gitsby-demo/home)
+##		--remove takes ROOT away, after the same check, and its folder if that is left empty.
+##		  It builds nothing.
 ##	History: At bottom of script.
 
 ##	Copyright (c) 2026 Bubbles
@@ -31,7 +32,9 @@ set -eu; set -o pipefail
 fDie(){ printf '%s\n' "$*" >&2; exit 1; }
 
 removeOnly=0; if [[ "${1:-}" == --remove ]]; then removeOnly=1; shift; fi
-root="${1:-/tmp/gitsby-demo}"
+##	One level down: where HOST_TEMP is /tmp, as in the image, the guard won't remove a folder right
+##	under it, since that is where a project keeps every run's folder.
+root="${1:-/tmp/gitsby-demo/home}"
 demoHere="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "${demoHere}/../include/safe-rm.bash"
@@ -84,7 +87,7 @@ if [[ -e "${root}" ]]; then
 	fi
 	fSafeRm "${root:?}" >/dev/null
 fi
-((removeOnly)) && exit 0
+if ((removeOnly)); then rmdir -- "${root%/*}" 2> /dev/null || true; exit 0; fi
 mkdir -p "${root}" "${work}" "${side}" "${XDG_CONFIG_HOME}/gitsby"
 : > "${stamp}"
 
@@ -207,3 +210,4 @@ GIT_COMMITTER_NAME="${sideName}" GIT_COMMITTER_EMAIL="${sideEmail}" \
 ##		- 20261019 JC: --remove, so cicd can take the world away once the gif is drawn.
 ##		- 20261106 JC: ROOT goes through fSafeRm after its own checks, so it has to sit under a tmp folder.
 ##		- 20261107 JC: Errors go through fDie, and the shellcheck disable says why.
+##		- 20261110 JC: ROOT defaults to /tmp/gitsby-demo/home. Right under /tmp, the guard refused it wherever HOST_TEMP is /tmp, so the image never removed it and a box without HOST_TEMP stopped at its own leftover world.
