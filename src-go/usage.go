@@ -64,7 +64,7 @@ var usages = []cmdUsage{
 	{cmd: "br prune", group: grpAdmin, help: "Delete branches already merged into " + mergeTargetLabel + ", local + remote."},
 	{cmd: "br hotfix", args: "<name>", group: grpAdmin, help: "Branch off the default branch, to correct what's already published.",
 		defs: []placeholder{{"<name>", "The fix's branch name, e.g. crash-on-start. It is created as hotfix/<name>, off the default branch."}}},
-	{cmd: "pr", group: grpAdmin, help: "List pull requests (gh on GitHub, glab on GitLab, tea on Gitea)."},
+	{cmd: "pr", args: "[list]", group: grpAdmin, help: "List pull requests (gh on GitHub, glab on GitLab, tea on Gitea)."},
 	{cmd: "pr", args: "<number>", group: grpAdmin, help: "View a pull request and its diff.", defs: []placeholder{prNumberDef}},
 	{cmd: "pr create", args: "[title]", group: grpAdmin, help: "Push this branch and open a pull request against " + mergeTargetLabel + ".",
 		defs: []placeholder{{"[title]", "The new pull request's title. Without it, the last commit's subject."}}},
@@ -111,9 +111,12 @@ func nounRefusal(noun string) error {
 			continue
 		}
 		alt := strings.TrimSpace(strings.TrimSpace(verb) + " " + u.args)
-		if alt == "" {
+		switch alt {
+		case "":
 			optional = true
 			continue
+		case "[list]": // the noun alone lists, so 'list' is one more verb
+			optional, alt = true, "list"
 		}
 		alts = append(alts, alt)
 		for _, d := range u.defs {

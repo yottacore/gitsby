@@ -444,3 +444,20 @@ func TestRawTakesTheSameOptions(t *testing.T) { // [df4ea]
 		}
 	}
 }
+
+// pr settles its verb with the other nouns: 'list' is the bare form, and a word
+// that is neither a verb nor a number is refused as one, by name.
+func TestCollapsePr(t *testing.T) { // [df4em]
+	for in, want := range map[string]string{"": "", "list": "", "LIST": "", "create": "create", "new": "create", "ok": "ok", "42": "42"} {
+		cmd, err := collapseCommand(command{name: "pr", arg: in})
+		if err != nil || cmd.name != "pr" || cmd.arg != want {
+			t.Errorf("pr %q: name=%q arg=%q err=%v, want arg %q", in, cmd.name, cmd.arg, err, want)
+		}
+	}
+	for _, in := range []string{"foo", "view", "4x"} {
+		_, err := collapseCommand(command{name: "pr", arg: in})
+		if err == nil || !strings.Contains(err.Error(), "Unknown 'pr' subcommand '"+in+"'") {
+			t.Errorf("pr %q: err=%v", in, err)
+		}
+	}
+}

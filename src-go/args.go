@@ -219,6 +219,22 @@ func collapseCommand(cmd command) (command, error) {
 		default:
 			return cmd, usagef("Unknown 'repo' subcommand '%s'. One of: clone, create, connect, url.", cmd.arg)
 		}
+	case "pr":
+		// The flat name stays 'pr', since the rest reads the verb from pr.sub. Only the
+		// word is settled here, so an unknown one is refused the way the other nouns'
+		// are.
+		shift = false
+		switch sub := strings.ToLower(cmd.arg); {
+		case sub == "" || sub == "list":
+			cmd.arg = ""
+		case sub == "create" || sub == "new":
+			cmd.arg = "create"
+		case sub == "ok":
+			cmd.arg = "ok"
+		case prNumRE.MatchString(sub):
+		default:
+			return cmd, usagef("Unknown 'pr' subcommand '%s'. One of: list, create, ok, or a pull request number.", cmd.arg)
+		}
 	case "account", "acct":
 		switch strings.ToLower(cmd.arg) {
 		case "", "list", "show":

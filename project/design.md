@@ -214,7 +214,8 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- `repo connect` refuses remotes that already have history rather than auto-merging: forgiving means not destroying either side. Reconciling unrelated histories stays raw-git territory.
 	- `owner/name` targets go through gh (honoring gh's git_protocol setting); plain URLs never touch gh, and can only be connected to, never created.
 
-- Pull requests are subcommands of one noun (`pr`, `pr create`, `pr <n>`, `pr ok <n>`) rather than separate top-level verbs.
+- Pull requests are subcommands of one noun (`pr`, `pr create`, `pr <number>`, `pr ok <number>`) rather than separate top-level verbs.
+	- `pr list` is a bare `pr`, as `br list` and `account list` are for theirs (2026-11-10).
 	- This puts everything about a PR in one place to look, and matches how `repo` and `br` group.
 	- `pr create` defaults its title to the last commit subject. The alternative, requiring a title, was rejected as inconsistent with `pullcom`/`sync`, which never require a message. Without one they open git's editor, and under `-q` they make one up. The preview shows the resolved title before the prompt, so a bad default is visible rather than surprising.
 

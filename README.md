@@ -104,7 +104,7 @@ What you reach for daily is a one-word command. Everything else is grouped under
 | `repo create`   | `<owner/name>`            | `git init` if needed, commit, then create the GitHub repo via [gh](https://github.com/cli/cli) and push to it (`--public`/`--private`; private by default).
 | `repo connect`  | `[<url> \| <owner/name>]` | Publish local work to a remote that already exists and is empty: `git init` if needed, commit, push. Takes a URL or `owner/name`.
 | `repo url`      | `[https\|ssh]`            | Show how `origin` authenticates, or switch it between the two. Nothing else about the repo changes.
-| `pr`            |                           | Lists PRs, via [gh](https://github.com/cli/cli) on GitHub, [glab](https://gitlab.com/gitlab-org/cli) on GitLab, or [tea](https://gitea.com/gitea/tea) on Gitea.
+| `pr`            | `[list]`                  | Lists PRs, via [gh](https://github.com/cli/cli) on GitHub, [glab](https://gitlab.com/gitlab-org/cli) on GitLab, or [tea](https://gitea.com/gitea/tea) on Gitea.
 | `pr`            | `<number>`                | View a PR plus its diff.
 | `pr create`     | `[title]`                 | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
 | `pr ok`         | `<number>`                | Approve and merge a PR.

@@ -139,13 +139,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 enhancement 1: pr takes no list, and an unknown word after it gets the Syntax block
 	- ID: 2026111010494773
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
 	- Requirements [Feature]: `pr list` is the same as a bare `pr`, as `br list` and `account list` are, and the help shows `pr [list]`. An unknown word after `pr` gets the line the other nouns give, such as "Unknown 'pr' subcommand 'foo'. One of: list, create, ok, or a number." `pr` folds to tokens in collapseCommand like `repo`, `br` and `account`, so sortCommand stops parsing subcommand words for 1 noun only.
 	- Origin: args.go:239 from 3d22222, 2026-08-17, the port, which kept 2.1.0's `pr` handling. No round saw it. Confirmed: `gitsby pr list` and `gitsby pr foo` both print the Syntax block and exit 1.
 	- Decided against: listing `acct`, `account show` and `br clean` beside `new` and `go` in design.md. They are v2.1.0 spellings, kept by the permanent alias rule like the rest.
+	- Decisions:
+		- The flat name stays `pr`, with the verb settled in collapseCommand. About 15 sites read the verb from `pr.sub`, and renaming them to tokens before rc.1 would change a lot for what it buys. What the item asked for, an unknown word refused the way the other nouns refuse one, needs only the word settled.
+	- Actual fix [Enhancement]: `pr list` is a bare `pr`, and the help and the README show `pr [list]`. An unknown word gets "Unknown 'pr' subcommand 'foo'. One of: list, create, ok, or a pull request number." sortPr's number check, which collapseCommand now makes, is gone.
+	- Swept: design.md's `pr <n>` is `pr <number>`.
+	- Branch: cr1110
+	- Test case: Go [df4em], test.bash [df4en] and [df4ep]. [df4em] fails with the `pr` case taken out of collapseCommand, and [df4en] and [df4ep] fail against the build before it.
+	- Closed: 20261110-1150
 
 - Code Review 20261110 enhancement 2: -- isn't taken as the end of options
 	- ID: 2026111010494760

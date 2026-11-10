@@ -42,18 +42,15 @@ func (a *app) sortPr() error {
 		if !prNumRE.MatchString(a.pr.num) {
 			return usageOf("pr ok").refuse("")
 		}
-	case "create", "new":
+	case "create":
 		a.pr.sub = "create"
 		a.pr.title = a.opt.message // -m wins, same as everywhere else
 		if a.pr.title == "" {
 			a.pr.title = a.cmd.arg2
 		}
 	case "":
-	default:
+	default: // a number, since collapseCommand refused anything else
 		a.pr.num = a.cmd.arg
-		if !prNumRE.MatchString(a.pr.num) {
-			return nounRefusal("pr")
-		}
 	}
 	return nil
 }

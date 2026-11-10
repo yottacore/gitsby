@@ -8467,6 +8467,11 @@ SSHEOF
 	: > "${fg}/local-gh.log"
 	fAssert "[dbg5y] a local-path remote still falls through to gh, as it always did" \
 		bash -c "cd '${fg}/localorigin' && PATH='${fgPath}' FAKE_GH_LOG='${fg}/local-gh.log' '${gitsby}' -q -NoFetch pr && grep -q '^pr list' '${fg}/local-gh.log'"
+	: > "${fg}/local-gh.log"
+	fAssert "[df4en] 'pr list' is a bare 'pr'" \
+		bash -c "cd '${fg}/localorigin' && PATH='${fgPath}' FAKE_GH_LOG='${fg}/local-gh.log' '${gitsby}' -q -NoFetch pr list && grep -q '^pr list' '${fg}/local-gh.log'"
+	fAssertOut "[df4ep] and an unknown word after pr is refused by name"  "Unknown 'pr' subcommand 'foo'" \
+		bash -c "cd '${fg}/localorigin' && PATH='${fgPath}' '${gitsby}' -q -NoFetch pr foo 2>&1"
 
 	if ((hasPty)); then
 		## Only 'y' was a yes, so the word people actually type aborted.

@@ -56,7 +56,7 @@ func TestUsagesDefineTheirPlaceholders(t *testing.T) { // [df4ef]
 func TestNounRefusal(t *testing.T) { // [df4eg]
 	for noun, want := range map[string]string{
 		"repo": "Syntax: " + meName + " repo <clone <url> [directory] | create <owner/name> | connect [<url> | <owner/name>] | url [https|ssh]>",
-		"pr":   "Syntax: " + meName + " pr [<number> | create [title] | ok <number>]",
+		"pr":   "Syntax: " + meName + " pr [list | <number> | create [title] | ok <number>]",
 	} {
 		got := nounRefusal(noun).Error()
 		if !strings.HasPrefix(got, want+"\n") {
