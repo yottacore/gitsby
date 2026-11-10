@@ -5942,6 +5942,9 @@ GHEOF
 	fAssert "[df33s] config.bash run directly prints its error to stderr only, and exits 1" \
 		bash -c 'rc=0; out="$(bash "$1" 2>"$2")" || rc=$?; [[ "${rc}" == 1 && -z "${out}" ]] && grep -q "meant to be sourced" "$2"' _ "${root}/cicd/config.bash" "${work}/config-direct.err"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[df3fd] gfs-rotate.bash run directly prints its error to stderr only" \
+		bash -c 'rc=0; out="$(bash "$1" 2>"$2")" || rc=$?; [[ "${rc}" != 0 && -z "${out}" ]] && grep -q "meant to be sourced" "$2"' _ "${root}/cicd/utility/include/gfs-rotate.bash" "${work}/gfs-direct.err"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[df035] every pipeline script and installer has its license line" \
 		bash -c 'cd "$1" && [[ -z "$(grep -L "SPDX-License-Identifier" install.bash install.ps1 $(find cicd -type f \( -name "*.bash" -o -name "*.sh" -o -name "*.ps1" -o -name "*.py" \)))" ]]' _ "${root}"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
@@ -8574,3 +8577,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript. [df34d] runs each harness's lines against such a count. 1896 -> 1899.
 ##		- 20261109 JC: CICD_MEM_CAP needs a unit and 1g at least, [df350]. The memory scope's probe passes the run's properties, [df351].
 ##		- 20261109 JC: spawn-count.bash and cicd.bash name their records in UTC, [df385] [df386].
+##		- 20261109 JC: gfs-rotate.bash run directly, [df3fd].
