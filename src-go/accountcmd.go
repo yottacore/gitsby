@@ -590,7 +590,9 @@ const (
 
 // accountSetUsage spells out the 3 words 'account set' takes, with the closed list of
 // keys. No '*' in the examples, since 'pathContains' is folder names, not a glob.
-func accountSetUsage() error {
+func accountSetUsage() error { return usageOf("account set").refuse("") }
+
+func accountSetLines() []string {
 	lines := []string{
 		"Syntax: " + meName + " account set <account> <key> <value>",
 		accountSetIndent + "Writes '<key>: <value>' into the <account> block of the accounts file.",
@@ -605,13 +607,15 @@ func accountSetUsage() error {
 		accountSetPad+accountSetIndent+meName+" account set github.com_my-work-login ghaccount my-work-login",
 		accountSetPad+"Or by a run of folder names the project's path contains:",
 		accountSetPad+accountSetIndent+meName+" account set github.com_my-work-login pathcontains my-employer/github")
-	return &usageError{msg: strings.Join(lines, "\n")}
+	return lines
 }
 
 // accountUnsetUsage is the same layout for the two words 'account unset' takes. A
 // key nothing reads can go too, where the block has one: that is the line the
 // listing calls ignored, and this is the way to be rid of it.
-func accountUnsetUsage() error {
+func accountUnsetUsage() error { return usageOf("account unset").refuse("") }
+
+func accountUnsetLines() []string {
 	lines := []string{
 		"Syntax: " + meName + " account unset <account> <key>",
 		accountSetIndent + "Removes '<key>' from the <account> block of the accounts file, every line of it.",
@@ -622,7 +626,7 @@ func accountUnsetUsage() error {
 		accountSetIndent+"Example:",
 		accountSetPad+"Go back to the default host for an account:",
 		accountSetPad+accountSetIndent+meName+" account unset gitea.com_my-login host")
-	return &usageError{msg: strings.Join(lines, "\n")}
+	return lines
 }
 
 // appendKeyDef adds the '<key>' line of either usage, wrapped under its column.

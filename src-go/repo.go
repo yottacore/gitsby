@@ -173,8 +173,7 @@ func ghRepoState(target string) (repoExistence, string) {
 func (a *app) settleRepoURL() (bool, error) {
 	a.cmd.arg = strings.ToLower(a.cmd.arg)
 	if a.cmd.arg != "" && a.cmd.arg != "https" && a.cmd.arg != "ssh" {
-		return false, syntaxUsage("", "repo url [https|ssh]",
-			placeholder{"[https|ssh]", "Switches origin to that kind of address. Without it, shows which one origin uses."})
+		return false, usageOf("repo url").refuse("")
 	}
 	// Exempt from the repo gate with its 'repo-' siblings, but unlike them it has
 	// nothing to say outside one - it re-spells a remote a repo has to already have.
@@ -183,7 +182,7 @@ func (a *app) settleRepoURL() (bool, error) {
 	}
 	current := a.originURL()
 	if current == "" {
-		return false, usagef("No origin to re-spell. Connect one first: %s repo connect <url | owner/name>", meName)
+		return false, usagef("No origin to re-spell. Connect one first: %s repo connect <url>, or <owner/name> for a GitHub repo.", meName)
 	}
 	if a.cmd.arg != "" {
 		// Any host, not just github.com: re-spelling a remote is text work that the
@@ -235,7 +234,7 @@ func (a *app) cloneDirShown() string {
 // an error. True means main is done.
 func (a *app) settleRepoClone() (bool, error) {
 	if a.cmd.arg == "" {
-		return false, syntaxUsage("No URL given.", "repo clone <url> [directory]", repoURLDef("<url>"), repoDirDef())
+		return false, usageOf("repo clone").refuse("No URL given.")
 	}
 	// 'owner/name' is refused before the plan, not after. It has only ever meant
 	// github.com, so the transport is asked of github.com too.
@@ -299,7 +298,7 @@ func (a *app) settleRepoConnect() error {
 
 func (a *app) settleRepoCreate() error {
 	if a.cmd.arg == "" {
-		return syntaxUsage("No target given.", "repo create <owner/name>", repoOwnerNameDef())
+		return usageOf("repo create").refuse("No target given.")
 	}
 	if !ownerNameRE.MatchString(a.cmd.arg) || pathExists(a.cmd.arg) {
 		return usagef("'%s' isn't a GitHub 'owner/name'; only GitHub repos can be created from here. For a remote that already exists: %s repo connect %s", a.cmd.arg, meName, a.cmd.arg)
@@ -320,7 +319,7 @@ func (a *app) settleRepoCreate() error {
 
 func (a *app) settleRepoConnectTo() error {
 	if a.cmd.arg == "" {
-		return syntaxUsage("No remote configured and no target given.", "repo connect <url | owner/name>", repoURLDef("<url>"), repoOwnerNameDef())
+		return usageOf("repo connect").refuse("No remote configured and no target given.")
 	}
 	if !ownerNameRE.MatchString(a.cmd.arg) || pathExists(a.cmd.arg) {
 		state, reason := a.probeRemote(a.cmd.arg)
@@ -461,17 +460,4 @@ func (a *app) showFilesToPublish() {
 	if a.lastListCount == 0 {
 		a.out.clean("    (nothing - the directory is empty, or everything in it is ignored)")
 	}
-}
-
-// The placeholders more than one 'repo' refusal defines, worded once.
-func repoURLDef(name string) placeholder {
-	return placeholder{name, "The repo's https or ssh address, e.g. https://github.com/pat/app.git."}
-}
-
-func repoDirDef() placeholder {
-	return placeholder{"[directory]", "The folder to clone into. Without it, a folder named after the repo."}
-}
-
-func repoOwnerNameDef() placeholder {
-	return placeholder{"<owner/name>", "A GitHub account or organization, a slash, and the repo's name, e.g. pat/app."}
 }

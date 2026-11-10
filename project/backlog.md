@@ -33,10 +33,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- test.bash [dee5h] fails when the gate run starts more than 6 seconds after its fixture
+	- ID: 2026111011385413
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-113854
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Run `cicd.bash --backlog-run-quick suite` on a loaded box.
+	- Incorrect behavior [Bug]: [dee5h] fails now and then, and passes on a rerun. It failed once on 2026-11-10 at load 10, between 2 passing runs.
+	- Expected behavior [Bug]: It passes however long the run takes to start.
+	- Reproduced [Bug]: Once in 3 runs on b23, 2026-11-10, in the image.
+	- Possible cause [Bug]: fGateRunFolder makes the `_001` folders for the next 6 seconds only, then expects the run to take `_002`. A run that picks its stamp later finds `_001` free.
+	- Origin: fGateRunFolder in test.bash, from the 2026-10-24 CICD reset. No round saw it. Plausible: the cause is read, not reproduced on demand.
+	- Actual cause [Bug]: As read. The window was 6 seconds, and a loaded box took longer than that to start the run.
+	- Actual fix [Bug]: The fixture makes the `_001` folders for 120 seconds ahead.
+	- Branch: cr1110
+	- Test case: [dee5h] itself. With a 7-second sleep put in ahead of the run, it passes. The old 6-second window can't, and it failed on its own once at load 10.
+	- Closed: 20261110-1142
+
 - Code Review 20261110 enhancement 5: The README says nothing about exit statuses to someone scripting gitsby
 	- ID: 2026111010494722
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
@@ -46,11 +65,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions:
 		- Usage errors keep exit 1 (2026-11-10). The README's promise that nothing scripted stops working outweighs the convention, and most scripts test for non-zero anyway.
 	- Decided against: exit 2 for usage errors, as getopt-based tools and bash builtins do, or 129 as git does. A script that tests for exactly 1 would change, and parity.bash would need its usage cases carved out.
+	- Actual fix [Enhancement]: The README's Commands section ends with what a script can rely on: `-q` answers yes and asks nothing, `raw` hands stdout to its tool, and the exit status table, copied from the UI style guide.
+	- Branch: cr1110
+	- Test case: test.bash [df4f7]. It fails against the README before the change, and with the guide's table changed by one letter.
+	- Closed: 20261110-1213
 
 - Code Review 20261110 item 1: An option a command doesn't read is taken and dropped
 	- ID: 2026111010494811
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104948
 	- Opened by: jim-collier
@@ -62,11 +85,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: `--staged` in scanPassthrough from 9f53a91, and `--direct` from e1cc030, both 2026-10-05. `--public` and `--private` from 8da8951, 2026-08-17. A 2026-08 round fixed trailing arguments that were silently ignored, not options. No round saw this. Confirmed.
 	- Notes: 1 table of options and the commands that read each, used by both parsers, is where a new option can't get past the check. `-m` on `br create` and `br switch` is read by the commit that parks work, so it stays there.
 	- Against: A script that passes an option to a command that ignores it starts failing.
+	- Actual cause [Bug]: Only `--staged` was checked against the commands that read it, and `raw`'s scan took every option and kept 3.
+	- Decisions:
+		- `-q`, `--no-fetch`, `--any-identity` and `--config` stay valid on every command. `--no-fetch` asks for nothing a command could fail to do where nothing fetches, and parity `[db601]` pins v2.1.0 taking `-NoFetch` ahead of `raw`.
+		- So the refused set is `-m` outside the 10 commands that commit, `--direct` outside `sync`, `--public` and `--private` outside `repo create`, and `--staged` as before, now ahead of `raw` too.
+	- Actual fix [Bug]: 1 table of options, `optSpecs` in args.go, which both parsers read. An option with a command list is refused on any other command, as "-m works with pullcom, ... and repo connect." `checkStagedFlag` folded into it, with the same wording.
+	- Swept: every option the 2 parsers took. design.md's Execution flow and the UI style guide's Commands and options say the rule.
+	- Branch: cr1110
+	- Test case: Go [df4e9] and [df4ea], test.bash [df4eb] to [df4ed], [ddht9] kept. [df4e9], [df4ea] and [ddht9] fail with the check stubbed out. [df4eb] and [df4ec] fail against the build before the fix.
+	- Checks changed: test.bash [db5yb] loops over `-NoFetch` and `-AnyIdentity` only. It pinned `-Public` ahead of `raw` being taken rather than blamed on `raw`, and `-Public` is now refused by its own name, which [df4eh] checks. The point it was written for still holds.
+	- Acceptance signoff: Quick gate passed, all areas.
+	- Closed: 20261110-1140
 
 - Code Review 20261110 item 2: The docs call -q the machine-readable mode, and its output is the same human layout
 	- ID: 2026111010494798
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
@@ -75,11 +109,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10, `gitsby -q status` in a temp repo.
 	- Origin: style-guide_ui-ux.md:176 from 578b34e, and design.md:153 from 483ebc5, 2026-10-06. No round saw it. Confirmed.
 	- Notes: A real machine-readable mode would be a new feature, against the `raw`-only non-goal, and isn't proposed here.
+	- Actual fix [Bug]: design.md, the UI style guide and printBanner's comment call `-q` the unattended mode. The guide's Scripts section says what it does: answers yes, asks nothing, and leaves out the build line, with the rest of the output unchanged.
+	- Swept: every "machine-readable" in the Go source, the docs and the scripts.
+	- Branch: cr1110
+	- Test case: none, wording only. What the guide now says `-q` does is pinned by [dbshn], [dbfhk] and the no-terminal checks.
+	- Closed: 20261110-1127
 
 - Code Review 20261110 item 3: One placeholder has several names across the help, the README and the Syntax lines
 	- ID: 2026111010494785
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
@@ -89,48 +128,83 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: help.go:65 from 2206206, 2026-10-05, help.go:78 from 197677f, 2026-10-22, and README.md:105 from d446496, 2026-07-26. No round saw it. Confirmed.
 	- Notes: The help's left column is 20 wide, which is why it shortens them. Widening it, or moving the arguments into the description as `account set` already does, are the 2 ways.
 	- Decided against: making the Syntax line's `e.g. 'work', 'personal'` match the `github.com_my-work-login` examples. An account name is any string, and both are valid.
+	- Actual cause [Bug]: Each Syntax line, the help's command list and the README's table wrote their placeholders out by hand. The Syntax lines disagreed with each other too: `br create <new branch name>` against `<branch>`, and `repo connect` as both `[url | owner/name]` and `<url | owner/name>`.
+	- Decisions:
+		- `[message]`, `[version]`, `[directory]` and `<number>` everywhere, the Syntax lines' names. `repo connect` takes `[<url> | <owner/name>]`, so its Syntax line names the placeholders it defines.
+		- The help lists `pr`, `pr <number>`, `pr create [title]` and `pr ok <number>` on 4 lines, the way the README does, and `raw <tool> <arguments ...>` on 1. A syntax too long for the 20-wide column moves into the line's text, as `account set` already did.
+	- Actual fix [Bug]: 1 table, `usages` in usage.go, with each command's placeholders, their meanings and its help line. Every Syntax refusal and the help's command list read it, and a noun's block, such as bare `repo`, is built from its verbs. The README's Commands table uses the same names.
+	- Swept: every `syntaxUsage` call, the 3 inline `repo connect <url | owner/name>` fix lines, app.go's comment, and the README table. design.md's Output sweep has a row for it. The fix lines now say `repo connect <url>, or <owner/name> for a GitHub repo`, with no `|` a pasted line would hand the shell.
+	- Checks changed: test.bash [dbefw] and [dbefx] pinned the help's `pullcom [msg]` and `br merge [msg]`, to show the renamed commands lead. They are off, and [df4ej] and [df4ek] check the same with `[message]`.
+	- Branch: cr1110
+	- Test case: Go [df4ef], [df4eg] and [df4f8], test.bash [df4ee]. [df4f8] fails with a fix line put back to the `|` form. [df4ef] and [df4eg] fail with a placeholder renamed in the table. [df4ee] fails against the README before the fix, and against the build before it.
+	- Acceptance signoff: Quick gate passed, all areas.
+	- Closed: 20261110-1140
 
 - Code Review 20261110 enhancement 1: pr takes no list, and an unknown word after it gets the Syntax block
 	- ID: 2026111010494773
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
 	- Requirements [Feature]: `pr list` is the same as a bare `pr`, as `br list` and `account list` are, and the help shows `pr [list]`. An unknown word after `pr` gets the line the other nouns give, such as "Unknown 'pr' subcommand 'foo'. One of: list, create, ok, or a number." `pr` folds to tokens in collapseCommand like `repo`, `br` and `account`, so sortCommand stops parsing subcommand words for 1 noun only.
 	- Origin: args.go:239 from 3d22222, 2026-08-17, the port, which kept 2.1.0's `pr` handling. No round saw it. Confirmed: `gitsby pr list` and `gitsby pr foo` both print the Syntax block and exit 1.
 	- Decided against: listing `acct`, `account show` and `br clean` beside `new` and `go` in design.md. They are v2.1.0 spellings, kept by the permanent alias rule like the rest.
+	- Decisions:
+		- The flat name stays `pr`, with the verb settled in collapseCommand. About 15 sites read the verb from `pr.sub`, and renaming them to tokens before rc.1 would change a lot for what it buys. What the item asked for, an unknown word refused the way the other nouns refuse one, needs only the word settled.
+	- Actual fix [Enhancement]: `pr list` is a bare `pr`, and the help and the README show `pr [list]`. An unknown word gets "Unknown 'pr' subcommand 'foo'. One of: list, create, ok, or a pull request number." sortPr's number check, which collapseCommand now makes, is gone.
+	- Swept: design.md's `pr <n>` is `pr <number>`.
+	- Branch: cr1110
+	- Test case: Go [df4em], test.bash [df4en] and [df4ep]. [df4em] fails with the `pr` case taken out of collapseCommand, and [df4en] and [df4ep] fail against the build before it.
+	- Closed: 20261110-1150
 
 - Code Review 20261110 enhancement 2: -- isn't taken as the end of options
 	- ID: 2026111010494760
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
 	- Requirements [Feature]: `--` ends gitsby's options, and everything after it is positional, as POSIX's utility guidelines and git have it. `gitsby pullcom -- '-v bump'` commits with that message. A `--` after `raw <tool>` stays the tool's.
 	- Origin: switchRegex at args.go:21 from 8da8951, 2026-08-17, which matches neither `-` nor `--`. 2.1.0 did the same. Confirmed: `gitsby -q pullcom --` made a commit with the subject `--`, and `gitsby pullcom -- msg` refuses with "Unexpected extra argument 'msg'". Today `-m` is the only way to give a message that starts with a dash.
 	- Notes: gitsby already passes `--` to git ahead of a clone's folder, for the same reason.
+	- Actual fix [Enhancement]: Both parsers take a first `--` as the end of gitsby's options. A value an option is waiting for still wins, so `-m --` is the message `--`. The help's option list, the README's Options line and the UI style guide name it.
+	- Branch: cr1110
+	- Test case: Go [df4eq], test.bash [df4er]. [df4eq] fails against the parser before it, and [df4er]'s command made no commit with the build before it.
+	- Checks changed: fuzz.bash's bad subcommands no longer include `--`, so [dadv5], [db002] and [db003] don't feed it. After a noun it now leaves the bare noun, which `br`, `repo url` and `account` take. It stays among the bad commands for [dabe3], where it is still refused.
+	- Closed: 20261110-1155
 
 - Code Review 20261110 enhancement 3: A command's --help prints the whole help screen, not that command's syntax
 	- ID: 2026111010494747
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
 	- Requirements [Feature]: `--help` or `-h` after a command prints that command's Syntax block, the one a wrong argument count gets, and exits 0. A bare `--help` keeps the whole screen. Commands with no Syntax block yet get one.
 	- Origin: args.go:62 from 2a3ab8f, 2026-09-28. Confirmed: `gitsby br create -h` prints the full help. `--help` after a command was made to work on purpose in the 2.x days, since asking a subcommand for help is the reflex every git user has. Syntax blocks exist for `repo`, `pr`, `raw`, `account set` and `account unset`.
+	- Decisions:
+		- `help <command>` and `-h <command>` ask about that command too, as `git help` does. Before, a help word in the first slot always printed the whole screen.
+		- The block also names the options the command takes, read from the same option table as the refusals.
+		- A noun alone, such as `br --help`, gets the noun's block with every verb, and a line naming each verb's own `--help`.
+	- Actual fix [Enhancement]: `helpFor` in usage.go reads the command words past the options and prints that entry of the `usages` table: its Syntax block, its help line, and its options. `raw --help` stops at gitsby's parser instead of being refused as an option after `raw`.
+	- Branch: cr1110
+	- Test case: Go [df4f1], test.bash [df4f2] to [df4f5]. [df4f1] fails with helpFor stubbed out, and [df4f2] to [df4f5] each fail against the build before it.
+	- Closed: 20261110-1205
 
 - Code Review 20261110 enhancement 4: The help's opening lines leave out the plan and the question
 	- ID: 2026111010494735
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
 	- Requirements [Feature]: The opening paragraph of `gitsby --help` says that a command which changes anything shows the git it will run and asks first, as well as checking state.
 	- Origin: help.go:29 from 4918b5b, 2026-08-19. No round saw it. Confirmed by reading: the help says each command checks state and is safe to re-run. The README opens on showing the git and asking, and that is design.md's second goal. design.md:126 says the help is the only documentation most people read.
+	- Actual fix [Enhancement]: The help's opening says a command that changes anything shows the repo state and the exact git it will run, then asks first, before the state checks. `--about` prints the same lines.
+	- Branch: cr1110
+	- Test case: test.bash [df4f6], which fails against the build before it.
+	- Closed: 20261110-1208
 
 - Demo: add a br merge scene, and hold screens long enough to read
 	- ID: 2026111010125300

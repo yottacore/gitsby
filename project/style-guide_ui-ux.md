@@ -54,6 +54,12 @@ New output follows this guide. Where the program and the guide disagree, one of 
 
 - gitsby's own options go before `raw <tool>`. Everything after the tool name belongs to that tool.
 
+- `<command> --help`, `-h` after it, or `help <command>` prints that command's Syntax block, what it does, and the options it takes, and exits 0. A noun alone gets the noun's block. Anything else gets the whole help screen.
+
+- `--` ends gitsby's options, and what follows is positional, as POSIX and git have it. After `raw <tool>`, a `--` is the tool's.
+
+- An option a command doesn't read is refused, naming the commands that take it, and never dropped. `-q`, `--no-fetch`, `--any-identity` and `--config` are taken everywhere.
+
 ## Layout
 
 - Output starts with a blank line and ends with one. Sections are split by a single blank line, never by a rule, and there are never two blanks in a row. A refusal is the exception: it ends with two, to match the 2.1.0 scripts.
@@ -173,6 +179,6 @@ gitsby: Another run is editing the accounts file.
 
 ## Scripts
 
-- `-q` is the machine-readable mode. It prints no build line and asks nothing.
+- `-q` is the unattended mode. It answers yes, asks nothing, and prints no build line. The rest of the output is the same as without it, so there is no machine-readable mode beyond the exit status and `raw`.
 
 - `raw` gives stdout to the tool alone. The one line naming the account goes to stderr, and `-q` silences it.

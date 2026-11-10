@@ -118,12 +118,17 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 - The preview is a static recipe per command, with `*` marking steps that only happen if the repo state calls for them. It has to match what the command actually does, including where the command branches on state.
 
+- An option a command doesn't read is refused, and the refusal names the commands that take it. Dropping it would make a typo look like it did what was meant. Decided 2026-11-10.
+	- `-q`, `--no-fetch`, `--any-identity` and `--config` are taken by every command. Each means something everywhere, or asks for nothing a command could fail to do, like `--no-fetch` where nothing fetches. v2.1.0 took `-NoFetch` ahead of `raw`, and still does here.
+	- Both parsers read one table of options, so the options ahead of `raw` can't drift from the rest.
+
 - No command shells out through `eval`. Arguments are passed as arrays, so a message or branch name is never re-parsed.
 
 - Every program gitsby runs, git included, is found by one lookup that passes over any PATH entry that is gitsby itself. A link named `gh` to gitsby would otherwise start gitsby with gh's arguments. With nothing else on PATH, the command refuses with "Not found in path" and names that entry. The program still sees its own name as argv[0].
 	- Started under the name of a tool `raw` runs, gitsby refuses and points to `gitsby raw <name>`. Acting as that tool would be one more way in, and nothing needs it. Any other name still runs, since the release files are named like `gitsby-linux-amd64`.
 
 - Any command named inside an error message, or in the built-in help, has to be one the parser still accepts. The help is the only documentation most people read, so it drifting is a defect, not a typo.
+	- `--help` after a command, or `help` before one, prints only that command: its Syntax block, what it does, and the options it takes. It comes from the same table as the help screen's list and the Syntax refusals, so the 3 can't disagree. A noun alone gets the noun's block, and anything unknown the whole screen. Decided 2026-11-10.
 
 - A recursive or forced removal may only target a path the running script itself created, and has to be able to prove it.
 	- In practice that means the path came straight from `mktemp` and nothing else ever assigns it.
@@ -150,7 +155,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- It is derived from the commit's own date, not from the clock at build time. A clock-derived number would change on every rebuild, which would mean nobody, including us, could rebuild a published binary to its published checksum - the same property `-buildvcs=false` exists to protect. As a consequence the release cross-builds twice: once in phase 1 as a compile gate, and again in phase 3 from the tagged commit, which is where the uploaded bytes come from.
 	- A hand-run `go build` stamps nothing and reports no build number at all, rather than one invented from the clock. A number that moves every minute would say the opposite of what a build number means.
 	- A build between releases also shows the commit's date, as `build dbrk8 (2026-10-23)`, since nobody can read a date off a build number. It's the local date of whoever runs it, worked out at run time from the same commit time, so rebuilds still match. A release is a version that is a tag's own. Anything git describe adds past a tag, a bare hash, and 0.0.0 aren't.
-	- Output starts with the build line so a bug report carries it without being asked. Not under `-q`, which is the machine-readable mode, and never on `raw`, which exists to hand a tool's output back unchanged. `--version` and the help screen already printed a version line and gained the build number there instead of a second line saying the same thing.
+	- Output starts with the build line so a bug report carries it without being asked. Not under `-q`, the unattended mode, and never on `raw`, which exists to hand a tool's output back unchanged. `--version` and the help screen already printed a version line and gained the build number there instead of a second line saying the same thing.
 
 - An account's credentials are only credentials where that account banks.
 	- Accounts gained `host` (defaulting to `github.com`, which is what every config written before the key existed meant) and `user`. If an account's host is not the host `origin` is on, nothing is applied and the identity block names both hosts.
@@ -210,7 +215,8 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- `repo connect` refuses remotes that already have history rather than auto-merging: forgiving means not destroying either side. Reconciling unrelated histories stays raw-git territory.
 	- `owner/name` targets go through gh (honoring gh's git_protocol setting); plain URLs never touch gh, and can only be connected to, never created.
 
-- Pull requests are subcommands of one noun (`pr`, `pr create`, `pr <n>`, `pr ok <n>`) rather than separate top-level verbs.
+- Pull requests are subcommands of one noun (`pr`, `pr create`, `pr <number>`, `pr ok <number>`) rather than separate top-level verbs.
+	- `pr list` is a bare `pr`, as `br list` and `account list` are for theirs (2026-11-10).
 	- This puts everything about a PR in one place to look, and matches how `repo` and `br` group.
 	- `pr create` defaults its title to the last commit subject. The alternative, requiring a title, was rejected as inconsistent with `pullcom`/`sync`, which never require a message. Without one they open git's editor, and under `-q` they make one up. The preview shows the resolved title before the prompt, so a bad default is visible rather than surprising.
 
@@ -568,7 +574,7 @@ The rules these entries lead to are collected in [style-guide_ui-ux.md](style-gu
 
 #### Output sweep
 
-These 4 output rules came back after 2 sweeps, each time at sites the sweep's grep didn't reach. A sweep of the output checks every row, with the search in its second column, not just the sites a review named.
+The first 4 of these output rules came back after 2 sweeps, each time at sites the sweep's grep didn't reach. A sweep of the output checks every row, with the search in its second column, not just the sites a review named.
 
 | Rule                                           | What to search
 | :---                                           | :---
@@ -576,6 +582,7 @@ These 4 output rules came back after 2 sweeps, each time at sites the sweep's gr
 | A path on its own labeled line, in full        | Every path, file, folder or origin passed to `usagef`, `usageSubf`, `errorf` or `status`, or joined into a string. Each goes through `nativePath`, or `cloneDirShown` for a clone's folder.
 | A config key spelled the way the file takes it | Every `account set` literal in the Go source, which a Go test checks, and every key named in accounts.md, README.md and the changelog's vNEXT section.
 | One word per thing                             | Every name for the same thing in output: labels, the accounts file, and the old config formats.
+| One name per placeholder                       | The `usages` table in usage.go, which the help and every Syntax line read, and any placeholder written into another message. test.bash compares the README's Commands table with the help.
 
 ### Testing
 

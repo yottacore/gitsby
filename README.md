@@ -87,33 +87,32 @@ The full list of opinions, and how the workflow lines up against GitFlow, GitHub
 
 What you reach for daily is a one-word command. Everything else is grouped under a noun, so the whole set is discoverable from a handful of starting points. `repository` and `branch` spell out if you prefer them.
 
-| Command              | Args          | What it does
-| :--                  | :--           | :--
-| `pullcom`            | `[msg]`       | Pull updates, then commit all local changes. Do frequently!
-| `sync`               | `[msg]`       | Pull, commit, and push. Do infrequently.
-| `status`             |               | Fetch and show current status.
-| `whoami`             |               | Show who commands in this folder act as: account, ssh key, commit author, git host login.
-| `release`            | `[ver]`       | Cut a release: merge `dev` into `main`, tag, push. No version: the next one after the latest tag.
-| `br`                 |               | Fetch and list branches (`br list` is the same thing).
-| `br create`          | `<branch>`    | Create a new branch off `dev`/`main`. Uncommitted work on `dev`/`main` comes along; on another branch it is parked there first.
-| `br hotfix`          | `<name>`      | Branch off the default branch as `hotfix/<name>`, to correct what's already published. Landing it carries the change back to `dev`.
-| `br switch`          | `[branch]`    | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
-| `br merge`           | `[msg]`       | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
-| `br prune`           |               | Delete branches already merged into `dev`/`main`, local + remote. Unmerged ones, and the branch you're on, are kept.
-| `repo clone`         | `<url> [dir]` | Clone a repo you don't have yet (checks out `dev` if it has one). Re-run is a no-op.
-| `repo create`        | `<owner/name>`| `git init` if needed, commit, then create the GitHub repo via [gh](https://github.com/cli/cli) and push to it (`--public`/`--private`; private by default).
-| `repo connect`       | `[target]`    | Publish local work to a remote that already exists and is empty: `git init` if needed, commit, push. Takes a URL or `owner/name`.
-| `repo url`           | `[https\|ssh]` | Show how `origin` authenticates, or switch it between the two. Nothing else about the repo changes.
-| `pr`                 |               | Lists PRs, via [gh](https://github.com/cli/cli) on GitHub, [glab](https://gitlab.com/gitlab-org/cli) on GitLab, or [tea](https://gitea.com/gitea/tea) on Gitea.
-| `pr <#>`             |               | View a PR plus its diff.
-| `pr create`          | `[title]`     | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
-| `pr ok`              | `<#>`         | Approve and merge a PR.
-| `account`            |               | Show your configured accounts, and which one this folder uses (`account list` is the same thing).
-| `account set`        | `<a> <k> <v>` | Set one key of one account in the accounts file, e.g. `account set github.com_my-work-login path ~/dev/work`. Run it bare for the keys it takes.
-| `account unset`      | `<a> <k>`     | Remove one key from one account, every line of it, e.g. `account unset github.com_my-work-login host`.
-| `account apply`      |               | Teach plain `git` the same folder rules, so `git` outside Gitsby behaves identically.
-| `raw git`            | `<args ...>`  | Run `git` as the account this folder belongs to. Everything after `git` is git's, verbatim.
-| `raw gh`             | `<args ...>`  | The same, for `gh`. Also `tea`, `glab`, `lazygit` and `tig`.
+| Command         | Args                      | What it does
+| :--             | :--                       | :--
+| `pullcom`       | `[message]`               | Pull updates, then commit all local changes. Do frequently!
+| `sync`          | `[message]`               | Pull, commit, and push. Do infrequently.
+| `status`        |                           | Fetch and show current status.
+| `whoami`        |                           | Show who commands in this folder act as: account, ssh key, commit author, git host login.
+| `release`       | `[version]`               | Cut a release: merge `dev` into `main`, tag, push. No version: the next one after the latest tag.
+| `br`            | `[list]`                  | Fetch and list branches.
+| `br create`     | `<branch>`                | Create a new branch off `dev`/`main`. Uncommitted work on `dev`/`main` comes along; on another branch it is parked there first.
+| `br hotfix`     | `<name>`                  | Branch off the default branch as `hotfix/<name>`, to correct what's already published. Landing it carries the change back to `dev`.
+| `br switch`     | `[branch]`                | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
+| `br merge`      | `[message]`               | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
+| `br prune`      |                           | Delete branches already merged into `dev`/`main`, local + remote. Unmerged ones, and the branch you're on, are kept.
+| `repo clone`    | `<url> [directory]`       | Clone a repo you don't have yet (checks out `dev` if it has one). Re-run is a no-op.
+| `repo create`   | `<owner/name>`            | `git init` if needed, commit, then create the GitHub repo via [gh](https://github.com/cli/cli) and push to it (`--public`/`--private`; private by default).
+| `repo connect`  | `[<url> \| <owner/name>]` | Publish local work to a remote that already exists and is empty: `git init` if needed, commit, push. Takes a URL or `owner/name`.
+| `repo url`      | `[https\|ssh]`            | Show how `origin` authenticates, or switch it between the two. Nothing else about the repo changes.
+| `pr`            | `[list]`                  | Lists PRs, via [gh](https://github.com/cli/cli) on GitHub, [glab](https://gitlab.com/gitlab-org/cli) on GitLab, or [tea](https://gitea.com/gitea/tea) on Gitea.
+| `pr`            | `<number>`                | View a PR plus its diff.
+| `pr create`     | `[title]`                 | Push the current branch and open a PR against `dev`/`main` (no title: the last commit subject).
+| `pr ok`         | `<number>`                | Approve and merge a PR.
+| `account`       | `[list]`                  | Show your configured accounts, and which one this folder uses.
+| `account set`   | `<account> <key> <value>` | Set one key of one account in the accounts file, e.g. `account set github.com_my-work-login path ~/dev/work`. Run it bare for the keys it takes.
+| `account unset` | `<account> <key>`         | Remove one key from one account, every line of it, e.g. `account unset github.com_my-work-login host`.
+| `account apply` |                           | Teach plain `git` the same folder rules, so `git` outside Gitsby behaves identically.
+| `raw`           | `<tool> <arguments ...>`  | Run `git`, `gh`, `tea`, `glab`, `lazygit` or `tig` as the account this folder belongs to. Everything after the tool's name is the tool's, verbatim.
 
 `pullcom` was once called `update`, and `br merge` was `br land`. The old spellings still work and always will, so nothing you have typed or scripted stops working. `pullcom` also answers to `pull`, and to anything between it and the full word.
 
@@ -123,7 +122,7 @@ There is deliberately no bare `commit`, and no bare `pull` that skips the commit
 
 `br prune` deletes a branch only when its tip is provably an ancestor of the merge target, re-checked at the moment of each delete - not `git branch -d`'s upstream-containment test, which answers a different question and gets it wrong in both directions. That exactness is what the workflow buys: every branch lands with a real merge commit, so "merged" is a fact, not a guess. Unmerged work always survives it, and there is deliberately no `--force`.
 
-Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--direct` (let `sync` push your own work straight to `main` or `dev`), `--staged` (commit only what is staged, see below), `--any-identity`, `--config FILE` (read accounts from somewhere other than the usual place), `-h`, `-v`, `--about`, `--donate`.
+Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (assume yes; no prompts), `--public`/`--private` (visibility for `repo create`; private by default), `--no-fetch` (skip the fetch and the pull), `--direct` (let `sync` push your own work straight to `main` or `dev`), `--staged` (commit only what is staged, see below), `--any-identity`, `--config FILE` (read accounts from somewhere other than the usual place), `--` (end of options, so a message can start with a dash), `-h` (after a command, just that command's syntax and options), `-v`, `--about`, `--donate`.
 
 **`--staged` commits what you staged and nothing else.** It is for a tree that holds edits which aren't part of the change. `pullcom`, `sync`, `pr create`, `release`, and the `br` commands that commit before they move take it. The plan lists which files get committed and which stay behind, and unstaged edits and untracked files stay where they are. On a branch switch they come along, the way plain `git` carries them. Where git would refuse a pull or a checkout over them, gitsby refuses before it starts, with nothing done. Without the flag nothing changes: every command commits the whole tree.
 
@@ -134,6 +133,14 @@ Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (as
 - The ones that exist to publish - `sync`, `pr create`, `pr ok`, `release` - refuse up front and say what to do instead. None of them fails halfway through, and none reports success having sent nothing.
 
 **Publishing a directory shows you the directory first.** `repo create` and `repo connect` list every file they are about to publish, before asking. The list is what `git add --all` will actually add, `.gitignore` and all - so a stray `.env` is visible while you can still say no.
+
+**In a script**, `-q` answers yes and asks nothing, and `raw` hands stdout to its tool alone. The rest of the output is for people. What a script reads is the exit status:
+
+| Exit status | When
+| :---        | :---
+| 0           | Success, and "nothing to do"
+| 1           | A refusal, a failed step, or a "no" at the prompt
+| The tool's  | `raw` hands back whatever the tool exited with
 
 ## Multiple accounts
 

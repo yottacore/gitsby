@@ -40,22 +40,17 @@ func (a *app) sortPr() error {
 	case "ok":
 		a.pr.sub, a.pr.num = "ok", a.cmd.arg2
 		if !prNumRE.MatchString(a.pr.num) {
-			return syntaxUsage("", "pr ok <number>", prNumberDef())
+			return usageOf("pr ok").refuse("")
 		}
-	case "create", "new":
+	case "create":
 		a.pr.sub = "create"
 		a.pr.title = a.opt.message // -m wins, same as everywhere else
 		if a.pr.title == "" {
 			a.pr.title = a.cmd.arg2
 		}
 	case "":
-	default:
+	default: // a number, since collapseCommand refused anything else
 		a.pr.num = a.cmd.arg
-		if !prNumRE.MatchString(a.pr.num) {
-			return syntaxUsage("", "pr [create [title] | <number> | ok <number>]",
-				placeholder{"[title]", "The new pull request's title. Without it, the last commit's subject."},
-				prNumberDef())
-		}
 	}
 	return nil
 }
@@ -66,7 +61,7 @@ func (a *app) sortPr() error {
 // never use, and the answer never mentioned the host that decided it.
 func (a *app) settlePrTool() error {
 	if !a.hasOrigin() {
-		return usagef("No 'origin' remote, so there is nowhere to open a pull request. Connect one first: %s repo connect <url | owner/name>", meName)
+		return usagef("No 'origin' remote, so there is nowhere to open a pull request. Connect one first: %s repo connect <url>, or <owner/name> for a GitHub repo.", meName)
 	}
 	a.pr.tool, a.pr.cli = a.originTool()
 	if a.pr.tool == toolGlab && !a.acct.bypassed {
@@ -642,8 +637,4 @@ func (a *app) cmdPrAccept() error {
 		return a.backMergeToDev()
 	}
 	return nil
-}
-
-func prNumberDef() placeholder {
-	return placeholder{"<number>", "The pull request's number, e.g. 42. A bare 'pr' lists them."}
 }

@@ -85,6 +85,12 @@ func run(out *printer, argv []string) error {
 	}
 	switch strings.ToLower(argv[0]) {
 	case "-h", "--help", "help":
+		// 'help br create' asks about br create, as '-h' after it does.
+		if block := helpFor(argv[1:]); block != nil {
+			a.printCmdHelp(block)
+			out.clean("")
+			return nil
+		}
 		a.printHelp()
 		return nil
 	case "-v", "--ver", "--version", "version":
@@ -172,7 +178,11 @@ func (a *app) settleCommand(argv []string) error {
 	if info != "" {
 		switch info {
 		case "help":
-			a.printHelp()
+			if block := helpFor(argv); block != nil {
+				a.printCmdHelp(block)
+			} else {
+				a.printHelp()
+			}
 		case "about":
 			a.printAbout()
 		case "donate":
@@ -199,7 +209,7 @@ func (a *app) settleCommand(argv []string) error {
 	if a.cmd, err = sortCommand(a.cmd, &a.opt); err != nil {
 		return err
 	}
-	if err := checkStagedFlag(a.cmd, a.opt); err != nil {
+	if err := checkOptionsUsed(typedName(a.cmd), a.opt); err != nil {
 		return err
 	}
 	// Whether -q was typed, captured before the rule below writes the same field -
@@ -363,7 +373,7 @@ func (a *app) preflight() error {
 		// With no remote at all the check below never trips - there is nothing to find
 		// unreachable - and the tag would be cut, pushed nowhere, and reported as done.
 		if !a.hasOrigin() {
-			return usagef("No 'origin' remote, and a release nobody can fetch isn't one. Connect one first: %s repo connect <url | owner/name>", meName)
+			return usagef("No 'origin' remote, and a release nobody can fetch isn't one. Connect one first: %s repo connect <url>, or <owner/name> for a GitHub repo.", meName)
 		}
 		if err := a.requireOnline("release", "A release nobody can fetch isn't one."); err != nil {
 			return err
@@ -411,14 +421,12 @@ func (a *app) preflightBranch() error {
 	switch a.cmd.name {
 	case "br-create":
 		if a.cmd.arg == "" {
-			return syntaxUsage("No branch name given.", "br create <new branch name>",
-				placeholder{"<new branch name>", "The branch to create off " + mergeTargetLabel + ", e.g. login-form."})
+			return usageOf("br create").refuse("No branch name given.")
 		}
 		return a.checkNewBranchName(a.cmd.arg)
 	case "br-hotfix":
 		if a.cmd.arg == "" {
-			return syntaxUsage("No name given.", "br hotfix <name>",
-				placeholder{"<name>", "The fix's branch name, e.g. crash-on-start. It is created as hotfix/<name>, off the default branch."})
+			return usageOf("br hotfix").refuse("No name given.")
 		}
 		// The prefix is the marker, so put it on ourselves - and accept it if the user
 		// typed it.

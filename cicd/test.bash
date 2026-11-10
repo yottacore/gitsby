@@ -749,14 +749,15 @@ fGateKeepTempImage(){
 fGateRunFolder(){
 	local t="${gateDir}/tmp-folder" rc=0 i line="" dir=""
 	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}/host/gitsby" "${t}/other"
-	for i in 0 1 2 3 4 5; do mkdir -p "${t}/host/gitsby/$(date -u -d "+${i} seconds" +%Y%m%d-%H%M%S)_001"; done
+	## Every second for 2 minutes, since a loaded box can take several to start the run.
+	for ((i = 0; i < 120; i++)); do mkdir -p "${t}/host/gitsby/$(date -u -d "+${i} seconds" +%Y%m%d-%H%M%S)_001"; done
 	fGateStub "${gateDir}/cicd/test.bash" test "printf 'tmp=%s %s %s pid=%s\\n' \"\${TMPDIR:-}\" \"\${TEMP:-}\" \"\${TMP:-}\" \"\$(cat \"\${TMPDIR:-}/run.pid\" 2>/dev/null)\" >> '${gateCalls}'"
 	gateHostTemp="${t}/host" TMPDIR="${t}/other" fGateStatus 0 --no-container --backlog-run-quick suite || rc=1
 	line="$(sed -n 's/^tmp=//p' "${gateCalls}")"
 	dir="${line%% *}"
 	[[ "${dir}" =~ ^${t}/host/gitsby/[0-9]{8}-[0-9]{6}_002$ && "${line}" =~ ^${dir}\ ${dir}\ ${dir}\ pid=[0-9]+$ ]] || rc=1
 	## Gone once the run ended, and nothing went to TMPDIR. The names taken are left alone.
-	[[ ! -e "${dir}" && -z "$(ls -A "${t}/other")" && "$(compgen -G "${t}/host/gitsby/*_001" | wc -l | tr -d ' ')" == 6 ]] || rc=1
+	[[ ! -e "${dir}" && -z "$(ls -A "${t}/other")" && "$(compgen -G "${t}/host/gitsby/*_001" | wc -l | tr -d ' ')" == 120 ]] || rc=1
 	fGateStub "${gateDir}/cicd/test.bash" test
 	fSafeRm_IfThere "${t:?}"
 	((rc == 0))
@@ -1573,6 +1574,19 @@ fReadmeRecipeMatches(){ local line="" both="" flags="" ld=""
 fHelpCountsTen(){ local help="" n=""; help="$("${gitsby}" --help)"
 	n="$(awk '/^Options:/{exit} /^Common commands:/{f=1} f && /^  [a-z]/{print $1}' <<< "${help}" | sort -u | wc -l)"
 	[[ "${n// /}" == "10" ]] && grep -qF 'Gitsby has ten' "${here}/../README.md" ;}
+## Each command and its placeholders, 1 per line, from the help and from the README's
+## Commands table. A help line too long for its column starts its text with them.
+fHelpSyntaxes(){ local help=""; help="$("${gitsby}" --help)" || return 1
+	awk '/^Options:/{exit} /^Common commands:/{f=1} f && /^  [a-z]/' <<< "${help}" \
+	| sed -E 's/^  //; s/^([^:]*[^ .:]) *\.*: /\1\t/' \
+	| awk -F'\t' '{ if ($1 !~ /[<[]/ && $2 ~ /^[<[]/) { sub(/\. .*/, "", $2); print $1 " " $2 } else print $1 }' | sort ;}
+fReadmeSyntaxes(){ awk '/^\| Command /{f=1; next} f && !/^\|/{exit} f && /^\| `/' "${root}/README.md" | sed 's/\\|/\x01/g' \
+	| awk -F'|' '{ c=$2; a=$3; gsub(/[` ]+$|^[` ]+/, "", c); gsub(/[` ]+$|^[` ]+/, "", a); gsub(/\x01/, "|", a); print (a == "" ? c : c " " a) }' | sort ;}
+## The exit status table, as one file and then the other has it.
+fExitTable(){ awk '/^\| Exit status/{f=1} f && !/^\|/{exit} f' "$1" ;}
+fExitTablesMatch(){ local readme="" guide=""
+	readme="$(fExitTable "${root}/README.md")"; guide="$(fExitTable "${root}/project/style-guide_ui-ux.md")"
+	[[ -n "${readme}" && "${readme}" == "${guide}" ]] ;}
 fRunSuite(){
 	fEcho_Clean "suite: ${1} (${gitsby})"
 
@@ -1589,6 +1603,8 @@ fRunSuite(){
 	fAssertOut  "[ddk4g] help gives account set its args"       '^  account set \.*: <account> <key> <value>\. ' "${gitsby}" --help
 	fAssertOut  "[ddk4h] help gives account unset its args"     '^  account unset \.*: <account> <key>\. ' "${gitsby}" --help
 	fAssert     "[ddj3j] README's command count matches the help" fHelpCountsTen
+	fAssert     "[df4ee] README's Commands table and the help name the same commands and placeholders" diff <(fHelpSyntaxes) <(fReadmeSyntaxes)
+	fAssert     "[df4f7] README's exit status table is the UI style guide's" fExitTablesMatch
 	## A pasted step line has to run as shown, so it quotes what the plan quotes.
 	fAssert     "[ddj3g] a step line quotes the message the way the plan does" \
 		fPlanRan 'git commit -m' bash -c "d='${work}/$1-quoted' && git init --quiet \"\${d}\" && cd \"\${d}\" && echo q > f && '${gitsby}' -q pullcom -m 'two words; here'"
@@ -1598,6 +1614,13 @@ fRunSuite(){
 	fAssert     "[dafqy] --help works after a command"     "${gitsby}" update --help
 	fAssert     "[dafqz] --help works after noun and verb" "${gitsby}" br create --help
 	fAssert     "[dafr0] -h works after a command"         "${gitsby}" update -h
+	fAssertOut  "[df4f6] help opens on showing the git and asking first"  '^shows the repo state and the exact git it will run, then asks first\.'  "${gitsby}" --help
+	## A command's --help is its own Syntax block, not the whole screen.
+	fAssertOut  "[df4f2] br create --help prints its own syntax"  '^Syntax: gitsby br create <branch>$'  "${gitsby}" br create --help
+	fAssertNotOut "[df4f3] and not the whole screen"             '^Common commands:'                   "${gitsby}" br create --help
+	fAssert     "[df4f4] raw --help is gitsby's, not an option after raw" \
+		bash -c "out=\"\$('${gitsby}' raw --help 2>/dev/null)\" && grep -q '^Syntax: gitsby raw <tool>' <<< \"\${out}\""
+	fAssertOut  "[df4f5] help before a command asks about it"    '^Syntax: gitsby pr ok <number>$'    "${gitsby}" help pr ok
 	fAssertFail "[dafr1] -v after a command is refused"    bash -c "cd '${cloneA}' && '${gitsby}' -q update -v"
 	fAssertOut  "[dafr2] and says which option"            'Unexpected option'  bash -c "cd '${cloneA}' && '${gitsby}' -q update -v 2>&1"
 	fAssert     "[dab76] -y alias accepted"            bash -c "cd '${cloneA}' && '${gitsby}' -y status"
@@ -5447,10 +5470,14 @@ GHEOF
 	## parser looking at a command called 'raw' - and it reported "Unknown command 'raw'", naming
 	## the one token that was not the problem. These are inert here; being taken is the point.
 	local rawOpt=""
-	for rawOpt in "-NoFetch" "-AnyIdentity" "-Public"; do
+	## Off since 2026-11-10 for -Public: an option a command doesn't read is refused, raw included.
+	## It is refused by its own name, not as an unknown 'raw', so the point above still holds. df4eh below.
+	for rawOpt in "-NoFetch" "-AnyIdentity"; do
 		fAssertOut "[db5yb] ${rawOpt} before raw is taken, not blamed"  '^main$' \
 			bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q ${rawOpt} raw git rev-parse --abbrev-ref HEAD 2>/dev/null"
 	done
+	fAssertOut "[df4eh] -Public before raw is refused by its own name"  'public works with repo create\.' \
+		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -Public raw git rev-parse --abbrev-ref HEAD 2>&1"
 	## An option that really is unknown must still be refused - and by its own name.
 	fAssertOut "[db5yc] an unknown option before raw names itself"  'bogus' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q --bogus raw git status 2>&1"
@@ -7614,8 +7641,11 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 	## legs would only prove that a frozen file is frozen.
 	local renDir="${work}/rename"
 	git clone --quiet "${origin}" "${renDir}"
-	fAssertOut "[dbefw] help leads with the new name" 'pullcom \[msg\] \.+: Pull updates'        "${gitsby}" --help
-	fAssertOut "[dbefx] and offers br merge"          'br merge \[msg\] \.+: Merge current'      "${gitsby}" --help
+	## Off since 2026-11-10: the help names the placeholder [message], as the README and the Syntax lines do. df4ej and df4ek below.
+	# fAssertOut "[dbefw] help leads with the new name" 'pullcom \[msg\] \.+: Pull updates'        "${gitsby}" --help
+	# fAssertOut "[dbefx] and offers br merge"          'br merge \[msg\] \.+: Merge current'      "${gitsby}" --help
+	fAssertOut "[df4ej] help leads with the new name" 'pullcom \[message\] \.+: Pull updates'    "${gitsby}" --help
+	fAssertOut "[df4ek] and offers br merge"          'br merge \[message\] \.+: Merge current'  "${gitsby}" --help
 	fAssertOut "[dbefy] and lists whoami"             'whoami \.+: Show account, ssh key'        "${gitsby}" --help
 	## Every accepted spelling, because a ladder is only worth having if the whole ladder is
 	## there - a missing rung reads as a typo the tool refused for no reason.
@@ -7675,6 +7705,20 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 	## of what was typed.
 	fAssertOut  "[dbfhs] an option between raw and the tool says where ours go"  "options come before 'raw'" \
 		bash -c "cd '${renDir}' && '${gitsby}' raw -q git status 2>&1"
+
+	## An option a command doesn't read is refused, not dropped. raw was the last way past --staged.
+	fAssertOut  "[df4eb] --staged ahead of raw is refused"  'staged works with pullcom, sync' \
+		bash -c "cd '${renDir}' && '${gitsby}' --staged raw git status 2>&1"
+	fAssertOut  "[df4ec] -m on status is refused, naming what takes it"  'm works with pullcom, .* and repo connect\.' \
+		bash -c "cd '${renDir}' && '${gitsby}' -q status -m hello 2>&1"
+	fAssert     "[df4ed] --no-fetch and --any-identity still go ahead of raw" \
+		bash -c "cd '${renDir}' && '${gitsby}' -q --no-fetch --any-identity raw git rev-parse HEAD >/dev/null"
+	## '--' ends our options, the way POSIX and git have it. It used to be a positional, so
+	## 'pullcom --' committed with the message '--'.
+	local ddRepo="${work}/dashdash"
+	git init --quiet -b main "${ddRepo}" && echo a > "${ddRepo}/a.txt"
+	fAssert     "[df4er] after '--' a message can start with a dash" \
+		bash -c "cd '${ddRepo}' && '${gitsby}' -q -NoFetch pullcom -- '-v bump' >/dev/null && [[ \"\$(git log -1 --format=%s)\" == '-v bump' ]]"
 
 	## ------------------------------------------------------------------------------------
 	## Directive review 20260819. Every check below fails against the build that preceded it,
@@ -8442,6 +8486,11 @@ SSHEOF
 	: > "${fg}/local-gh.log"
 	fAssert "[dbg5y] a local-path remote still falls through to gh, as it always did" \
 		bash -c "cd '${fg}/localorigin' && PATH='${fgPath}' FAKE_GH_LOG='${fg}/local-gh.log' '${gitsby}' -q -NoFetch pr && grep -q '^pr list' '${fg}/local-gh.log'"
+	: > "${fg}/local-gh.log"
+	fAssert "[df4en] 'pr list' is a bare 'pr'" \
+		bash -c "cd '${fg}/localorigin' && PATH='${fgPath}' FAKE_GH_LOG='${fg}/local-gh.log' '${gitsby}' -q -NoFetch pr list && grep -q '^pr list' '${fg}/local-gh.log'"
+	fAssertOut "[df4ep] and an unknown word after pr is refused by name"  "Unknown 'pr' subcommand 'foo'" \
+		bash -c "cd '${fg}/localorigin' && PATH='${fgPath}' '${gitsby}' -q -NoFetch pr foo 2>&1"
 
 	if ((hasPty)); then
 		## Only 'y' was a yes, so the word people actually type aborted.

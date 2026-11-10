@@ -164,8 +164,12 @@ fMakeRepo(){
 ## valid alias of 'status' and doesn't belong here.
 badCommands=( frobnicate status2 '..' './x' '123' 'a b' '-' '--' 'commit extra junk' )
 badOptions=( --bogus -x -qx '--no-fetch=1' '--=v' -Z )
-## The noun grammar put a second word in play; it gets the same treatment as the first.
-badSubcommands=( "${badCommands[@]}" 'creat' 'switchh' 'ok' 'list extra' )
+## The noun grammar put a second word in play; it gets the same treatment as the first. All
+## but '--', which ends the options since 2026-11-10: after a noun it leaves the bare noun, and
+## 'br', 'repo url' and 'account' take that. With no command at all it is still refused.
+badSubcommands=()
+for c in "${badCommands[@]}"; do [[ "${c}" == '--' ]] || badSubcommands+=( "${c}" ); done
+badSubcommands+=( 'creat' 'switchh' 'ok' 'list extra' )
 inject=( '$(touch CANARY_A)' '`touch CANARY_B`' ';touch CANARY_C' '&& touch CANARY_D'
          '| touch CANARY_E' '> CANARY_F' '$(touch CANARY_G)tail' '../CANARY_H' )
 badBranch=( "${inject[@]}" 'a..b' 'has space' '-leadingdash' 'tilde~x' 'caret^x'

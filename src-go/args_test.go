@@ -384,3 +384,103 @@ func TestBorrowedNameRefusesRawToolNames(t *testing.T) { // [debe6]
 		}
 	}
 }
+
+// An option a command doesn't read is refused, never dropped. The ones that mean
+// something everywhere stay valid everywhere, raw included.
+func TestOptionsOnlyWhereRead(t *testing.T) { // [df4e9]
+	settle := func(argv ...string) error {
+		opt, cmd, _, err := parseArgs(argv)
+		if err != nil {
+			return err
+		}
+		if cmd, err = collapseCommand(cmd); err != nil {
+			return err
+		}
+		if cmd, err = sortCommand(cmd, &opt); err != nil {
+			return err
+		}
+		return checkOptionsUsed(typedName(cmd), opt)
+	}
+	for _, argv := range [][]string{
+		{"status", "-m", "x"}, {"status", "--public"}, {"pullcom", "--direct"}, {"pullcom", "--private"},
+		{"repo", "connect", "--public"}, {"br", "prune", "-m", "x"}, {"pr", "ok", "7", "-m", "x"}, {"pr", "--message=x"},
+		{"whoami", "--staged"}, {"account", "--direct"},
+	} {
+		if err := settle(argv...); err == nil {
+			t.Errorf("%v: took an option it doesn't read", argv)
+		}
+	}
+	for _, argv := range [][]string{
+		{"sync", "--direct"}, {"repo", "create", "o/n", "--public"}, {"repo", "connect", "-m", "x"}, {"pr", "create", "-m", "t"},
+		{"release", "-m", "x"}, {"br", "switch", "-m", "x"}, {"-q", "-NoFetch", "--any-identity", "--config", "f", "account"},
+		{"--no-fetch", "repo", "clone", "u"}, {"status", "-y"},
+	} {
+		if err := settle(argv...); err != nil {
+			t.Errorf("%v: refused: %v", argv, err)
+		}
+	}
+}
+
+// Both parsers read one table. Every spelling goes before raw, and only the
+// options with no command list get through to the tool.
+func TestRawTakesTheSameOptions(t *testing.T) { // [df4ea]
+	for _, spec := range optSpecs {
+		for _, s := range spec.spellings {
+			argv := []string{"--" + s}
+			if spec.value {
+				argv = append(argv, "v")
+			}
+			opt := defaultOptions()
+			tool, _, err := scanPassthrough(append(argv, "raw", "git", "status"), &opt)
+			switch {
+			case spec.cmds == nil && (err != nil || tool != "git"):
+				t.Errorf("--%s before raw: tool=%q err=%v", s, tool, err)
+			case spec.cmds != nil && err == nil:
+				t.Errorf("--%s before raw was taken and dropped", s)
+			}
+			if _, _, _, err := parseArgs(append(argv, "status")); err != nil {
+				t.Errorf("--%s: main parser refused it: %v", s, err)
+			}
+		}
+	}
+}
+
+// pr settles its verb with the other nouns: 'list' is the bare form, and a word
+// that is neither a verb nor a number is refused as one, by name.
+func TestCollapsePr(t *testing.T) { // [df4em]
+	for in, want := range map[string]string{"": "", "list": "", "LIST": "", "create": "create", "new": "create", "ok": "ok", "42": "42"} {
+		cmd, err := collapseCommand(command{name: "pr", arg: in})
+		if err != nil || cmd.name != "pr" || cmd.arg != want {
+			t.Errorf("pr %q: name=%q arg=%q err=%v, want arg %q", in, cmd.name, cmd.arg, err, want)
+		}
+	}
+	for _, in := range []string{"foo", "view", "4x"} {
+		_, err := collapseCommand(command{name: "pr", arg: in})
+		if err == nil || !strings.Contains(err.Error(), "Unknown 'pr' subcommand '"+in+"'") {
+			t.Errorf("pr %q: err=%v", in, err)
+		}
+	}
+}
+
+// '--' ends gitsby's options, as POSIX and git have it. Before it a '--' was a
+// positional, so 'pullcom --' committed with the message '--'.
+func TestDoubleDashEndsOptions(t *testing.T) { // [df4eq]
+	opt, cmd, _, err := parseArgs([]string{"-q", "pullcom", "--", "-v bump"})
+	if err != nil || cmd.name != "pullcom" || cmd.arg != "-v bump" || !opt.quiet {
+		t.Errorf("pullcom -- '-v bump': cmd=%+v err=%v", cmd, err)
+	}
+	if _, cmd, _, err = parseArgs([]string{"pullcom", "--"}); err != nil || cmd.arg != "" {
+		t.Errorf("pullcom --: arg=%q err=%v", cmd.arg, err)
+	}
+	if _, cmd, _, err = parseArgs([]string{"pullcom", "--", "--"}); err != nil || cmd.arg != "--" {
+		t.Errorf("pullcom -- --: arg=%q err=%v", cmd.arg, err)
+	}
+	if opt, _, _, err = parseArgs([]string{"-m", "--", "pullcom"}); err != nil || opt.message != "--" {
+		t.Errorf("-m --: the value wins, got %q err=%v", opt.message, err)
+	}
+	opt = defaultOptions()
+	tool, args, err := scanPassthrough([]string{"-q", "--", "raw", "git", "log", "--", "x"}, &opt)
+	if err != nil || tool != "git" || joinArgs(args) != joinArgs([]string{"log", "--", "x"}) {
+		t.Errorf("-- raw git log -- x: tool=%q args=%v err=%v", tool, args, err)
+	}
+}
