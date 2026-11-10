@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash [df4c4] fails on macOS
 	- ID: 2026111014390966
 	- Type: Bug
-	- Status: In progress
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-143909
 	- Opened by: jim-collier
@@ -49,12 +49,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual cause [Bug]: As read.
 	- Actual fix [Bug]: The stand-in HOST_TEMP is a folder named tmp, as /tmp is. The check asserts the same thing.
 	- Branch: rc1prep
-	- Test case: [df4c4] itself, kept under its ID since what it asserts didn't change. Under a path with no tmp in it, the old fixture fails and the new one passes. With the parent-folder removal taken out of demo-repo, the new one fails.
+	- Test case: [df4c4] itself, kept under its ID since what it asserts didn't change. It passed on b26 and vmKt6m at 4159937. Under a path with no tmp in it, the old fixture fails and the new one passes. With the parent-folder removal taken out of demo-repo, the new one fails.
+	- Closed: 20261110-1512
 
 - Go [df35x] fails on Windows
 	- ID: 2026111014390949
 	- Type: Bug
-	- Status: In progress
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-143909
 	- Opened by: jim-collier
@@ -67,7 +68,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual cause [Bug]: As read.
 	- Actual fix [Bug]: The shellQuote part runs everywhere. The folder part skips on Windows, since it makes those names and tests commands for a POSIX shell.
 	- Branch: rc1prep
-	- Test case: [df35x] itself. The full run showed it failing on b29w and under Wine. It skips there now, and the whole Windows test binary passes under Wine on b23.
+	- Test case: [df35x] itself. The full run showed it failing on b29w and under Wine. It skips there now, passed on b29w at 4159937, and the whole Windows test binary passes under Wine on b23.
+	- Closed: 20261110-1512
 
 - A missing option value names the option wrong
 	- ID: 2026111012595856
