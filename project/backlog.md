@@ -33,6 +33,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- test.bash [dee5h] fails on a box not on UTC
+	- ID: 2026110920200900
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-202009
+	- Opened by:
+	- Steps to reproduce [Bug]: On b23 (Pacific time), run `bash cicd/test.bash` outside cicd.bash, or `cicd.bash --backlog-run-quick suite --no-container`.
+	- Incorrect behavior [Bug]: `FAIL dee5h`. The run's folder is `<UTC time>_001`, where the check wants `_002`.
+	- Expected behavior [Bug]: Passes in any time zone.
+	- Possible cause [Bug]: `fGateRunFolder` makes the taken `_001` names with a plain `date`, in local time. Since af96363 cicd.bash names its run folder with `date -u`, so the names never clash off UTC. The gate passes only because test.bash runs in the image, which is on UTC.
+	- Requirements [Bug fix]: The fixture takes its names in UTC. Sweep test.bash for other fixtures that build a stamp cicd.bash now writes in UTC.
+	- Estimated effort: Low
+	- Origin: Seen 2026-11-09 on the fuzzretry branch, running test.bash on its own. Fails the same on d4ab0d3 and e0952c4. Stage 7 on b26 runs test.bash in local time too.
+
 - Native fuzz step fails on a fuzz deadline, not a crasher
 	- ID: 2026110915475544
 	- Type: Bug
