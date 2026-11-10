@@ -1628,6 +1628,15 @@ func shWord(s string) (word string, ok bool) {
 // A Fix command pastes as shown, whatever the path has in it. An apostrophe in one
 // closed the quote early, or the command was left out. 2026110912215206.
 func TestFixLiteralsPaste(t *testing.T) { // [df35x]
+	// The loose token file's chmod line quotes through the same helper.
+	for _, path := range []string{"/h/o'brien/tok", "''", "a'b'c"} {
+		if got, ok := shWord(shellQuote(path)); !ok || got != path {
+			t.Errorf("shellQuote(%q) reads back as %q", path, got)
+		}
+	}
+	if isWindows() {
+		t.Skip("the folders' names have a double quote and a backslash, which Windows can't hold, and the commands are for a POSIX shell")
+	}
 	base := t.TempDir()
 	for _, name := range []string{"o'brien", "a b", "$HOME `x` \\y", "''", "it's \"q\""} {
 		dir := filepath.Join(base, name)
@@ -1652,12 +1661,6 @@ func TestFixLiteralsPaste(t *testing.T) { // [df35x]
 			if got, ok := shWord(arg); !found || !ok || got != want {
 				t.Errorf("%s line %q reads as %q, want %q", cmd, lines[1], got, want)
 			}
-		}
-	}
-	// The loose token file's chmod line quotes through the same helper.
-	for _, path := range []string{"/h/o'brien/tok", "''", "a'b'c"} {
-		if got, ok := shWord(shellQuote(path)); !ok || got != path {
-			t.Errorf("shellQuote(%q) reads back as %q", path, got)
 		}
 	}
 }

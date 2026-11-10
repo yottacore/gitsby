@@ -5875,10 +5875,11 @@ GHEOF
 	## Where HOST_TEMP is /tmp, as in the image, the guard won't remove a folder right under it,
 	## so a world at /tmp/gitsby-demo was never removed there, and a box without HOST_TEMP stopped
 	## at its own leftover one on the next render.
-	mkdir -p "${rmWork}/ht"
-	env HOST_TEMP="${rmWork}/ht" bash "${demoRepo}" "${rmWork}/ht/gitsby-demo/home" >/dev/null 2>&1 || true
+	## The folder is named tmp, as /tmp is, since on macOS the fixture sits under a folder that isn't.
+	mkdir -p "${rmWork}/tmp"
+	env HOST_TEMP="${rmWork}/tmp" bash "${demoRepo}" "${rmWork}/tmp/gitsby-demo/home" >/dev/null 2>&1 || true
 	fAssert "[df4c4] demo-repo --remove takes its world and the folder it sat in" \
-		bash -c "env HOST_TEMP='${rmWork}/ht' bash '${demoRepo}' --remove '${rmWork}/ht/gitsby-demo/home' && [[ ! -e '${rmWork}/ht/gitsby-demo' ]]"
+		bash -c "env HOST_TEMP='${rmWork}/tmp' bash '${demoRepo}' --remove '${rmWork}/tmp/gitsby-demo/home' && [[ ! -e '${rmWork}/tmp/gitsby-demo' ]]"
 	local demoRoot=""
 	demoRoot="$(sed -nE 's/^root="\$\{1:-([^}]+)\}"$/\1/p' "${demoRepo}")"
 	fAssert "[df4c5] the demo's default world is one the guard removes where HOST_TEMP is /tmp" \

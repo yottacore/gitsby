@@ -33,6 +33,42 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- test.bash [df4c4] fails on macOS
+	- ID: 2026111014390966
+	- Type: Bug
+	- Status: In progress
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-143909
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Run test.bash on a Mac.
+	- Incorrect behavior [Bug]: [df4c4] fails, since demo-repo's `--remove` is refused by the guard and leaves the world behind.
+	- Expected behavior [Bug]: It passes on any box.
+	- Reproduced [Bug]: In the 2026-11-10 full run, on b26 and vmKt6m, and on b23 with the fixture under a folder not named tmp.
+	- Possible cause [Bug]: The fixture's stand-in HOST_TEMP is a folder named `ht`. The guard takes a path under a folder named tmp, or under HOST_TEMP/gitsby. On Linux the fixture sits under /tmp, and on macOS under /var/folders/.../T, so there it matches neither.
+	- Origin: The rc.1 full run. The check came in with Bug 2026111010125301 earlier the same day, and was only run on Linux.
+	- Actual cause [Bug]: As read.
+	- Actual fix [Bug]: The stand-in HOST_TEMP is a folder named tmp, as /tmp is. The check asserts the same thing.
+	- Branch: rc1prep
+	- Test case: [df4c4] itself, kept under its ID since what it asserts didn't change. Under a path with no tmp in it, the old fixture fails and the new one passes. With the parent-folder removal taken out of demo-repo, the new one fails.
+
+- Go [df35x] fails on Windows
+	- ID: 2026111014390949
+	- Type: Bug
+	- Status: In progress
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-143909
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Run the Go tests on Windows, natively or under Wine.
+	- Incorrect behavior [Bug]: TestFixLiteralsPaste fails at its first mkdir: `The system cannot find the path specified.`
+	- Expected behavior [Bug]: It passes, or skips where its folders can't be made.
+	- Reproduced [Bug]: In the 2026-11-10 full run, on b29w and under Wine on vmDebARM64.
+	- Possible cause [Bug]: The test makes folders whose names have a double quote and a backslash, which Windows can't hold.
+	- Origin: The rc.1 full run. The test came in with round-20261109, and no full run with the Windows boxes had run since.
+	- Actual cause [Bug]: As read.
+	- Actual fix [Bug]: The shellQuote part runs everywhere. The folder part skips on Windows, since it makes those names and tests commands for a POSIX shell.
+	- Branch: rc1prep
+	- Test case: [df35x] itself. The full run showed it failing on b29w and under Wine. It skips there now, and the whole Windows test binary passes under Wine on b23.
+
 - A missing option value names the option wrong
 	- ID: 2026111012595856
 	- Type: Bug
