@@ -607,9 +607,11 @@ These 4 output rules came back after 2 sweeps, each time at sites the sweep's gr
 
 - Where a feature is about context - which folder, which account - the demo has to show that context. That is why the prompt carries the working directory: a scene proving the folder decides who you act as, above a prompt that never names a folder, asks to be taken on trust.
 
-- The confirmation is answered on camera rather than described. The scene that starts a branch runs with a terminal on its stdin, so the tool really does stop and ask, and the `y` on screen is what let it go on. Drawing a question that was never asked was rejected for the same reason the commands really run: the demo's worth is that nothing in it can be arranged to look right.
+- The confirmation is answered on camera rather than described. The scenes that start and merge a branch run with a terminal on stdin, so the tool really does stop and ask, and the `y` on screen is what let it go on. Drawing a question that was never asked was rejected for the same reason the commands really run: the demo's worth is that nothing in it can be arranged to look right.
 
-- The length target is about fifty seconds, not the twenty to thirty written down earlier. Five scenes of real output, one of them waiting to be answered, come to roughly forty-seven. The earlier figure predates the decision above, and meeting it now would cost either a scene or the time needed to read one. Captions stopped being typed out for the same reason: typing them was 12.9 seconds of a 67.4-second loop, more screen time than the commands they introduce.
+- Length is no target. The demo shows the main advertised features in use, and holds each screen long enough to read. A viewer who needs a second loop to get it is fine. The earlier targets, twenty to thirty seconds and then about fifty, each cost a scene or the time to read one. The feature loop runs start to finish, from `status` to `br merge`, before the account scenes. Captions appear whole rather than typed, since typing them was 12.9 seconds of a 67.4-second loop, more screen time than the commands they introduce.
+
+- The scene with the longest output scrolls fast, at about a line per frame, as a terminal prints git's output. The file's size follows its scroll frames, so this kept the file at 6.9 MB, where the default rate made it 11.5. Its plan is read at the question instead, which holds for 3 seconds.
 
 ### Release policy
 

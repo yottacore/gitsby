@@ -177,6 +177,7 @@ def fLoadScenario(path):
 	##	  cwd = "~/dev/thing"           shown in the prompt (default: "~")
 	##	  ask = "Continue? (y|n): "     text the command stops on and waits for input
 	##	  answer = "y"                  typed on camera in reply, then Enter
+	##	  askpause = 3.0                seconds to read the plan before the answer
 	try:
 		with open(path, "rb") as f:
 			sc = tomllib.load(f)
@@ -691,7 +692,7 @@ def fMain():
 			else:
 				snap(lineMs, cursor=False)
 
-	def drawAsk(ask, answer, rate):
+	def drawAsk(ask, answer, rate, askPause):
 		##	The question is a live line, the way the shell's own prompt is: it holds
 		##	the cursor, the answer types onto it, and Enter commits the pair. A demo
 		##	of a tool whose whole claim is that it asks first has to show somebody
@@ -701,7 +702,8 @@ def fMain():
 		shown[:] = scr.fCursorTarget()
 		if scr.fRestScroll() > scr.scroll + 0.5:
 			settle(rate)
-		blinkPause(rng.uniform(900, 1400))           # read the plan before answering
+		readMs = rng.uniform(900, 1400)              # drawn either way, so the rest of the run doesn't shift
+		blinkPause(readMs if askPause is None else 1000 * askPause)   # read the plan before answering
 		for (action, ch), delay in fTypeEvents(answer, rng, WPM_LETTERS, False, wpmDigits):
 			if action == "type":
 				scr.typed += ch
@@ -765,7 +767,7 @@ def fMain():
 			tail = []
 			for seg in stepOut[stepIdx]:
 				if seg[0] == "ask":
-					drawAsk(seg[1], seg[2], rate)
+					drawAsk(seg[1], seg[2], rate, step.get("askpause"))
 					tail = []
 				else:
 					drawOut(seg[1], rate, lineMs, step.get("overflow", "truncate"))
@@ -808,6 +810,8 @@ if __name__ == "__main__":
 
 
 ##	History:
+##		- 20261110: askpause= sets how long a step that asks holds on the plan
+##			before its answer is typed.
 ##		- 20261107: One import per line, no `;` statements.
 ##		- 20260916: type_notes = false shows each caption whole instead of typing
 ##			it out. Typing them was 12.9s of a 67.4s loop - more screen time than

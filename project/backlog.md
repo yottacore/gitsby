@@ -33,6 +33,149 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Code Review 20261110 enhancement 5: The README says nothing about exit statuses to someone scripting gitsby
+	- ID: 2026111010494722
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: The README gets the exit status table from style-guide_ui-ux.md: 0 for success and for nothing to do, 1 for a refusal, a failed step or a no at the prompt, and the tool's own status from `raw`. A check fails if the two tables differ.
+	- Origin: The exit status table in style-guide_ui-ux.md, and 2.1.0 before it. No round raised it. Confirmed: `gitsby pr foo`, `gitsby br list extra` and a refused `pullcom` with no terminal all exit 1, and the README doesn't say so.
+	- Notes: The UI style guide is the only place the exit statuses are written down, and it isn't where a script author looks.
+	- Decisions:
+		- Usage errors keep exit 1 (2026-11-10). The README's promise that nothing scripted stops working outweighs the convention, and most scripts test for non-zero anyway.
+	- Decided against: exit 2 for usage errors, as getopt-based tools and bash builtins do, or 129 as git does. A script that tests for exactly 1 would change, and parity.bash would need its usage cases carved out.
+
+- Code Review 20261110 item 1: An option a command doesn't read is taken and dropped
+	- ID: 2026111010494811
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104948
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: In any repo, run `gitsby --staged raw git commit`, `gitsby -m msg raw git commit`, `gitsby status -m hello`, `gitsby repo connect <url> --public` or `gitsby pullcom --direct`.
+	- Incorrect behavior [Bug]: Each runs with the option dropped and says nothing. `gitsby --staged status` is refused, so only `raw` lets `--staged` through, and design.md:180 says any other command refuses it, since ignoring it would sweep in the edits it was typed to keep out.
+	- Expected behavior [Bug]: A command refuses an option it doesn't read, the way `--staged` is refused, and names the commands that take it. `-q`, `--any-identity` and `--config` stay valid wherever they mean something.
+	- Reproduced [Bug]: 2026-11-10 on b23, built binary in a temp repo.
+	- Possible cause [Bug]: parseArgs and scanPassthrough each keep their own list of options, and only `--staged` is checked against the commands that read it, in staged.go:20. Nothing ties the other options to theirs.
+	- Origin: `--staged` in scanPassthrough from 9f53a91, and `--direct` from e1cc030, both 2026-10-05. `--public` and `--private` from 8da8951, 2026-08-17. A 2026-08 round fixed trailing arguments that were silently ignored, not options. No round saw this. Confirmed.
+	- Notes: 1 table of options and the commands that read each, used by both parsers, is where a new option can't get past the check. `-m` on `br create` and `br switch` is read by the commit that parks work, so it stays there.
+	- Against: A script that passes an option to a command that ignores it starts failing.
+
+- Code Review 20261110 item 2: The docs call -q the machine-readable mode, and its output is the same human layout
+	- ID: 2026111010494798
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: style-guide_ui-ux.md under Scripts and design.md:153 say `-q` is the machine-readable mode. `gitsby -q status` prints the same labeled, dot-padded block as without it, and a mutating `-q` run prints its plan and status lines. Only the build line goes. design.md's non-goals say there is no scripting surface beyond `raw`.
+	- Expected behavior [Bug]: The docs call `-q` the unattended mode: it answers yes, asks nothing, and leaves out the build line.
+	- Reproduced [Bug]: 2026-11-10, `gitsby -q status` in a temp repo.
+	- Origin: style-guide_ui-ux.md:176 from 578b34e, and design.md:153 from 483ebc5, 2026-10-06. No round saw it. Confirmed.
+	- Notes: A real machine-readable mode would be a new feature, against the `raw`-only non-goal, and isn't proposed here.
+
+- Code Review 20261110 item 3: One placeholder has several names across the help, the README and the Syntax lines
+	- ID: 2026111010494785
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: `repo connect` takes `[url]` in the help, `[target]` in the README and `[url | owner/name]` in its Syntax line. A PR number is `n` in the help, `<#>` in the README and `<number>` in the Syntax line. `repo create` takes `<o/n>` in the help and `<owner/name>` in the README and its Syntax line.
+	- Expected behavior [Bug]: One name per placeholder everywhere, per the UI style guide's "One word per thing" and the output sweep's row for it in design.md.
+	- Reproduced [Bug]: 2026-11-10, `gitsby --help`, `gitsby pr list` and `gitsby repo` against the README's Commands table.
+	- Origin: help.go:65 from 2206206, 2026-10-05, help.go:78 from 197677f, 2026-10-22, and README.md:105 from d446496, 2026-07-26. No round saw it. Confirmed.
+	- Notes: The help's left column is 20 wide, which is why it shortens them. Widening it, or moving the arguments into the description as `account set` already does, are the 2 ways.
+	- Decided against: making the Syntax line's `e.g. 'work', 'personal'` match the `github.com_my-work-login` examples. An account name is any string, and both are valid.
+
+- Code Review 20261110 enhancement 1: pr takes no list, and an unknown word after it gets the Syntax block
+	- ID: 2026111010494773
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: `pr list` is the same as a bare `pr`, as `br list` and `account list` are, and the help shows `pr [list]`. An unknown word after `pr` gets the line the other nouns give, such as "Unknown 'pr' subcommand 'foo'. One of: list, create, ok, or a number." `pr` folds to tokens in collapseCommand like `repo`, `br` and `account`, so sortCommand stops parsing subcommand words for 1 noun only.
+	- Origin: args.go:239 from 3d22222, 2026-08-17, the port, which kept 2.1.0's `pr` handling. No round saw it. Confirmed: `gitsby pr list` and `gitsby pr foo` both print the Syntax block and exit 1.
+	- Decided against: listing `acct`, `account show` and `br clean` beside `new` and `go` in design.md. They are v2.1.0 spellings, kept by the permanent alias rule like the rest.
+
+- Code Review 20261110 enhancement 2: -- isn't taken as the end of options
+	- ID: 2026111010494760
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: `--` ends gitsby's options, and everything after it is positional, as POSIX's utility guidelines and git have it. `gitsby pullcom -- '-v bump'` commits with that message. A `--` after `raw <tool>` stays the tool's.
+	- Origin: switchRegex at args.go:21 from 8da8951, 2026-08-17, which matches neither `-` nor `--`. 2.1.0 did the same. Confirmed: `gitsby -q pullcom --` made a commit with the subject `--`, and `gitsby pullcom -- msg` refuses with "Unexpected extra argument 'msg'". Today `-m` is the only way to give a message that starts with a dash.
+	- Notes: gitsby already passes `--` to git ahead of a clone's folder, for the same reason.
+
+- Code Review 20261110 enhancement 3: A command's --help prints the whole help screen, not that command's syntax
+	- ID: 2026111010494747
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: `--help` or `-h` after a command prints that command's Syntax block, the one a wrong argument count gets, and exits 0. A bare `--help` keeps the whole screen. Commands with no Syntax block yet get one.
+	- Origin: args.go:62 from 2a3ab8f, 2026-09-28. Confirmed: `gitsby br create -h` prints the full help. `--help` after a command was made to work on purpose in the 2.x days, since asking a subcommand for help is the reflex every git user has. Syntax blocks exist for `repo`, `pr`, `raw`, `account set` and `account unset`.
+
+- Code Review 20261110 enhancement 4: The help's opening lines leave out the plan and the question
+	- ID: 2026111010494735
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: The opening paragraph of `gitsby --help` says that a command which changes anything shows the git it will run and asks first, as well as checking state.
+	- Origin: help.go:29 from 4918b5b, 2026-08-19. No round saw it. Confirmed by reading: the help says each command checks state and is safe to re-run. The README opens on showing the git and asking, and that is design.md's second goal. design.md:126 says the help is the only documentation most people read.
+
+- Demo: add a br merge scene, and hold screens long enough to read
+	- ID: 2026111010125300
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-101253
+	- Opened by:
+	- Requirements [Feature]:
+		- The demo shows the main advertised features in use. Length is no target, and a viewer who needs a second loop is fine.
+		- A `br merge` scene after `sync`, answered on camera, so the README's typical day runs start to finish.
+		- Holds long enough to read each screen, and time to read the plan at each question.
+	- Origin: Asked 2026-11-10, answering the demo length question that timed out in September.
+	- Decisions:
+		- The merge scene scrolls at about a line per frame. At the default rate it doubled the file, about +6 MB.
+		- `[defp0]` now fails at two minutes rather than one, since design.md sets no length.
+		- The plan holds 3 seconds at each question, through a new `askpause=` step setting. It was about 1.
+		- Holds 4.0 to 5.5 seconds, up from 2.6 to 3.2.
+	- Progress log:
+		- 1118 frames, 72.0 s, 6912767 bytes, up from 902 frames, 47.7 s and 5651896 bytes. At the default scroll rate the merge scene made it 11.5 MB.
+		- Rendered twice in the image to the same bytes.
+	- Branch: demomerge
+	- Test case: test.bash [defp0], [dcq6v]; the render itself
+	- Acceptance signoff: Gate passed, test.bash 1925/0, fuzz 314/0, parity 30/0.
+	- Closed: 20261110-102000
+
+- Demo world at /tmp/gitsby-demo is never removed where HOST_TEMP is /tmp
+	- ID: 2026111010125301
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-101253
+	- Opened by:
+	- Steps to reproduce [Bug]: Render the demo in the image, or on a box with no HOST_TEMP set.
+	- Incorrect behavior [Bug]: `safe-rm: refused, not under a tmp folder, or a whole project temp folder: /tmp/gitsby-demo`, then `WARNING: left the demo's repos in place`. On a box, the next render stops at the same refusal and the gif isn't drawn.
+	- Expected behavior [Bug]: The world is removed after each render, on any box.
+	- Possible cause [Bug]: Since 2026-10-28 the guard refuses a folder right under HOST_TEMP. HOST_TEMP falls back to /tmp, as in the image.
+	- Origin: Seen 2026-11-10 rendering the demo for demomerge. b23 sets HOST_TEMP, so runs here missed it.
+	- Actual cause [Bug]: As the possible cause says. Not seen before because the image's /tmp goes with the container, and b23's HOST_TEMP is elsewhere.
+	- Actual fix [Bug]: The world is built at /tmp/gitsby-demo/home, and `--remove` also takes the folder above it once it's empty.
+	- Branch: demomerge
+	- Test case: test.bash [df4c4], [df4c5], [df4c6]
+	- Verified: [df4c4] and [df4c5] fail against dev's demo-repo.bash, and [df4c6] fails with the new builder and dev's scenario. All 3 pass on the branch. A render in the image no longer warns, and leaves no /tmp/gitsby-demo.
+	- Closed: 20261110-102000
+
 - test.bash [dee5h] fails on a box not on UTC
 	- ID: 2026110920200900
 	- Type: Bug
