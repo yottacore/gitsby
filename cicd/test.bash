@@ -6913,7 +6913,10 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 				"test -race") if [[ -e '${gateFail}/go-test' ]]; then printf -- '--- FAIL: TestA (0.00s)\n    a_test.go:4: boom\n'
 					else printf -- '=== RUN   TestA\n--- PASS: TestA (0.00s)\n    --- PASS: TestA/sub (0.00s)\n--- PASS: TestC (0.00s)\n'; fi ;;
 			esac
-			[[ "\$*" != *" -fuzz "* || ! -e '${gateFail}/go-fuzz' ]] || { printf -- 'fuzz: crasher input: "x"\\n'; exit 1 ;}
+			[[ "\$*" != *" -fuzz "* || ! -e '${gateFail}/go-fuzz' ]] || { printf -- 'fuzz: crasher input: "x"\\n    Failing input written to testdata/fuzz/FuzzA/0123abcd\\n'; exit 1 ;}
+			## What go prints when a worker stops at -fuzztime under load. The once form clears itself.
+			[[ "\$*" != *" -fuzz "* || ! -e '${gateFail}/go-fuzz-noinput' ]] || { printf -- '--- FAIL: FuzzA (5.42s)\\n    context deadline exceeded\\n'; exit 1 ;}
+			[[ "\$*" != *" -fuzz "* || ! -e '${gateFail}/go-fuzz-noinput-once' ]] || { mv '${gateFail}/go-fuzz-noinput-once' '${gateFail}/go-fuzz-noinput-used'; printf -- '--- FAIL: FuzzA (5.42s)\\n    context deadline exceeded\\n'; exit 1 ;}
 			[[ ! -e "${gateFail}/go-\${1:-}" ]] || exit 1
 			o=''; for a in "\$@"; do [[ "\${o}" != 1 ]] || : > "\${a}"; o=''; [[ "\${a}" != -o ]] || o=1; done
 		EOF
@@ -6988,6 +6991,19 @@ sys.exit(0 if 0 < ms < 60000 else 1)' "${root}/assets/demo.gif"
 		rm -f -- "${gateFail:?}/go-fuzz"
 		fAssert "[dd5fq] and a crasher stops the run, naming the target"  fGateRanSaying 1 'fuzzing found a crasher in FuzzA'
 		fAssert "[deh0c] and prints what go said about it"  fGateRanSaying 1 '^fuzz: crasher input'
+		fAssert "[df3gx] and stops at once, with no second try" \
+			bash -c "[[ \"\$(grep -c -- ' -fuzz \\^FuzzA' '${gateCalls}')\" == 1 ]]"
+		## A fuzz run that stopped on its deadline under load was reported as a crasher, with nothing saved.
+		: > "${gateFail}/go-fuzz-noinput-once"
+		fGateOnly fuzz --no-leakcheck
+		rm -f -- "${gateFail:?}/go-fuzz-noinput-used"
+		fAssert "[df3gy] a fuzz failure that saves no input runs the target once more, and passes when that one does" \
+			bash -c "[[ '${gateRc}' == 0 && \"\$(grep -c -- ' -fuzz \\^FuzzA' '${gateCalls}')\" == 2 ]] && grep -qF 'FuzzA failed and saved no failing input, so running it once more' '${gateOut}' && grep -qxF '  PASS aaaaa FuzzA' '${gateOut}' && ! grep -qF crasher '${gateOut}'"
+		: > "${gateFail}/go-fuzz-noinput"
+		fGateOnly fuzz --no-leakcheck
+		rm -f -- "${gateFail:?}/go-fuzz-noinput"
+		fAssert "[df3gz] and fails without calling it a crasher when the second run saves none either" \
+			bash -c "[[ '${gateRc}' == 1 ]] && grep -qF 'fuzzing FuzzA failed twice and saved no failing input' '${gateOut}' && grep -qF 'context deadline exceeded' '${gateOut}' && ! grep -qF crasher '${gateOut}'"
 		: > "${gateFail}/fuzz"
 		fGateOnly fuzz
 		rm -f -- "${gateFail:?}/fuzz"
