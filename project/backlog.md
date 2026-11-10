@@ -33,6 +33,25 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- A missing option value names the option wrong
+	- ID: 2026111012595856
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-125958
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: `gitsby pullcom -m`, with nothing after `-m`.
+	- Incorrect behavior [Bug]: It says `Never received a parameter for switch '--m'.` Nobody typed `--m`, and the help calls them options, not switches.
+	- Expected behavior [Bug]: `-m needs a value.`, with the option as it was typed.
+	- Reproduced [Bug]: Every time, in the Go build and in v2.1.0.
+	- Possible cause [Bug]: The message puts `--` in front of the name with its dashes stripped.
+	- Origin: Release prep for v3.0.0-rc.1, a quick pass over the option parser. It came over from v2.1.0, and no round looked at this message.
+	- Actual cause [Bug]: As read.
+	- Actual fix [Bug]: The refusal keeps the option as typed and says `<option> needs a value.`
+	- Branch: rc1prep
+	- Test case: Go [df4hb] TestMissingValueNamesOption, which fails 4 of 4 cases with the old name put back.
+	- Closed: 20261110-1301
+
 - test.bash [dee5h] fails when the gate run starts more than 6 seconds after its fixture
 	- ID: 2026111011385413
 	- Type: Bug

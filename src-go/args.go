@@ -125,7 +125,7 @@ func parseArgs(argv []string) (opt options, cmd command, info string, err error)
 	const maxPositional = 5
 	opt = defaultOptions()
 	cmd = command{mutating: true}
-	lastSwitch := ""
+	lastSwitch := ""     // as typed, for the missing-value refusal
 	var pending *optSpec // an option still waiting for its value
 	endOpts := false     // past '--', where everything is positional
 	positional := 0
@@ -140,7 +140,7 @@ func parseArgs(argv []string) (opt options, cmd command, info string, err error)
 			endOpts = true
 		case !endOpts && switchRegex.MatchString(arg):
 			t := stripDashes(strings.ToLower(arg))
-			lastSwitch = t
+			lastSwitch = arg
 			switch t {
 			case "h", "help":
 				return opt, cmd, "help", nil
@@ -181,7 +181,7 @@ func parseArgs(argv []string) (opt options, cmd command, info string, err error)
 		}
 	}
 	if pending != nil {
-		return opt, cmd, "", usagef("Never received a parameter for switch '--%s'.", lastSwitch)
+		return opt, cmd, "", usagef("%s needs a value.", lastSwitch)
 	}
 	return opt, cmd, "", nil
 }
