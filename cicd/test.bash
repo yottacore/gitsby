@@ -1582,6 +1582,11 @@ fHelpSyntaxes(){ local help=""; help="$("${gitsby}" --help)" || return 1
 	| awk -F'\t' '{ if ($1 !~ /[<[]/ && $2 ~ /^[<[]/) { sub(/\. .*/, "", $2); print $1 " " $2 } else print $1 }' | sort ;}
 fReadmeSyntaxes(){ awk '/^\| Command /{f=1; next} f && !/^\|/{exit} f && /^\| `/' "${root}/README.md" | sed 's/\\|/\x01/g' \
 	| awk -F'|' '{ c=$2; a=$3; gsub(/[` ]+$|^[` ]+/, "", c); gsub(/[` ]+$|^[` ]+/, "", a); gsub(/\x01/, "|", a); print (a == "" ? c : c " " a) }' | sort ;}
+## The exit status table, as one file and then the other has it.
+fExitTable(){ awk '/^\| Exit status/{f=1} f && !/^\|/{exit} f' "$1" ;}
+fExitTablesMatch(){ local readme="" guide=""
+	readme="$(fExitTable "${root}/README.md")"; guide="$(fExitTable "${root}/project/style-guide_ui-ux.md")"
+	[[ -n "${readme}" && "${readme}" == "${guide}" ]] ;}
 fRunSuite(){
 	fEcho_Clean "suite: ${1} (${gitsby})"
 
@@ -1599,6 +1604,7 @@ fRunSuite(){
 	fAssertOut  "[ddk4h] help gives account unset its args"     '^  account unset \.*: <account> <key>\. ' "${gitsby}" --help
 	fAssert     "[ddj3j] README's command count matches the help" fHelpCountsTen
 	fAssert     "[df4ee] README's Commands table and the help name the same commands and placeholders" diff <(fHelpSyntaxes) <(fReadmeSyntaxes)
+	fAssert     "[df4f7] README's exit status table is the UI style guide's" fExitTablesMatch
 	## A pasted step line has to run as shown, so it quotes what the plan quotes.
 	fAssert     "[ddj3g] a step line quotes the message the way the plan does" \
 		fPlanRan 'git commit -m' bash -c "d='${work}/$1-quoted' && git init --quiet \"\${d}\" && cd \"\${d}\" && echo q > f && '${gitsby}' -q pullcom -m 'two words; here'"

@@ -134,6 +134,14 @@ Options: `-m MSG` (commit/merge message, or give it positionally), `-q`/`-y` (as
 
 **Publishing a directory shows you the directory first.** `repo create` and `repo connect` list every file they are about to publish, before asking. The list is what `git add --all` will actually add, `.gitignore` and all - so a stray `.env` is visible while you can still say no.
 
+**In a script**, `-q` answers yes and asks nothing, and `raw` hands stdout to its tool alone. The rest of the output is for people. What a script reads is the exit status:
+
+| Exit status | When
+| :---        | :---
+| 0           | Success, and "nothing to do"
+| 1           | A refusal, a failed step, or a "no" at the prompt
+| The tool's  | `raw` hands back whatever the tool exited with
+
 ## Multiple accounts
 
 Most people with two GitHub accounts also have a folder for each: one tree for work, one for everything else. Gitsby takes that literally. Say which account owns which folder, once, and every command run anywhere under that folder acts as that account - `git` and `gh` alike.

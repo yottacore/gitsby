@@ -55,7 +55,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 enhancement 5: The README says nothing about exit statuses to someone scripting gitsby
 	- ID: 2026111010494722
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
@@ -65,6 +65,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions:
 		- Usage errors keep exit 1 (2026-11-10). The README's promise that nothing scripted stops working outweighs the convention, and most scripts test for non-zero anyway.
 	- Decided against: exit 2 for usage errors, as getopt-based tools and bash builtins do, or 129 as git does. A script that tests for exactly 1 would change, and parity.bash would need its usage cases carved out.
+	- Actual fix [Enhancement]: The README's Commands section ends with what a script can rely on: `-q` answers yes and asks nothing, `raw` hands stdout to its tool, and the exit status table, copied from the UI style guide.
+	- Branch: cr1110
+	- Test case: test.bash [df4f7]. It fails against the README before the change, and with the guide's table changed by one letter.
+	- Closed: 20261110-1213
 
 - Code Review 20261110 item 1: An option a command doesn't read is taken and dropped
 	- ID: 2026111010494811
