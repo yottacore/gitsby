@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Native fuzz step fails on a fuzz deadline, not a crasher
 	- ID: 2026110915475544
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-154755
 	- Opened by:
@@ -44,6 +44,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: A fuzz run that ends on its own deadline with no reproducer passes, or retries once. Only a saved reproducer counts as a crasher.
 	- Estimated effort: Low
 	- Origin: Seen 2026-11-09 in the gate step's security run. 3 reruns alone with the same flags (-fuzztime 5s, 8 workers) passed. The round didn't change parseTeaTable.
+	- Actual cause [Bug]: The step read any nonzero exit from `go test -fuzz` as a crasher. Go saves a crasher's input and says "Failing input written to". A worker stopped at -fuzztime saves nothing.
+	- Actual fix [Bug]: Only output naming a saved input is a crasher, and it stops the run at once. Any other failure runs the target once more, and fails as "failed twice and saved no failing input" if that one fails too.
+	- Decisions:
+		- A second failure still fails the step. A target that hangs looks the same as a slow worker, and it shouldn't pass.
+	- Branch: fuzzretry
+	- Test case: test.bash [df3gx], [df3gy], [df3gz]
+	- Verified: [df3gy] and [df3gz] fail on dev's cicd.bash. [df3gx] fails with crashers retried too. `--backlog-run-quick` passed, test.bash 1922/0. The real fuzz step passed on all 9 targets.
+	- Closed: 20261109-195600
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
