@@ -61,7 +61,7 @@ func (a *app) sortPr() error {
 // never use, and the answer never mentioned the host that decided it.
 func (a *app) settlePrTool() error {
 	if !a.hasOrigin() {
-		return usagef("No 'origin' remote, so there is nowhere to open a pull request. Connect one first: %s repo connect <url> | <owner/name>", meName)
+		return usagef("No 'origin' remote, so there is nowhere to open a pull request. Connect one first: %s repo connect <url>, or <owner/name> for a GitHub repo.", meName)
 	}
 	a.pr.tool, a.pr.cli = a.originTool()
 	if a.pr.tool == toolGlab && !a.acct.bypassed {

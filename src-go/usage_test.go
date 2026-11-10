@@ -9,6 +9,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -103,6 +105,27 @@ func TestHelpForEveryCommand(t *testing.T) { // [df4f1]
 	for _, argv := range []string{"--help", "-q -h", "nosuch --help"} {
 		if got := helpFor(strings.Fields(argv)); got != nil {
 			t.Errorf("%s: want the whole screen, got %q", argv, got)
+		}
+	}
+}
+
+// A placeholder written into another message is spelled the way the table spells
+// it, and never with a '|' a pasted line would hand the shell.
+func TestInlinePlaceholders(t *testing.T) { // [df4f8]
+	files, _ := filepath.Glob("*.go")
+	bad := regexp.MustCompile(`<url \||connect <url> \||<new branch|\[msg\]|\[ver\]|\[dir\]|<o/n>`)
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if bad.MatchString(line) {
+				t.Errorf("%s:%d: %s", f, i+1, strings.TrimSpace(line))
+			}
 		}
 	}
 }

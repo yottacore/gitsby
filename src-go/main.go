@@ -373,7 +373,7 @@ func (a *app) preflight() error {
 		// With no remote at all the check below never trips - there is nothing to find
 		// unreachable - and the tag would be cut, pushed nowhere, and reported as done.
 		if !a.hasOrigin() {
-			return usagef("No 'origin' remote, and a release nobody can fetch isn't one. Connect one first: %s repo connect <url> | <owner/name>", meName)
+			return usagef("No 'origin' remote, and a release nobody can fetch isn't one. Connect one first: %s repo connect <url>, or <owner/name> for a GitHub repo.", meName)
 		}
 		if err := a.requireOnline("release", "A release nobody can fetch isn't one."); err != nil {
 			return err

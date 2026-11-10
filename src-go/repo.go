@@ -182,7 +182,7 @@ func (a *app) settleRepoURL() (bool, error) {
 	}
 	current := a.originURL()
 	if current == "" {
-		return false, usagef("No origin to re-spell. Connect one first: %s repo connect <url> | <owner/name>", meName)
+		return false, usagef("No origin to re-spell. Connect one first: %s repo connect <url>, or <owner/name> for a GitHub repo.", meName)
 	}
 	if a.cmd.arg != "" {
 		// Any host, not just github.com: re-spelling a remote is text work that the
