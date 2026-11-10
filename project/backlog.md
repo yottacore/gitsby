@@ -74,7 +74,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 item 2: The docs call -q the machine-readable mode, and its output is the same human layout
 	- ID: 2026111010494798
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
@@ -83,6 +83,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10, `gitsby -q status` in a temp repo.
 	- Origin: style-guide_ui-ux.md:176 from 578b34e, and design.md:153 from 483ebc5, 2026-10-06. No round saw it. Confirmed.
 	- Notes: A real machine-readable mode would be a new feature, against the `raw`-only non-goal, and isn't proposed here.
+	- Actual fix [Bug]: design.md, the UI style guide and printBanner's comment call `-q` the unattended mode. The guide's Scripts section says what it does: answers yes, asks nothing, and leaves out the build line, with the rest of the output unchanged.
+	- Swept: every "machine-readable" in the Go source, the docs and the scripts.
+	- Branch: cr1110
+	- Test case: none, wording only. What the guide now says `-q` does is pinned by [dbfhk], [dbshr] and the no-terminal checks.
+	- Closed: 20261110-1127
 
 - Code Review 20261110 item 3: One placeholder has several names across the help, the README and the Syntax lines
 	- ID: 2026111010494785

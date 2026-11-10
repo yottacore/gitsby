@@ -175,6 +175,6 @@ gitsby: Another run is editing the accounts file.
 
 ## Scripts
 
-- `-q` is the machine-readable mode. It prints no build line and asks nothing.
+- `-q` is the unattended mode. It answers yes, asks nothing, and prints no build line. The rest of the output is the same as without it, so there is no machine-readable mode beyond the exit status and `raw`.
 
 - `raw` gives stdout to the tool alone. The one line naming the account goes to stderr, and `-q` silences it.

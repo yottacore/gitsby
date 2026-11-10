@@ -100,8 +100,8 @@ func (a *app) printHelp() {
 }
 
 // printBanner names the build every command's output came from, so a bug report
-// can say which one. Skipped under -q, which is the machine-readable mode, and
-// never reached by 'raw' - that hands stdout straight back to the caller.
+// can say which one. Skipped under -q, the unattended mode, and never reached by
+// 'raw' - that hands stdout straight back to the caller.
 func (a *app) printBanner() {
 	if a.opt.sawQuiet {
 		return
