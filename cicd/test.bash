@@ -745,10 +745,11 @@ fGateKeepTempImage(){
 ## The run's folder is <start time>_<NNN> under ${HOST_TEMP}/gitsby, or under TMPDIR without
 ## it, made with the first free counter. TMPDIR, TEMP and TMP point into it, and it has the
 ## run's pid. A name another run took is passed over, for the next few seconds' start times.
+## Those are in UTC, as cicd.bash names them, or the names never clash on a box off UTC.
 fGateRunFolder(){
 	local t="${gateDir}/tmp-folder" rc=0 i line="" dir=""
 	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}/host/gitsby" "${t}/other"
-	for i in 0 1 2 3 4 5; do mkdir -p "${t}/host/gitsby/$(date -d "+${i} seconds" +%Y%m%d-%H%M%S)_001"; done
+	for i in 0 1 2 3 4 5; do mkdir -p "${t}/host/gitsby/$(date -u -d "+${i} seconds" +%Y%m%d-%H%M%S)_001"; done
 	fGateStub "${gateDir}/cicd/test.bash" test "printf 'tmp=%s %s %s pid=%s\\n' \"\${TMPDIR:-}\" \"\${TEMP:-}\" \"\${TMP:-}\" \"\$(cat \"\${TMPDIR:-}/run.pid\" 2>/dev/null)\" >> '${gateCalls}'"
 	gateHostTemp="${t}/host" TMPDIR="${t}/other" fGateStatus 0 --no-container --backlog-run-quick suite || rc=1
 	line="$(sed -n 's/^tmp=//p' "${gateCalls}")"
