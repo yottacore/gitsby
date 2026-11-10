@@ -171,6 +171,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Enhancement]: Both parsers take a first `--` as the end of gitsby's options. A value an option is waiting for still wins, so `-m --` is the message `--`. The help's option list, the README's Options line and the UI style guide name it.
 	- Branch: cr1110
 	- Test case: Go [df4eq], test.bash [df4er]. [df4eq] fails against the parser before it, and [df4er]'s command made no commit with the build before it.
+	- Checks changed: fuzz.bash's bad subcommands no longer include `--`, so [dadv5], [db002] and [db003] don't feed it. After a noun it now leaves the bare noun, which `br`, `repo url` and `account` take. It stays among the bad commands for [dabe3], where it is still refused.
 	- Closed: 20261110-1155
 
 - Code Review 20261110 enhancement 3: A command's --help prints the whole help screen, not that command's syntax
