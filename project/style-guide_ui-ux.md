@@ -54,6 +54,8 @@ New output follows this guide. Where the program and the guide disagree, one of 
 
 - gitsby's own options go before `raw <tool>`. Everything after the tool name belongs to that tool.
 
+- An option a command doesn't read is refused, naming the commands that take it, and never dropped. `-q`, `--no-fetch`, `--any-identity` and `--config` are taken everywhere.
+
 ## Layout
 
 - Output starts with a blank line and ends with one. Sections are split by a single blank line, never by a rule, and there are never two blanks in a row. A refusal is the exception: it ends with two, to match the 2.1.0 scripts.

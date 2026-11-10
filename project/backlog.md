@@ -50,7 +50,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 item 1: An option a command doesn't read is taken and dropped
 	- ID: 2026111010494811
 	- Type: Bug
-	- Status: Queued
+	- Status: Testing
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104948
 	- Opened by: jim-collier
@@ -62,6 +62,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: `--staged` in scanPassthrough from 9f53a91, and `--direct` from e1cc030, both 2026-10-05. `--public` and `--private` from 8da8951, 2026-08-17. A 2026-08 round fixed trailing arguments that were silently ignored, not options. No round saw this. Confirmed.
 	- Notes: 1 table of options and the commands that read each, used by both parsers, is where a new option can't get past the check. `-m` on `br create` and `br switch` is read by the commit that parks work, so it stays there.
 	- Against: A script that passes an option to a command that ignores it starts failing.
+	- Actual cause [Bug]: Only `--staged` was checked against the commands that read it, and `raw`'s scan took every option and kept 3.
+	- Decisions:
+		- `-q`, `--no-fetch`, `--any-identity` and `--config` stay valid on every command. `--no-fetch` asks for nothing a command could fail to do where nothing fetches, and parity `[db601]` pins v2.1.0 taking `-NoFetch` ahead of `raw`.
+		- So the refused set is `-m` outside the 10 commands that commit, `--direct` outside `sync`, `--public` and `--private` outside `repo create`, and `--staged` as before, now ahead of `raw` too.
+	- Actual fix [Bug]: 1 table of options, `optSpecs` in args.go, which both parsers read. An option with a command list is refused on any other command, as "-m works with pullcom, ... and repo connect." `checkStagedFlag` folded into it, with the same wording.
+	- Swept: every option the 2 parsers took. design.md's Execution flow and the UI style guide's Commands and options say the rule.
+	- Branch: cr1110
+	- Test case: Go [df4e9] and [df4ea], test.bash [df4eb] to [df4ed], [ddht9] kept. [df4e9], [df4ea] and [ddht9] fail with the check stubbed out. [df4eb] and [df4ec] fail against the build before the fix.
 
 - Code Review 20261110 item 2: The docs call -q the machine-readable mode, and its output is the same human layout
 	- ID: 2026111010494798

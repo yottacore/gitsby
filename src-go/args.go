@@ -18,6 +18,93 @@ func defaultOptions() options {
 	return options{fetch: true, visibility: "private"}
 }
 
+// optSpec is one of gitsby's own options. parseArgs and scanPassthrough both read
+// optSpecs, so they can't take different ones. An option with cmds is refused on any
+// other command rather than dropped. Without cmds it means something everywhere, or
+// asks for nothing a command could fail to do, like --no-fetch where nothing fetches.
+type optSpec struct {
+	shown     string   // as messages print it
+	spellings []string // lowercased, dashes stripped
+	value     bool     // takes a value, joined by '=' or as the next argument
+	cmds      []string // the commands that read it, as typed
+	set       func(o *options, v string)
+}
+
+// stagedCmds commit before they move, so --staged has something to narrow.
+var stagedCmds = []string{"pullcom", "sync", "br create", "br hotfix", "br switch", "br merge", "pr create", "release"}
+
+var optSpecs = []optSpec{
+	{shown: "-q", spellings: []string{"q", "quiet", "y", "yes"}, set: func(o *options, _ string) { o.quiet = true }},
+	{shown: "--no-fetch", spellings: []string{"no-fetch", "nofetch"}, set: func(o *options, _ string) { o.fetch = false }},
+	{shown: "--any-identity", spellings: []string{"any-identity", "anyidentity"}, set: func(o *options, _ string) { o.anyIdentity = true }},
+	{shown: "--config", spellings: []string{"config"}, value: true, set: func(o *options, v string) { o.configFile, o.configGiven = v, true }},
+	{shown: "--public", spellings: []string{"public"}, cmds: []string{"repo create"}, set: func(o *options, _ string) { o.visibility, o.sawPublic = "public", true }},
+	{shown: "--private", spellings: []string{"private"}, cmds: []string{"repo create"}, set: func(o *options, _ string) { o.visibility, o.sawPrivate = "private", true }},
+	{shown: "--direct", spellings: []string{"direct"}, cmds: []string{"sync"}, set: func(o *options, _ string) { o.direct = true }},
+	{shown: "--staged", spellings: []string{"staged"}, cmds: stagedCmds, set: func(o *options, _ string) { o.staged = true }},
+	// The commands that commit, which is the --staged list plus the 2 that publish a
+	// directory.
+	{shown: "-m", spellings: []string{"m", "message", "msg"}, value: true, cmds: append(slices.Clone(stagedCmds), "repo create", "repo connect"),
+		set: func(o *options, v string) { o.message = v }},
+}
+
+// lookupOption finds the option a lowercased, dash-stripped argument names, and
+// whether its value was joined on with '='.
+func lookupOption(t string) (spec *optSpec, joined bool) {
+	for i := range optSpecs {
+		for _, s := range optSpecs[i].spellings {
+			if t == s {
+				return &optSpecs[i], false
+			}
+			if optSpecs[i].value && strings.HasPrefix(t, s+"=") {
+				return &optSpecs[i], true
+			}
+		}
+	}
+	return nil, false
+}
+
+func (o *options) apply(spec *optSpec, v string) {
+	spec.set(o, v)
+	if o.typed == nil {
+		o.typed = map[string]bool{}
+	}
+	o.typed[spec.shown] = true
+}
+
+// checkOptionsUsed refuses an option typed for a command that doesn't read it.
+// Dropping it would make a typo look like it did what was meant, and for --staged it
+// would sweep in the edits it was typed to keep out. 'cmd' is as typed, such as
+// "br create" or "raw".
+func checkOptionsUsed(cmd string, opt options) error {
+	for _, spec := range optSpecs {
+		if spec.cmds == nil || !opt.typed[spec.shown] || slices.Contains(spec.cmds, cmd) {
+			continue
+		}
+		return usagef("%s works with %s.", spec.shown, andList(spec.cmds))
+	}
+	return nil
+}
+
+// andList joins words as a sentence does: "a, b and c".
+func andList(words []string) string {
+	if len(words) < 2 {
+		return strings.Join(words, "")
+	}
+	return strings.Join(words[:len(words)-1], ", ") + " and " + words[len(words)-1]
+}
+
+// typedName is the command as a person types it, for messages and the option check.
+func typedName(cmd command) string {
+	if cmd.name == "pr" {
+		if sub := strings.ToLower(cmd.arg); sub == "create" || sub == "new" || sub == "ok" {
+			return "pr " + strings.Replace(sub, "new", "create", 1)
+		}
+		return "pr"
+	}
+	return strings.Replace(cmd.name, "-", " ", 1)
+}
+
 var switchRegex = regexp.MustCompile(`^--?[^ -]`)
 
 func stripDashes(s string) string {
@@ -39,58 +126,37 @@ func parseArgs(argv []string) (opt options, cmd command, info string, err error)
 	opt = defaultOptions()
 	cmd = command{mutating: true}
 	lastSwitch := ""
-	expectingValue := false
+	var pending *optSpec // an option still waiting for its value
 	positional := 0
 	for _, arg := range argv {
 		switch {
-		case expectingValue:
+		case pending != nil:
 			// A value we are already waiting for wins over the option test:
-			// '-m -Wall added' is a commit message, and there is no other way to
-			// write one starting with '-'.
-			switch lastSwitch {
-			case "m", "message", "msg":
-				opt.message = arg
-			case "config":
-				opt.configFile, opt.configGiven = arg, true
-			}
-			expectingValue = false
+			// '-m -Wall added' is a commit message.
+			opt.apply(pending, arg)
+			pending = nil
 		case switchRegex.MatchString(arg):
 			t := stripDashes(strings.ToLower(arg))
 			lastSwitch = t
-			switch {
-			case t == "h" || t == "help":
+			switch t {
+			case "h", "help":
 				return opt, cmd, "help", nil
-			case t == "version" || t == "ver":
+			case "version", "ver":
 				return opt, cmd, "version", nil
-			case t == "about" || t == "donate":
+			case "about", "donate":
 				return opt, cmd, t, nil
-			case t == "q" || t == "quiet" || t == "y" || t == "yes":
-				opt.quiet = true
-			case t == "no-fetch" || t == "nofetch":
-				opt.fetch = false
-			case t == "offline":
+			case "offline":
 				// Old spelling of --no-fetch, and a lie: it never stopped a push.
 				return opt, cmd, "", usagef("There is no --offline option. Offline is a state gitsby finds by trying, not one you declare; use --no-fetch to skip the pre-command fetch (pushes still go out).")
-			case t == "public":
-				opt.visibility, opt.sawPublic = "public", true
-			case t == "private":
-				opt.visibility, opt.sawPrivate = "private", true
-			case t == "any-identity" || t == "anyidentity":
-				opt.anyIdentity = true
-			case t == "direct":
-				opt.direct = true
-			case t == "staged":
-				opt.staged = true
-			case strings.HasPrefix(t, "m=") || strings.HasPrefix(t, "message=") || strings.HasPrefix(t, "msg="):
-				opt.message = afterEq(arg)
-			case strings.HasPrefix(t, "config="):
-				opt.configFile, opt.configGiven = afterEq(arg), true
-			case t == "m" || t == "message" || t == "msg":
-				expectingValue = true
-			case t == "config":
-				expectingValue = true
-			default:
+			}
+			spec, joined := lookupOption(t)
+			switch {
+			case spec == nil:
 				return opt, cmd, "", usagef("Unexpected option in this context: '%s'.", arg)
+			case spec.value && !joined:
+				pending = spec
+			default:
+				opt.apply(spec, afterEq(arg))
 			}
 		default:
 			positional++
@@ -111,7 +177,7 @@ func parseArgs(argv []string) (opt options, cmd command, info string, err error)
 			}
 		}
 	}
-	if expectingValue {
+	if pending != nil {
 		return opt, cmd, "", usagef("Never received a parameter for switch '--%s'.", lastSwitch)
 	}
 	return opt, cmd, "", nil
@@ -294,17 +360,16 @@ func sortCommand(cmd command, opt *options) (command, error) {
 func scanPassthrough(argv []string, opt *options) (string, []string, error) {
 	tool := ""
 	var ptArgs []string
-	wantConfig, wantTool, wantValue := false, false, false
+	var pending *optSpec
+	wantTool := false
 scan:
 	for _, arg := range argv {
 		switch {
 		case tool != "":
 			ptArgs = append(ptArgs, arg)
-		case wantConfig:
-			opt.configFile, opt.configGiven = arg, true
-			wantConfig = false
-		case wantValue:
-			wantValue = false
+		case pending != nil:
+			opt.apply(pending, arg)
+			pending = nil
 		case wantTool:
 			// Past the tool name every option is the tool's, so one typed here is
 			// ours arriving too late - not a subcommand nobody has heard of.
@@ -320,30 +385,25 @@ scan:
 		case !strings.HasPrefix(arg, "-"):
 			break scan
 		default:
-			o := stripDashes(strings.ToLower(arg))
+			// Anything not in the table, -h and -v among them, is the main parser's.
+			spec, joined := lookupOption(stripDashes(strings.ToLower(arg)))
 			switch {
-			case o == "q" || o == "quiet" || o == "y" || o == "yes":
-				opt.quiet = true
-			case o == "config":
-				wantConfig = true
-			case strings.HasPrefix(o, "config="):
-				opt.configFile, opt.configGiven = afterEq(arg), true
-			case o == "no-fetch" || o == "nofetch":
-			case o == "any-identity" || o == "anyidentity":
-				opt.anyIdentity = true
-			case o == "direct":
-			case o == "public" || o == "private":
-			case o == "staged":
-			case o == "m" || o == "message" || o == "msg":
-				wantValue = true
-			case strings.HasPrefix(o, "m=") || strings.HasPrefix(o, "message=") || strings.HasPrefix(o, "msg="):
-			default:
+			case spec == nil:
 				break scan
+			case spec.value && !joined:
+				pending = spec
+			default:
+				opt.apply(spec, afterEq(arg))
 			}
 		}
 	}
 	if wantTool {
 		return "", nil, syntaxUsage("", rawSyntax, rawDefs()...)
+	}
+	if tool != "" {
+		if err := checkOptionsUsed("raw", *opt); err != nil {
+			return "", nil, err
+		}
 	}
 	return tool, ptArgs, nil
 }

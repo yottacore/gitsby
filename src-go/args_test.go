@@ -384,3 +384,63 @@ func TestBorrowedNameRefusesRawToolNames(t *testing.T) { // [debe6]
 		}
 	}
 }
+
+// An option a command doesn't read is refused, never dropped. The ones that mean
+// something everywhere stay valid everywhere, raw included.
+func TestOptionsOnlyWhereRead(t *testing.T) { // [df4e9]
+	settle := func(argv ...string) error {
+		opt, cmd, _, err := parseArgs(argv)
+		if err != nil {
+			return err
+		}
+		if cmd, err = collapseCommand(cmd); err != nil {
+			return err
+		}
+		if cmd, err = sortCommand(cmd, &opt); err != nil {
+			return err
+		}
+		return checkOptionsUsed(typedName(cmd), opt)
+	}
+	for _, argv := range [][]string{
+		{"status", "-m", "x"}, {"status", "--public"}, {"pullcom", "--direct"}, {"pullcom", "--private"},
+		{"repo", "connect", "--public"}, {"br", "prune", "-m", "x"}, {"pr", "ok", "7", "-m", "x"}, {"pr", "--message=x"},
+		{"whoami", "--staged"}, {"account", "--direct"},
+	} {
+		if err := settle(argv...); err == nil {
+			t.Errorf("%v: took an option it doesn't read", argv)
+		}
+	}
+	for _, argv := range [][]string{
+		{"sync", "--direct"}, {"repo", "create", "o/n", "--public"}, {"repo", "connect", "-m", "x"}, {"pr", "create", "-m", "t"},
+		{"release", "-m", "x"}, {"br", "switch", "-m", "x"}, {"-q", "-NoFetch", "--any-identity", "--config", "f", "account"},
+		{"--no-fetch", "repo", "clone", "u"}, {"status", "-y"},
+	} {
+		if err := settle(argv...); err != nil {
+			t.Errorf("%v: refused: %v", argv, err)
+		}
+	}
+}
+
+// Both parsers read one table. Every spelling goes before raw, and only the
+// options with no command list get through to the tool.
+func TestRawTakesTheSameOptions(t *testing.T) { // [df4ea]
+	for _, spec := range optSpecs {
+		for _, s := range spec.spellings {
+			argv := []string{"--" + s}
+			if spec.value {
+				argv = append(argv, "v")
+			}
+			opt := defaultOptions()
+			tool, _, err := scanPassthrough(append(argv, "raw", "git", "status"), &opt)
+			switch {
+			case spec.cmds == nil && (err != nil || tool != "git"):
+				t.Errorf("--%s before raw: tool=%q err=%v", s, tool, err)
+			case spec.cmds != nil && err == nil:
+				t.Errorf("--%s before raw was taken and dropped", s)
+			}
+			if _, _, _, err := parseArgs(append(argv, "status")); err != nil {
+				t.Errorf("--%s: main parser refused it: %v", s, err)
+			}
+		}
+	}
+}

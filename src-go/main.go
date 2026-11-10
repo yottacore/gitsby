@@ -199,7 +199,7 @@ func (a *app) settleCommand(argv []string) error {
 	if a.cmd, err = sortCommand(a.cmd, &a.opt); err != nil {
 		return err
 	}
-	if err := checkStagedFlag(a.cmd, a.opt); err != nil {
+	if err := checkOptionsUsed(typedName(a.cmd), a.opt); err != nil {
 		return err
 	}
 	// Whether -q was typed, captured before the rule below writes the same field -

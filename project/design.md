@@ -118,6 +118,10 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 - The preview is a static recipe per command, with `*` marking steps that only happen if the repo state calls for them. It has to match what the command actually does, including where the command branches on state.
 
+- An option a command doesn't read is refused, and the refusal names the commands that take it. Dropping it would make a typo look like it did what was meant. Decided 2026-11-10.
+	- `-q`, `--no-fetch`, `--any-identity` and `--config` are taken by every command. Each means something everywhere, or asks for nothing a command could fail to do, like `--no-fetch` where nothing fetches. v2.1.0 took `-NoFetch` ahead of `raw`, and still does here.
+	- Both parsers read one table of options, so the options ahead of `raw` can't drift from the rest.
+
 - No command shells out through `eval`. Arguments are passed as arrays, so a message or branch name is never re-parsed.
 
 - Every program gitsby runs, git included, is found by one lookup that passes over any PATH entry that is gitsby itself. A link named `gh` to gitsby would otherwise start gitsby with gh's arguments. With nothing else on PATH, the command refuses with "Not found in path" and names that entry. The program still sees its own name as argv[0].

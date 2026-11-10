@@ -13,24 +13,6 @@ import (
 	"strings"
 )
 
-// checkStagedFlag refuses --staged where the command would commit everything
-// anyway. Ignoring it there would sweep in the very edits it was typed to keep out.
-// Read ahead of sortPr, so pr's subcommand is still the raw argument here.
-func checkStagedFlag(cmd command, opt options) error {
-	if !opt.staged {
-		return nil
-	}
-	switch cmd.name {
-	case "pullcom", "sync", "br-create", "br-hotfix", "br-switch", "br-merge", "release":
-		return nil
-	case "pr":
-		if sub := strings.ToLower(cmd.arg); sub == "create" || sub == "new" {
-			return nil
-		}
-	}
-	return usagef("--staged works with pullcom, sync, br create, br hotfix, br switch, br merge, pr create and release.")
-}
-
 // treeSplit is the working tree as --staged sees it, with paths from the top of
 // the repo. A file staged and then edited again is in both lists.
 type treeSplit struct {

@@ -7676,6 +7676,14 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 	fAssertOut  "[dbfhs] an option between raw and the tool says where ours go"  "options come before 'raw'" \
 		bash -c "cd '${renDir}' && '${gitsby}' raw -q git status 2>&1"
 
+	## An option a command doesn't read is refused, not dropped. raw was the last way past --staged.
+	fAssertOut  "[df4eb] --staged ahead of raw is refused"  'staged works with pullcom, sync' \
+		bash -c "cd '${renDir}' && '${gitsby}' --staged raw git status 2>&1"
+	fAssertOut  "[df4ec] -m on status is refused, naming what takes it"  'm works with pullcom, .* and repo connect\.' \
+		bash -c "cd '${renDir}' && '${gitsby}' -q status -m hello 2>&1"
+	fAssert     "[df4ed] --no-fetch and --any-identity still go ahead of raw" \
+		bash -c "cd '${renDir}' && '${gitsby}' -q --no-fetch --any-identity raw git rev-parse HEAD >/dev/null"
+
 	## ------------------------------------------------------------------------------------
 	## Directive review 20260819. Every check below fails against the build that preceded it,
 	## bar the two marked as follow-up state checks on the run above them.
