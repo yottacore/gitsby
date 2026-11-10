@@ -33,6 +33,103 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Code Review 20261110 enhancement 5: Usage errors exit 1, the same as a refusal or a failed step
+	- ID: 2026111010494722
+	- Type: Enhancement
+	- Status: Waiting for answers
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: A usage error exits 2: an unknown command or option, a wrong argument count, anything that prints a Syntax line. Refusals, failed steps and a no at the prompt keep 1. That is what getopt-based tools and bash builtins do, so a script can tell a typo from a refusal.
+	- Origin: The exit status table in style-guide_ui-ux.md, and 2.1.0 before it. No round raised it. Confirmed: `gitsby pr foo`, `gitsby br list extra` and a refused `pullcom` with no terminal all exit 1.
+	- Notes: git uses 129 for usage. The UI style guide is the only place the exit statuses are written down, and the README says nothing to someone scripting gitsby.
+	- Against: A script that tests for exactly 1 would change, and parity.bash may need its usage cases carved out. The README promises that nothing scripted stops working.
+
+- Code Review 20261110 item 1: An option a command doesn't read is taken and dropped
+	- ID: 2026111010494811
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104948
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: In any repo, run `gitsby --staged raw git commit`, `gitsby -m msg raw git commit`, `gitsby status -m hello`, `gitsby repo connect <url> --public` or `gitsby pullcom --direct`.
+	- Incorrect behavior [Bug]: Each runs with the option dropped and says nothing. `gitsby --staged status` is refused, so only `raw` lets `--staged` through, and design.md:180 says any other command refuses it, since ignoring it would sweep in the edits it was typed to keep out.
+	- Expected behavior [Bug]: A command refuses an option it doesn't read, the way `--staged` is refused, and names the commands that take it. `-q`, `--any-identity` and `--config` stay valid wherever they mean something.
+	- Reproduced [Bug]: 2026-11-10 on b23, built binary in a temp repo.
+	- Possible cause [Bug]: parseArgs and scanPassthrough each keep their own list of options, and only `--staged` is checked against the commands that read it, in staged.go:20. Nothing ties the other options to theirs.
+	- Origin: `--staged` in scanPassthrough from 9f53a91, and `--direct` from e1cc030, both 2026-10-05. `--public` and `--private` from 8da8951, 2026-08-17. A 2026-08 round fixed trailing arguments that were silently ignored, not options. No round saw this. Confirmed.
+	- Notes: 1 table of options and the commands that read each, used by both parsers, is where a new option can't get past the check. `-m` on `br create` and `br switch` is read by the commit that parks work, so it stays there.
+	- Against: A script that passes an option to a command that ignores it starts failing.
+
+- Code Review 20261110 item 2: The docs call -q the machine-readable mode, and its output is the same human layout
+	- ID: 2026111010494798
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: style-guide_ui-ux.md under Scripts and design.md:153 say `-q` is the machine-readable mode. `gitsby -q status` prints the same labeled, dot-padded block as without it, and a mutating `-q` run prints its plan and status lines. Only the build line goes. design.md's non-goals say there is no scripting surface beyond `raw`.
+	- Expected behavior [Bug]: The docs call `-q` the unattended mode: it answers yes, asks nothing, and leaves out the build line.
+	- Reproduced [Bug]: 2026-11-10, `gitsby -q status` in a temp repo.
+	- Origin: style-guide_ui-ux.md:176 from 578b34e, and design.md:153 from 483ebc5, 2026-10-06. No round saw it. Confirmed.
+	- Notes: A real machine-readable mode would be a new feature, against the `raw`-only non-goal, and isn't proposed here.
+
+- Code Review 20261110 item 3: One placeholder has several names across the help, the README and the Syntax lines
+	- ID: 2026111010494785
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: `repo connect` takes `[url]` in the help, `[target]` in the README and `[url | owner/name]` in its Syntax line. A PR number is `n` in the help, `<#>` in the README and `<number>` in the Syntax line. `repo create` takes `<o/n>` in the help and `<owner/name>` in the README and its Syntax line.
+	- Expected behavior [Bug]: One name per placeholder everywhere, per the UI style guide's "One word per thing" and the output sweep's row for it in design.md.
+	- Reproduced [Bug]: 2026-11-10, `gitsby --help`, `gitsby pr list` and `gitsby repo` against the README's Commands table.
+	- Origin: help.go:65 from 2206206, 2026-10-05, help.go:78 from 197677f, 2026-10-22, and README.md:105 from d446496, 2026-07-26. No round saw it. Confirmed.
+	- Notes: The help's left column is 20 wide, which is why it shortens them. Widening it, or moving the arguments into the description as `account set` already does, are the 2 ways.
+	- Decided against: making the Syntax line's `e.g. 'work', 'personal'` match the `github.com_my-work-login` examples. An account name is any string, and both are valid.
+
+- Code Review 20261110 enhancement 1: pr takes no list, and an unknown word after it gets the Syntax block
+	- ID: 2026111010494773
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: `pr list` is the same as a bare `pr`, as `br list` and `account list` are, and the help shows `pr [list]`. An unknown word after `pr` gets the line the other nouns give, such as "Unknown 'pr' subcommand 'foo'. One of: list, create, ok, or a number." `pr` folds to tokens in collapseCommand like `repo`, `br` and `account`, so sortCommand stops parsing subcommand words for 1 noun only.
+	- Origin: args.go:239 from 3d22222, 2026-08-17, the port, which kept 2.1.0's `pr` handling. No round saw it. Confirmed: `gitsby pr list` and `gitsby pr foo` both print the Syntax block and exit 1.
+	- Decided against: listing `acct`, `account show` and `br clean` beside `new` and `go` in design.md. They are v2.1.0 spellings, kept by the permanent alias rule like the rest.
+
+- Code Review 20261110 enhancement 2: -- isn't taken as the end of options
+	- ID: 2026111010494760
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: `--` ends gitsby's options, and everything after it is positional, as POSIX's utility guidelines and git have it. `gitsby pullcom -- '-v bump'` commits with that message. A `--` after `raw <tool>` stays the tool's.
+	- Origin: switchRegex at args.go:21 from 8da8951, 2026-08-17, which matches neither `-` nor `--`. 2.1.0 did the same. Confirmed: `gitsby -q pullcom --` made a commit with the subject `--`, and `gitsby pullcom -- msg` refuses with "Unexpected extra argument 'msg'". Today `-m` is the only way to give a message that starts with a dash.
+	- Notes: gitsby already passes `--` to git ahead of a clone's folder, for the same reason.
+
+- Code Review 20261110 enhancement 3: A command's --help prints the whole help screen, not that command's syntax
+	- ID: 2026111010494747
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: `--help` or `-h` after a command prints that command's Syntax block, the one a wrong argument count gets, and exits 0. A bare `--help` keeps the whole screen. Commands with no Syntax block yet get one.
+	- Origin: args.go:62 from 2a3ab8f, 2026-09-28. Confirmed: `gitsby br create -h` prints the full help. `--help` after a command was made to work on purpose in the 2.x days, since asking a subcommand for help is the reflex every git user has. Syntax blocks exist for `repo`, `pr`, `raw`, `account set` and `account unset`.
+
+- Code Review 20261110 enhancement 4: The help's opening lines leave out the plan and the question
+	- ID: 2026111010494735
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: The opening paragraph of `gitsby --help` says that a command which changes anything shows the git it will run and asks first, as well as checking state.
+	- Origin: help.go:29 from 4918b5b, 2026-08-19. No round saw it. Confirmed by reading: the help says each command checks state and is safe to re-run. The README opens on showing the git and asking, and that is design.md's second goal. design.md:126 says the help is the only documentation most people read.
+
 - Demo: add a br merge scene, and hold screens long enough to read
 	- ID: 2026111010125300
 	- Type: Enhancement
