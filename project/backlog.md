@@ -33,17 +33,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Code Review 20261110 enhancement 5: Usage errors exit 1, the same as a refusal or a failed step
+- Code Review 20261110 enhancement 5: The README says nothing about exit statuses to someone scripting gitsby
 	- ID: 2026111010494722
 	- Type: Enhancement
-	- Status: Waiting for answers
+	- Status: Queued
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
-	- Requirements [Feature]: A usage error exits 2: an unknown command or option, a wrong argument count, anything that prints a Syntax line. Refusals, failed steps and a no at the prompt keep 1. That is what getopt-based tools and bash builtins do, so a script can tell a typo from a refusal.
-	- Origin: The exit status table in style-guide_ui-ux.md, and 2.1.0 before it. No round raised it. Confirmed: `gitsby pr foo`, `gitsby br list extra` and a refused `pullcom` with no terminal all exit 1.
-	- Notes: git uses 129 for usage. The UI style guide is the only place the exit statuses are written down, and the README says nothing to someone scripting gitsby.
-	- Against: A script that tests for exactly 1 would change, and parity.bash may need its usage cases carved out. The README promises that nothing scripted stops working.
+	- Requirements [Feature]: The README gets the exit status table from style-guide_ui-ux.md: 0 for success and for nothing to do, 1 for a refusal, a failed step or a no at the prompt, and the tool's own status from `raw`. A check fails if the two tables differ.
+	- Origin: The exit status table in style-guide_ui-ux.md, and 2.1.0 before it. No round raised it. Confirmed: `gitsby pr foo`, `gitsby br list extra` and a refused `pullcom` with no terminal all exit 1, and the README doesn't say so.
+	- Notes: The UI style guide is the only place the exit statuses are written down, and it isn't where a script author looks.
+	- Decisions:
+		- Usage errors keep exit 1 (2026-11-10). The README's promise that nothing scripted stops working outweighs the convention, and most scripts test for non-zero anyway.
+	- Decided against: exit 2 for usage errors, as getopt-based tools and bash builtins do, or 129 as git does. A script that tests for exactly 1 would change, and parity.bash would need its usage cases carved out.
 
 - Code Review 20261110 item 1: An option a command doesn't read is taken and dropped
 	- ID: 2026111010494811
