@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash [dee5h] fails on a box not on UTC
 	- ID: 2026110920200900
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-202009
 	- Opened by:
@@ -47,6 +47,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements [Bug fix]: The fixture takes its names in UTC. Sweep test.bash for other fixtures that build a stamp cicd.bash now writes in UTC.
 	- Estimated effort: Low
 	- Origin: Seen 2026-11-09 on the fuzzretry branch, running test.bash on its own. Fails the same on d4ab0d3 and e0952c4. Stage 7 on b26 runs test.bash in local time too.
+	- Actual cause [Bug]: As the possible cause says.
+	- Actual fix [Bug]: `fGateRunFolder` makes the taken names with `date -u`.
+	- Swept: every `date` in cicd/ that builds a stamp. release.bash, remote-tests.bash and keep-build.bash name their own files in local time, and nothing compares those with a UTC name. `[df386]` already sets its zone.
+	- Branch: utcstamp
+	- Test case: test.bash [dee5h]
+	- Verified: [dee5h] fails on dev run outside cicd.bash, and passes after. test.bash 1922/0 on its own, in the image through `--backlog-run-quick`, and on the box with `--no-container`.
+	- Closed: 20261109-204000
 
 - Native fuzz step fails on a fuzz deadline, not a crasher
 	- ID: 2026110915475544
