@@ -26,9 +26,10 @@ func (a *app) printVersion() {
 
 func (a *app) printBlurb() {
 	a.out.clean("")
-	a.out.clean("Safer, state-checked wrappers for everyday git. Every command verifies the")
-	a.out.clean("repo state before acting (commit only if dirty, pull only with an upstream,")
-	a.out.clean("push only if ahead), so each is idempotent and safe to re-run.")
+	a.out.clean("Safer, state-checked wrappers for everyday git. A command that changes anything")
+	a.out.clean("shows the repo state and the exact git it will run, then asks first. Each step")
+	a.out.clean("checks state before it runs (commit only if dirty, pull only with an upstream,")
+	a.out.clean("push only if ahead), so every command is idempotent and safe to re-run.")
 	a.out.clean("")
 }
 

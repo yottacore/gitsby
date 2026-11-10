@@ -1608,6 +1608,7 @@ fRunSuite(){
 	fAssert     "[dafqy] --help works after a command"     "${gitsby}" update --help
 	fAssert     "[dafqz] --help works after noun and verb" "${gitsby}" br create --help
 	fAssert     "[dafr0] -h works after a command"         "${gitsby}" update -h
+	fAssertOut  "[df4f6] help opens on showing the git and asking first"  '^shows the repo state and the exact git it will run, then asks first\.'  "${gitsby}" --help
 	## A command's --help is its own Syntax block, not the whole screen.
 	fAssertOut  "[df4f2] br create --help prints its own syntax"  '^Syntax: gitsby br create <branch>$'  "${gitsby}" br create --help
 	fAssertNotOut "[df4f3] and not the whole screen"             '^Common commands:'                   "${gitsby}" br create --help

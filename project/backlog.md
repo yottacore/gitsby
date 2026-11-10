@@ -190,12 +190,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 enhancement 4: The help's opening lines leave out the plan and the question
 	- ID: 2026111010494735
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
 	- Requirements [Feature]: The opening paragraph of `gitsby --help` says that a command which changes anything shows the git it will run and asks first, as well as checking state.
 	- Origin: help.go:29 from 4918b5b, 2026-08-19. No round saw it. Confirmed by reading: the help says each command checks state and is safe to re-run. The README opens on showing the git and asking, and that is design.md's second goal. design.md:126 says the help is the only documentation most people read.
+	- Actual fix [Enhancement]: The help's opening says a command that changes anything shows the repo state and the exact git it will run, then asks first, before the state checks. `--about` prints the same lines.
+	- Branch: cr1110
+	- Test case: test.bash [df4f6], which fails against the build before it.
+	- Closed: 20261110-1208
 
 - Demo: add a br merge scene, and hold screens long enough to read
 	- ID: 2026111010125300
