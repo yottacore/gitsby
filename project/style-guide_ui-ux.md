@@ -54,6 +54,8 @@ New output follows this guide. Where the program and the guide disagree, one of 
 
 - gitsby's own options go before `raw <tool>`. Everything after the tool name belongs to that tool.
 
+- `--` ends gitsby's options, and what follows is positional, as POSIX and git have it. After `raw <tool>`, a `--` is the tool's.
+
 - An option a command doesn't read is refused, naming the commands that take it, and never dropped. `-q`, `--no-fetch`, `--any-identity` and `--config` are taken everywhere.
 
 ## Layout

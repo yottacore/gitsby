@@ -70,6 +70,7 @@ func (a *app) printSyntax() {
 	a.out.clean("  --no-fetch ...........: Skip the pre-command fetch, and the pull. (Pushes still go out.)")
 	a.out.clean("  --staged .............: Commit only what is staged, and leave the rest of the tree as it is.")
 	a.out.clean("  --config FILE ........: Read accounts from FILE instead of the usual config location.")
+	a.out.clean("  -- ...................: End of options. What follows is positional, so a message can start with '-'.")
 	a.out.clean("  -h, --help  /  -v, --version  /  --about  /  --donate")
 	a.out.clean("")
 }

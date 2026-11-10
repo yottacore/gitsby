@@ -157,13 +157,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 enhancement 2: -- isn't taken as the end of options
 	- ID: 2026111010494760
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
 	- Requirements [Feature]: `--` ends gitsby's options, and everything after it is positional, as POSIX's utility guidelines and git have it. `gitsby pullcom -- '-v bump'` commits with that message. A `--` after `raw <tool>` stays the tool's.
 	- Origin: switchRegex at args.go:21 from 8da8951, 2026-08-17, which matches neither `-` nor `--`. 2.1.0 did the same. Confirmed: `gitsby -q pullcom --` made a commit with the subject `--`, and `gitsby pullcom -- msg` refuses with "Unexpected extra argument 'msg'". Today `-m` is the only way to give a message that starts with a dash.
 	- Notes: gitsby already passes `--` to git ahead of a clone's folder, for the same reason.
+	- Actual fix [Enhancement]: Both parsers take a first `--` as the end of gitsby's options. A value an option is waiting for still wins, so `-m --` is the message `--`. The help's option list, the README's Options line and the UI style guide name it.
+	- Branch: cr1110
+	- Test case: Go [df4eq], test.bash [df4er]. [df4eq] fails against the parser before it, and [df4er]'s command made no commit with the build before it.
+	- Closed: 20261110-1155
 
 - Code Review 20261110 enhancement 3: A command's --help prints the whole help screen, not that command's syntax
 	- ID: 2026111010494747

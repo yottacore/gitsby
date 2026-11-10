@@ -461,3 +461,26 @@ func TestCollapsePr(t *testing.T) { // [df4em]
 		}
 	}
 }
+
+// '--' ends gitsby's options, as POSIX and git have it. Before it a '--' was a
+// positional, so 'pullcom --' committed with the message '--'.
+func TestDoubleDashEndsOptions(t *testing.T) { // [df4eq]
+	opt, cmd, _, err := parseArgs([]string{"-q", "pullcom", "--", "-v bump"})
+	if err != nil || cmd.name != "pullcom" || cmd.arg != "-v bump" || !opt.quiet {
+		t.Errorf("pullcom -- '-v bump': cmd=%+v err=%v", cmd, err)
+	}
+	if _, cmd, _, err = parseArgs([]string{"pullcom", "--"}); err != nil || cmd.arg != "" {
+		t.Errorf("pullcom --: arg=%q err=%v", cmd.arg, err)
+	}
+	if _, cmd, _, err = parseArgs([]string{"pullcom", "--", "--"}); err != nil || cmd.arg != "--" {
+		t.Errorf("pullcom -- --: arg=%q err=%v", cmd.arg, err)
+	}
+	if opt, _, _, err = parseArgs([]string{"-m", "--", "pullcom"}); err != nil || opt.message != "--" {
+		t.Errorf("-m --: the value wins, got %q err=%v", opt.message, err)
+	}
+	opt = defaultOptions()
+	tool, args, err := scanPassthrough([]string{"-q", "--", "raw", "git", "log", "--", "x"}, &opt)
+	if err != nil || tool != "git" || joinArgs(args) != joinArgs([]string{"log", "--", "x"}) {
+		t.Errorf("-- raw git log -- x: tool=%q args=%v err=%v", tool, args, err)
+	}
+}

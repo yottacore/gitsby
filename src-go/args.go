@@ -127,6 +127,7 @@ func parseArgs(argv []string) (opt options, cmd command, info string, err error)
 	cmd = command{mutating: true}
 	lastSwitch := ""
 	var pending *optSpec // an option still waiting for its value
+	endOpts := false     // past '--', where everything is positional
 	positional := 0
 	for _, arg := range argv {
 		switch {
@@ -135,7 +136,9 @@ func parseArgs(argv []string) (opt options, cmd command, info string, err error)
 			// '-m -Wall added' is a commit message.
 			opt.apply(pending, arg)
 			pending = nil
-		case switchRegex.MatchString(arg):
+		case arg == "--" && !endOpts:
+			endOpts = true
+		case !endOpts && switchRegex.MatchString(arg):
 			t := stripDashes(strings.ToLower(arg))
 			lastSwitch = t
 			switch t {
@@ -373,7 +376,7 @@ func scanPassthrough(argv []string, opt *options) (string, []string, error) {
 	tool := ""
 	var ptArgs []string
 	var pending *optSpec
-	wantTool := false
+	wantTool, endOpts := false, false
 scan:
 	for _, arg := range argv {
 		switch {
@@ -392,9 +395,11 @@ scan:
 				return "", nil, usagef("Unknown 'raw' subcommand '%s'. One of: %s.", arg, strings.Join(rawTools, ", "))
 			}
 			tool, wantTool = arg, false
+		case arg == "--" && !endOpts:
+			endOpts = true
 		case arg == "raw":
 			wantTool = true
-		case !strings.HasPrefix(arg, "-"):
+		case !strings.HasPrefix(arg, "-") || endOpts:
 			break scan
 		default:
 			// Anything not in the table, -h and -v among them, is the main parser's.

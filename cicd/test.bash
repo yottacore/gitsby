@@ -7700,6 +7700,12 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		bash -c "cd '${renDir}' && '${gitsby}' -q status -m hello 2>&1"
 	fAssert     "[df4ed] --no-fetch and --any-identity still go ahead of raw" \
 		bash -c "cd '${renDir}' && '${gitsby}' -q --no-fetch --any-identity raw git rev-parse HEAD >/dev/null"
+	## '--' ends our options, the way POSIX and git have it. It used to be a positional, so
+	## 'pullcom --' committed with the message '--'.
+	local ddRepo="${work}/dashdash"
+	git init --quiet -b main "${ddRepo}" && echo a > "${ddRepo}/a.txt"
+	fAssert     "[df4er] after '--' a message can start with a dash" \
+		bash -c "cd '${ddRepo}' && '${gitsby}' -q -NoFetch pullcom -- '-v bump' >/dev/null && [[ \"\$(git log -1 --format=%s)\" == '-v bump' ]]"
 
 	## ------------------------------------------------------------------------------------
 	## Directive review 20260819. Every check below fails against the build that preceded it,
