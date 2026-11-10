@@ -33,6 +33,25 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- test.bash [dee5h] fails when the gate run starts more than 6 seconds after its fixture
+	- ID: 2026111011385413
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-113854
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Run `cicd.bash --backlog-run-quick suite` on a loaded box.
+	- Incorrect behavior [Bug]: [dee5h] fails now and then, and passes on a rerun. It failed once on 2026-11-10 at load 10, between 2 passing runs.
+	- Expected behavior [Bug]: It passes however long the run takes to start.
+	- Reproduced [Bug]: Once in 3 runs on b23, 2026-11-10, in the image.
+	- Possible cause [Bug]: fGateRunFolder makes the `_001` folders for the next 6 seconds only, then expects the run to take `_002`. A run that picks its stamp later finds `_001` free.
+	- Origin: fGateRunFolder in test.bash, from the 2026-10-24 CICD reset. No round saw it. Plausible: the cause is read, not reproduced on demand.
+	- Actual cause [Bug]: As read. The window was 6 seconds, and a loaded box took longer than that to start the run.
+	- Actual fix [Bug]: The fixture makes the `_001` folders for 120 seconds ahead.
+	- Branch: cr1110
+	- Test case: [dee5h] itself. With a 7-second sleep put in ahead of the run, it passes. The old 6-second window can't, and it failed on its own once at load 10.
+	- Closed: 20261110-1142
+
 - Code Review 20261110 enhancement 5: The README says nothing about exit statuses to someone scripting gitsby
 	- ID: 2026111010494722
 	- Type: Enhancement

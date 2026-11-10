@@ -749,14 +749,15 @@ fGateKeepTempImage(){
 fGateRunFolder(){
 	local t="${gateDir}/tmp-folder" rc=0 i line="" dir=""
 	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}/host/gitsby" "${t}/other"
-	for i in 0 1 2 3 4 5; do mkdir -p "${t}/host/gitsby/$(date -u -d "+${i} seconds" +%Y%m%d-%H%M%S)_001"; done
+	## Every second for 2 minutes, since a loaded box can take several to start the run.
+	for ((i = 0; i < 120; i++)); do mkdir -p "${t}/host/gitsby/$(date -u -d "+${i} seconds" +%Y%m%d-%H%M%S)_001"; done
 	fGateStub "${gateDir}/cicd/test.bash" test "printf 'tmp=%s %s %s pid=%s\\n' \"\${TMPDIR:-}\" \"\${TEMP:-}\" \"\${TMP:-}\" \"\$(cat \"\${TMPDIR:-}/run.pid\" 2>/dev/null)\" >> '${gateCalls}'"
 	gateHostTemp="${t}/host" TMPDIR="${t}/other" fGateStatus 0 --no-container --backlog-run-quick suite || rc=1
 	line="$(sed -n 's/^tmp=//p' "${gateCalls}")"
 	dir="${line%% *}"
 	[[ "${dir}" =~ ^${t}/host/gitsby/[0-9]{8}-[0-9]{6}_002$ && "${line}" =~ ^${dir}\ ${dir}\ ${dir}\ pid=[0-9]+$ ]] || rc=1
 	## Gone once the run ended, and nothing went to TMPDIR. The names taken are left alone.
-	[[ ! -e "${dir}" && -z "$(ls -A "${t}/other")" && "$(compgen -G "${t}/host/gitsby/*_001" | wc -l | tr -d ' ')" == 6 ]] || rc=1
+	[[ ! -e "${dir}" && -z "$(ls -A "${t}/other")" && "$(compgen -G "${t}/host/gitsby/*_001" | wc -l | tr -d ' ')" == 120 ]] || rc=1
 	fGateStub "${gateDir}/cicd/test.bash" test
 	fSafeRm_IfThere "${t:?}"
 	((rc == 0))
