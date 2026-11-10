@@ -172,12 +172,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 enhancement 3: A command's --help prints the whole help screen, not that command's syntax
 	- ID: 2026111010494747
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
 	- Requirements [Feature]: `--help` or `-h` after a command prints that command's Syntax block, the one a wrong argument count gets, and exits 0. A bare `--help` keeps the whole screen. Commands with no Syntax block yet get one.
 	- Origin: args.go:62 from 2a3ab8f, 2026-09-28. Confirmed: `gitsby br create -h` prints the full help. `--help` after a command was made to work on purpose in the 2.x days, since asking a subcommand for help is the reflex every git user has. Syntax blocks exist for `repo`, `pr`, `raw`, `account set` and `account unset`.
+	- Decisions:
+		- `help <command>` and `-h <command>` ask about that command too, as `git help` does. Before, a help word in the first slot always printed the whole screen.
+		- The block also names the options the command takes, read from the same option table as the refusals.
+		- A noun alone, such as `br --help`, gets the noun's block with every verb, and a line naming each verb's own `--help`.
+	- Actual fix [Enhancement]: `helpFor` in usage.go reads the command words past the options and prints that entry of the `usages` table: its Syntax block, its help line, and its options. `raw --help` stops at gitsby's parser instead of being refused as an option after `raw`.
+	- Branch: cr1110
+	- Test case: Go [df4f1], test.bash [df4f2] to [df4f5]. [df4f1] fails with helpFor stubbed out, and [df4f2] to [df4f5] each fail against the build before it.
+	- Closed: 20261110-1205
 
 - Code Review 20261110 enhancement 4: The help's opening lines leave out the plan and the question
 	- ID: 2026111010494735

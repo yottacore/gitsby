@@ -85,6 +85,12 @@ func run(out *printer, argv []string) error {
 	}
 	switch strings.ToLower(argv[0]) {
 	case "-h", "--help", "help":
+		// 'help br create' asks about br create, as '-h' after it does.
+		if block := helpFor(argv[1:]); block != nil {
+			a.printCmdHelp(block)
+			out.clean("")
+			return nil
+		}
 		a.printHelp()
 		return nil
 	case "-v", "--ver", "--version", "version":
@@ -172,7 +178,11 @@ func (a *app) settleCommand(argv []string) error {
 	if info != "" {
 		switch info {
 		case "help":
-			a.printHelp()
+			if block := helpFor(argv); block != nil {
+				a.printCmdHelp(block)
+			} else {
+				a.printHelp()
+			}
 		case "about":
 			a.printAbout()
 		case "donate":

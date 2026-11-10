@@ -128,6 +128,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- Started under the name of a tool `raw` runs, gitsby refuses and points to `gitsby raw <name>`. Acting as that tool would be one more way in, and nothing needs it. Any other name still runs, since the release files are named like `gitsby-linux-amd64`.
 
 - Any command named inside an error message, or in the built-in help, has to be one the parser still accepts. The help is the only documentation most people read, so it drifting is a defect, not a typo.
+	- `--help` after a command, or `help` before one, prints only that command: its Syntax block, what it does, and the options it takes. It comes from the same table as the help screen's list and the Syntax refusals, so the 3 can't disagree. A noun alone gets the noun's block, and anything unknown the whole screen. Decided 2026-11-10.
 
 - A recursive or forced removal may only target a path the running script itself created, and has to be able to prove it.
 	- In practice that means the path came straight from `mktemp` and nothing else ever assigns it.

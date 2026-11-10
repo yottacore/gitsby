@@ -8,7 +8,10 @@
 
 package main
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 type cmdUsage struct {
 	cmd   string // as typed, such as "br create"
@@ -149,4 +152,90 @@ func (u cmdUsage) helpLine() string {
 		label += " " + strings.Repeat(".", pad-1)
 	}
 	return "  " + label + ": " + text
+}
+
+// helpFor is the block '<command> --help' prints. Nil means the whole help screen:
+// no command was typed, or one the parser doesn't know.
+func helpFor(argv []string) []string {
+	var words []string
+	var pending *optSpec
+	endOpts := false
+	for _, arg := range argv {
+		switch {
+		case pending != nil:
+			pending = nil
+		case arg == "--" && !endOpts:
+			endOpts = true
+		case !endOpts && switchRegex.MatchString(arg):
+			if spec, joined := lookupOption(stripDashes(strings.ToLower(arg))); spec != nil && spec.value && !joined {
+				pending = spec
+			}
+		default:
+			words = append(words, arg)
+		}
+	}
+	if len(words) == 0 {
+		return nil
+	}
+	if len(words) == 1 {
+		switch strings.ToLower(words[0]) {
+		case "repo", "repository":
+			return nounHelp("repo")
+		case "br", "branch":
+			return nounHelp("br")
+		case "account", "acct":
+			return nounHelp("account")
+		case "pr":
+			return nounHelp("pr")
+		}
+	}
+	cmd := command{name: words[0]}
+	if len(words) > 1 {
+		cmd.arg = words[1]
+	}
+	cmd, err := collapseCommand(cmd)
+	if err != nil {
+		return nil
+	}
+	name := typedName(cmd)
+	switch {
+	case cmd.name == "pr" && cmd.arg != "" && prNumRE.MatchString(cmd.arg):
+		return usages[slices.IndexFunc(usages, func(u cmdUsage) bool { return u.cmd == "pr" && u.args == "<number>" })].helpBlock()
+	case name == "br list" || name == "account list":
+		name = strings.TrimSuffix(name, " list")
+	}
+	for _, u := range usages {
+		if u.cmd == name {
+			return u.helpBlock()
+		}
+	}
+	return nil
+}
+
+// helpBlock is the Syntax block, what the command does, and the options it takes.
+func (u cmdUsage) helpBlock() []string {
+	var lines []string
+	if u.lines != nil {
+		lines = u.lines()
+	} else {
+		lines = strings.Split(u.refuse("").Error(), "\n")
+		var what []string
+		for _, l := range wrapWords(u.help, noteWidth+16) {
+			what = append(what, "  "+l)
+		}
+		lines = slices.Insert(lines, 1, what...)
+	}
+	var opts []string
+	for _, spec := range optSpecs {
+		if spec.cmds == nil || slices.Contains(spec.cmds, u.cmd) {
+			opts = append(opts, spec.shown)
+		}
+	}
+	return append(lines, "  Options: "+strings.Join(opts, ", ")+".")
+}
+
+// nounHelp is a noun's block, with each verb's own '--help' named under it.
+func nounHelp(noun string) []string {
+	lines := strings.Split(nounRefusal(noun).Error(), "\n")
+	return append(lines, "  Each verb has its own, as '"+meName+" "+noun+" <verb> --help'.")
 }

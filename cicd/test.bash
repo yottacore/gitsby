@@ -1608,6 +1608,12 @@ fRunSuite(){
 	fAssert     "[dafqy] --help works after a command"     "${gitsby}" update --help
 	fAssert     "[dafqz] --help works after noun and verb" "${gitsby}" br create --help
 	fAssert     "[dafr0] -h works after a command"         "${gitsby}" update -h
+	## A command's --help is its own Syntax block, not the whole screen.
+	fAssertOut  "[df4f2] br create --help prints its own syntax"  '^Syntax: gitsby br create <branch>$'  "${gitsby}" br create --help
+	fAssertNotOut "[df4f3] and not the whole screen"             '^Common commands:'                   "${gitsby}" br create --help
+	fAssert     "[df4f4] raw --help is gitsby's, not an option after raw" \
+		bash -c "out=\"\$('${gitsby}' raw --help 2>/dev/null)\" && grep -q '^Syntax: gitsby raw <tool>' <<< \"\${out}\""
+	fAssertOut  "[df4f5] help before a command asks about it"    '^Syntax: gitsby pr ok <number>$'    "${gitsby}" help pr ok
 	fAssertFail "[dafr1] -v after a command is refused"    bash -c "cd '${cloneA}' && '${gitsby}' -q update -v"
 	fAssertOut  "[dafr2] and says which option"            'Unexpected option'  bash -c "cd '${cloneA}' && '${gitsby}' -q update -v 2>&1"
 	fAssert     "[dab76] -y alias accepted"            bash -c "cd '${cloneA}' && '${gitsby}' -y status"

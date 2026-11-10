@@ -386,6 +386,11 @@ scan:
 			opt.apply(pending, arg)
 			pending = nil
 		case wantTool:
+			// 'raw --help' is a question about raw, for the main parser to answer.
+			if t := stripDashes(strings.ToLower(arg)); t == "h" || t == "help" {
+				wantTool = false
+				break scan
+			}
 			// Past the tool name every option is the tool's, so one typed here is
 			// ours arriving too late - not a subcommand nobody has heard of.
 			if strings.HasPrefix(arg, "-") {

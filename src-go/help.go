@@ -75,6 +75,15 @@ func (a *app) printSyntax() {
 	a.out.clean("")
 }
 
+// printCmdHelp prints one command's help block under the build line.
+func (a *app) printCmdHelp(block []string) {
+	a.out.clean("")
+	a.printBanner()
+	for _, l := range block {
+		a.out.clean(l)
+	}
+}
+
 func (a *app) printHelp() {
 	a.printCopyright()
 	a.printBlurb()

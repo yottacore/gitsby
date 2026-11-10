@@ -67,3 +67,42 @@ func TestNounRefusal(t *testing.T) { // [df4eg]
 		}
 	}
 }
+
+// Every command answers '<command> --help' with its own block, opening on its own
+// syntax. A noun alone gets the noun's block, and anything unknown the whole screen.
+func TestHelpForEveryCommand(t *testing.T) { // [df4f1]
+	nouns := map[string]bool{"br": true, "account": true, "pr": true}
+	for _, u := range usages {
+		words := strings.Fields(u.cmd)
+		switch {
+		case u.cmd == "pr" && u.args == "<number>":
+			words = []string{"pr", "7"}
+		case nouns[u.cmd]:
+			continue
+		}
+		block := helpFor(append(words, "--help"))
+		if len(block) == 0 || block[0] != "Syntax: "+meName+" "+u.syntax() {
+			t.Errorf("%v --help: got %q", words, block)
+			continue
+		}
+		if last := block[len(block)-1]; !strings.HasPrefix(last, "  Options: -q, --no-fetch") {
+			t.Errorf("%v --help: no options line, got %q", words, last)
+		}
+	}
+	for argv, want := range map[string]string{
+		"br create --help":     "Options: -q, --no-fetch, --any-identity, --config, --staged, -m.",
+		"-q update -h":         "Syntax: " + meName + " pullcom [message]",
+		"repo --help":          "Syntax: " + meName + " repo <clone",
+		"branch -h":            "Syntax: " + meName + " br [",
+		"sync --direct --help": "--direct",
+	} {
+		if got := strings.Join(helpFor(strings.Fields(argv)), "\n"); !strings.Contains(got, want) {
+			t.Errorf("%s: want %q in %q", argv, want, got)
+		}
+	}
+	for _, argv := range []string{"--help", "-q -h", "nosuch --help"} {
+		if got := helpFor(strings.Fields(argv)); got != nil {
+			t.Errorf("%s: want the whole screen, got %q", argv, got)
+		}
+	}
+}
