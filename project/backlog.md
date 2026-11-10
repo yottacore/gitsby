@@ -3223,9 +3223,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions:
 		- A plain printf rather than an error helper, since a helper defined in a sourced settings file would land in the script that sources it.
 		- gfs-rotate.bash is the shared file, so it's left as it is here. Its patch and issue text are drafted in the round's upstream folder, under `2026110912215211/`.
+			- Answered 2026-11-09, file it: every copy prints with printf to stderr now, gitsby's on branch gfsguard. Copies in other projects are left uncommitted there, as on 2026-10-04. Skipped the synced `wsl/` copy, slodworld's `wt/analysis` worktree, silkterm's `forks/shcl-v2` and rename-foundry.
 	- Branch: round-20261109
-	- Test case: test.bash [df33s]
-	- Verified: [df33s] fails on HEAD's config.bash, which wrote the error to stdout, and passes after. `--backlog-run-quick` passed: test.bash 1889/0.
+	- Test case: test.bash [df33s], [df3fd]
+	- Verified: [df3fd] fails on the old gfs-rotate.bash and passes after, test.bash 1919/0. [df33s] fails on HEAD's config.bash, which wrote the error to stdout, and passes after. `--backlog-run-quick` passed: test.bash 1889/0.
 		- Swept: every sourced-only guard and `echo -e` in the live scripts. Only gfs-rotate.bash:213 has the same line.
 	- Acceptance signoff: Self-closed: its test runs passed.
 	- Closed: 20261109-124440
