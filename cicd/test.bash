@@ -2122,6 +2122,31 @@ fRunSuite(){
 	fAssertPlan "[ddgbh] a name a tag also answers to is spelled out further"  '^ +git merge --ff-only --autostash remotes/origin/far \*$'  bash -c "cd '${nameA}' && '${gitsby}' -q -NoFetch pullcom"
 	fAssert     "[ddgbj] and the step that runs is the line the plan showed"  fPlanRan '^ +git merge --ff-only'  bash -c "cd '${nameA}' && '${gitsby}' -q pullcom"
 	fAssert     "[ddgbk] and it brings in origin's commit"  bash -c "cd '${nameA}' && [[ -f g.txt ]]"
+	## The push names the branch, so push.default and origin's own push refspecs can't send
+	## another branch with it, or mirror. main is a commit ahead of origin's here.
+	local pdO="${work}/$1-pdo.git" pdA="${work}/$1-pda"
+	git init --quiet --bare -b main "${pdO}"
+	git clone --quiet "${pdO}" "${pdA}" 2>/dev/null
+	(
+		cd "${pdA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git push --quiet origin main:refs/heads/keep
+		git checkout --quiet -b feat && git push --quiet -u origin feat
+		git checkout --quiet main && echo two > g.txt && git add --all && git commit --quiet -m "main only" && git checkout --quiet feat
+	)
+	fSyncPushesOnlyFeat(){
+		( cd "${pdA}" && echo "$1" > "$1.txt" && "${gitsby}" -q sync "$1" ) || return 1
+		[[ "$(git -C "${pdO}" rev-parse feat)" == "$(git -C "${pdA}" rev-parse feat)" && "$(git -C "${pdO}" rev-parse main)" != "$(git -C "${pdA}" rev-parse main)" ]]
+	}
+	git -C "${pdA}" config push.default matching
+	fAssert "[df52c] sync under push.default=matching pushes the branch and not main"  fSyncPushesOnlyFeat f1
+	git -C "${pdA}" config --unset push.default
+	git -C "${pdA}" config remote.origin.push '+refs/heads/*:refs/heads/*'
+	fAssert "[df52d] and so does one with a push refspec for every branch"  fSyncPushesOnlyFeat f2
+	git -C "${pdA}" config --unset remote.origin.push
+	git -C "${pdA}" config remote.origin.mirror true
+	## git refuses a named branch on a mirror remote, so the sync fails, but nothing moves.
+	( cd "${pdA}" && echo f3 > h3.txt && "${gitsby}" -q sync 'feat 3' ) >/dev/null 2>&1 || true
+	fAssert "[df52e] and a mirror remote keeps a branch only origin has"  bash -c "git -C '${pdO}' show-ref --verify --quiet refs/heads/keep && [[ \"\$(git -C '${pdO}' rev-parse main)\" != \"\$(git -C '${pdA}' rev-parse main)\" ]]"
+	git -C "${pdA}" config --unset remote.origin.mirror
 	fStagedChecks "$1"
 
 	## A command that still means something locally runs offline and says what it skipped; one

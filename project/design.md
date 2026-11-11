@@ -181,6 +181,10 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- `--no-fetch` and offline skip the step as before, rather than merging what an earlier fetch left. That would call the branch up to date against refs nobody checked.
 	- It stays fast-forward only, as the pull was. A diverged branch still refuses, with the tree left as it was.
 
+- The push step names the branch and where it goes (2026-11-10). A bare `git push` follows `push.default` and `remote.<name>.push`, so under `matching`, or a refspec for every branch, it sent branches the plan never named. On a mirror remote it deleted origin's branches that weren't here.
+	- It goes where a bare push would send that branch alone: the push remote, as `pushRemote` or `remote.pushDefault` sets it, and the ref that remote's push refspecs map it to. Where git has no one answer, as under `push.default=nothing`, it goes to the upstream the pull reads.
+	- A first push is still `git push -u origin HEAD`. On a mirror remote git refuses a named branch, so the push fails and nothing moves.
+
 - `--staged` commits the index only, and its pulls go without `--autostash` (2026-10-05).
 	- It is a flag on `pullcom`, `sync`, `pr create`, `release`, and the branch commands that commit before they move. Any other command refuses it, since ignoring it would sweep in the edits it was typed to keep out. It is opt-in: a file staged long ago would otherwise make a commit quietly smaller.
 	- Git reapplies its autostash without `--index`. Staged work comes back unstaged, and a file staged and then edited again loses its staged copy, so the commit after the pull would take nothing. Checked on git 2.51, and git's current source still applies it that way.

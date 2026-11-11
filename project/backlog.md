@@ -194,7 +194,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 5: sync and the park pushes follow push.default, so they push branches the plan never names
 	- ID: 2026111016332392
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
 	- Opened by: jim-collier
@@ -205,6 +205,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: pushArgs in mutate.go returns a bare `git push` once the branch has an upstream.
 	- Origin: 38cc756, 2026-10-04. The bare push is older. No round saw it. Confirmed.
 	- Sweep: Every caller of pushArgs: sync, each park, release's 2 pushes, br merge's fallback push, repo connect.
+	- Actual cause [Bug]: pushArgs returned a bare `git push`, which follows push.default and remote.origin.push. release's push of dev was a second bare push.
+	- Decisions:
+		- The push goes where a bare push would send that branch alone. pushRemote and remote.pushDefault still pick the remote, and a push refspec that renames the branch is followed. Fork users keep pushing to their fork.
+		- Where git has no one answer, as under push.default=nothing, it goes to the upstream, since the command asks to push.
+		- On a mirror remote git refuses a named branch, so the push fails and nothing moves. A `+` in a push refspec no longer forces.
+		- A remote name that starts with a dash gets `--` before it, since git takes a remote named `--all`.
+		- 1 more git call per push, a for-each-ref that also names the current branch. spawn-count `[df37w]` 37 -> 38 and `[df052]` 42 -> 43. Check: entry filed.
+	- Actual fix [Bug]: pushArgs names the remote and `HEAD:<ref>`, read from 1 for-each-ref. release's dev push uses it too. design.md and the changelog say so.
+	- Swept: every `"push"` in src-go. publishBranch, repo connect's add, the tag push, br merge's atomic push and the deletes already name their refs. pr create and the branch commands park through cmdPush.
+	- Test case: Go [df52f], test.bash [df52c] to [df52e]. [df52f] fails 9 of its 10 cases on the old pushArgs, and [df52c] to [df52e] fail against the build before the fix: main went to origin, and the mirror remote lost a branch.
+	- Acceptance signoff: Quick gate passed, all areas. gosec has no finding in the changed lines.
+	- Closed: 20261110-221524
 
 - Code Review 20261110b item 6: br switch from main or dev pushes commits straight to the protected branch without --direct
 	- ID: 2026111016332380

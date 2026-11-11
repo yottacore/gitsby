@@ -59,6 +59,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - After a `release` whose push of the default branch was refused, as by a hook or branch protection, running `release` again finishes it: it pushes the branch and that release's tag, then fast-forwards `dev`. It used to tag the same commit with the next version and push only that, so the first tag never left the machine. Typing the same version again finishes it too.
 
+- `sync`, and every command that pushes the branch it's on, pushes only that branch. Under `push.default=matching`, or a push refspec for every branch, they pushed other branches with it, so a commit on `main` reached origin without `--direct`. On a mirror remote they deleted origin's branches that aren't here. git now refuses that push, and nothing moves.
+
 - A syntax error from `release` or `raw` that quotes what was typed shows a control character by name, as every other error does, so an escape typed by mistake no longer changes the terminal's colors.
 
 ## v3.0.0-beta.1 - 2026-11-08

@@ -272,7 +272,7 @@ func (a *app) cmdRelease() error {
 				return err
 			}
 			if a.hasUpstream() {
-				if err := a.step("git", "push"); err != nil {
+				if err := a.step("git", a.pushArgs()...); err != nil {
 					return err
 				}
 			}

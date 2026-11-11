@@ -314,7 +314,7 @@ fMeasure "[ddf68] pullcom with a fetch"                 28 pipe repo        -q p
 fMeasure "[dbftm] br switch"                           26 pipe repo        -q --no-fetch br switch main
 fMeasure "[df37t] br merge"                             41 pipe feature     -q --no-fetch br merge
 fMeasure "[df37v] br merge with a fetch"                52 pipe feature     -q br merge
-fMeasure "[df37w] br switch of a staged change"         37 pipe staged      -q --no-fetch --staged br switch dev
+fMeasure "[df37w] br switch of a staged change"         38 pipe staged      -q --no-fetch --staged br switch dev
 fMeasure "[dbftn] br prune"                            31 pipe repo        -q --no-fetch br prune
 fMeasure "[deytk] br prune of five branches"           31 pipe prune5      -q --no-fetch br prune
 fMeasure "[ddf4z] status with a fetch"                 17 tty  repo        status
@@ -326,7 +326,7 @@ fMeasure "[df04s] status in a tea ssh folder"          16 tty  acct-gitea  --no-
 fMeasure "[df04t] whoami in a tea ssh folder"          12 tty  acct-gitea  --no-fetch whoami
 fMeasure "[df04v] repo url in a tea ssh folder"         8 pipe acct-gitea  -q --no-fetch repo url
 fMeasure "[df051] pullcom in a tea ssh folder"         27 pipe acct-gitea  -q --no-fetch pullcom "spawn count"
-fMeasure "[df052] pr create in a tea ssh folder"       42 pipe acct-gitea  -q --no-fetch pr create
+fMeasure "[df052] pr create in a tea ssh folder"       43 pipe acct-gitea  -q --no-fetch pr create
 fMeasure "[df37x] pr create in a glab ssh folder"      31 pipe acct-glab   -q --no-fetch pr create
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -432,3 +432,4 @@ TZ=UTC0 gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261109 JC: br merge, with and without a fetch, br switch with --staged, and pr create in a GitLab folder over ssh, with a fake glab.
 ##		- 20261109 JC: Records are named and rotated in UTC. The box named them in its own time and the image in UTC, so west of UTC a box run took the image's older record as its baseline, and rotation dropped its own.
 ##		- 20261110 JC: A measure fails when its command exits nonzero. The fake tea answers pulls list and pulls create, so pr create in the Gitea folder runs to the end.
+##		- 20261110 JC: A push that has an upstream asks for-each-ref where it goes, 1 more each: br switch of a staged change 37 -> 38, pr create in the Gitea folder 42 -> 43.

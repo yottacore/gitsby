@@ -11,6 +11,7 @@
 package main
 
 import (
+	"cmp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -142,13 +143,50 @@ func (a *app) directPushText() string {
 	return "This pushes your work straight to '" + a.currentBranch() + "'. But the recommended workflow is to push to a branch and merge one level higher through a pull request."
 }
 
-// pushArgs pushes the current branch. One with no upstream yet is a first publish:
-// it goes up under its own name and tracks origin's copy from then on.
+// pushArgs pushes the current branch and nothing else, named in full, since a bare
+// push follows push.default and remote.<name>.push and can send every matching
+// branch, or mirror. One with no upstream yet is a first publish: it goes up under
+// its own name and tracks origin's copy from then on.
 func (a *app) pushArgs() []string {
 	if !a.hasUpstream() {
 		return []string{"push", "-u", "origin", "HEAD"}
 	}
-	return []string{"push"}
+	remote, ref := a.pushDest()
+	if strings.HasPrefix(remote, "-") {
+		// git takes '--all' as a remote name.
+		return []string{"push", "--", remote, "HEAD:" + ref}
+	}
+	return []string{"push", remote, "HEAD:" + ref}
+}
+
+// pushDest is where a bare push would send the current branch: the push remote,
+// which pushRemote or remote.pushDefault can set apart from the upstream's, and the
+// ref that remote's push refspecs map it to. Where git has no one answer, as under
+// push.default=nothing, it's the upstream, as for the pull.
+func (a *app) pushDest() (remote, ref string) {
+	var branch, pushRemote, pushRef, upRemote, upRef string
+	// %(HEAD) marks the current branch, so naming it costs no second call.
+	for _, line := range runLines("git", "for-each-ref", "--format=%(HEAD)%00%(refname)%00%(push:remotename)%00%(push:remoteref)%00%(upstream:remotename)%00%(upstream:remoteref)", "refs/heads/") {
+		if f := strings.Split(line, "\x00"); len(f) == 6 && f[0] == "*" {
+			branch, pushRemote, pushRef, upRemote, upRef = f[1], f[2], f[3], f[4], f[5]
+			break
+		}
+	}
+	if branch == "" {
+		branch = "refs/heads/" + a.currentBranch()
+	}
+	remote = cmp.Or(pushRemote, upRemote, "origin")
+	switch {
+	case pushRef != "":
+		ref = pushRef
+	case remote == upRemote && upRef != "":
+		ref = upRef
+	default:
+		// Another remote than the upstream's gets the branch under its own name, as
+		// git does it.
+		ref = branch
+	}
+	return remote, ref
 }
 
 // pushesToRemote: whether this command sends anything to origin, since the identity
