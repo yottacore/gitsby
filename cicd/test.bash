@@ -5563,6 +5563,8 @@ GHEOF
 			#!/usr/bin/env bash
 			printf '%s\n' "\$(basename "\$0") \$*" >> '${relCalls}'
 			if [[ "\$(basename "\$0") \${1:-}" == "go env" ]]; then case "\${2:-}" in GOOS) echo linux ;; GOARCH) echo amd64 ;; esac; fi
+			## What a pipeline run does to the tree or to origin, where a check sets one.
+			[[ "\$(basename "\$0")" != cicd.bash || ! -x '${rel}/pipeline-hook' ]] || '${rel}/pipeline-hook'
 			exit 0
 		EOF
 		for relStub in cicd/cicd.bash cicd/utility/gen-winres.bash cicd/utility/gen-checksums.bash cicd/utility/macho-universal.bash src-go/gitsby; do cp "${rel}/stub" "${relRepo}/${relStub}"; done
@@ -5611,6 +5613,45 @@ GHEOF
 		fRelRun --dry-run --publish v1.2.4
 		fAssert "[df1mv] release.bash --publish refuses a version with no tag" \
 			bash -c "[[ '${relRc}' != 0 ]] && grep -qF 'there is no tag v1.2.4 here' '${relOut}'"
+		## Phase 2's pulls take origin's copy of the branch 'gitsby release' cuts from, so the
+		## pipeline ran on one commit and the tag went on another. A pushed feature branch and a
+		## main that origin moved past both passed.
+		git -C "${relRepo}" checkout --quiet -b feature
+		git -C "${relRepo}" push --quiet -u origin feature 2>/dev/null
+		fRelRun --dry-run
+		fAssert "[df4xt] release.bash refuses to cut from a branch 'gitsby release' doesn't cut from" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"on 'feature', and a release is cut from 'main'.\" '${relOut}' && ! grep -qF 'Phase 1 OK' '${relOut}'"
+		git -C "${relRepo}" checkout --quiet main
+		git -C "${relRepo}" push --quiet origin --delete feature 2>/dev/null
+		git -C "${relRepo}" branch --quiet -D feature
+		git clone --quiet "${rel}/origin.git" "${rel}/other" 2>/dev/null
+		echo ahead > "${rel}/other/ahead.txt"
+		git -C "${rel}/other" add ahead.txt
+		git -C "${rel}/other" commit --quiet -m ahead
+		git -C "${rel}/other" push --quiet 2>/dev/null
+		fRelRun --dry-run
+		fAssert "[df4xv] and refuses when that branch is behind origin's, which it fetches first" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"branch 'main' is behind origin's. Pull it, then run again.\" '${relOut}' && ! grep -qF 'Phase 1 OK' '${relOut}'"
+		git -C "${relRepo}" pull --quiet --ff-only 2>/dev/null
+		## With a dev, the release merges dev into main, so a commit main has and dev doesn't goes
+		## into the tag untested.
+		git -C "${relRepo}" checkout --quiet -b dev
+		git -C "${relRepo}" push --quiet -u origin dev 2>/dev/null
+		fRelRun --dry-run
+		fAssert "[df4y1] release.bash cuts from dev where the repo has one" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Dry run done: v1.2.4 was not released' '${relOut}'"
+		git -C "${rel}/other" pull --quiet --ff-only 2>/dev/null
+		echo hotfix > "${rel}/other/hotfix.txt"
+		git -C "${rel}/other" add hotfix.txt
+		git -C "${rel}/other" commit --quiet -m hotfix
+		git -C "${rel}/other" push --quiet 2>/dev/null
+		fRelRun --dry-run
+		fAssert "[df4y2] and refuses when origin's main has commits dev doesn't" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"origin's 'main' has commits 'dev' doesn't, which the release merge would take in untested.\" '${relOut}' && ! grep -qF 'Phase 1 OK' '${relOut}'"
+		git -C "${relRepo}" checkout --quiet main
+		git -C "${relRepo}" pull --quiet --ff-only 2>/dev/null
+		git -C "${relRepo}" push --quiet origin --delete dev 2>/dev/null
+		git -C "${relRepo}" branch --quiet -D dev
 		## A pipeline file changed since the tag, first with its footer as it was, then with an entry
 		## newer than the tag, written the dashed way.
 		echo '## fixture' >> "${relRepo}/cicd/config.bash"
@@ -5646,6 +5687,8 @@ GHEOF
 		: > "${relRepo}/src-go/resource_windows_amd64.syso"
 		fStub "${relRepo}/src-go/gitsby" <<-EOF
 			#!/usr/bin/env bash
+			## A pull that brings in a commit, where a check sets one.
+			[[ ! -x '${rel}/gitsby-hook' ]] || '${rel}/gitsby-hook' "\$@"
 			case "\${2:-}" in
 				pr) [[ "\${3:-}" != create ]] || cat '${rel}/pr-url' 2>/dev/null ;;
 				release) git tag "\${3:?}" ;;
@@ -5795,6 +5838,56 @@ GHEOF
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'WARNING: the install line takes v1.3.0-alpha.1, neither v1.3.0-beta.1 nor a full release.' '${relOut}'"
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" tag -d v1.3.0-beta.1 >/dev/null
+		## What phase 2 commits and tags has to be what the pipeline tested. A file the pipeline
+		## rewrote went into the version PR, and a commit origin gained during the run, or between
+		## phase 2's steps, came in with the next pull. Each hook below makes one of those happen.
+		local relHead=""
+		printf '#!/usr/bin/env bash\necho rewritten >> install.bash\n' > "${rel}/pipeline-hook"; chmod +x "${rel}/pipeline-hook"
+		fRelRun -y
+		fAssert "[df4xw] release.bash stops before phase 2 when the pipeline left the tree changed" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF 'the pipeline left the working tree changed, and the version PR would take that in: install.bash.' '${relOut}' && ! grep -qF 'Phase 2: merge' '${relOut}'"
+		git -C "${relRepo}" checkout -q -- .
+		git -C "${relRepo}" tag -d v1.2.4 >/dev/null 2>&1 || true
+		fStub "${rel}/pipeline-hook" <<-EOF
+			#!/usr/bin/env bash
+			cd '${rel}/other' && git pull --quiet --ff-only && echo moved >> moved.txt && git add moved.txt && git commit --quiet -m moved && git push --quiet
+		EOF
+		fRelRun -y
+		fAssert "[df4xx] and when origin's branch moved while the pipeline ran" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"origin's 'main' moved while the pipeline ran\" '${relOut}' && ! grep -qF 'Phase 2: merge' '${relOut}'"
+		rm -f -- "${rel:?}/pipeline-hook"
+		git -C "${relRepo}" checkout -q -- .
+		git -C "${relRepo}" tag -d v1.2.4 >/dev/null 2>&1 || true
+		git -C "${relRepo}" pull --quiet --ff-only 2>/dev/null
+		relHead="$(git -C "${relRepo}" rev-parse HEAD)"
+		## A commit on the branch, at the gitsby step named, as a pull there would bring in.
+		fStub "${rel}/gitsby-hook" <<-'EOF'
+			#!/usr/bin/env bash
+			[[ "${2:-} ${3:-}" == "$(cat "${0%/*}/gitsby-hook-at")" ]] || exit 0
+			echo moved >> moved.txt && git add moved.txt && git commit --quiet -m moved
+		EOF
+		echo 'br create' > "${rel}/gitsby-hook-at"
+		fRelRun -y
+		fAssert "[df4xy] and stops when 'br create' starts the version branch past the tested commit" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"origin's 'main' moved past the tested commit, and rel-1.2.4 starts from there.\" '${relOut}' && ! grep -qF 'opened PR' '${relOut}'"
+		git -C "${relRepo}" checkout -q -- .
+		git -C "${relRepo}" reset --quiet --keep "${relHead}"
+		git -C "${relRepo}" tag -d v1.2.4 >/dev/null 2>&1 || true
+		echo 'pr ok' > "${rel}/gitsby-hook-at"
+		fRelRun -y
+		fAssert "[df4xz] and before tagging when the merged branch holds more than the version PR" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"'main' holds more than PR #7 on the tested commit\" '${relOut}' && [[ -z \"\$(git -C '${relRepo}' tag -l v1.2.4)\" ]]"
+		git -C "${relRepo}" checkout -q -- .
+		git -C "${relRepo}" reset --quiet --keep "${relHead}"
+		git -C "${relRepo}" tag -d v1.2.4 >/dev/null 2>&1 || true
+		echo 'release v1.2.4' > "${rel}/gitsby-hook-at"
+		fRelRun -y
+		fAssert "[df4y0] and before publishing when the tag holds more than the version PR" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF 'the v1.2.4 tag holds more than PR #7 on the tested commit.' '${relOut}' && ! grep -qF 'Phase 3: publish' '${relOut}'"
+		rm -f -- "${rel:?}/gitsby-hook" "${rel:?}/gitsby-hook-at"
+		git -C "${relRepo}" checkout -q -- .
+		git -C "${relRepo}" reset --quiet --keep "${relHead}"
+		git -C "${relRepo}" tag -d v1.2.4 >/dev/null 2>&1 || true
 		## A Mac build that isn't Mach-O is refused by the joiner, and that stops phase 1.
 		fStub "${rel}/bin/go" <<-'EOF'
 			#!/usr/bin/env bash
@@ -8708,3 +8801,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261109 JC: gfs-rotate.bash run directly, [df3fd].
 ##		- 20261110 JC: a nested account's folder takes no key from the outer account's fragment after apply, [df4ws] to [df4wx].
 ##		- 20261111 JC: the backlog gate wants a removed check named on a line the branch adds, and sees every helper and spawn-count.bash, [df4xc] to [df4xf].
+##		- 20261110 JC: release.bash cuts only from the branch 'gitsby release' cuts from, level with origin's, and stops when the pipeline changed the tree, or what is branched, merged or tagged isn't what was tested, [df4xt] to [df4y2].

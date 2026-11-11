@@ -27,7 +27,11 @@
 ##		                   when phase 2 got the tag out by hand after a stop.
 ##		  -h, --help       This.
 ##	Notes:
-##		- Refuses unless the tree is clean and you are on the merge target.
+##		- Refuses unless the tree is clean, and you are on the branch 'gitsby release'
+##		  cuts from - dev, where the repo has one - level with origin's, fetched first.
+##		- What the pipeline tests is what gets tagged. The run stops before phase 2 if
+##		  the pipeline left the tree changed or origin's branch moved meanwhile, and
+##		  before each later step if that branch takes in anything but the version PR.
 ##		- The version lives in the tag and nowhere else. The binary has it
 ##		  because the release build injects it, so there is no in-source version
 ##		  to bump and nothing that can disagree with the tag.
@@ -190,6 +194,34 @@ fpChangelogVnext(){
 	awk -v start="${start}" 'NR>=start && /^## vNEXT/{print NR; exit}' "${changelog}"
 :;}
 
+## The branch 'gitsby release' tags, and the one it merges into it: dev where the repo has one,
+## else the same branch. Found the way gitsby finds them.
+fpDefaultBranch(){
+	local name
+	name="$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+	if [[ -n "${name}" ]]; then echo "${name#origin/}"; return 0; fi
+	for name in main master trunk; do
+		if git show-ref -q --verify "refs/heads/${name}"; then echo "${name}"; return 0; fi
+	done
+	git rev-parse --abbrev-ref HEAD
+}
+fpReleaseSource(){
+	if git show-ref -q --verify refs/heads/dev || git show-ref -q --verify refs/remotes/origin/dev; then echo dev; else fpDefaultBranch; fi
+}
+
+## Where HEAD stands against origin's ${relSource}, fetched now: level, behind, ahead, apart,
+## gone, or unfetched.
+fpOriginState(){
+	local at there
+	git fetch --quiet origin || { echo unfetched; return 0; }
+	there="$(git rev-parse -q --verify "refs/remotes/origin/${relSource}^{commit}")" || { echo gone; return 0; }
+	at="$(git rev-parse HEAD)"
+	if [[ "${at}" == "${there}" ]]; then echo level
+	elif git merge-base --is-ancestor "${at}" "${there}"; then echo behind
+	elif git merge-base --is-ancestor "${there}" "${at}"; then echo ahead
+	else echo apart; fi
+}
+
 ## The downloads table for the release body, from the files in ${assets}: a row per OS, a column
 ## per CPU, each cell a link to that file on the release. The Mac file runs on either CPU, so it
 ## is linked under both. Checksums and the installers go on one line below it.
@@ -335,12 +367,30 @@ if [[ -n "${lastTag}" ]]; then
 	done < <(git diff --name-only "${lastTag}" HEAD -- cicd install.bash install.ps1)
 fi
 
-## State: clean tree, on the merge target, nothing unpushed.
+## State: a clean tree, on the branch 'gitsby release' cuts from, level with origin's. Phase 2's
+## 'br create' and 'gitsby release' pull that branch first, so a local copy that is behind, or
+## another branch, would test one commit and tag another. --publish builds from the tag instead.
 [[ -z "$(git status --porcelain)" ]] || fDie "working tree isn't clean."
-branch="$(git rev-parse --abbrev-ref HEAD)"
-target="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
-[[ -n "${target}" ]] || fDie "branch '${branch}' has no upstream."
-[[ -z "$(git log '@{u}..HEAD' --oneline)" ]] || fDie "branch '${branch}' has unpushed commits."
+relSource="$(fpReleaseSource)"
+if ((! publishOnly)); then
+	branch="$(git rev-parse --abbrev-ref HEAD)"
+	[[ "${branch}" == "${relSource}" ]] || fDie "on '${branch}', and a release is cut from '${relSource}'. Switch to it, then run again."
+	case "$(fpOriginState)" in
+		level)     ;;
+		unfetched) fDie "couldn't fetch origin, which the release pushes to." ;;
+		gone)      fDie "origin has no '${relSource}' branch." ;;
+		behind)    fDie "branch '${relSource}' is behind origin's. Pull it, then run again." ;;
+		ahead)     fDie "branch '${relSource}' has unpushed commits." ;;
+		*)         fDie "branch '${relSource}' and origin's have gone different ways. Settle them, then run again." ;;
+	esac
+	## The release merge takes in whatever the default branch has that this one doesn't, such as
+	## a hotfix not merged back, and none of that is tested here.
+	relMain="$(fpDefaultBranch)"
+	if [[ "${relMain}" != "${relSource}" ]] && git show-ref -q --verify "refs/remotes/origin/${relMain}" \
+		&& ! git merge-base --is-ancestor "refs/remotes/origin/${relMain}" HEAD; then
+		fDie "origin's '${relMain}' has commits '${relSource}' doesn't, which the release merge would take in untested. Merge them into '${relSource}', then run again."
+	fi
+fi
 ## Tagged modules only. A pseudo-version is a commit on somebody's branch, picked by hand.
 pinned="$(grep -oE '[^[:space:]]+ v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.]*[0-9]{14}-[0-9a-f]{12}' "${root}/${GO_MODULE_DIR}/go.mod" 2>/dev/null | paste -sd ' ' || true)"
 [[ -z "${pinned}" ]] || fDie "go.mod pins a module to a commit rather than a tag: ${pinned}"
@@ -385,6 +435,20 @@ elif ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
 	fEcho_Clean "built: $(cd "${assets}" && echo *)"
 fi
 
+## Phase 2 takes the tree as it stands now. A file the run rewrote, such as a demo gif that came
+## out different, would ride into the version PR, and a commit origin gained meanwhile would come
+## in with the pull. The commit tested is HEAD now, since the pipeline's sync runs before its checks.
+if ((! publishOnly)); then
+	changed="$(git status --porcelain)"
+	[[ -z "${changed}" ]] || fDie "the pipeline left the working tree changed, and the version PR would take that in: $(cut -c4- <<< "${changed}" | paste -sd ' '). Commit it through a PR, or put it back, then run again. Nothing is pushed."
+	case "$(fpOriginState)" in
+		level)     ;;
+		unfetched) fDie "couldn't fetch origin after the pipeline ran. Nothing is pushed." ;;
+		*)         fDie "origin's '${relSource}' moved while the pipeline ran, so phase 2 would release commits it didn't test. Pull, then run again. Nothing is pushed." ;;
+	esac
+	tested="$(git rev-parse HEAD)"
+fi
+
 fEcho "Phase 1 OK: ${lastTag:-(no previous tag)} -> ${version}"
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -406,6 +470,10 @@ else
 	## below is the only push to the default branch.
 	if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} - ${today}', add its downloads table, and merge it through a PR"; then
 		"${gitsby}" -q br create "${relBranch}" || fDie "couldn't create ${relBranch}."
+		## 'br create' pulls first, so a commit origin gained since the check above starts the
+		## branch past the one tested.
+		[[ "$(git rev-parse HEAD)" == "${tested}" ]] \
+			|| fDie "origin's '${relSource}' moved past the tested commit, and ${relBranch} starts from there. It's pushed, with no PR. Delete it, pull, then run again."
 		## The changelog heading and the downloads table under it are the whole of it. Nothing in the
 		## tree records the version any more - the build injects it from the tag - so this is the only
 		## file a release edits.
@@ -430,10 +498,17 @@ else
 		prNum="${prNum##*/}"
 		[[ "${prNum}" =~ ^[0-9]+$ ]] || { printf '%s\n' "${prOut}" >&2; fDie "couldn't read a PR number out of 'pr create' output."; }
 		fEcho_Clean "opened PR #${prNum} for the version bump"
+		## The tested tree plus the bump, which is what the merge and the tag must hold.
+		relTree="$(git rev-parse 'HEAD^{tree}')"
 		"${gitsby}" -q pr ok "${prNum}" || fDie "couldn't merge PR #${prNum}; the bump is pushed but nothing is tagged."
+		[[ "$(git rev-parse "refs/heads/${relSource}^{tree}")" == "${relTree}" ]] \
+			|| fDie "'${relSource}' holds more than PR #${prNum} on the tested commit, since origin's moved. The bump is merged, and nothing is tagged."
 	fi
 	if ! fWould "gitsby release ${version}"; then
 		"${gitsby}" -q release "${version}" || fDie "'gitsby release' failed; the version commit is pushed but no tag was cut."
+		## 'gitsby release' pulls both branches before it merges, so the tag is checked as well.
+		[[ "$(git rev-parse "refs/tags/${version}^{tree}")" == "${relTree}" ]] \
+			|| fDie "the ${version} tag holds more than PR #${prNum} on the tested commit. It's pushed, and nothing is published. Check it, then run 'cicd/release.bash ${version} --publish'."
 	fi
 	if ((dryRun)); then fEcho "Phase 2 OK: dry run, ${version} not tagged"; else fEcho "Phase 2 OK: ${version} tagged and pushed"; fi
 fi
@@ -448,8 +523,8 @@ fEcho "Phase 3: publish and prove"
 ## commit's date, so checking out ${version} and building reproduces them.
 if ! fWould "rebuild ${#RELEASE_TARGETS[@]} targets from the ${version} commit"; then
 	fEcho_Clean "rebuilding ${#RELEASE_TARGETS[@]} targets from ${version} ..."
-	## From the tag's own files, not the working tree. The two match when nothing has moved
-	## since phase 2, and nothing here checks that it hasn't.
+	## From the tag's own files, not the working tree, which may have moved since phase 2.
+	## Phase 2 checked that the tag holds the tested tree plus the bump.
 	tagTree="$(mktemp -d "${safeTmp}/gitsby-tag.XXXXXX")"
 	git -C "${root}" archive "${version}^{commit}" | tar -x -C "${tagTree}" \
 		|| fDie "couldn't export ${version} to build from; the tag is pushed but nothing is published."
@@ -600,3 +675,4 @@ echo
 ##		- 20261106 JC: Every recursive removal goes through fSafeRm, and the temp folders are made where the guard takes them.
 ##		- 20261107 JC: The footer check reads the .ps1 files' one-# entries, and warns about a changed script with no footer at all.
 ##		- 20261108 JC: --publish runs phase 3 alone, for a tag pushed by hand after phase 2 stopped. The v3.0.0-beta.1 cut stopped at the gated push to main.
+##		- 20261110 JC: Fetches first, and refuses unless HEAD is the branch 'gitsby release' cuts from, level with origin's. It ran the pipeline on whatever was checked out, and phase 2's pulls then tagged origin's commit. Stops before phase 2 when the pipeline left the tree changed, which the version PR took in, or origin's branch moved during the run. Phase 2 checks the new branch, the merged branch and the tag each hold the tested tree.

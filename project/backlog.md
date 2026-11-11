@@ -309,7 +309,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 17: release.bash tests one commit and releases another
 	- ID: 2026111016332243
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163322
 	- Opened by: jim-collier
@@ -319,6 +319,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: No. Read only, since release.bash can't run for real here.
 	- Possible cause [Bug]: release.bash:339-343 checks for unpushed commits but never fetches or checks the branch.
 	- Origin: 8d108fd, 2026-08-12. The pre-push gate on main still runs on the real commit where it's installed. No round saw it. Plausible.
+	- Actual cause [Bug]: As the possible cause says. The pipeline's sync, `br create`, `pr ok` and `gitsby release` each pull, so origin's dev could also move between the run and the tag. The release merge also took in anything main had that dev didn't.
+	- Actual fix [Bug]: release.bash fetches, and refuses unless HEAD is the branch `gitsby release` cuts from, level with origin's, and unless origin's main has nothing that branch lacks. After the pipeline it fetches again and refuses a branch origin moved. Phase 2 checks that the version branch starts at the tested commit, and that dev after the merge and the tag each hold the tested tree plus the bump. A stop at the tag publishes nothing.
+	- Decisions:
+		- The branch is found the way gitsby finds it: dev where the repo has one, else the default branch.
+		- After the merge and the tag, trees are compared, not commits, so a merge commit and a squash both pass.
+		- `--publish` skips the branch checks, since it builds from the tag, so it no longer needs an upstream.
+		- A dry run fetches too, so it refuses what a real run would.
+		- The check on main goes past the wording. The release merge would put a commit there that dev lacks into the tag untested.
+	- Swept: every pull in phase 2 (`br create`, `pr create`, `pr ok`, `gitsby release`), the header Notes, the phase 3 comment that said nothing checked the tag, and design.md "Automating a release".
+	- Branch: round-20261111
+	- Test case: test.bash [df4xt] [df4xv] [df4y1] [df4y2] [df4xx] [df4xy] [df4xz] [df4y0]
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261110-195237
+	- Verified: [df4xt] [df4xv] [df4y2] [df4xx] [df4xy] [df4xz] [df4y0] fail against the old release.bash and pass after. [df4y1], the control that dev is taken where there is one, passes on both. Quick gate passed, every area: test.bash 1959/0, fuzz 310/0, parity 30/0.
 
 - Code Review 20261110b item 18: repo connect -- <URL starting with a dash> reaches git ls-remote as an option
 	- ID: 2026111016332231
@@ -453,7 +467,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 27: release.bash puts files the pipeline rewrote into the version PR
 	- ID: 2026111016332119
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
 	- Opened by: jim-collier
@@ -463,6 +477,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: No. Read only.
 	- Possible cause [Bug]: The clean-tree check at release.bash:339 runs before the pipeline at :359, and nothing checks again.
 	- Origin: 3a5d14f, 2026-08-14. No round saw it. Plausible.
+	- Actual cause [Bug]: As the possible cause says.
+	- Actual fix [Bug]: After the pipeline and the phase 1 cross-build, release.bash refuses a changed tree, naming the files, before anything is branched or pushed. Done with item 17, 2026111016332243.
+	- Decisions:
+		- It stops, rather than running the pipeline with the gif left as committed. A gif that came out different still gets looked at, and goes in through its own PR before the cut.
+	- Swept: what the phase 1 run writes in the tree. In cicd.bash the demo gif is the tracked file a plain run rewrites. The check reads the whole tree's status, so any other change stops it too, and the Windows resource stamp is put back before it.
+	- Branch: round-20261111
+	- Test case: test.bash [df4xw]
+	- Acceptance signoff: Self-closed: its test failed before the fix and passes after.
+	- Closed: 20261110-195256
+	- Verified: [df4xw] fails against the old release.bash and passes after. Quick gate passed, every area.
 
 - Code Review 20261110b item 28: br merge's plan shows 2 pushes when the target has no local branch yet, and the run does 1 atomic push
 	- ID: 2026111016332107
