@@ -41,6 +41,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The help screen opens by saying what Gitsby does differently: a command that changes anything shows the repo state and the exact git it will run, then asks first.
 
+### Removed
+
+- `cicd/utility/include/gh-account.bash`. Nothing sourced it, and `gitsby raw gh` does what it did.
+
 ### Fixed
 
 - `raw glab` and `pr` no longer send the account's GitLab token to some other host. glab sends its token to whatever host it's pointed at, so `raw glab api --hostname gitlab.com user` in a gitlab.gnome.org folder sent the GNOME token to gitlab.com. A run that names another host, with `--hostname`, `-R` or a URL, now gets no token and runs as plain glab would, and says so.

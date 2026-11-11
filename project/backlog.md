@@ -855,12 +855,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b enhancement 5: gh-account.bash is never sourced
 	- ID: 2026111016331881
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163318
 	- Opened by: jim-collier
 	- Requirements [Feature]: Remove it, with the lint checks and the test.bash fixture copy that name it.
 	- Origin: No script sources it. test.bash:312 copies it into a fixture, and 5 lint checks read it. `gitsby raw gh` replaced what it did. Confirmed by grep.
+	- Actual fix [Enhancement]: Deleted cicd/utility/include/gh-account.bash and its name in test.bash's gate fixture copy. The lint checks read it by glob, so they went with the file. changelog.md has a Removed entry under vNEXT. The v2.1.0 Added line stays as history.
+	- Decisions: Reverses the 2026-10-04 answer to keep it, since `gitsby raw gh` now does what it did and nothing sources it. No suite check was removed, only the per-file instances.
+	- Test case: none, a deletion. The gate's test.bash fixture builds without it.
+	- Verified: --backlog-run-quick lint suite passed, backlog-check passed.
+	- Swept: grep for gh-account across the repo outside logs, artifacts and backlog history.
+	- Branch: round-20261111
 
 - test.bash [df4c4] fails on macOS
 	- ID: 2026111014390966
