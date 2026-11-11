@@ -789,6 +789,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: Each of the 29 blocks has an else that calls fSkipBlock. fUnskippedBlocks finds a block behind a probe of the box that holds tests and skips none.
 	- Swept: every multi-line `if` in test.bash that holds a test and has no SKIP. Left out: a `gateTool` loop branch, a soak branch inside a quoted script, and an awk line, none of them a probe of the box.
 	- Branch: round-20261111
+	- Commit: 6c6baad
 	- Test case: test.bash `[df4zv]` (the check finds a bare probe block in a fixture, and passes one with a SKIP or a tested else) and `[df4zw]` (no such block in test.bash).
 		- Verified: `[df4zw]`'s check fails on the unfixed test.bash, naming the 29 blocks, and passes after. Quick gate passed, all areas: test.bash 1969/0 with 1 SKIP, fuzz 310/0, parity 31/0.
 	- Acceptance signoff: Self-closed: its tests passed, and the check was watched to fail.
