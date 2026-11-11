@@ -10,12 +10,13 @@
 ##		   the commit or round that introduced it, whether an earlier round saw it,
 ##		   and Confirmed (reproduced) or Plausible (read only).
 ##		2. A suite check removed on this branch, against the integration branch, is
-##		   named in the backlog. Two decisions were reversed by deleting the check
-##		   that encoded them, with nothing written down; this makes that a stop.
-##		The removed-check match is a fixed-string grep for the check's ID or its
-##		label, so a label with a shell variable has to be quoted in the backlog
-##		as written. A check that keeps its ID under a new label was edited, not
-##		removed.
+##		   named on a backlog line the branch adds. Two decisions were reversed by
+##		   deleting the check that encoded them, with nothing written down; this
+##		   makes that a stop.
+##		The checks are the ones test-id.bash finds, in the suites and spawn-count.bash.
+##		A removed one is named by its ID as a word, or by its label as written, so a
+##		label with a shell variable has to be quoted that way. A check that keeps its
+##		ID under a new label was edited, not removed. Needs test-id.bash beside it.
 ##	Syntax:
 ##		backlog-check.bash [-q] [--base REF] [--backlog FILE]
 ##		  -q              print findings only
@@ -39,7 +40,8 @@ meDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd -- "${meDir}/../.." && pwd)"
 backlog="${root}/project/backlog.md"
 base=""; quiet=0
-suites=(cicd/test.bash cicd/parity.bash cicd/fuzz.bash)
+suites=(cicd/test.bash cicd/parity.bash cicd/fuzz.bash cicd/utility/spawn-count.bash)
+testIdCmd="${meDir}/test-id.bash"
 
 fUsage(){ printf '%s\n' "$*" >&2; exit 2; }
 while [[ $# -gt 0 ]]; do
@@ -94,8 +96,7 @@ else
 fi
 
 ## 2. Suite checks removed since the merge base. Compares the working tree, not HEAD,
-## so it sees the branch as it is about to be committed. A label that was removed
-## and added back is an edit, not a removal.
+## so it sees the branch as it is about to be committed.
 if [[ -z "${base}" ]]; then
 	for c in dev main; do
 		if git -C "${root}" rev-parse --verify -q "refs/heads/${c}" >/dev/null; then base="${c}"; break; fi
@@ -108,29 +109,47 @@ else
 	if [[ -z "${mergeBase}" ]]; then
 		fEcho_Clean "backlog-check: no merge base with ${base}; removed-check test skipped"
 	else
-		labelRE='^[-+][[:space:]]*f(Assert[A-Za-z]*|Same[A-Za-z]*|Ok)[[:space:]]+"([^"]*)"'
-		diffOut="$(git -C "${root}" diff "${mergeBase}" -- "${suites[@]}" || true)"
-		removed="$(printf '%s\n' "${diffOut}" | sed -nE "/^-/ s/${labelRE}.*/\2/p" | sort -u)"
-		added="$(printf '%s\n' "${diffOut}" | sed -nE "/^\+/ s/${labelRE}.*/\2/p" | sort -u)"
-		## A label starts with its test ID, "[<id>] ". Either half still there means the check is.
-		idRE='^\[([0-9A-Za-z]+)\] (.*)$'
-		addedIds="$(sed -nE "s/${idRE}/\1/p" <<< "${added}")"
-		addedBare="$(sed -E "s/${idRE}/\2/" <<< "${added}")"
-		unnamed=""; n=0
-		while IFS= read -r label; do
-			[[ -n "${label}" ]] || continue
-			id=""; bare="${label}"
-			if [[ "${label}" =~ ${idRE} ]]; then id="${BASH_REMATCH[1]}"; bare="${BASH_REMATCH[2]}"; fi
-			[[ -n "${id}" ]] && grep -qxF -- "${id}" <<< "${addedIds}" && continue
-			grep -qxF -- "${bare}" <<< "${addedBare}" && continue
-			n=$((n + 1))
-			[[ -n "${id}" ]] && grep -qF -- "${id}" "${backlog}" && continue
-			if ! grep -qF -- "${bare}" "${backlog}"; then unnamed+="${label}"$'\n'; fi
-		done <<< "${removed}"
+		[[ -r "${testIdCmd}" ]] || fUsage "backlog-check: no test-id.bash beside this script, at ${testIdCmd}"
+		## Each test as "<id> <label>", from the scan test-id.bash checks IDs with, so a check any
+		## helper makes, anywhere on its line, counts. A suite gone from the tree has none left.
+		before="$(bash "${testIdCmd}" --list --root "${root}" --rev "${mergeBase}" "${suites[@]}")" || fUsage "backlog-check: could not list the tests at ${base}"
+		present=(); for s in "${suites[@]}"; do [[ -f "${root}/${s}" ]] && present+=("${s}"); done
+		after=""
+		if ((${#present[@]})); then after="$(bash "${testIdCmd}" --list --root "${root}" "${present[@]}")" || fUsage "backlog-check: could not list the tests"; fi
+		## Only a line the branch adds can name a removal. One already there at the base, such as the
+		## item that added the check, says nothing about why it went. A backlog git has no copy of
+		## at the base is all new.
+		backlogDir="$(cd -P -- "$(dirname -- "${backlog}")" && pwd -P)"; rootP="$(cd -P -- "${root}" && pwd -P)"
+		baseBacklog=""
+		if [[ "${backlogDir}/" == "${rootP}/"* ]]; then
+			rel="${backlogDir#"${rootP}"}/${backlog##*/}"; rel="${rel#/}"
+			baseBacklog="$(git -C "${root}" show "${mergeBase}:${rel}" 2>/dev/null || true)"
+		fi
+		## A check whose ID is still there was edited. So was one whose label came back under an ID
+		## the base didn't have. The added lines name a removed check by its ID as a word, or by its label.
+		mapfile -t scan < <(awk '
+			(FILENAME == ARGV[1] || FILENAME == ARGV[2]) && $0 == "" { next }
+			FILENAME == ARGV[1] { id = $1; lab = substr($0, length($1) + 2); ids[++nb] = id; labs[nb] = lab; if (id != "-") wasId[id] = 1; next }
+			FILENAME == ARGV[2] { id = $1; lab = substr($0, length($1) + 2); if (id != "-") nowId[id] = 1; if (id == "-" || !(id in wasId)) newLab[lab] = 1; next }
+			FILENAME == ARGV[3] { old[$0] = 1; next }
+			!($0 in old) { text = text "\n" $0; t = $0; gsub(/[^0-9A-Za-z]+/, " ", t); k = split(t, w, " "); for (j = 1; j <= k; j++) named[w[j]] = 1 }
+			END {
+				n = 0
+				for (i = 1; i <= nb; i++) {
+					id = ids[i]; lab = labs[i]
+					if ((id != "-" && id in nowId) || lab in newLab) continue
+					n++
+					if ((id != "-" && id in named) || (lab != "" && index(text, lab))) continue
+					out = out (id == "-" ? lab : "[" id "] " lab) "\n"
+				}
+				printf "%d\n%s", n, out
+			}' <(printf '%s\n' "${before}") <(printf '%s\n' "${after}") <(printf '%s\n' "${baseBacklog}") "${backlog}")
+		n="${scan[0]:-0}"; unnamed=""
+		for line in "${scan[@]:1}"; do unnamed+="${line}"$'\n'; done
 		if [[ -n "${unnamed}" ]]; then
-			echo "backlog-check: suite checks removed since ${base} and not named in the backlog:"
+			echo "backlog-check: suite checks removed since ${base} and not named on a backlog line this branch adds:"
 			while IFS= read -r line; do [[ -n "${line}" ]] && echo "  \"${line}\""; done <<< "${unnamed}"
-			echo "  Name each one in the backlog, with the decision it encoded and why that changed."
+			echo "  Name each one in the backlog, by its ID, with the decision it encoded and why that changed."
 			findings=1
 		else
 			fEcho_Clean "backlog-check: removed suite checks all named in the backlog (${n} removed since ${base})"
@@ -149,3 +168,4 @@ exit "${findings}"
 ##		  enforces it.
 ##		- 20261107 JC: Errors go through fUsage.
 ##		- 20261108 JC: gover retired, so the default base is dev.
+##		- 20261111 JC: A removed check has to be named on a line the branch adds, not anywhere in the backlog. Checks are found by test-id.bash's scan, so every helper counts, at any place on its line, and spawn-count.bash's too.

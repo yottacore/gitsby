@@ -230,16 +230,18 @@ func (a *app) previewPr() {
 func (a *app) previewRelease() {
 	a.preview("sync")
 	hasDev := a.mergeTarget() == "dev"
-	if hasDev {
+	if hasDev && !a.rel.resume {
 		a.out.clean(planPad + a.checkoutDisp("dev") + " *")
 		a.out.clean(planPad + a.pullDisp("dev"))
 	}
 	a.out.clean(planPad + a.checkoutDisp(a.defaultBranch()) + " *")
-	a.out.clean(planPad + a.pullDisp(a.defaultBranch()))
-	if hasDev {
-		a.out.clean(planPad + "git merge --no-ff dev")
+	if !a.rel.resume {
+		a.out.clean(planPad + a.pullDisp(a.defaultBranch()))
+		if hasDev {
+			a.out.clean(planPad + "git merge --no-ff dev")
+		}
+		a.out.clean(planPad + "git tag -a " + a.rel.tag)
 	}
-	a.out.clean(planPad + "git tag -a " + a.rel.tag)
 	a.out.clean(planPad + "git push *")
 	a.out.clean(planPad + "git push origin tag " + a.rel.tag + " *")
 	if hasDev {

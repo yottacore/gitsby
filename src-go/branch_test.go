@@ -134,3 +134,40 @@ func TestDefaultBranchBesideSameNamedTag(t *testing.T) { // [ddgbx]
 		t.Errorf("unborn defaultBranch() beside tag trunkish = %q, want trunkish", got)
 	}
 }
+
+// After '--' a br switch target can start with a dash, and 'git checkout -f' would
+// run as the option. One that exists is refused like any other dash-led branch, and
+// one that doesn't isn't offered as a br create line.
+func TestSwitchTargetWithLeadingDash(t *testing.T) { // [df520]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "update-ref", "refs/heads/-f", "HEAD")
+	runGit(t, clone, "push", "-q", "origin", "HEAD:refs/heads/-far")
+	runGit(t, clone, "fetch", "-q")
+	runGit(t, clone, "checkout", "-q", "-b", "work")
+	t.Chdir(clone)
+	for target, want := range map[string]string{
+		"-f":   "reads it as an option",
+		"-far": "reads it as an option",
+		"-no":  "can't start with a dash",
+		"main": "",
+	} {
+		_, cmd, _, err := parseArgs([]string{"br", "switch", "--", target})
+		if err == nil {
+			cmd, err = collapseCommand(cmd)
+		}
+		if err != nil {
+			t.Fatalf("%q: parse: %v", target, err)
+		}
+		a := newApp(newPrinter())
+		a.cmd = cmd
+		err = a.preflightBranch()
+		switch {
+		case want == "" && err != nil:
+			t.Errorf("%q: refused: %v", target, err)
+		case want != "" && (err == nil || !strings.Contains(err.Error(), want)):
+			t.Errorf("%q: got %v, want %q", target, err, want)
+		case want != "" && strings.Contains(err.Error(), "br create"):
+			t.Errorf("%q: suggests a br create line: %v", target, err)
+		}
+	}
+}

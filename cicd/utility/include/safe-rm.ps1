@@ -4,8 +4,9 @@
 ## sides spelled by Get-Item, so a short 8.3 temp path compares the same, as in install.ps1.
 ## rmdir still does the removal, as before the guard, since it removes a link inside the folder
 ## rather than follow it. Its exit code says little, so the folder still there is the failure,
-## and its output goes nowhere, since anything written would join the boolean. History at the
-## bottom.
+## and its output goes nowhere, since anything written would join the boolean. A path with a
+## character cmd acts on (&|<>^%"()) is refused, since 5.1 quotes an argument only for a space.
+## History at the bottom.
 ##
 ## Copyright (C) 2026 Jim Collier
 ## Licensed under The MIT License (MIT). Full text at:
@@ -24,6 +25,7 @@ function fSafeRm([string]$p) {
         $item = Get-Item -LiteralPath $p -Force
         $root = (Get-Item -LiteralPath $env:TEMP -Force).FullName.TrimEnd('\', '/')
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { $why = 'a link' }
+        elseif ($item.FullName -match '[&|<>^%"()]') { $why = 'a character cmd would act on' }
         elseif ($item.Parent.FullName.TrimEnd('\', '/') -ne $root -or $item.Name -notmatch '^test_gitsby_[0-9-]+$') { $why = 'not a stage 7 folder right under the temp folder' }
     }
     if ($why) { [Console]::Error.WriteLine("safe-rm: refused, ${why}: $p"); return $false }
@@ -37,3 +39,4 @@ function fSafeRm([string]$p) {
 ##	History:
 ##		- 2026-11-06 JC: Created, for stage 7's rmdir on the Windows box.
 ##		- 2026-11-07 JC: rmdir's output stays out of the return value, and the header has the copyright and license.
+##		- 2026-11-11 JC: A path with a character cmd acts on is refused, not passed on to rmdir unquoted.

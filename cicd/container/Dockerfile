@@ -3,7 +3,7 @@
 # tests and publish stay on the host.
 #
 # The versions come from config.bash as build args, and the tag hashes this file,
-# the two it copies in, plus those args. It builds from cicd/. A version bump without its checksum here fails the build.
+# the files it copies in, plus those args. It builds from cicd/. A version bump without its checksum here fails the build.
 #
 # Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 # SPDX-License-Identifier: MIT
@@ -113,6 +113,8 @@ ARG NODE_VER=22.23.2
 ARG NODE_SHA256=d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307
 ARG PWSH_VER=7.6.6
 ARG PWSH_SHA256=ddbc4a2d113bbd46d283cfedcbcd117a70caefd7673f41f2b4e0000badf103bc
+# markdownlint-cli and every package under it, from the lock, each checked by its sha512.
+COPY container/markdownlint/package.json container/markdownlint/package-lock.json /opt/markdownlint/
 
 WORKDIR /tmp/gitsby/dl
 RUN : "${VER_go:?}${VER_shellcheck:?}${VER_markdownlint:?}${VER_PSScriptAnalyzer:?}" \
@@ -125,7 +127,9 @@ RUN : "${VER_go:?}${VER_shellcheck:?}${VER_markdownlint:?}${VER_PSScriptAnalyzer
 	&& curl -fsSLo node.txz "https://nodejs.org/dist/v${NODE_VER}/node-v${NODE_VER}-linux-x64.tar.xz" \
 	&& echo "${NODE_SHA256}  node.txz" | sha256sum -c - \
 	&& mkdir /opt/node && tar -C /opt/node --strip-components=1 -xJf node.txz \
-	&& PATH="/opt/node/bin:${PATH}" npm install -g --prefix /opt/node --no-fund --no-audit "markdownlint-cli@${VER_markdownlint}" \
+	&& (cd /opt/markdownlint && PATH="/opt/node/bin:${PATH}" npm ci --ignore-scripts --omit=dev --no-fund --no-audit --cache /tmp/gitsby/dl/npm) \
+	&& ln -s /opt/markdownlint/node_modules/.bin/markdownlint /usr/local/bin/markdownlint \
+	&& PATH="/opt/node/bin:${PATH}" markdownlint --version | awk -v want="${VER_markdownlint}" '{ if ($1 != want) { print "markdownlint " $1; exit 1 } }' \
 	&& curl -fsSLo pwsh.tgz "https://github.com/PowerShell/PowerShell/releases/download/v${PWSH_VER}/powershell-${PWSH_VER}-linux-x64.tar.gz" \
 	&& echo "${PWSH_SHA256}  pwsh.tgz" | sha256sum -c - \
 	&& mkdir /opt/pwsh && tar -C /opt/pwsh -xzf pwsh.tgz && chmod +x /opt/pwsh/pwsh \

@@ -148,6 +148,8 @@ With no rule covering the destination, gh stays on its own account. The owner of
 
 Over https, each account's file also gets a credential helper. gh's own helper only answers for its active account, so this one asks gh for the folder's account by name, then tries its `tokenfile`. On a host gh doesn't serve it tries only the `tokenfile`. An account with neither gets no helper. No token is written to disk, and any credential manager already set up still gets asked first. `gh auth setup-git` clears the helpers listed ahead of its own, so run `gitsby account apply` again after it.
 
+When one account's folder sits inside another's, git reads both files there, and git can't unset a key from the later one. So each key the inner account leaves unset that the outer one sets, such as its `name`, `tokenfile` or `sshkey`, goes into the inner account's file with the value your global git config gives it. Where that gives none, the key is empty, or plain `ssh` in place of an ssh key. Run `gitsby account apply` again after changing one of those in your global git config.
+
 It is safe to re-run: it replaces only the entries it wrote before, leaves any you wrote by hand alone, and drops rules for accounts you have since removed.
 
 ## Scripts
@@ -162,7 +164,7 @@ gitsby raw gh pr list --json number
 gitsby -q raw git rev-parse HEAD
 ~~~
 
-`tea` and `glab` get the account's token for the repo's host in their own variables, `GITEA_TOKEN` and `GITLAB_TOKEN`, with the host beside it. A GitHub token is never handed to either one. tea before 0.11 ignores those variables and uses the first login it has for the host. When that login is somebody else Gitsby warns, and with `-q` it refuses. Debian 13's `tea-cli` is 0.9.2, so it's one of those.
+`tea` and `glab` get the account's token for the repo's host in their own variables, `GITEA_TOKEN` and `GITLAB_TOKEN`, with the host beside it. A GitHub token is never handed to either one. glab sends its token to whatever host it's pointed at, so Gitsby pins its API to the account's host, and a `raw glab` run that names some other host, with `--hostname`, `-R` or a URL, gets no token at all and runs as plain glab would. tea before 0.11 ignores those variables and uses the first login it has for the host. When that login is somebody else Gitsby warns, and with `-q` it refuses. Debian 13's `tea-cli` is 0.9.2, so it's one of those.
 
 `lazygit` and `tig` run git underneath, so they get the account the same way `git` does. gitui isn't on the list because it doesn't go through git, and wouldn't see the account at all.
 

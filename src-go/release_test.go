@@ -9,7 +9,10 @@
 
 package main
 
-import "testing"
+import (
+	"os/exec"
+	"testing"
+)
 
 func TestNextVersion(t *testing.T) { // [dbfrk]
 	tests := []struct {
@@ -84,6 +87,50 @@ func TestReleaseVersionShape(t *testing.T) { // [dbfrm]
 		if releaseVerRE.MatchString(bad) {
 			t.Errorf("%q was accepted", bad)
 		}
+	}
+}
+
+// A version git can't tag passed, and 'release' stopped at 'git tag' with the
+// release merge already on main. Each short suffix from these pieces that passes
+// has to be a tag git takes, and the ones it refuses have to be refused here.
+func TestReleaseVersionGitCanTag(t *testing.T) { // [df4yj]
+	for _, bad := range []string{"1.2.3.lock", "1.2.3-rc.lock", "1.2.3-a..b", "1.2.3-", "1.2.3.", "1.2.3-a.", "1.2.3rc1"} {
+		if releaseVersionOK(bad) {
+			t.Errorf("%q was accepted", bad)
+		}
+	}
+	for _, ok := range []string{"1.2.3", "1.2.3-beta.1", "1.2.3.4", "1.2.3-lock", "1.2.3-x.lock1", "1.2.3--a"} {
+		if !releaseVersionOK(ok) {
+			t.Errorf("%q was refused", ok)
+		}
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	pieces := []string{"-", ".", "a", "0", "lock"}
+	suffixes := []string{""}
+	for n, from := 0, 0; n < 3; n++ {
+		to := len(suffixes)
+		for _, s := range suffixes[from:to] {
+			for _, p := range pieces {
+				suffixes = append(suffixes, s+p)
+			}
+		}
+		from = to
+	}
+	accepted := 0
+	for _, s := range suffixes {
+		ver := "1.2.3" + s
+		if !releaseVersionOK(ver) {
+			continue
+		}
+		accepted++
+		if err := exec.Command("git", "check-ref-format", "refs/tags/v"+ver).Run(); err != nil {
+			t.Errorf("%q passes, and git can't tag it", ver)
+		}
+	}
+	if accepted < 20 {
+		t.Errorf("only %d of %d versions passed, so git was asked about too few", accepted, len(suffixes))
 	}
 }
 

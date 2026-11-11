@@ -1192,7 +1192,7 @@ fi
 ## invocation is go's rule, and a crasher goes in src-go/testdata/fuzz/ as evidence.
 ## A list that failed or came back empty would fuzz nothing and still pass.
 if ((doFuzz)); then
-	fuzzList="$(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>&1)" \
+	fuzzList="$(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${HEAVY_JOBS}" go test -p "${HEAVY_JOBS}" -list 'Fuzz.*' . 2>&1)" \
 		|| { fEcho_Clean "$(tail -n 40 <<< "${fuzzList}")"; fDie "go test -list failed, so no fuzz target could run"; }
 	mapfile -t fuzzTargets < <(grep '^Fuzz' <<< "${fuzzList}" || true)
 	((${#fuzzTargets[@]})) || fDie "go test -list found no fuzz targets in ${GO_MODULE_DIR}"
@@ -1342,7 +1342,7 @@ else
 	demoVersion="0.0.0"; demoBuildEpoch=""
 	demoTags="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' 2>/dev/null || true)"
 	demoTag="${demoTags%%$'\n'*}"
-	if [[ "${demoTag}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.-]+)?$ ]]; then
+	if fIsReleaseVersion "${demoTag}"; then
 		demoVersion="${demoTag#v}"
 		demoBuildEpoch="$(git log -1 --format=%ct "${demoTag}^{commit}" 2>/dev/null || true)"
 	elif [[ -n "${demoTag}" ]]; then
@@ -1512,3 +1512,4 @@ fEcho_Clean
 ##		- 2026-11-09 JC: Under --no-test the fuzz and parity steps build first, rather than run whatever build was on disk. The native fuzzing fails when go test -list fails or lists no target.
 ##		- 2026-11-09 JC: The memory scope's probe passes the same properties as the run, so a systemd that doesn't know one runs as before.
 ##		- 2026-11-09 JC: The run's stamp, which names its log, temp folder, soak and CodeQL folders and archived demo gif, is in UTC, and the rotations read it so. The image named them in UTC and the box in its own time.
+##		- 2026-11-10 JC: The demo build takes the newest tag's version only in the shape 'gitsby release' takes, through fIsReleaseVersion.

@@ -132,8 +132,8 @@ func branchHasUnpushed(branch string) bool {
 	return runOut("git", "rev-list", "-n", "1", "refs/remotes/origin/"+branch+"..refs/heads/"+branch) != ""
 }
 
-// refuseOptionShapedRefs stops a branch named with a leading dash, which can only come
-// from a clone, before git reads it as flags where there's no separator.
+// refuseOptionShapedRefs stops a branch named with a leading dash, which comes from a
+// clone or raw git, before git reads it as flags where there's no separator.
 func refuseOptionShapedRefs(names ...string) error {
 	for _, name := range names {
 		if strings.HasPrefix(name, "-") {

@@ -426,8 +426,13 @@ func (a *app) cmdAccountApply() error {
 			noteLines("File", nativePath(failedAt(err, dir))))
 	}
 	files := a.cfg.fragmentNames()
-	for _, name := range a.cfg.accountNames() {
-		if err := a.writeAccountFragment(dir, files[name], name); err != nil {
+	names := a.cfg.accountNames()
+	keys := make(map[string][]fragmentKey, len(names))
+	for _, name := range names {
+		keys[name] = a.fragmentKeys(name)
+	}
+	for _, name := range names {
+		if err := a.writeAccountFragment(dir, files[name], a.withOuterKeys(dir, name, names, keys)); err != nil {
 			return err
 		}
 	}
@@ -463,9 +468,114 @@ func (a *app) cmdAccountApply() error {
 	return nil
 }
 
+// fragmentKey is one key an account fragment sets. An outer one is written even when
+// empty, since it stands in for the key being unset.
+type fragmentKey struct {
+	key, value string
+	outer      bool
+}
+
+// fragmentKeys is every key an account's fragment can set, empty where the account
+// sets none.
+func (a *app) fragmentKeys(name string) []fragmentKey {
+	sshCommand := ""
+	if sshKey := a.cfg.value(name, "sshKey"); sshKey != "" {
+		sshCommand = sshKeyCommand(sshKey)
+	}
+	return []fragmentKey{
+		{key: "user.name", value: a.cfg.value(name, "name")},
+		{key: "user.email", value: a.cfg.value(name, "email")},
+		{key: "gitsby.ghAccount", value: a.cfg.value(name, "ghAccount")},
+		// Which account plain git asks for over https, so a credential manager looks up
+		// that account's entry and not any for the host.
+		{key: "credential.https://" + a.cfg.hostOf(name) + ".username", value: a.cfg.loginOf(name)},
+		// Expanded, since git knows none of the home spellings the accounts file takes.
+		{key: "gitsby.ghTokenFile", value: expandHome(a.cfg.value(name, "tokenFile"))},
+		// gh's own helper answers only for its active account, so plain git over
+		// https had nothing to push with in another account's folder. Added after
+		// any helper the global config already lists, so a credential manager set
+		// up there is still asked first.
+		{key: "credential.https://" + a.cfg.hostOf(name) + ".helper", value: a.fragmentHelperFor(name)},
+		{key: "core.sshCommand", value: sshCommand},
+	}
+}
+
+// withOuterKeys is an account's keys, plus each one it leaves empty that an outer
+// account's fragment sets. git includes every fragment whose rule matches, so a key
+// only the outer one set was taken from it in the inner folder, the token file
+// included. git can't unset a key from a later include, so it gets the value your
+// git config gives it outside the fragments. Backlog 2026111016332429.
+func (a *app) withOuterKeys(dir, name string, names []string, all map[string][]fragmentKey) []fragmentKey {
+	own := all[name]
+	set := make(map[string]bool, len(own))
+	for _, k := range own {
+		set[k.key] = k.value != ""
+	}
+	var keys []fragmentKey
+	for _, other := range names {
+		if other == name || !a.cfg.includedBefore(other, name) {
+			continue
+		}
+		for _, k := range all[other] {
+			// The helper is a list, and the outer one only reads the keys put back here.
+			if k.value == "" || set[k.key] || strings.HasSuffix(k.key, ".helper") {
+				continue
+			}
+			set[k.key] = true
+			keys = append(keys, fragmentKey{k.key, valueOutsideFragments(dir, k.key), true})
+		}
+	}
+	if keys == nil {
+		return own
+	}
+	return slices.Concat(own, keys)
+}
+
+// includedBefore says whether outer's fragment can come ahead of inner's in one folder,
+// so that the later one, inner's, wins only the keys it sets. Folder-name rules go
+// ahead of every path rule, and a shorter path ahead of a longer one. Loose on
+// purpose, since a key put back for nothing costs nothing: gitdir/i ignores case,
+// and a folder-name rule can match under any path.
+func (c *config) includedBefore(outer, inner string) bool {
+	innerPaths, innerSegments := rulesOf(c.paths, inner), rulesOf(c.segments, inner)
+	if len(innerPaths)+len(innerSegments) == 0 {
+		return false
+	}
+	if len(rulesOf(c.segments, outer)) > 0 {
+		return true
+	}
+	// A path rule goes after every folder-name rule, so only inner's paths can follow it.
+	for _, o := range rulesOf(c.paths, outer) {
+		for _, i := range innerPaths {
+			if pathUnder(strings.ToLower(i.match), strings.ToLower(o.match)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// valueOutsideFragments is what your git config gives a key with no account fragment in
+// play, read from the folder the fragments are in. Empty where it gives none, and
+// plain ssh for core.sshCommand, since git runs an empty one as a command.
+func valueOutsideFragments(dir, key string) string {
+	value := ""
+	fields := strings.Split(runOut("git", "-C", dir, "config", "--show-scope", "--show-origin", "--null", "--get-all", key), "\x00")
+	for i := 0; i+2 < len(fields); i += 3 {
+		scope, origin := fields[i], strings.TrimPrefix(fields[i+1], "file:")
+		if (scope == "global" || scope == "system") && !pathUnder(canonPath(origin), canonPath(dir)) {
+			value = fields[i+2] // last one wins, the same way git settles a scalar
+		}
+	}
+	if value == "" && key == "core.sshCommand" {
+		return "ssh"
+	}
+	return value
+}
+
 // writeAccountFragment writes one account's git config fragment. Every write is checked,
 // since this is the one command that writes outside the repo.
-func (a *app) writeAccountFragment(dir, file, name string) (err error) {
+func (a *app) writeAccountFragment(dir, file string, keys []fragmentKey) (err error) {
 	fragment := dir + "/" + file
 	// Nothing goes into the global config until every fragment is written, and the
 	// global config may already include this one. So the keys go into a new file
@@ -502,31 +612,11 @@ func (a *app) writeAccountFragment(dir, file, name string) (err error) {
 		}
 		return nil
 	}
-	entries := []struct{ key, value string }{
-		{"user.name", a.cfg.value(name, "name")},
-		{"user.email", a.cfg.value(name, "email")},
-		{"gitsby.ghAccount", a.cfg.value(name, "ghAccount")},
-		// Which account plain git asks for over https, so a credential manager looks up
-		// that account's entry and not any for the host.
-		{"credential.https://" + a.cfg.hostOf(name) + ".username", a.cfg.loginOf(name)},
-		// Expanded, since git knows none of the home spellings the accounts file takes.
-		{"gitsby.ghTokenFile", expandHome(a.cfg.value(name, "tokenFile"))},
-		// gh's own helper answers only for its active account, so plain git over
-		// https had nothing to push with in another account's folder. Added after
-		// any helper the global config already lists, so a credential manager set
-		// up there is still asked first.
-		{"credential.https://" + a.cfg.hostOf(name) + ".helper", a.fragmentHelperFor(name)},
-	}
-	for _, e := range entries {
-		if e.value == "" {
+	for _, k := range keys {
+		if k.value == "" && !k.outer {
 			continue
 		}
-		if err := write(e.key, e.value); err != nil {
-			return err
-		}
-	}
-	if sshKey := a.cfg.value(name, "sshKey"); sshKey != "" {
-		if err := write("core.sshCommand", sshKeyCommand(sshKey)); err != nil {
+		if err := write(k.key, k.value); err != nil {
 			return err
 		}
 	}

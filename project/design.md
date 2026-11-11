@@ -181,6 +181,10 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- `--no-fetch` and offline skip the step as before, rather than merging what an earlier fetch left. That would call the branch up to date against refs nobody checked.
 	- It stays fast-forward only, as the pull was. A diverged branch still refuses, with the tree left as it was.
 
+- The push step names the branch and where it goes (2026-11-10). A bare `git push` follows `push.default` and `remote.<name>.push`, so under `matching`, or a refspec for every branch, it sent branches the plan never named. On a mirror remote it deleted origin's branches that weren't here.
+	- It goes where a bare push would send that branch alone: the push remote, as `pushRemote` or `remote.pushDefault` sets it, and the ref that remote's push refspecs map it to. Where git has no one answer, as under `push.default=nothing`, it goes to the upstream the pull reads.
+	- A first push is still `git push -u origin HEAD`. On a mirror remote git refuses a named branch, so the push fails and nothing moves.
+
 - `--staged` commits the index only, and its pulls go without `--autostash` (2026-10-05).
 	- It is a flag on `pullcom`, `sync`, `pr create`, `release`, and the branch commands that commit before they move. Any other command refuses it, since ignoring it would sweep in the edits it was typed to keep out. It is opt-in: a file staged long ago would otherwise make a commit quietly smaller.
 	- Git reapplies its autostash without `--index`. Staged work comes back unstaged, and a file staged and then edited again loses its staged copy, so the commit after the pull would take nothing. Checked on git 2.51, and git's current source still applies it that way.
@@ -651,6 +655,8 @@ Three phases, so a failure never leaves a half-cut release:
 Decisions inside that shape:
 
 - **The assets are built twice.** Phase 1 compiles every target to prove none has stopped building, where the cost of a failure is nothing. Phase 3 builds them again once the tag exists, and those are the bytes that get uploaded - a build number taken from the commit can only be the tag's if the tag is already there. The second build is the price of "check out the tag, build, and get the published checksums back".
+
+- **What the pipeline tests is what gets tagged.** `br create` and `gitsby release` each pull before they act. So phase 1 fetches, and refuses unless it is on the branch `gitsby release` cuts from, `dev` where the repo has one, level with origin's. It also refuses when origin's default branch has commits `dev` doesn't, since the release merge would take them in. After the pipeline it refuses a tree the run changed, such as a demo gif that came out different, since the version PR would take that in too. It refuses a branch origin moved during the run as well. Phase 2 checks that the version branch starts at the tested commit, and that the merged branch and the tag each hold the tested tree plus the bump. A stop at the tag publishes nothing, and `--publish` finishes the release once the tag has been checked by hand.
 
 - **Both builds use the pipeline image's Go**, where docker works, since 2026-10-25. That is the toolchain the checks ran with, pinned by version, so the published bytes don't depend on what the releasing box has installed. The tag's export is mounted into the container at its own path. Without docker they build with the box's Go, and the run says so. The upload and the proof against the published files stay on the box, since they need its network and its `gh` login.
 

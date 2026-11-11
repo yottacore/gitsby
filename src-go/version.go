@@ -69,7 +69,7 @@ var describeTailRE = regexp.MustCompile(`-[0-9]+-g[0-9a-f]{4,}(-dirty)?$|-dirty$
 // isReleaseVersion is true for a tag's own version, 2.1.0 or 3.0.0-beta.1. A build
 // past a tag, a bare hash from a repo with no tags, and the 0.0.0 stand-ins aren't.
 func isReleaseVersion(v string) bool {
-	return releaseVerRE.MatchString(v) && !describeTailRE.MatchString(v) && !strings.HasPrefix(v, "0.0.0")
+	return releaseVersionOK(v) && !describeTailRE.MatchString(v) && !strings.HasPrefix(v, "0.0.0")
 }
 
 // versionText is "v2.1.0 build dbrk8", or just the version where nothing stamped a

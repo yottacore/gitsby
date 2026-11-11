@@ -193,7 +193,7 @@ PS_LINT_SETTINGS="PSScriptAnalyzerSettings.psd1"
 WINRES_CMD=(cicd/utility/gen-winres.bash)
 
 ## Stage 1: backlog rules. Open review items have an "Origin:" line, and a suite check
-## removed on the branch is named in the backlog. See the script's header for why.
+## removed on the branch is named on a backlog line the branch adds. See the script's header for why.
 BACKLOG_CHECK_CMD=(cicd/utility/backlog-check.bash)
 
 ## Stage 2: build + regression tests. The suite runs against the compiled binary and gates.
@@ -287,6 +287,12 @@ RELEASE_TARGETS=(
 	"freebsd/amd64"
 	"freebsd/arm64"
 )
+## A release version: vX.Y.Z, then a '-' or '.' and dot-separated parts, none of them empty. The
+## same as releaseVerRE in src-go/release.go, so release.bash takes no version 'gitsby release'
+## refuses after the bump is merged. git refuses a tag ending in .lock, which the pattern can't
+## say. fIsReleaseVersion leaves the three numbers in BASH_REMATCH 1 to 3.
+RELEASE_VERSION_RE='^v?([0-9]+)\.([0-9]+)\.([0-9]+)([-.][0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+fIsReleaseVersion(){ [[ "$1" =~ ${RELEASE_VERSION_RE} && "$1" != *.lock ]] ;}
 
 ## Stage 6: demo gif. Seeded, with pinned dates and the newest release's stamp, so a commit that
 ## changes nothing the demo prints gives the same bytes. Skipped by --quick / --no-demogif, or
@@ -385,3 +391,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-11-09 JC: fMemCap, a memory cap with no swap from CICD_MEM_CAP, for every container a run starts and the run itself.
 ##		- 2026-11-09 JC: fMemCap refuses a CICD_MEM_CAP with no unit, or under 1g.
 ##		- 2026-11-09 JC: The sourced-only guard prints its error to stderr with printf.
+##		- 2026-11-10 JC: RELEASE_VERSION_RE and fIsReleaseVersion, the release version shape that release.bash, gen-winres.bash and the demo share with 'gitsby release'.

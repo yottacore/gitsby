@@ -178,8 +178,9 @@ func (a *app) teaCommand() string {
 }
 
 // hostTokenEnv hands the account's token for this run's host to a git host CLI
-// other than gh, in the variables that CLI reads, with the host beside it so the
-// token only goes back where it came from. A GitHub token is never handed over:
+// other than gh, in the variables that CLI reads, with the host beside it. tea keeps
+// the token on that host; glab doesn't, so it goes through glabTokenEnv. A GitHub
+// token is never handed over:
 // that one is gh's, already in GH_TOKEN. Says whether there was a token to give.
 func (a *app) hostTokenEnv(tokenVar, hostVar string) (bool, error) {
 	if a.acct.tokenEnv == "" || isGitHubHost(a.acct.credHost) {
@@ -189,6 +190,107 @@ func (a *app) hostTokenEnv(tokenVar, hostVar string) (bool, error) {
 		return false, err
 	}
 	return true, setEnv(hostVar, "https://"+a.acct.credHost)
+}
+
+// glabTokenEnv is hostTokenEnv for glab, which sends GITLAB_TOKEN to every host it
+// talks to. GITLAB_API_HOST wins over any host glab is told, so pinning it keeps the
+// token on the account's host. A run pointed at some other host gets nothing and
+// runs as plain glab would; that host comes back so the caller can say so.
+func (a *app) glabTokenEnv(args []string) (gave bool, elsewhere string, err error) {
+	if a.acct.tokenEnv == "" || isGitHubHost(a.acct.credHost) {
+		return false, "", nil
+	}
+	host := a.acct.credHost
+	named := glabNamedHosts(args)
+	if api := os.Getenv("GITLAB_API_HOST"); api != "" {
+		named = append(named, api)
+	}
+	for _, x := range named {
+		if !strings.EqualFold(glabHostName(x), serviceHost(host)) {
+			return false, x, nil
+		}
+	}
+	if gave, err = a.hostTokenEnv("GITLAB_TOKEN", "GITLAB_HOST"); !gave || err != nil {
+		return gave, "", err
+	}
+	return true, "", setEnv("GITLAB_API_HOST", host)
+}
+
+// glabNamedHosts is every host a glab command line names: --hostname, a -R that
+// starts with a host, a URL anywhere (api takes one as the endpoint, issue view
+// takes one as the issue), and a repo command's 'host/group/name'. glab reads a
+// dotted first part as a host only when it knows that host, which we can't see, so
+// it always counts here. Too many means no token, never a token sent astray.
+func glabNamedHosts(args []string) []string {
+	var hosts []string
+	repoCmd := len(args) > 0 && args[0] == "repo"
+	for i := 0; i < len(args); i++ {
+		x := args[i]
+		name, val, hasVal := x, x, false
+		if strings.HasPrefix(x, "--") {
+			if n, v, ok := strings.Cut(x, "="); ok {
+				name, val, hasVal = n, v, true
+			}
+		} else if len(x) > 2 && (strings.HasPrefix(x, "-R") || strings.HasPrefix(x, "-h")) {
+			name, val, hasVal = x[:2], strings.TrimPrefix(x[2:], "="), true
+		}
+		hostFlag := name == "--hostname" || name == "-h"
+		repoFlag := name == "--repo" || name == "-R"
+		if (hostFlag || repoFlag) && !hasVal {
+			if i+1 == len(args) {
+				break
+			}
+			i++
+			val = args[i]
+		}
+		h := ""
+		switch {
+		case hostFlag:
+			hosts = append(hosts, val)
+		case repoFlag || (repoCmd && !strings.HasPrefix(x, "-")):
+			h = glabRepoHost(val)
+		default:
+			h = glabURLHost(val)
+		}
+		if h != "" {
+			hosts = append(hosts, h)
+		}
+	}
+	return hosts
+}
+
+// glabRepoHost is the host in a repo as glab takes it: a URL, or 'host/group/name'.
+func glabRepoHost(repo string) string {
+	if h := glabURLHost(repo); h != "" {
+		return h
+	}
+	parts := strings.Split(repo, "/")
+	if first := parts[0]; len(parts) >= 3 && strings.Contains(first, ".") && strings.Trim(first, ".") == first {
+		return first
+	}
+	return ""
+}
+
+// glabURLRE: an argument that is a URL or 'user@host:path' from its first byte. Not a
+// bare 'a:b', which a label such as 'priority:high' would be, nor an api field
+// such as 'url=https://...', which is a value for the host to store.
+var glabURLRE = regexp.MustCompile(`^(?:[A-Za-z][A-Za-z0-9+.-]*://|[A-Za-z0-9._-]+@[^:/\s]+:)`)
+
+func glabURLHost(s string) string {
+	if !glabURLRE.MatchString(s) {
+		return ""
+	}
+	host, _, _ := splitRemoteURL(s)
+	return host
+}
+
+// glabHostName is a host as glab compares them, so a URL, a trailing slash, 'www.'
+// and the ssh. endpoint all match the account's host.
+func glabHostName(host string) string {
+	if strings.Contains(host, "://") {
+		host, _, _ = splitRemoteURL(host)
+	}
+	return serviceHost(strings.TrimPrefix(strings.ToLower(strings.TrimSuffix(host, "/")), "www."))
 }
 
 // glabScopeAuth pins 'glab auth status' to the account's host. Left alone it

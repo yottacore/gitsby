@@ -54,6 +54,35 @@ account.broad.pathContains = b
 	}
 }
 
+// An inner account's fragment has to put back each key an account whose fragment git
+// can include ahead of it sets, and only those. Backlog 2026111016332429.
+func TestAccountIncludedBefore(t *testing.T) { // [df4x3]
+	cfg := planFor(t, driveFixture(`
+account.inner.path = /srv/code/client
+account.outer.path = /srv/CODE
+account.side.path = /srv/other
+account.anywhere.pathContains = a/b
+account.loose.name = No rule
+`))
+	cases := []struct {
+		outer, inner string
+		want         bool
+	}{
+		{"outer", "inner", true},     // a shorter path, case aside, as gitdir/i reads it
+		{"inner", "outer", false},    // a longer one comes after
+		{"side", "inner", false},     // folders apart
+		{"anywhere", "inner", true},  // a folder-name rule goes ahead of every path rule
+		{"outer", "anywhere", false}, // and a path rule after every one
+		{"loose", "inner", false},    // no rule, so never included
+		{"outer", "loose", false},
+	}
+	for _, c := range cases {
+		if got := cfg.includedBefore(c.outer, c.inner); got != c.want {
+			t.Errorf("includedBefore(%s, %s) = %v, want %v", c.outer, c.inner, got, c.want)
+		}
+	}
+}
+
 // gitsby reads a rule as plain text and git reads an includeIf as a pattern, so
 // 'lit[x]' bound 'litx' in plain git and 'acme-*' bound 'acme-x'.
 func TestAccountApplyPlanEscapesGlobs(t *testing.T) { // [dcnp0]

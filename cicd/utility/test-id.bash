@@ -17,13 +17,15 @@
 ##	Syntax:
 ##		test-id.bash [--at DATE] [-n COUNT] [--root DIR]
 ##		test-id.bash --check [-q] [--root DIR]
-##		test-id.bash --list [--root DIR] WHAT...
+##		test-id.bash --list [--root DIR] [--rev REV] WHAT...
 ##		  --at DATE   mint for DATE instead of now, in any form 'date -d' reads
 ##		  -n COUNT    mint COUNT IDs, each the next free minute after the last
 ##		  --check     fail on a test with no ID, or an ID used twice
 ##		  --list      print "<id> <label>" for each test in WHAT, once each: a suite script's
 ##		              path from the repo root, 'go' for the Go tests and fuzz targets, or
 ##		              'gofuzz' for the fuzz targets alone
+##		  --rev REV   with --list, read the suite scripts as they are at the git revision
+##		              REV, leaving out one that isn't there
 ##		  -q          print findings only
 ##		  --root DIR  tree to check (default: the repo this script sits in)
 ##	Exit: 0 clean, 1 findings, 2 bad usage.
@@ -43,7 +45,7 @@ set -Eeuo pipefail
 meDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd -- "${meDir}/../.." && pwd)"
 fUsage(){ printf '%s\n' "$*" >&2; exit 2; }
-at=""; check=0; quiet=0; list=0; listWhat=(); count=1
+at=""; rev=""; check=0; quiet=0; list=0; listWhat=(); count=1
 suites=(cicd/test.bash cicd/fuzz.bash cicd/parity.bash cicd/utility/spawn-count.bash)
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -53,6 +55,7 @@ while [[ $# -gt 0 ]]; do
 		-q)        quiet=1 ;;
 		-n)        count="${2:?-n needs a count}"; shift ;;
 		--root)    root="${2:?--root needs a directory}"; shift ;;
+		--rev)     rev="${2:?--rev needs a revision}"; shift ;;
 		-h|--help) grep -E '^##' "$0" | sed 's/^##\t\?//'; exit 0 ;;
 		-*)        fUsage "Unknown option: $1 (try --help)" ;;
 		*)         ((list)) || fUsage "Unknown option: $1 (try --help)"; listWhat+=("$1") ;;
@@ -70,6 +73,7 @@ fBase32(){
 
 if ((check && list)); then fUsage "test-id: --check and --list are separate runs; give one."; fi
 if ((list && ! ${#listWhat[@]})); then fUsage "test-id: --list needs a suite, 'go' or 'gofuzz'"; fi
+if [[ -n "${rev}" ]] && ((! list)); then fUsage "test-id: --rev goes with --list"; fi
 
 ## One line per test: "<id or -> <kind> <file>:<line>", then a tab and its label. Kind is ok or
 ## fail for the two halves of a hand-written pair, and check for everything else. A label that
@@ -85,6 +89,7 @@ fSites(){
 			gofuzz) goPat='^func Fuzz[A-Za-z0-9_]*[(]' ;;
 			*)      goPat="" ;;
 		esac
+		if [[ -n "${goPat}" && -n "${rev}" ]]; then fUsage "test-id: --rev reads suite scripts only, not '${f}'"; fi
 		if [[ -n "${goPat}" ]]; then
 			[[ -d "${root}/src-go" ]] || continue
 			while IFS= read -r f; do
@@ -99,8 +104,12 @@ fSites(){
 			continue
 		fi
 		f="${f#"${root}/"}"
-		[[ -f "${root}/${f}" ]] || { ((! list)) || { printf '%s\n' "test-id: no suite at ${f}" >&2; return 2; }; continue; }
-		FILE="${f}" awk '
+		if [[ -n "${rev}" ]]; then
+			git -C "${root}" cat-file -e "${rev}:${f}" 2>/dev/null || continue
+		else
+			[[ -f "${root}/${f}" ]] || { ((! list)) || { printf '%s\n' "test-id: no suite at ${f}" >&2; return 2; }; continue; }
+		fi
+		fSuiteText "${f}" | FILE="${f}" awk '
 			/^[[:space:]]*#/ { next }
 			{
 				s = $0
@@ -118,9 +127,10 @@ fSites(){
 					if (match(label, /^([^"\\]|\\.)*/)) label = substr(label, 1, RLENGTH)
 					print id, kind, ENVIRON["FILE"] ":" NR "\t" label
 				}
-			}' "${root}/${f}"
+			}'
 	done
 }
+fSuiteText(){ if [[ -n "${rev}" ]]; then git -C "${root}" show "${rev}:$1"; else cat -- "${root}/$1"; fi ;}
 
 if ((! check && ! list)); then
 	[[ "${count}" =~ ^[1-9][0-9]*$ ]] || fUsage "test-id: -n takes a count of 1 or more"
@@ -184,3 +194,4 @@ exit 0
 ##		- 20261025 JC: --list prints each test's ID and label for the suites named, so cicd.bash --list can say what a run would check.
 ##		- 20261026 JC: IDs are minutes since 2000 in Crockford base 32, and every old one was converted from the time it held. A taken minute goes to the next free one. -n mints several.
 ##		- 20261107 JC: Errors go through fUsage.
+##		- 20261111 JC: --rev lists the tests a suite had at a git revision, for backlog-check.bash.
