@@ -5147,6 +5147,28 @@ GHEOF
 	fAssertFail "[df1s8] and a login holding shell text runs nothing"  test -e "${ac}/credhome/CANARY"
 	fAssertFail "[df31s] a fill no helper answers fails, with no askpass asked" \
 		bash -c "printf 'protocol=https\nhost=nobody.example\n\n' | env ${acCredEnv} git credential fill"
+	## An account nested in another's folder. git includes both fragments there, so each key only
+	## the outer one set came from it: its token file, its name and its ssh key.
+	mkdir -p "${ac}/nesthome" "${ac}/trees/outer/nested"
+	git init --quiet "${ac}/trees/outer/proj"
+	git init --quiet "${ac}/trees/outer/nested/proj"
+	printf '[user]\n\tname = Base Name\n' > "${ac}/nesthome/.gitconfig"
+	printf 'tok_outer_file\n' > "${ac}/nesthome/outer.tok"
+	printf 'account: no\n\tpath: %s/trees/outer\n\tname: Outer Name\n\ttokenfile: %s/nesthome/outer.tok\n\tsshkey: %s/nesthome/outer_key\n\naccount: ni\n\tpath: %s/trees/outer/nested\n\tghaccount: nestacct\n\temail: ni@example.com\n' \
+		"${acCanon}" "${acCanon}" "${acCanon}" "${acCanon}" > "${ac}/nest.shcl"
+	local acNestEnv="${acNoDiscovery} HOME='${ac}/nesthome' GIT_CONFIG_GLOBAL='${ac}/nesthome/.gitconfig' PATH='${ac}/bin:${PATH}' GIT_TERMINAL_PROMPT=0"
+	local acNested="${ac}/trees/outer/nested/proj"
+	local acFillNest="printf 'protocol=https\nhost=github.com\n\n' | env ${acNestEnv}"
+	fAssertNotOut "[df4ws] after apply, plain git in a nested account's folder gets no token from the outer one"  'tok_outer_file' \
+		bash -c "cd '${acNested}' && env ${acNestEnv} '${gitsby}' -q -NoFetch --config '${ac}/nest.shcl' account apply >/dev/null && ${acFillNest} git credential fill"
+	fAssertNotOut "[df4wt] and nor does gitsby raw git"  'tok_outer_file' \
+		bash -c "cd '${acNested}' && ${acFillNest} '${gitsby}' -q -NoFetch --config '${ac}/nest.shcl' raw git credential fill"
+	fAssertOut "[df4wv] and the name is the global config's, not the outer account's"  '^Author \.+: Base Name <ni@example\.com>$' \
+		bash -c "cd '${acNested}' && env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL ${acNestEnv} '${gitsby}' -q -NoFetch --config '${ac}/nest.shcl' whoami"
+	fAssertOut "[df4ww] and plain git uses no ssh key the nested account doesn't name"  '^ssh$' \
+		bash -c "cd '${acNested}' && env ${acNestEnv} git config core.sshCommand"
+	fAssertOut "[df4wx] and the outer folder still gets its own token"  '^password=tok_outer_file$' \
+		bash -c "cd '${ac}/trees/outer/proj' && ${acFillNest} git credential fill"
 	## A rule for the root covers every folder. It looked for the rule plus a slash, '//', and
 	## covered none, and the includeIf git got had the same extra slash.
 	mkdir -p "${ac}/roothome"
@@ -8668,3 +8690,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261109 JC: CICD_MEM_CAP needs a unit and 1g at least, [df350]. The memory scope's probe passes the run's properties, [df351].
 ##		- 20261109 JC: spawn-count.bash and cicd.bash name their records in UTC, [df385] [df386].
 ##		- 20261109 JC: gfs-rotate.bash run directly, [df3fd].
+##		- 20261110 JC: a nested account's folder takes no key from the outer account's fragment after apply, [df4ws] to [df4wx].

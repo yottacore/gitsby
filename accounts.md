@@ -148,6 +148,8 @@ With no rule covering the destination, gh stays on its own account. The owner of
 
 Over https, each account's file also gets a credential helper. gh's own helper only answers for its active account, so this one asks gh for the folder's account by name, then tries its `tokenfile`. On a host gh doesn't serve it tries only the `tokenfile`. An account with neither gets no helper. No token is written to disk, and any credential manager already set up still gets asked first. `gh auth setup-git` clears the helpers listed ahead of its own, so run `gitsby account apply` again after it.
 
+When one account's folder sits inside another's, git reads both files there, and git can't unset a key from the later one. So each key the inner account leaves unset that the outer one sets, such as its `name`, `tokenfile` or `sshkey`, goes into the inner account's file with the value your global git config gives it. Where that gives none, the key is empty, or plain `ssh` in place of an ssh key. Run `gitsby account apply` again after changing one of those in your global git config.
+
 It is safe to re-run: it replaces only the entries it wrote before, leaves any you wrote by hand alone, and drops rules for accounts you have since removed.
 
 ## Scripts
