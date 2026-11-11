@@ -33,191 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- cicd.bash's go test -list compiles with every core
-	- ID: 2026111020264871
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-202629
-	- Opened by: jim-collier
-	- Related IDs: 2026111016331970
-	- Steps to reproduce [Bug]: Run the fuzz step, and watch the compile behind go test -list at cicd.bash:1195.
-	- Incorrect behavior [Bug]: It has no -p and no GOMAXPROCS, so it builds the test binary with every core, at nice 19.
-	- Expected behavior [Bug]: It takes the quarter, like the fuzz runs after it.
-	- Reproduced [Bug]: No, from reading cicd.bash. Came in with 8c53b28, 2026-11-09.
-	- Possible cause [Bug]: The line was added after [dedq2] and [dbft4] were written, and neither matches it.
-	- Estimated effort: Low
-	- Actual fix [Bug]: The list runs as `GOMAXPROCS="${HEAVY_JOBS}" go test -p "${HEAVY_JOBS}" -list`, like the fuzz runs after it. [dedq2] now matches the list line too, and wants 7 hard lines. The gate fixtures' go stubs matched `test -list` by position, so they match it with `-p` in between, and the quick run's call check wants `go test -p <n> -list Fuzz`.
-	- Decisions: The quarter, not the half, since the list is the fuzz step's and the fuzz step is a hard step.
-	- Branch: round-20261111
-	- Test case: test.bash [dedq2], widened. [dbft4] doesn't see it, since `go test -list` isn't a compile command it matches.
-	- Verified: [dedq2]'s check fails on cicd.bash with the old line and passes on the new one. --backlog-run-quick passed, all areas, after the stubs changed. The first two runs failed only on the fixtures' stubs.
-	- Swept: every go test, go build and go vet in cicd.bash, and the stubs and call checks in test.bash that name go test -list.
-	- Acceptance signoff: Self-closed. Its check fails on the old line and passes on the fix.
-	- Closed: 20261110-210557
-
-- release.bash says nothing is pushed after 'br create' pushed the version branch
-	- ID: 2026111019574118
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-195741
-	- Opened by: jim-collier
-	- Related IDs: 2026111016332243
-	- Steps to reproduce [Bug]: Have phase 2 fail at the downloads table or the Windows resource stamp, after `br create`.
-	- Incorrect behavior [Bug]: It says "the branch is created but nothing is pushed". `br create` pushes the new branch to origin as it makes it.
-	- Expected behavior [Bug]: The message says the branch is on origin, with no PR, as the check after `br create` now does.
-	- Reproduced [Bug]: No. Read only: `publishBranch` in mutate.go runs `git push -u origin HEAD`.
-	- Estimated effort: Low
-	- Origin: Seen 2026-11-10 while fixing 2026111016332243.
-	- Actual fix [Bug]: Both messages say `<branch> is pushed, with no PR. Delete it, then run again.`, as the check after `br create` does.
-	- Swept: every "nothing is pushed" in release.bash. The 3 left come before phase 2, where they hold.
-	- Branch: round-20261111
-	- Test case: test.bash [df4yq], the stop at the Windows resource stamp. The downloads table stop has the same message and no test, since the fixture can't make that step fail.
-	- Verified: [df4yq] fails against the old release.bash and passes after. Quick gate passed, every area: test.bash 1964/0, fuzz 310/0, parity 30/0.
-	- Acceptance signoff: Self-closed: its test failed before the fix and passes after.
-	- Closed: 20261110-201616
-
-- Code Review 20261110b item 1: raw glab sends the folder account's token to any GitLab host glab is pointed at
-	- ID: 2026111016332442
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261110-163324
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: In a folder whose account is on gitlab.gnome.org with a token file, run `gitsby raw glab api --hostname gitlab.com user`, or `gitsby raw glab mr list -R gitlab.com/someone/else`.
-	- Incorrect behavior [Bug]: glab sends the gitlab.gnome.org token to gitlab.com as `PRIVATE-TOKEN`. Plain glab sends none.
-	- Expected behavior [Bug]: The token goes only to the account's own host.
-	- Reproduced [Bug]: 2026-11-10 on b23, glab 1.53.0, with the gitlab.com API pointed at a local logger.
-	- Possible cause [Bug]: hostTokenEnv in githost.go puts the token in `GITLAB_TOKEN`, and glab applies that to every host. The code comment says the host beside it keeps the token where it came from, which holds for tea but not for glab.
-	- Origin: 483ebc5 and d8d3c69, 2026-10. Same class as Bug 2026102209210000, whose fix pinned only `raw glab auth status`. Confirmed.
-	- Sweep: Every glab subcommand that takes a host: `api --hostname`, `-R host/...`, `repo clone <url>`. Also tea's `--login` and any other variable a host CLI applies to every host.
-	- Actual cause [Bug]: glab reads `GITLAB_TOKEN` before it looks at the host, so the token goes to any host a command names. `GITLAB_API_HOST`, from the caller's own environment, also sent it elsewhere.
-	- Actual fix [Bug]: `glabTokenEnv` in githost.go. `raw glab` and `pr` hand the token only with `GITLAB_API_HOST` pinned to the account's host, since glab sends every API call there whatever host it's told. A run that names another host gets no token and no changed variables, and says so on stderr.
-	- Decisions:
-		- Pin and refuse both. The pin alone sends `api --hostname gitlab.com` to the account's host, a wrong answer. The refusal alone misses any spelling not listed.
-		- A host named by `--hostname`, `-h`, `-R`, a URL or `user@host:path` argument, a repo command's `host/group/name`, or the caller's `GITLAB_API_HOST`. glab takes a dotted first part as a host only when its config knows it, which gitsby can't read, so a dotted first part always counts. Too many means no token, never a token sent astray.
-		- An argument counts as a URL only from its first byte, so a label such as `priority:high` or an api field such as `url=https://...` doesn't.
-	- Progress log:
-		- 2026-11-10: Checked against glab 1.53.0 through a logging proxy: `GITLAB_API_HOST` wins over `--hostname`, `-R` and a URL, and with `GITLAB_HOST` set glab skips remotes on other hosts, so a second remote in the clone isn't a way out.
-		- 2026-11-10: test.bash `[ddk65]` assert updated: `raw glab` now also prints `api=git.example.test`, from the pin. Old `^host=https://git\.example\.test token=tok_ghonly$`, new `^host=https://git\.example\.test token=tok_ghonly api=git\.example\.test$`.
-	- Test case: Go `[df4w4]` `[df4w5]`, test.bash `[df4w6]` `[df4w7]` `[df4w8]`.
-	- Verified: test.bash `[df4w6]` `[df4w7]` `[df4w8]` fail on the unfixed build (1937/4, with `[ddk65]`) and pass after. Quick gate passed, all areas, test.bash 1941/0, fuzz 310/0, parity 30/0. Real glab 1.53.0 through the built gitsby: `api user` and `mr list` go to gitlab.gnome.org as the account, `api --hostname gitlab.com user` and `mr list -R gitlab.com/someone/else` say they aren't acting as the account.
-	- Swept: `hostTokenEnv`'s 3 callers. `raw glab` and `pr` now go through `glabTokenEnv`. `raw tea` keeps its env login on `GITEA_INSTANCE_URL`, and `--login` picks a stored login with its own token, so tea isn't affected, by reading only, since this box has tea 0.9.2. gh's `GH_TOKEN` is for github.com only, and Enterprise is item 20. lazygit and tig go through git's host-scoped credential helper.
-	- Acceptance signoff: Closed on tests.
-	- Closed: 20261110-185317
-
-- Code Review 20261110b item 2: After account apply, a nested account's folder uses the outer account's token file and name
-	- ID: 2026111016332429
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261110-163324
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Account a has a token file, a name and folder P. Account b has a GitHub login and email, folder P/nested, and no token file. Run `account apply`, then `git credential fill` and `gitsby whoami` in a repo under P/nested.
-	- Incorrect behavior [Bug]: Plain git and `gitsby raw git` both answer with b's username and a's token. `whoami` says b and shows `Author: <a's name> <b's email>`. Before apply, gitsby said b used no token.
-	- Expected behavior [Bug]: A folder gets only its own account's keys. A key the account doesn't set is unset there, not taken from an outer account.
-	- Reproduced [Bug]: 2026-11-10 on b23, hermetic fixture with a fake gh.
-	- Possible cause [Bug]: Both fragments are included in the nested folder. writeAccountFragment skips empty values, so a key only the outer fragment sets wins: `gitsby.ghTokenFile`, `user.name` and the credential username. tokenFor's fallback to `gitsby.ghTokenFile` then reads it too.
-	- Origin: The fallback from d92a157, 2026-08-19. The ghTokenFile key from 0ad1374, 2026-09-16. The plain-git half from 08e7452, 2026-11-08. The 20260812 fix for apply's rule order covered only keys both accounts set. Confirmed.
-	- Actual cause [Bug]: git includes every fragment whose rule matches, and a later include can't unset a key. The inner fragment left out what its account doesn't set, so the outer one's token file, name, ssh key and ghAccount held there.
-	- Actual effort: Avg
-	- Decisions:
-		- Where an outer account's fragment can come first in a folder, the inner one writes each key its account leaves unset that the outer one sets. The value is what the global or system git config gives it outside the fragments, read at apply time. Departs from "unset", which git has no way to do from an include.
-		- Where that config gives none, the key is written empty. gitsby reads an empty `gitsby.ghAccount` or `gitsby.ghTokenFile` as none, and so does the helper. An empty `user.name` makes git refuse a commit and ask who you are, rather than use the outer name. `core.sshCommand` gets plain `ssh`, since git runs an empty one as a command.
-		- Only for accounts whose fragments can stack: a folder-name rule, or a path at or above the inner path, case aside. Elsewhere nothing changes, so the copied value can only go stale where accounts nest. accounts.md says to run `apply` again after changing one of those keys.
-		- The credential helper isn't put back. It's a list, and the outer one reads only the keys that are.
-		- Changelog under Fixed.
-	- Actual fix [Bug]: `account apply` gathers every account's keys first, and `withOuterKeys` adds the outer accounts' keys to the inner fragment, with `valueOutsideFragments` for the value.
-	- Branch: round-20261111
-	- Commit: 6770e4f
-	- Test case: test.bash `[df4ws]` to `[df4wx]` (token through plain git and `raw git`, the whoami name, the ssh key, and the outer folder still gets its token). Go `[df4x3]` for which accounts stack.
-		- Verified: `[df4ws]` to `[df4ww]` fail on the unfixed build (1942/4) and pass after, with `[df4wx]` passing both ways. `[df4x3]` fails with the folder-name case broken. Quick gate passed, all areas: test.bash 1946/0, fuzz 310/0, parity 30/0.
-		- Swept: every key the fragment writes, the token lookup in gitsby's own runs (`accountToken`'s fallback reads the put-back value), and `resolveAccount`'s `gitsby.ghAccount` pin. `writeAccountFragment` has no other caller.
-		- Not run on Windows. The origin compare goes through `canonPath`, as `accountManagedIncludes` does.
-	- Acceptance signoff: Self-closed: its tests passed. The value choice has a Check: entry in questions.md.
-	- Closed: 20261110-192044
-
-- Code Review 20261110b item 3: A second release after a failed push of main cuts a new tag on the same commit
-	- ID: 2026111016332417
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163324
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Make the push of main fail during `gitsby release`, as a hook or branch protection does. Fix that and run `gitsby -q release` again.
-	- Incorrect behavior [Bug]: The first run leaves tag v1.0.1 local and main ahead. The second sees main ahead, skips the nothing-to-release check, and tags v1.0.2 on the commit named Release v1.0.1. v1.0.2 is pushed, v1.0.1 never is, and it exits 0.
-	- Expected behavior [Bug]: The second run finishes the first: it pushes main and v1.0.1, or says what's left to do.
-	- Reproduced [Bug]: 2026-11-10 on b23, local bare origin with a pre-receive hook.
-	- Possible cause [Bug]: release.go:142 treats main being ahead as new work. The tag is made before main is pushed, at release.go:223-237.
-	- Origin: 089776d, 2026-08-18, the Go port of a bash fix. Code Review 20260727b item 12 fixed this case, and its tests [dafrk] to [dafrq] cover only a run whose push worked. Regression. Confirmed.
-	- Actual cause [Bug]: As the possible cause says. The run that failed also leaves you on main, ahead, so the second run's park push sends main, and then only v1.0.2 goes with it.
-	- Actual fix [Bug]: When the default branch's tip holds a release tag and origin's copy is behind it or missing, a bare `release` finishes that release instead of cutting one: it pushes the branch and that tag, fast-forwards dev and pushes it. The plan shows only those steps, and a line says which release it is finishing. Typing that same version does the same. changelog.md has a line under vNEXT.
-	- Decisions:
-		- Finish rather than refuse, the first of the two outcomes the item allows, since re-running a command is meant to be safe and to get you there.
-		- A different version typed out still cuts its own tag, as [dafrq] keeps for a typed version.
-		- Any run with no version typed finishes, a candidate's promotion included, since that would also tag the same commit again and leave the candidate behind.
-		- A default branch that went its own way from origin's isn't taken as a stuck release, since its push would be refused anyway.
-		- A run whose branch push worked and tag push failed is unchanged: main is level, so the nothing-new check stands down and names the tag to push.
-	- Swept: the plan (previewRelease) and the `--staged` walk (stagedReleaseCheck), which both now skip dev's pull and the merge on a finish. release.bash refuses an existing tag in phase 1, so it can't cut a second one. Its phase 2 message for a failed `gitsby release` said no tag was cut, which a refused push makes untrue, so it now names `gitsby release <version>` and then `--publish` as the way to finish.
-	- Branch: round-20261111
-	- Test case: test.bash [df519] [df51a] [df51b] [df51c] [df51d] [df51e] [df51f] [df51g]
-	- Verified: [df51a] [df51b] [df51e] fail against the old release.go and pass after. [df519] and [df51d], the refused first runs, and [df51c], dev after the second run, pass on both. [df51g], a candidate left behind, failed on a first version of the fix that keyed on a bump, and passes after. Quick gate passed, every area: test.bash 1975/0, fuzz 310/0, parity 31/0.
-	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
-	- Closed: 20261110-213630
-
-- Code Review 20261110b item 4: br switch to a local branch named like an option runs the option, and under --staged throws away unstaged edits
-	- ID: 2026111016332404
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163324
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: `git update-ref refs/heads/-f HEAD`, make an unstaged edit, then `gitsby -q --staged br switch -- -f`.
-	- Incorrect behavior [Bug]: The plan says `git checkout -f`. It commits the staged file, runs `git checkout -f`, and the unstaged edit is gone. Exit 0.
-	- Expected behavior [Bug]: A switch target that starts with a dash is refused before anything runs, as br create's is.
-	- Reproduced [Bug]: 2026-11-10 on b23, hermetic fixture.
-	- Possible cause [Bug]: preflightBranch checks only that the target exists, and branch.go:152 runs `checkout <name>`.
-	- Origin: 353f5c9 and f9716e4. Code Review 20260818 item 10 refused dash-led current, default and target branches, not the switch target. The fuzz sweep at backlog line 539 assumed the parser refuses dash-led words, which stopped holding when bbb6445 made `--` end the options on 2026-11-10. Regression. Confirmed.
-	- Sweep: Every positional that reaches git argv now that `--` lets a dash through: switch, merge, prune, hotfix, release, repo connect, create and clone.
-	- Actual cause [Bug]: preflightBranch checked only that the br switch target exists. Since bbb6445 a dash-led word gets past the parser after `--`, and one made by raw git exists, so `git checkout -f` ran as the option.
-	- Actual fix [Bug]: br switch refuses a dash-led target that exists with the line a dash-led current branch gets, and one that doesn't with "a branch name can't start with a dash", rather than a br create line that would be refused too.
-		- Swept: switch fixed. create runs check-ref-format --branch, which refuses a dash. hotfix puts `hotfix/` ahead of the name. merge's word is the message, after `-m`. prune takes none. release's must match the version pattern, which starts with a digit. clone has `--` ahead of the URL. pr's number must be digits, and its title follows `--title`. repo connect and repo create are item 18, 2026111016332231.
-	- Decisions:
-		- A missing dash-led target gets its own wording, since there is nothing to rename.
-		- No changelog entry. `--` is new in vNEXT, so no release had this.
-	- Branch: round-20261111
-	- Test case: Go [df520], test.bash [df521] and [df522]. [df520] fails with the fix stubbed out. The [df522] steps with the build before the fix made a commit and lost the unstaged edit, at exit 0.
-	- Acceptance signoff: Quick gate passed, all areas.
-	- Closed: 20261110-215801
-
-- Code Review 20261110b item 5: sync and the park pushes follow push.default, so they push branches the plan never names
-	- ID: 2026111016332392
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163323
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Set `push.default=matching`. On a feature branch, with an unpushed commit on local main, run `gitsby -q sync`.
-	- Incorrect behavior [Bug]: The plan says it pushes the feature branch. git pushes the feature branch and main, and it exits 0. That gets past `--direct`. A mirror refspec in `remote.origin.push` could delete branches on origin.
-	- Expected behavior [Bug]: gitsby pushes only the branch its plan names.
-	- Reproduced [Bug]: 2026-11-10 on b23, local bare origin.
-	- Possible cause [Bug]: pushArgs in mutate.go returns a bare `git push` once the branch has an upstream.
-	- Origin: 38cc756, 2026-10-04. The bare push is older. No round saw it. Confirmed.
-	- Sweep: Every caller of pushArgs: sync, each park, release's 2 pushes, br merge's fallback push, repo connect.
-	- Actual cause [Bug]: pushArgs returned a bare `git push`, which follows push.default and remote.origin.push. release's push of dev was a second bare push.
-	- Decisions:
-		- The push goes where a bare push would send that branch alone. pushRemote and remote.pushDefault still pick the remote, and a push refspec that renames the branch is followed. Fork users keep pushing to their fork.
-		- Where git has no one answer, as under push.default=nothing, it goes to the upstream, since the command asks to push.
-		- On a mirror remote git refuses a named branch, so the push fails and nothing moves. A `+` in a push refspec no longer forces.
-		- A remote name that starts with a dash gets `--` before it, since git takes a remote named `--all`.
-		- 1 more git call per push, a for-each-ref that also names the current branch. spawn-count `[df37w]` 37 -> 38 and `[df052]` 42 -> 43. Check: entry filed.
-	- Actual fix [Bug]: pushArgs names the remote and `HEAD:<ref>`, read from 1 for-each-ref. release's dev push uses it too. design.md and the changelog say so.
-	- Swept: every `"push"` in src-go. publishBranch, repo connect's add, the tag push, br merge's atomic push and the deletes already name their refs. pr create and the branch commands park through cmdPush.
-	- Test case: Go [df52f], test.bash [df52c] to [df52e]. [df52f] fails 9 of its 10 cases on the old pushArgs, and [df52c] to [df52e] fail against the build before the fix: main went to origin, and the mirror remote lost a branch.
-	- Acceptance signoff: Quick gate passed, all areas. gosec has no finding in the changed lines.
-	- Closed: 20261110-221524
-
 - Code Review 20261110b item 6: br switch from main or dev pushes commits straight to the protected branch without --direct
 	- ID: 2026111016332380
 	- Type: Bug
@@ -361,60 +176,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: remoteEnv in remote.go always sets `GIT_SSH_COMMAND`. A `core.sshCommand` of plink also gets `-o ConnectTimeout=3`, which plink doesn't take. That part is Plausible.
 	- Origin: 88ff4ab, 2026-08-19, from v2.1.0. No round saw it. Confirmed.
 
-- Code Review 20261110b item 16: backlog-check passes when a removed suite check's ID is anywhere in the backlog
-	- ID: 2026111016332256
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163322
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: On a branch off dev in a copy of the tree, delete test.bash [dab6x], or fuzz.bash's `fRefuse "[dadsp]...` line. Run backlog-check.bash.
-	- Incorrect behavior [Bug]: Both pass, exit 0. [dab6x] counts as named since its ID is on the Test case row from when it was added. 1077 of the 1725 IDs it can see are already in the backlog. The fuzz.bash line isn't seen at all, since the check only knows `fAssert*`, `fSame*` and `fOk`.
-	- Expected behavior [Bug]: A removed check fails the gate unless the branch adds a backlog line naming it.
-	- Reproduced [Bug]: 2026-11-10 in a copy of the tree. Deleting [da8kz], whose ID isn't in the backlog, fails as it should.
-	- Possible cause [Bug]: backlog-check.bash:111 and :127. It also misses fuzz.bash's other helpers, checks with an env prefix or after `for`, `if` or `;`, and spawn-count.bash.
-	- Origin: 2319e09, 2026-09-10, and 4bf3215, 2026-09-26. The 2026-11-03 bug at backlog line 4383 fixed rule 1 only. Confirmed.
-	- Actual cause [Bug]: Rule 2 took a removed check as named when its ID or label was anywhere in the backlog, old rows included. It found checks with its own pattern, which knew only fAssert, fSame and fOk at the start of a diff line, over test.bash, parity.bash and fuzz.bash.
-	- Actual fix [Bug]: backlog-check.bash lists the tests at the merge base and in the working tree with test-id.bash's own scan, through a new `--list --rev REV`, so every helper at any place on its line counts, and spawn-count.bash's measures too. A removed check has to be named, by its ID as a word or by its label, on a backlog line the merge base's backlog doesn't have.
-	- Decisions:
-		- One scan for what a test is, test-id.bash's, rather than a second pattern in backlog-check.bash that drifts from it. backlog-check.bash needs test-id.bash beside it only when rule 2 runs.
-		- A line counts as added when the merge base's backlog has no line exactly like it, so a moved item names nothing new. A backlog outside the repo, or new on the branch, counts as all added, as before.
-		- A label still matches anywhere in an added line, as 4bf3215 allowed. Go tests stay out of rule 2, as they were.
-	- Branch: round-20261111
-	- Test case: test.bash [df4xc] (an ID the backlog had at the base), [df4xd] (fRefuse after an if and an env prefix), [df4xe] (spawn-count.bash removed), [df4xf] (a line the branch adds names them).
-	- Verified: [df4xc] to [df4xe] fail against dev's backlog-check.bash and pass against the new one, in a copy of the fixture. In a clone off dev, deleting [dab6x], fuzz.bash's [dadsp] and spawn-count's [dbftf] passed the old script and failed the new one, naming all 3. `--backlog-run-quick` passed, all areas: test.bash 1950/0, fuzz 310/0, parity 30/0. shellcheck clean.
-	- Swept: config.bash's stage 1 comment, which now says a line the branch adds. No other script finds removed checks. test.bash's other backlog-check fixtures, which have no integration branch, so they need no test-id.bash.
-	- Acceptance signoff: Self-closed: its tests passed.
-	- Closed: 20261110-193132
-
-- Code Review 20261110b item 17: release.bash tests one commit and releases another
-	- ID: 2026111016332243
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163322
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: With local dev behind origin's dev, run `cicd/release.bash <version>`.
-	- Incorrect behavior [Bug]: Phase 1 runs the full pipeline on the local tree. Phase 2's `br create` and `gitsby release` pull dev first, so the tag and the published binaries are origin's commit plus the changelog edit, which nothing tested. Run from a feature branch, it tests that branch. The Notes say it refuses unless you're on the merge target, and nothing checks that.
-	- Expected behavior [Bug]: It fetches first, refuses unless HEAD is dev and level with origin, and checks after phase 2's pull that dev is still the tested commit.
-	- Reproduced [Bug]: No. Read only, since release.bash can't run for real here.
-	- Possible cause [Bug]: release.bash:339-343 checks for unpushed commits but never fetches or checks the branch.
-	- Origin: 8d108fd, 2026-08-12. The pre-push gate on main still runs on the real commit where it's installed. No round saw it. Plausible.
-	- Actual cause [Bug]: As the possible cause says. The pipeline's sync, `br create`, `pr ok` and `gitsby release` each pull, so origin's dev could also move between the run and the tag. The release merge also took in anything main had that dev didn't.
-	- Actual fix [Bug]: release.bash fetches, and refuses unless HEAD is the branch `gitsby release` cuts from, level with origin's, and unless origin's main has nothing that branch lacks. After the pipeline it fetches again and refuses a branch origin moved. Phase 2 checks that the version branch starts at the tested commit, and that dev after the merge and the tag each hold the tested tree plus the bump. A stop at the tag publishes nothing.
-	- Decisions:
-		- The branch is found the way gitsby finds it: dev where the repo has one, else the default branch.
-		- After the merge and the tag, trees are compared, not commits, so a merge commit and a squash both pass.
-		- `--publish` skips the branch checks, since it builds from the tag, so it no longer needs an upstream.
-		- A dry run fetches too, so it refuses what a real run would.
-		- The check on main goes past the wording. The release merge would put a commit there that dev lacks into the tag untested.
-	- Swept: every pull in phase 2 (`br create`, `pr create`, `pr ok`, `gitsby release`), the header Notes, the phase 3 comment that said nothing checked the tag, and design.md "Automating a release".
-	- Branch: round-20261111
-	- Test case: test.bash [df4xt] [df4xv] [df4y1] [df4y2] [df4xx] [df4xy] [df4xz] [df4y0]
-	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
-	- Closed: 20261110-195237
-	- Verified: [df4xt] [df4xv] [df4y2] [df4xx] [df4xy] [df4xz] [df4y0] fail against the old release.bash and pass after. [df4y1], the control that dev is taken where there is one, passes on both. Quick gate passed, every area: test.bash 1959/0, fuzz 310/0, parity 30/0.
-
 - Code Review 20261110b item 18: repo connect -- <URL starting with a dash> reaches git ls-remote as an option
 	- ID: 2026111016332231
 	- Type: Bug
@@ -516,82 +277,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23.
 	- Possible cause [Bug]: cfgformat.go:59 counts a newer format as current. accountcmd.go:1342-1350 handles `SaveRefused` and not `SaveTooNew`.
 	- Origin: 37f4843, 75ce642 and 8d3f857. No round saw it. Confirmed.
-
-- Code Review 20261110b item 25: gitsby release takes a version git can't use as a tag, and fails after the merge into main
-	- ID: 2026111016332145
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163321
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: `gitsby release 1.2.3.lock` or `1.2.3-a..b`.
-	- Incorrect behavior [Bug]: It commits the release merge on main, then `git tag` fails. Exit 1, with main 2 ahead.
-	- Expected behavior [Bug]: The version is refused before anything runs.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: release.go:27 and :61 check the version with a regexp only.
-	- Origin: 089776d, 2026-08-18. No round saw it. Confirmed.
-	- Actual cause [Bug]: releaseVerRE took `..`, a trailing `.` and a `.lock` ending, which git refuses in a tag, and nothing else checked the version before the release merge.
-	- Actual fix [Bug]: The pattern takes dot-separated parts, none of them empty, and releaseVersionOK also refuses a `.lock` ending, so `release` refuses before anything runs. changelog.md has a line under vNEXT.
-	- Decisions:
-		- A pattern plus the `.lock` rule, not `git check-ref-format`, so it costs no spawn and release.bash can use the same rule. The test asks git about every short suffix that passes.
-		- An empty part, such as `1.2.3-.a`, is refused too, which git would tag. Semver has no empty part either.
-		- `.lock` is refused in lower case only, as git does.
-	- Swept: every releaseVerRE use (resolveRelease, newestReleaseTag, isReleaseVersion) goes through releaseVersionOK. release.bash's side is 2026111016332132.
-	- Branch: round-20261111
-	- Test case: release_test.go [df4yj]
-	- Verified: [df4yj] fails on the old pattern, where `1.2.3.lock`, `1.2.3..a` and 7 more pass and git refuses them, and passes after. Quick gate passed, every area: test.bash 1964/0, fuzz 310/0, parity 30/0.
-	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
-	- Closed: 20261110-201616
-
-- Code Review 20261110b item 26: release.bash takes version strings gitsby release refuses
-	- ID: 2026111016332132
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163321
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: `cicd/release.bash v3.0.0-`, `v3.0.0.` or `v3.0.0rc1`.
-	- Incorrect behavior [Bug]: release.bash's pattern takes them and Go's doesn't. With `v3.0.0-` the version PR is merged into dev before `gitsby release` refuses, which then needs a PR by hand to undo. With `v3.0.0rc1` it dies at the winres step after the whole pipeline.
-	- Expected behavior [Bug]: Both use the same pattern, checked before the pipeline runs.
-	- Reproduced [Bug]: 2026-11-10 on b23, the 2 patterns compared and `gitsby release v3.0.0rc1` run in a temp repo.
-	- Possible cause [Bug]: release.bash:304 uses `([A-Za-z0-9.-]+)?`, where releaseVerRE uses `([-.][0-9A-Za-z.-]+)?`.
-	- Origin: 8d108fd, 2026-08-12. No round saw it. Confirmed.
-	- Actual cause [Bug]: As the possible cause says. gen-winres.bash and the demo stamp in cicd.bash had the same loose pattern, and gen-winres.bash put a suffix after a dot, as in `v3.0.0.beta`, into the patch number.
-	- Actual fix [Bug]: config.bash has RELEASE_VERSION_RE, the same pattern as releaseVerRE, and fIsReleaseVersion, which also refuses a `.lock` ending. release.bash checks with it before the pipeline, gen-winres.bash takes the three numbers from it, and the demo stamp uses it.
-	- Decisions:
-		- In config.bash, which release.bash, gen-winres.bash and cicd.bash all source. The Go build can't read cicd/, so test.bash holds the two patterns together over the same versions.
-		- release.bash still wants the `v`. The shared pattern takes it as optional, for gen-winres.bash and the demo.
-		- A dotted suffix such as `v3.0.0.beta` still publishes as a full release, since release.bash calls a version a pre-release by its `-`. Unchanged.
-	- Swept: every version pattern outside legacy/. release.bash's argument check, gen-winres.bash and the demo stamp, fixed. release.bash's bump wants a plain vX.Y.Z already. test.bash's changelog heading check, and the installers' `--tag` check, which checks a tag's characters rather than a version, left. legacy/ is frozen.
-	- Branch: round-20261111
-	- Test case: test.bash [df4ym] [df4yk] [df4yn] [df4yp]
-	- Verified: all 4 fail against the old release.bash, config.bash and gen-winres.bash and pass after. [df4yk] has a dry run refuse v1.3.0-, v1.3.0., v1.3.0rc1, v1.3.0.lock and v1.3.0-a..b before the pipeline. Quick gate passed, every area: test.bash 1964/0, fuzz 310/0, parity 30/0.
-	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
-	- Closed: 20261110-201616
-
-- Code Review 20261110b item 27: release.bash puts files the pipeline rewrote into the version PR
-	- ID: 2026111016332119
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163321
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Run `cicd/release.bash <version>` when the demo gif comes out different.
-	- Incorrect behavior [Bug]: The pipeline rewrites the tracked gif. `br create` takes the dirty tree to the new branch, and `pr create` commits and pushes it with the changelog edit. The script says the changelog is the only file a release edits.
-	- Expected behavior [Bug]: The release stops if the pipeline left the tree dirty, or the pipeline runs without rewriting tracked files.
-	- Reproduced [Bug]: No. Read only.
-	- Possible cause [Bug]: The clean-tree check at release.bash:339 runs before the pipeline at :359, and nothing checks again.
-	- Origin: 3a5d14f, 2026-08-14. No round saw it. Plausible.
-	- Actual cause [Bug]: As the possible cause says.
-	- Actual fix [Bug]: After the pipeline and the phase 1 cross-build, release.bash refuses a changed tree, naming the files, before anything is branched or pushed. Done with item 17, 2026111016332243.
-	- Decisions:
-		- It stops, rather than running the pipeline with the gif left as committed. A gif that came out different still gets looked at, and goes in through its own PR before the cut.
-	- Swept: what the phase 1 run writes in the tree. In cicd.bash the demo gif is the tracked file a plain run rewrites. The check reads the whole tree's status, so any other change stops it too, and the Windows resource stamp is put back before it.
-	- Branch: round-20261111
-	- Test case: test.bash [df4xw]
-	- Acceptance signoff: Self-closed: its test failed before the fix and passes after.
-	- Closed: 20261110-195256
-	- Verified: [df4xw] fails against the old release.bash and passes after. Quick gate passed, every area.
 
 - Code Review 20261110b item 28: br merge's plan shows 2 pushes when the target has no local branch yet, and the run does 1 atomic push
 	- ID: 2026111016332107
@@ -720,126 +405,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: install.ps1:407 writes the registry with `Set-ItemProperty` and doesn't broadcast `WM_SETTINGCHANGE`. `SetEnvironmentVariable`, which it replaced, did.
 	- Origin: 37b7445, 2026-08-19, which kept `%VAR%` entries unexpanded. Regression. Plausible.
 
-- Code Review 20261110b item 37: test.bash [dab8t] and [dab8z] pass with the guard they test removed
-	- ID: 2026111016331995
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163319
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: In a copy of the tree, take out the Nothing to publish here guard at repo.go:275, build, and run those checks.
-	- Incorrect behavior [Bug]: Both still pass. They connect to a remote that [dab8g] already filled, so the command fails on already has history instead.
-	- Expected behavior [Bug]: They fail when the guard is gone.
-	- Reproduced [Bug]: 2026-11-10 in a copy of the tree. Of the 88 fAssertFail checks up to line 4382, these 2 are the only ones whose reason comes from another guard.
-	- Possible cause [Bug]: test.bash:2615 and :2618 reuse a remote with history and don't check the message.
-	- Origin: 5552726, 2026-07-24. The 2026-08-10 pass that made refusals check their reason missed these. Confirmed.
-	- Actual cause [Bug]: As the possible cause says.
-	- Actual fix [Bug]: Each check connects to an empty remote of its own, and a new check after each one wants the Nothing to publish here refusal.
-	- Decisions: The message check is what fails without the guard. With an empty remote the command still fails later, on the empty commit, so the exit code alone can't tell.
-	- Branch: round-20261111
-	- Test case: test.bash [dab8t] [df4z3], [dab8z] [df4z4]
-	- Verified: with the guard taken out of a copy of src-go, [df4z3] and [df4z4] fail and the build with it passes them. --backlog-run-quick passed, all areas: test.bash 1966/0, fuzz 310/0, parity 30/0.
-	- Swept: the other refusals in the connect block. [dab8s] has its reason checked by [dcmnb]. [dab8n] and [dab8r] fail on the guard they name, per the review's sweep of the 88 fAssertFail checks.
-	- Acceptance signoff: Self-closed. Its new checks fail without the guard and pass with it.
-	- Closed: 20261110-202629
-
-- Code Review 20261110b item 38: parity [dben1], [dben2] and [deyw8] can't fail on an alias routed to the wrong command
-	- ID: 2026111016331982
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163319
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: In a copy of the tree, route pull to sync in args.go, build, and run parity.bash.
-	- Incorrect behavior [Bug]: parity passes 30 of 30. Outside a repo, every repo command prints the same line, so the checks see only a spelling removed outright. Go [dbfqr] does catch it.
-	- Expected behavior [Bug]: They fail when an alias runs a different command.
-	- Reproduced [Bug]: 2026-11-10 in a copy of the tree.
-	- Possible cause [Bug]: fSameSpelling runs in notRepo, at parity.bash:336-338.
-	- Origin: 1928f35, 2026-08-18, and 8f6662c for [deyw8]. Confirmed.
-	- Actual cause [Bug]: [dben1], [dben2] and [deyw8] ran both spellings in a folder that isn't a repo, where every repo command refuses with the same line, so only a spelling that stopped parsing could differ.
-	- Actual fix [Bug]: parity.bash runs both spellings in a repo on a pushed feature branch, each with -q on a fresh copy at the same path and pinned commit dates, and compares the whole output. pullcom, sync and br merge print different plans and results there. New check [df4zh] fails the run if the fixture stops telling those 3 apart.
-	- Decisions: The fixture's tree is clean, since a commit's default message has the time in it, which would make 2 runs of one command differ. The checks against the frozen build, [dbemz] and [dben0], stay outside a repo, since they ask only that the old name is still taken.
-	- Branch: round-20261111
-	- Test case: parity.bash [dben1], [dben2], [deyw8], and [df4zh] for the fixture.
-	- Verified: with pull routed to sync in args.go, the old parity.bash passed 30/0 and the new one failed [deyw8]. update to sync failed [dben1], br land to br prune and to br list failed [dben2]. Unchanged build: parity 31/0. Quick run passed, all areas: test.bash 1967/0, fuzz 310/0, parity 31/0, spawn counts passed. shellcheck and test-id.bash --check clean.
-	- Swept: parity.bash's other notRepo checks, [dbemz] and [dben0], which compare against the frozen build and are kept. test.bash greps no fSameSpelling or notRepo.
-	- Acceptance signoff: Self-closed: its tests passed.
-	- Closed: 20261110-203845
-
-- Code Review 20261110b item 39: test.bash [dbft4] and [dbft3] miss most build sites
-	- ID: 2026111016331970
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163319
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: In a copy of the tree, remove `-p "${BUILD_JOBS}"` from cicd.bash:1295 and release.bash:126. Run [dbft4].
-	- Incorrect behavior [Bug]: It passes. It greps only lines starting `go build`, and the cross-builds go through fImageGo. [dbft3] only checks that config.bash sets BUILD_JOBS.
-	- Expected behavior [Bug]: They fail when any build site drops the job cap.
-	- Reproduced [Bug]: 2026-11-10 in a copy of the tree.
-	- Possible cause [Bug]: test.bash:6060 and :6069.
-	- Origin: The checks predate eb6aa5e and 0748e25, 2026-10-25, which moved the builds. Confirmed.
-	- Actual cause [Bug]: As the possible cause says. [dbft4] saw only the 2 native builds, and [dbft3] read no value.
-	- Actual fix [Bug]: [dbft4] reads every compile in cicd.bash, release.bash and remote-tests.bash, continuation lines joined: a bare go build and every fImageGo call. Each needs -p with BUILD_JOBS or HEAVY_JOBS, and it fails under 5 sites. [dbft3] sources config.bash with 8 stand-in cores and wants BUILD_JOBS between 1 and 7.
-	- Decisions: remote-tests.bash's test build counts as a build site, since it compiles the whole package. [de56v] already treats it as one.
-	- Branch: round-20261111
-	- Test case: test.bash [dbft4], [dbft3], kept under their IDs since what they assert didn't change.
-	- Verified: in a copy, taking -p out of any one of the 5 sites fails [dbft4], and so does the issue's 2-site edit, which the old check passed. An empty remote-tests.bash fails it too. [dbft3] fails with BUILD_JOBS set to every core in config.bash. --backlog-run-quick passed, all areas: test.bash 1966/0, fuzz 310/0, parity 30/0.
-	- Swept: every go build, go test and go vet in cicd/ and its utility scripts. The vet, race, soak and fuzz runs have -p, GOMAXPROCS or both, and [dedq2] watches the hard ones. Only the fuzz step's go test -list has neither, filed as Bug 2026111020264871.
-	- Acceptance signoff: Self-closed. Both checks fail on the fault and pass on the tree.
-	- Closed: 20261110-202629
-
-- Code Review 20261110b item 40: spawn-count passes a measure whose command failed, and [df052] measures a failed run
-	- ID: 2026111016331957
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163319
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Run spawn-count.bash and log each command's exit code.
-	- Incorrect behavior [Bug]: [df052], pr create in a tea ssh folder, exits 1 since the fake tea doesn't answer `pulls create`. Its count of 37 is the cost of a failed run. A command that starts failing early drops its count and passes as improved.
-	- Expected behavior [Bug]: A measure fails when its command fails.
-	- Reproduced [Bug]: 2026-11-10 in a copy of the tree. The other 23 measures exit 0.
-	- Possible cause [Bug]: spawn-count.bash:285 ends the run with `|| true`.
-	- Origin: e6fca88, 2026-10-03, and c31a204, 2026-11-07, for [df052]. Confirmed.
-	- Actual cause [Bug]: fMeasure ended each run with '|| true', so a command's exit code was never read. The fake tea answered neither 'pulls list' nor 'pulls create', so [df052] stopped at the create.
-	- Actual fix [Bug]: fMeasure keeps the exit code, which strace and script -e both pass on. A measure whose command exits nonzero prints FAIL with the code and the run records nothing, ahead of the limit and baseline checks. The fake tea lists no open pull request and prints a link for a create.
-	- Decisions: [df052]'s expected count goes from 37 to 42 (dated 2026-11-10), today's count of a run that ends at exit 0. Every box's spawn baseline has 37 for it, so the first run after this one on a box needs --record, as a deliberate rise does. The main checkout's baseline was recorded at 42.
-	- Branch: round-20261111
-	- Test case: test.bash [df4zg] (a build that exits 1 for whoami fails dbjeq and records nothing), and spawn-count.bash [df052].
-	- Verified: [df4zg]'s check, run against the old spawn-count.bash, exits 0 and fails; against the new one it passes. The new script with the old fake tea fails [df052] as exited 1 at 37. With the new fake, all 24 measures exit 0. Quick run passed, all areas: test.bash 1967/0, fuzz 310/0, parity 31/0, spawn counts passed. shellcheck clean.
-	- Swept: every fMeasure run path, pipe and tty. The other fake tools: gh, ssh and glab answer every call the measures make, since the other 23 exit 0.
-	- Acceptance signoff: Self-closed: its tests passed.
-	- Closed: 20261110-203845
-
-- Code Review 20261110b item 41: 114 test.bash checks drop out with no SKIP line where pwsh or a pty is missing
-	- ID: 2026111016331944
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163319
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Run test.bash on a box with no pwsh, such as vmFreeBSD, or no `script -qec`.
-	- Incorrect behavior [Bug]: The checks in 9 `if ((hasPty))` blocks and 2 `if command -v pwsh` blocks vanish from the count without a SKIP. That's 15 and 99 checks.
-	- Expected behavior [Bug]: Each block a box can't run calls fSkipBlock, per the 2026-10-26 test line rule.
-	- Reproduced [Bug]: Yes, 2026-11-10 on b23. `[df4zw]`'s check, run on the unfixed test.bash, names the 11 blocks, and 18 more behind other probes of the box.
-	- Possible cause [Bug]: The blocks at test.bash:1748, 2424, 2448, 3474, 3604, 3887, 3892, 4033, 8313, 8473 and 8496 have no else. fEveryBlockSkips checks only existing calls.
-	- Origin: 2026102618140158 added fSkipBlock. These blocks weren't swept. Plausible.
-	- Actual cause [Bug]: As above. Nothing checked that a block behind a probe of the box has an else, so 29 blocks never got one.
-	- Actual effort: Low
-	- Decisions:
-		- The 18 other blocks are the same class, behind `isWindows`, `canNoTty`, `shNoTty`, a writable `/usr/local/bin`, `ln -s`, `/proc/self/mem`, GNU `date -d`, `OSTYPE` and root. They got the same else. A Linux box with pwsh now prints one SKIP, `[db5xm]`, which runs only on Windows.
-		- An if/else on `isMac` or `isWindows` with tests in both arms counts as covered, since each arm is that platform's form of the check.
-		- No changelog line. Only the suite's output changes.
-	- Actual fix [Bug]: Each of the 29 blocks has an else that calls fSkipBlock. fUnskippedBlocks finds a block behind a probe of the box that holds tests and skips none.
-	- Swept: every multi-line `if` in test.bash that holds a test and has no SKIP. Left out: a `gateTool` loop branch, a soak branch inside a quoted script, and an awk line, none of them a probe of the box.
-	- Branch: round-20261111
-	- Commit: 6c6baad
-	- Test case: test.bash `[df4zv]` (the check finds a bare probe block in a fixture, and passes one with a SKIP or a tested else) and `[df4zw]` (no such block in test.bash).
-		- Verified: `[df4zw]`'s check fails on the unfixed test.bash, naming the 29 blocks, and passes after. Quick gate passed, all areas: test.bash 1969/0 with 1 SKIP, fuzz 310/0, parity 31/0.
-	- Acceptance signoff: Self-closed: its tests passed, and the check was watched to fail.
-	- Closed: 20261110-204858
-
 - Code Review 20261110b enhancement 1: sync re-creates a branch on origin that was deleted after its PR merged
 	- ID: 2026111016331930
 	- Type: Enhancement
@@ -859,378 +424,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened by: jim-collier
 	- Requirements [Feature]: The body goes in a function called on the last line, so a cut download runs nothing.
 	- Origin: No round raised it. Confirmed: every line-boundary cut of install.bash, fed to `bash -s -- -y` with a fake curl, either refused or exited 0. One cut prints Checksum verified and exits 0 without installing. None installed an unverified file.
-
-- Code Review 20261110b enhancement 3: safe-rm.ps1 passes its path to cmd unquoted
-	- ID: 2026111016331906
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163319
-	- Opened by: jim-collier
-	- Requirements [Feature]: Refuse a path with any of `&|<>^%"()`, or quote it for cmd.
-	- Origin: da39cf8, 2026-11-06. Plausible: Windows PowerShell 5.1 quotes an argument only when it has a space, so a TEMP with `&` would split the rmdir. No box has one.
-	- Actual fix: safe-rm.ps1 refuses a folder whose full path holds any of &|<>^%"(), with a note, before rmdir runs.
-	- Decisions: Refuse, not quote. Windows PowerShell 5.1 re-quotes an argument that has a space, so a quote added here could double up, and a % is expanded by cmd even inside quotes.
-	- Branch: round-20261111
-	- Test case: test.bash [df50j] runs the guard under pwsh with TEMP holding an &, and a cmd.exe stub that would move the folder. Skips where there's no pwsh.
-	- Verified: [df50j] fails on the previous safe-rm.ps1 (the stub moves the folder) and passes after; [dez5g] passes on both. --backlog-run-quick lint suite passed on the new guard. Not run on a Windows box. The refusal runs before cmd, so the stage 7 run covers only that the usual path is still taken.
-	- Swept: safe-rm.sh and safe-rm.bash don't go through cmd. No other cmd.exe call takes the guard's path.
-	- Acceptance signoff: Self-closed: its test passed.
-	- Closed: 20261110-211004
-
-- Code Review 20261110b enhancement 4: The image installs markdownlint-cli's dependencies with no lock
-	- ID: 2026111016331893
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163318
-	- Opened by: jim-collier
-	- Requirements [Feature]: Install from a committed lock file with `npm ci --ignore-scripts`, or fetch by sha256, as the image's other tools are.
-	- Origin: Dockerfile:128, 8249e95, 2026-10-10. The file's header says the tools are pinned. Confirmed by reading.
-	- Progress log:
-		- 2026-11-11: markdownlint-cli comes from `cicd/container/markdownlint/package-lock.json` with `npm ci --ignore-scripts`, each of its 73 packages checked by sha512. The build stops on a markdownlint other than the one config.bash records. The image tag hashes the package and lock, so it moved to `gitsby-cicd:c153ffacafc4`. Every package version is the same as in the old image.
-	- Decisions:
-		- A lock rather than sha256 downloads, since npm checks each package's sha512 from the lock and the tree is 73 packages. It sits in its own folder, so npm ci has a project to install into, at /opt/markdownlint.
-		- VER_markdownlint stays in config.bash, and the build checks the installed version against it, as for ruff. A bump means a new lock: `npm install --package-lock-only --ignore-scripts` in that folder.
-		- npm's cache goes in the step's folder, so the image no longer keeps a /root/.npm.
-	- Branch: round-20261111
-	- Test case: test.bash [df50y] [df50z]
-	- Verified: `--backlog-run-quick` passed in the new image, every area, test.bash 1967/0, fuzz 310/0, parity 31/0, markdownlint clean. [df50y] fails on the previous Dockerfile, on npm ci without --ignore-scripts, on a stray npm install, on a lock at another version, and on a package with no sha512, and passes as it is. [df50z]: the previous tag hash stays the same when the lock changes, and the new one moves.
-	- Swept: test.bash's two fixtures that copy the recipe (the gate's and release.bash's) copy the lock folder too. contributing.md's host install line is for the host, and stays.
-	- Acceptance signoff: Self-closed: its tests passed.
-	- Closed: 20261110-212434
-
-- Code Review 20261110b enhancement 5: gh-account.bash is never sourced
-	- ID: 2026111016331881
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163318
-	- Opened by: jim-collier
-	- Requirements [Feature]: Remove it, with the lint checks and the test.bash fixture copy that name it.
-	- Origin: No script sources it. test.bash:312 copies it into a fixture, and 5 lint checks read it. `gitsby raw gh` replaced what it did. Confirmed by grep.
-	- Actual fix [Enhancement]: Deleted cicd/utility/include/gh-account.bash and its name in test.bash's gate fixture copy. The lint checks read it by glob, so they went with the file. changelog.md has a Removed entry under vNEXT. The v2.1.0 Added line stays as history.
-	- Decisions: Reverses the 2026-10-04 answer to keep it, since `gitsby raw gh` now does what it did and nothing sources it. No suite check was removed, only the per-file instances.
-	- Test case: none, a deletion. The gate's test.bash fixture builds without it.
-	- Verified: --backlog-run-quick lint suite passed, backlog-check passed.
-	- Swept: grep for gh-account across the repo outside logs, artifacts and backlog history.
-	- Branch: round-20261111
-
-- test.bash [df4c4] fails on macOS
-	- ID: 2026111014390966
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-143909
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Run test.bash on a Mac.
-	- Incorrect behavior [Bug]: [df4c4] fails, since demo-repo's `--remove` is refused by the guard and leaves the world behind.
-	- Expected behavior [Bug]: It passes on any box.
-	- Reproduced [Bug]: In the 2026-11-10 full run, on b26 and vmKt6m, and on b23 with the fixture under a folder not named tmp.
-	- Possible cause [Bug]: The fixture's stand-in HOST_TEMP is a folder named `ht`. The guard takes a path under a folder named tmp, or under HOST_TEMP/gitsby. On Linux the fixture sits under /tmp, and on macOS under /var/folders/.../T, so there it matches neither.
-	- Origin: The rc.1 full run. The check came in with Bug 2026111010125301 earlier the same day, and was only run on Linux.
-	- Actual cause [Bug]: As read.
-	- Actual fix [Bug]: The stand-in HOST_TEMP is a folder named tmp, as /tmp is. The check asserts the same thing.
-	- Branch: rc1prep
-	- Test case: [df4c4] itself, kept under its ID since what it asserts didn't change. It passed on b26 and vmKt6m at 4159937. Under a path with no tmp in it, the old fixture fails and the new one passes. With the parent-folder removal taken out of demo-repo, the new one fails.
-	- Closed: 20261110-1512
-
-- Go [df35x] fails on Windows
-	- ID: 2026111014390949
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-143909
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Run the Go tests on Windows, natively or under Wine.
-	- Incorrect behavior [Bug]: TestFixLiteralsPaste fails at its first mkdir: `The system cannot find the path specified.`
-	- Expected behavior [Bug]: It passes, or skips where its folders can't be made.
-	- Reproduced [Bug]: In the 2026-11-10 full run, on b29w and under Wine on vmDebARM64.
-	- Possible cause [Bug]: The test makes folders whose names have a double quote and a backslash, which Windows can't hold.
-	- Origin: The rc.1 full run. The test came in with round-20261109, and no full run with the Windows boxes had run since.
-	- Actual cause [Bug]: As read.
-	- Actual fix [Bug]: The shellQuote part runs everywhere. The folder part skips on Windows, since it makes those names and tests commands for a POSIX shell.
-	- Branch: rc1prep
-	- Test case: [df35x] itself. The full run showed it failing on b29w and under Wine. It skips there now, passed on b29w at 4159937, and the whole Windows test binary passes under Wine on b23.
-	- Closed: 20261110-1512
-
-- A missing option value names the option wrong
-	- ID: 2026111012595856
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-125958
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: `gitsby pullcom -m`, with nothing after `-m`.
-	- Incorrect behavior [Bug]: It says `Never received a parameter for switch '--m'.` Nobody typed `--m`, and the help calls them options, not switches.
-	- Expected behavior [Bug]: `-m needs a value.`, with the option as it was typed.
-	- Reproduced [Bug]: Every time, in the Go build and in v2.1.0.
-	- Possible cause [Bug]: The message puts `--` in front of the name with its dashes stripped.
-	- Origin: Release prep for v3.0.0-rc.1, a quick pass over the option parser. It came over from v2.1.0, and no round looked at this message.
-	- Actual cause [Bug]: As read.
-	- Actual fix [Bug]: The refusal keeps the option as typed and says `<option> needs a value.`
-	- Branch: rc1prep
-	- Test case: Go [df4hb] TestMissingValueNamesOption, which fails 4 of 4 cases with the old name put back.
-	- Closed: 20261110-1301
-
-- test.bash [dee5h] fails when the gate run starts more than 6 seconds after its fixture
-	- ID: 2026111011385413
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-113854
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Run `cicd.bash --backlog-run-quick suite` on a loaded box.
-	- Incorrect behavior [Bug]: [dee5h] fails now and then, and passes on a rerun. It failed once on 2026-11-10 at load 10, between 2 passing runs.
-	- Expected behavior [Bug]: It passes however long the run takes to start.
-	- Reproduced [Bug]: Once in 3 runs on b23, 2026-11-10, in the image.
-	- Possible cause [Bug]: fGateRunFolder makes the `_001` folders for the next 6 seconds only, then expects the run to take `_002`. A run that picks its stamp later finds `_001` free.
-	- Origin: fGateRunFolder in test.bash, from the 2026-10-24 CICD reset. No round saw it. Plausible: the cause is read, not reproduced on demand.
-	- Actual cause [Bug]: As read. The window was 6 seconds, and a loaded box took longer than that to start the run.
-	- Actual fix [Bug]: The fixture makes the `_001` folders for 120 seconds ahead.
-	- Branch: cr1110
-	- Test case: [dee5h] itself. With a 7-second sleep put in ahead of the run, it passes. The old 6-second window can't, and it failed on its own once at load 10.
-	- Closed: 20261110-1142
-
-- Code Review 20261110 enhancement 5: The README says nothing about exit statuses to someone scripting gitsby
-	- ID: 2026111010494722
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-104947
-	- Opened by: jim-collier
-	- Requirements [Feature]: The README gets the exit status table from style-guide_ui-ux.md: 0 for success and for nothing to do, 1 for a refusal, a failed step or a no at the prompt, and the tool's own status from `raw`. A check fails if the two tables differ.
-	- Origin: The exit status table in style-guide_ui-ux.md, and 2.1.0 before it. No round raised it. Confirmed: `gitsby pr foo`, `gitsby br list extra` and a refused `pullcom` with no terminal all exit 1, and the README doesn't say so.
-	- Notes: The UI style guide is the only place the exit statuses are written down, and it isn't where a script author looks.
-	- Decisions:
-		- Usage errors keep exit 1 (2026-11-10). The README's promise that nothing scripted stops working outweighs the convention, and most scripts test for non-zero anyway.
-	- Decided against: exit 2 for usage errors, as getopt-based tools and bash builtins do, or 129 as git does. A script that tests for exactly 1 would change, and parity.bash would need its usage cases carved out.
-	- Actual fix [Enhancement]: The README's Commands section ends with what a script can rely on: `-q` answers yes and asks nothing, `raw` hands stdout to its tool, and the exit status table, copied from the UI style guide.
-	- Branch: cr1110
-	- Test case: test.bash [df4f7]. It fails against the README before the change, and with the guide's table changed by one letter.
-	- Closed: 20261110-1213
-
-- Code Review 20261110 item 1: An option a command doesn't read is taken and dropped
-	- ID: 2026111010494811
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-104948
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: In any repo, run `gitsby --staged raw git commit`, `gitsby -m msg raw git commit`, `gitsby status -m hello`, `gitsby repo connect <url> --public` or `gitsby pullcom --direct`.
-	- Incorrect behavior [Bug]: Each runs with the option dropped and says nothing. `gitsby --staged status` is refused, so only `raw` lets `--staged` through, and design.md:180 says any other command refuses it, since ignoring it would sweep in the edits it was typed to keep out.
-	- Expected behavior [Bug]: A command refuses an option it doesn't read, the way `--staged` is refused, and names the commands that take it. `-q`, `--any-identity` and `--config` stay valid wherever they mean something.
-	- Reproduced [Bug]: 2026-11-10 on b23, built binary in a temp repo.
-	- Possible cause [Bug]: parseArgs and scanPassthrough each keep their own list of options, and only `--staged` is checked against the commands that read it, in staged.go:20. Nothing ties the other options to theirs.
-	- Origin: `--staged` in scanPassthrough from 9f53a91, and `--direct` from e1cc030, both 2026-10-05. `--public` and `--private` from 8da8951, 2026-08-17. A 2026-08 round fixed trailing arguments that were silently ignored, not options. No round saw this. Confirmed.
-	- Notes: 1 table of options and the commands that read each, used by both parsers, is where a new option can't get past the check. `-m` on `br create` and `br switch` is read by the commit that parks work, so it stays there.
-	- Against: A script that passes an option to a command that ignores it starts failing.
-	- Actual cause [Bug]: Only `--staged` was checked against the commands that read it, and `raw`'s scan took every option and kept 3.
-	- Decisions:
-		- `-q`, `--no-fetch`, `--any-identity` and `--config` stay valid on every command. `--no-fetch` asks for nothing a command could fail to do where nothing fetches, and parity `[db601]` pins v2.1.0 taking `-NoFetch` ahead of `raw`.
-		- So the refused set is `-m` outside the 10 commands that commit, `--direct` outside `sync`, `--public` and `--private` outside `repo create`, and `--staged` as before, now ahead of `raw` too.
-	- Actual fix [Bug]: 1 table of options, `optSpecs` in args.go, which both parsers read. An option with a command list is refused on any other command, as "-m works with pullcom, ... and repo connect." `checkStagedFlag` folded into it, with the same wording.
-	- Swept: every option the 2 parsers took. design.md's Execution flow and the UI style guide's Commands and options say the rule.
-	- Branch: cr1110
-	- Test case: Go [df4e9] and [df4ea], test.bash [df4eb] to [df4ed], [ddht9] kept. [df4e9], [df4ea] and [ddht9] fail with the check stubbed out. [df4eb] and [df4ec] fail against the build before the fix.
-	- Checks changed: test.bash [db5yb] loops over `-NoFetch` and `-AnyIdentity` only. It pinned `-Public` ahead of `raw` being taken rather than blamed on `raw`, and `-Public` is now refused by its own name, which [df4eh] checks. The point it was written for still holds.
-	- Acceptance signoff: Quick gate passed, all areas.
-	- Closed: 20261110-1140
-
-- Code Review 20261110 item 2: The docs call -q the machine-readable mode, and its output is the same human layout
-	- ID: 2026111010494798
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-104947
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: style-guide_ui-ux.md under Scripts and design.md:153 say `-q` is the machine-readable mode. `gitsby -q status` prints the same labeled, dot-padded block as without it, and a mutating `-q` run prints its plan and status lines. Only the build line goes. design.md's non-goals say there is no scripting surface beyond `raw`.
-	- Expected behavior [Bug]: The docs call `-q` the unattended mode: it answers yes, asks nothing, and leaves out the build line.
-	- Reproduced [Bug]: 2026-11-10, `gitsby -q status` in a temp repo.
-	- Origin: style-guide_ui-ux.md:176 from 578b34e, and design.md:153 from 483ebc5, 2026-10-06. No round saw it. Confirmed.
-	- Notes: A real machine-readable mode would be a new feature, against the `raw`-only non-goal, and isn't proposed here.
-	- Actual fix [Bug]: design.md, the UI style guide and printBanner's comment call `-q` the unattended mode. The guide's Scripts section says what it does: answers yes, asks nothing, and leaves out the build line, with the rest of the output unchanged.
-	- Swept: every "machine-readable" in the Go source, the docs and the scripts.
-	- Branch: cr1110
-	- Test case: none, wording only. What the guide now says `-q` does is pinned by [dbshn], [dbfhk] and the no-terminal checks.
-	- Closed: 20261110-1127
-
-- Code Review 20261110 item 3: One placeholder has several names across the help, the README and the Syntax lines
-	- ID: 2026111010494785
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-104947
-	- Opened by: jim-collier
-	- Incorrect behavior [Bug]: `repo connect` takes `[url]` in the help, `[target]` in the README and `[url | owner/name]` in its Syntax line. A PR number is `n` in the help, `<#>` in the README and `<number>` in the Syntax line. `repo create` takes `<o/n>` in the help and `<owner/name>` in the README and its Syntax line.
-	- Expected behavior [Bug]: One name per placeholder everywhere, per the UI style guide's "One word per thing" and the output sweep's row for it in design.md.
-	- Reproduced [Bug]: 2026-11-10, `gitsby --help`, `gitsby pr list` and `gitsby repo` against the README's Commands table.
-	- Origin: help.go:65 from 2206206, 2026-10-05, help.go:78 from 197677f, 2026-10-22, and README.md:105 from d446496, 2026-07-26. No round saw it. Confirmed.
-	- Notes: The help's left column is 20 wide, which is why it shortens them. Widening it, or moving the arguments into the description as `account set` already does, are the 2 ways.
-	- Decided against: making the Syntax line's `e.g. 'work', 'personal'` match the `github.com_my-work-login` examples. An account name is any string, and both are valid.
-	- Actual cause [Bug]: Each Syntax line, the help's command list and the README's table wrote their placeholders out by hand. The Syntax lines disagreed with each other too: `br create <new branch name>` against `<branch>`, and `repo connect` as both `[url | owner/name]` and `<url | owner/name>`.
-	- Decisions:
-		- `[message]`, `[version]`, `[directory]` and `<number>` everywhere, the Syntax lines' names. `repo connect` takes `[<url> | <owner/name>]`, so its Syntax line names the placeholders it defines.
-		- The help lists `pr`, `pr <number>`, `pr create [title]` and `pr ok <number>` on 4 lines, the way the README does, and `raw <tool> <arguments ...>` on 1. A syntax too long for the 20-wide column moves into the line's text, as `account set` already did.
-	- Actual fix [Bug]: 1 table, `usages` in usage.go, with each command's placeholders, their meanings and its help line. Every Syntax refusal and the help's command list read it, and a noun's block, such as bare `repo`, is built from its verbs. The README's Commands table uses the same names.
-	- Swept: every `syntaxUsage` call, the 3 inline `repo connect <url | owner/name>` fix lines, app.go's comment, and the README table. design.md's Output sweep has a row for it. The fix lines now say `repo connect <url>, or <owner/name> for a GitHub repo`, with no `|` a pasted line would hand the shell.
-	- Checks changed: test.bash [dbefw] and [dbefx] pinned the help's `pullcom [msg]` and `br merge [msg]`, to show the renamed commands lead. They are off, and [df4ej] and [df4ek] check the same with `[message]`.
-	- Branch: cr1110
-	- Test case: Go [df4ef], [df4eg] and [df4f8], test.bash [df4ee]. [df4f8] fails with a fix line put back to the `|` form. [df4ef] and [df4eg] fail with a placeholder renamed in the table. [df4ee] fails against the README before the fix, and against the build before it.
-	- Acceptance signoff: Quick gate passed, all areas.
-	- Closed: 20261110-1140
-
-- Code Review 20261110 enhancement 1: pr takes no list, and an unknown word after it gets the Syntax block
-	- ID: 2026111010494773
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-104947
-	- Opened by: jim-collier
-	- Requirements [Feature]: `pr list` is the same as a bare `pr`, as `br list` and `account list` are, and the help shows `pr [list]`. An unknown word after `pr` gets the line the other nouns give, such as "Unknown 'pr' subcommand 'foo'. One of: list, create, ok, or a number." `pr` folds to tokens in collapseCommand like `repo`, `br` and `account`, so sortCommand stops parsing subcommand words for 1 noun only.
-	- Origin: args.go:239 from 3d22222, 2026-08-17, the port, which kept 2.1.0's `pr` handling. No round saw it. Confirmed: `gitsby pr list` and `gitsby pr foo` both print the Syntax block and exit 1.
-	- Decided against: listing `acct`, `account show` and `br clean` beside `new` and `go` in design.md. They are v2.1.0 spellings, kept by the permanent alias rule like the rest.
-	- Decisions:
-		- The flat name stays `pr`, with the verb settled in collapseCommand. About 15 sites read the verb from `pr.sub`, and renaming them to tokens before rc.1 would change a lot for what it buys. What the item asked for, an unknown word refused the way the other nouns refuse one, needs only the word settled.
-	- Actual fix [Enhancement]: `pr list` is a bare `pr`, and the help and the README show `pr [list]`. An unknown word gets "Unknown 'pr' subcommand 'foo'. One of: list, create, ok, or a pull request number." sortPr's number check, which collapseCommand now makes, is gone.
-	- Swept: design.md's `pr <n>` is `pr <number>`.
-	- Branch: cr1110
-	- Test case: Go [df4em], test.bash [df4en] and [df4ep]. [df4em] fails with the `pr` case taken out of collapseCommand, and [df4en] and [df4ep] fail against the build before it.
-	- Closed: 20261110-1150
-
-- Code Review 20261110 enhancement 2: -- isn't taken as the end of options
-	- ID: 2026111010494760
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-104947
-	- Opened by: jim-collier
-	- Requirements [Feature]: `--` ends gitsby's options, and everything after it is positional, as POSIX's utility guidelines and git have it. `gitsby pullcom -- '-v bump'` commits with that message. A `--` after `raw <tool>` stays the tool's.
-	- Origin: switchRegex at args.go:21 from 8da8951, 2026-08-17, which matches neither `-` nor `--`. 2.1.0 did the same. Confirmed: `gitsby -q pullcom --` made a commit with the subject `--`, and `gitsby pullcom -- msg` refuses with "Unexpected extra argument 'msg'". Today `-m` is the only way to give a message that starts with a dash.
-	- Notes: gitsby already passes `--` to git ahead of a clone's folder, for the same reason.
-	- Actual fix [Enhancement]: Both parsers take a first `--` as the end of gitsby's options. A value an option is waiting for still wins, so `-m --` is the message `--`. The help's option list, the README's Options line and the UI style guide name it.
-	- Branch: cr1110
-	- Test case: Go [df4eq], test.bash [df4er]. [df4eq] fails against the parser before it, and [df4er]'s command made no commit with the build before it.
-	- Checks changed: fuzz.bash's bad subcommands no longer include `--`, so [dadv5], [db002] and [db003] don't feed it. After a noun it now leaves the bare noun, which `br`, `repo url` and `account` take. It stays among the bad commands for [dabe3], where it is still refused.
-	- Closed: 20261110-1155
-
-- Code Review 20261110 enhancement 3: A command's --help prints the whole help screen, not that command's syntax
-	- ID: 2026111010494747
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-104947
-	- Opened by: jim-collier
-	- Requirements [Feature]: `--help` or `-h` after a command prints that command's Syntax block, the one a wrong argument count gets, and exits 0. A bare `--help` keeps the whole screen. Commands with no Syntax block yet get one.
-	- Origin: args.go:62 from 2a3ab8f, 2026-09-28. Confirmed: `gitsby br create -h` prints the full help. `--help` after a command was made to work on purpose in the 2.x days, since asking a subcommand for help is the reflex every git user has. Syntax blocks exist for `repo`, `pr`, `raw`, `account set` and `account unset`.
-	- Decisions:
-		- `help <command>` and `-h <command>` ask about that command too, as `git help` does. Before, a help word in the first slot always printed the whole screen.
-		- The block also names the options the command takes, read from the same option table as the refusals.
-		- A noun alone, such as `br --help`, gets the noun's block with every verb, and a line naming each verb's own `--help`.
-	- Actual fix [Enhancement]: `helpFor` in usage.go reads the command words past the options and prints that entry of the `usages` table: its Syntax block, its help line, and its options. `raw --help` stops at gitsby's parser instead of being refused as an option after `raw`.
-	- Branch: cr1110
-	- Test case: Go [df4f1], test.bash [df4f2] to [df4f5]. [df4f1] fails with helpFor stubbed out, and [df4f2] to [df4f5] each fail against the build before it.
-	- Closed: 20261110-1205
-
-- Code Review 20261110 enhancement 4: The help's opening lines leave out the plan and the question
-	- ID: 2026111010494735
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-104947
-	- Opened by: jim-collier
-	- Requirements [Feature]: The opening paragraph of `gitsby --help` says that a command which changes anything shows the git it will run and asks first, as well as checking state.
-	- Origin: help.go:29 from 4918b5b, 2026-08-19. No round saw it. Confirmed by reading: the help says each command checks state and is safe to re-run. The README opens on showing the git and asking, and that is design.md's second goal. design.md:126 says the help is the only documentation most people read.
-	- Actual fix [Enhancement]: The help's opening says a command that changes anything shows the repo state and the exact git it will run, then asks first, before the state checks. `--about` prints the same lines.
-	- Branch: cr1110
-	- Test case: test.bash [df4f6], which fails against the build before it.
-	- Closed: 20261110-1208
-
-- Demo: add a br merge scene, and hold screens long enough to read
-	- ID: 2026111010125300
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-101253
-	- Opened by:
-	- Requirements [Feature]:
-		- The demo shows the main advertised features in use. Length is no target, and a viewer who needs a second loop is fine.
-		- A `br merge` scene after `sync`, answered on camera, so the README's typical day runs start to finish.
-		- Holds long enough to read each screen, and time to read the plan at each question.
-	- Origin: Asked 2026-11-10, answering the demo length question that timed out in September.
-	- Decisions:
-		- The merge scene scrolls at about a line per frame. At the default rate it doubled the file, about +6 MB.
-		- `[defp0]` now fails at two minutes rather than one, since design.md sets no length.
-		- The plan holds 3 seconds at each question, through a new `askpause=` step setting. It was about 1.
-		- Holds 4.0 to 5.5 seconds, up from 2.6 to 3.2.
-	- Progress log:
-		- 1118 frames, 72.0 s, 6912767 bytes, up from 902 frames, 47.7 s and 5651896 bytes. At the default scroll rate the merge scene made it 11.5 MB.
-		- Rendered twice in the image to the same bytes.
-	- Branch: demomerge
-	- Test case: test.bash [defp0], [dcq6v]; the render itself
-	- Acceptance signoff: Gate passed, test.bash 1925/0, fuzz 314/0, parity 30/0.
-	- Closed: 20261110-102000
-
-- Demo world at /tmp/gitsby-demo is never removed where HOST_TEMP is /tmp
-	- ID: 2026111010125301
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-101253
-	- Opened by:
-	- Steps to reproduce [Bug]: Render the demo in the image, or on a box with no HOST_TEMP set.
-	- Incorrect behavior [Bug]: `safe-rm: refused, not under a tmp folder, or a whole project temp folder: /tmp/gitsby-demo`, then `WARNING: left the demo's repos in place`. On a box, the next render stops at the same refusal and the gif isn't drawn.
-	- Expected behavior [Bug]: The world is removed after each render, on any box.
-	- Possible cause [Bug]: Since 2026-10-28 the guard refuses a folder right under HOST_TEMP. HOST_TEMP falls back to /tmp, as in the image.
-	- Origin: Seen 2026-11-10 rendering the demo for demomerge. b23 sets HOST_TEMP, so runs here missed it.
-	- Actual cause [Bug]: As the possible cause says. Not seen before because the image's /tmp goes with the container, and b23's HOST_TEMP is elsewhere.
-	- Actual fix [Bug]: The world is built at /tmp/gitsby-demo/home, and `--remove` also takes the folder above it once it's empty.
-	- Branch: demomerge
-	- Test case: test.bash [df4c4], [df4c5], [df4c6]
-	- Verified: [df4c4] and [df4c5] fail against dev's demo-repo.bash, and [df4c6] fails with the new builder and dev's scenario. All 3 pass on the branch. A render in the image no longer warns, and leaves no /tmp/gitsby-demo.
-	- Closed: 20261110-102000
-
-- test.bash [dee5h] fails on a box not on UTC
-	- ID: 2026110920200900
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261109-202009
-	- Opened by:
-	- Steps to reproduce [Bug]: On b23 (Pacific time), run `bash cicd/test.bash` outside cicd.bash, or `cicd.bash --backlog-run-quick suite --no-container`.
-	- Incorrect behavior [Bug]: `FAIL dee5h`. The run's folder is `<UTC time>_001`, where the check wants `_002`.
-	- Expected behavior [Bug]: Passes in any time zone.
-	- Possible cause [Bug]: `fGateRunFolder` makes the taken `_001` names with a plain `date`, in local time. Since af96363 cicd.bash names its run folder with `date -u`, so the names never clash off UTC. The gate passes only because test.bash runs in the image, which is on UTC.
-	- Requirements [Bug fix]: The fixture takes its names in UTC. Sweep test.bash for other fixtures that build a stamp cicd.bash now writes in UTC.
-	- Estimated effort: Low
-	- Origin: Seen 2026-11-09 on the fuzzretry branch, running test.bash on its own. Fails the same on d4ab0d3 and e0952c4. Stage 7 on b26 runs test.bash in local time too.
-	- Actual cause [Bug]: As the possible cause says.
-	- Actual fix [Bug]: `fGateRunFolder` makes the taken names with `date -u`.
-	- Swept: every `date` in cicd/ that builds a stamp. release.bash, remote-tests.bash and keep-build.bash name their own files in local time, and nothing compares those with a UTC name. `[df386]` already sets its zone.
-	- Branch: utcstamp
-	- Test case: test.bash [dee5h]
-	- Verified: [dee5h] fails on dev run outside cicd.bash, and passes after. test.bash 1922/0 on its own, in the image through `--backlog-run-quick`, and on the box with `--no-container`.
-	- Closed: 20261109-204000
-
-- Native fuzz step fails on a fuzz deadline, not a crasher
-	- ID: 2026110915475544
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261109-154755
-	- Opened by:
-	- Incorrect behavior [Bug]: The native fuzz step stopped with `--- FAIL: FuzzParseTeaTable (5.42s) context deadline exceeded` and printed `fuzzing found a crasher`, with no reproducer under src-go/testdata/fuzz/. Load was about 14 on b23, in the image, during a --backlog-run-full on round-20261109 at 4e70dce.
-	- Expected behavior [Bug]: A fuzz run that ends on its own deadline with no reproducer passes, or retries once. Only a saved reproducer counts as a crasher.
-	- Estimated effort: Low
-	- Origin: Seen 2026-11-09 in the gate step's security run. 3 reruns alone with the same flags (-fuzztime 5s, 8 workers) passed. The round didn't change parseTeaTable.
-	- Actual cause [Bug]: The step read any nonzero exit from `go test -fuzz` as a crasher. Go saves a crasher's input and says "Failing input written to". A worker stopped at -fuzztime saves nothing.
-	- Actual fix [Bug]: Only output naming a saved input is a crasher, and it stops the run at once. Any other failure runs the target once more, and fails as "failed twice and saved no failing input" if that one fails too.
-	- Decisions:
-		- A second failure still fails the step. A target that hangs looks the same as a slow worker, and it shouldn't pass.
-	- Branch: fuzzretry
-	- Test case: test.bash [df3gx], [df3gy], [df3gz]
-	- Verified: [df3gy] and [df3gz] fail on dev's cicd.bash. [df3gx] fails with crashers retried too. `--backlog-run-quick` passed, test.bash 1922/0. The real fuzz step passed on all 9 targets.
-	- Closed: 20261109-195600
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
@@ -1285,6 +478,66 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 	- Acceptance signoff: Hand test on b28l, run in the 2026-10-23 round as asked.
 	- Closed: 20261023-195424
+
+- Code Review 20261110b item 1: raw glab sends the folder account's token to any GitLab host glab is pointed at
+	- ID: 2026111016332442
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261110-163324
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: In a folder whose account is on gitlab.gnome.org with a token file, run `gitsby raw glab api --hostname gitlab.com user`, or `gitsby raw glab mr list -R gitlab.com/someone/else`.
+	- Incorrect behavior [Bug]: glab sends the gitlab.gnome.org token to gitlab.com as `PRIVATE-TOKEN`. Plain glab sends none.
+	- Expected behavior [Bug]: The token goes only to the account's own host.
+	- Reproduced [Bug]: 2026-11-10 on b23, glab 1.53.0, with the gitlab.com API pointed at a local logger.
+	- Possible cause [Bug]: hostTokenEnv in githost.go puts the token in `GITLAB_TOKEN`, and glab applies that to every host. The code comment says the host beside it keeps the token where it came from, which holds for tea but not for glab.
+	- Origin: 483ebc5 and d8d3c69, 2026-10. Same class as Bug 2026102209210000, whose fix pinned only `raw glab auth status`. Confirmed.
+	- Sweep: Every glab subcommand that takes a host: `api --hostname`, `-R host/...`, `repo clone <url>`. Also tea's `--login` and any other variable a host CLI applies to every host.
+	- Actual cause [Bug]: glab reads `GITLAB_TOKEN` before it looks at the host, so the token goes to any host a command names. `GITLAB_API_HOST`, from the caller's own environment, also sent it elsewhere.
+	- Actual fix [Bug]: `glabTokenEnv` in githost.go. `raw glab` and `pr` hand the token only with `GITLAB_API_HOST` pinned to the account's host, since glab sends every API call there whatever host it's told. A run that names another host gets no token and no changed variables, and says so on stderr.
+	- Decisions:
+		- Pin and refuse both. The pin alone sends `api --hostname gitlab.com` to the account's host, a wrong answer. The refusal alone misses any spelling not listed.
+		- A host named by `--hostname`, `-h`, `-R`, a URL or `user@host:path` argument, a repo command's `host/group/name`, or the caller's `GITLAB_API_HOST`. glab takes a dotted first part as a host only when its config knows it, which gitsby can't read, so a dotted first part always counts. Too many means no token, never a token sent astray.
+		- An argument counts as a URL only from its first byte, so a label such as `priority:high` or an api field such as `url=https://...` doesn't.
+	- Progress log:
+		- 2026-11-10: Checked against glab 1.53.0 through a logging proxy: `GITLAB_API_HOST` wins over `--hostname`, `-R` and a URL, and with `GITLAB_HOST` set glab skips remotes on other hosts, so a second remote in the clone isn't a way out.
+		- 2026-11-10: test.bash `[ddk65]` assert updated: `raw glab` now also prints `api=git.example.test`, from the pin. Old `^host=https://git\.example\.test token=tok_ghonly$`, new `^host=https://git\.example\.test token=tok_ghonly api=git\.example\.test$`.
+	- Test case: Go `[df4w4]` `[df4w5]`, test.bash `[df4w6]` `[df4w7]` `[df4w8]`.
+	- Verified: test.bash `[df4w6]` `[df4w7]` `[df4w8]` fail on the unfixed build (1937/4, with `[ddk65]`) and pass after. Quick gate passed, all areas, test.bash 1941/0, fuzz 310/0, parity 30/0. Real glab 1.53.0 through the built gitsby: `api user` and `mr list` go to gitlab.gnome.org as the account, `api --hostname gitlab.com user` and `mr list -R gitlab.com/someone/else` say they aren't acting as the account.
+	- Swept: `hostTokenEnv`'s 3 callers. `raw glab` and `pr` now go through `glabTokenEnv`. `raw tea` keeps its env login on `GITEA_INSTANCE_URL`, and `--login` picks a stored login with its own token, so tea isn't affected, by reading only, since this box has tea 0.9.2. gh's `GH_TOKEN` is for github.com only, and Enterprise is item 20. lazygit and tig go through git's host-scoped credential helper.
+	- Acceptance signoff: Closed on tests.
+	- Closed: 20261110-185317
+
+- Code Review 20261110b item 2: After account apply, a nested account's folder uses the outer account's token file and name
+	- ID: 2026111016332429
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261110-163324
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Account a has a token file, a name and folder P. Account b has a GitHub login and email, folder P/nested, and no token file. Run `account apply`, then `git credential fill` and `gitsby whoami` in a repo under P/nested.
+	- Incorrect behavior [Bug]: Plain git and `gitsby raw git` both answer with b's username and a's token. `whoami` says b and shows `Author: <a's name> <b's email>`. Before apply, gitsby said b used no token.
+	- Expected behavior [Bug]: A folder gets only its own account's keys. A key the account doesn't set is unset there, not taken from an outer account.
+	- Reproduced [Bug]: 2026-11-10 on b23, hermetic fixture with a fake gh.
+	- Possible cause [Bug]: Both fragments are included in the nested folder. writeAccountFragment skips empty values, so a key only the outer fragment sets wins: `gitsby.ghTokenFile`, `user.name` and the credential username. tokenFor's fallback to `gitsby.ghTokenFile` then reads it too.
+	- Origin: The fallback from d92a157, 2026-08-19. The ghTokenFile key from 0ad1374, 2026-09-16. The plain-git half from 08e7452, 2026-11-08. The 20260812 fix for apply's rule order covered only keys both accounts set. Confirmed.
+	- Actual cause [Bug]: git includes every fragment whose rule matches, and a later include can't unset a key. The inner fragment left out what its account doesn't set, so the outer one's token file, name, ssh key and ghAccount held there.
+	- Actual effort: Avg
+	- Decisions:
+		- Where an outer account's fragment can come first in a folder, the inner one writes each key its account leaves unset that the outer one sets. The value is what the global or system git config gives it outside the fragments, read at apply time. Departs from "unset", which git has no way to do from an include.
+		- Where that config gives none, the key is written empty. gitsby reads an empty `gitsby.ghAccount` or `gitsby.ghTokenFile` as none, and so does the helper. An empty `user.name` makes git refuse a commit and ask who you are, rather than use the outer name. `core.sshCommand` gets plain `ssh`, since git runs an empty one as a command.
+		- Only for accounts whose fragments can stack: a folder-name rule, or a path at or above the inner path, case aside. Elsewhere nothing changes, so the copied value can only go stale where accounts nest. accounts.md says to run `apply` again after changing one of those keys.
+		- The credential helper isn't put back. It's a list, and the outer one reads only the keys that are.
+		- Changelog under Fixed.
+	- Actual fix [Bug]: `account apply` gathers every account's keys first, and `withOuterKeys` adds the outer accounts' keys to the inner fragment, with `valueOutsideFragments` for the value.
+	- Branch: round-20261111
+	- Commit: 6770e4f
+	- Test case: test.bash `[df4ws]` to `[df4wx]` (token through plain git and `raw git`, the whoami name, the ssh key, and the outer folder still gets its token). Go `[df4x3]` for which accounts stack.
+		- Verified: `[df4ws]` to `[df4ww]` fail on the unfixed build (1942/4) and pass after, with `[df4wx]` passing both ways. `[df4x3]` fails with the folder-name case broken. Quick gate passed, all areas: test.bash 1946/0, fuzz 310/0, parity 30/0.
+		- Swept: every key the fragment writes, the token lookup in gitsby's own runs (`accountToken`'s fallback reads the put-back value), and `resolveAccount`'s `gitsby.ghAccount` pin. `writeAccountFragment` has no other caller.
+		- Not run on Windows. The origin compare goes through `canonPath`, as `accountManagedIncludes` does.
+	- Acceptance signoff: Self-closed: its tests passed. The value choice has a Check: entry in questions.md.
+	- Closed: 20261110-192044
 
 - The pre-push gate fails every release merge to main, on a check that wants a vNEXT heading
 	- ID: 2026110811340000
@@ -2459,6 +1712,140 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
 
+- Code Review 20261110b item 3: A second release after a failed push of main cuts a new tag on the same commit
+	- ID: 2026111016332417
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163324
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Make the push of main fail during `gitsby release`, as a hook or branch protection does. Fix that and run `gitsby -q release` again.
+	- Incorrect behavior [Bug]: The first run leaves tag v1.0.1 local and main ahead. The second sees main ahead, skips the nothing-to-release check, and tags v1.0.2 on the commit named Release v1.0.1. v1.0.2 is pushed, v1.0.1 never is, and it exits 0.
+	- Expected behavior [Bug]: The second run finishes the first: it pushes main and v1.0.1, or says what's left to do.
+	- Reproduced [Bug]: 2026-11-10 on b23, local bare origin with a pre-receive hook.
+	- Possible cause [Bug]: release.go:142 treats main being ahead as new work. The tag is made before main is pushed, at release.go:223-237.
+	- Origin: 089776d, 2026-08-18, the Go port of a bash fix. Code Review 20260727b item 12 fixed this case, and its tests [dafrk] to [dafrq] cover only a run whose push worked. Regression. Confirmed.
+	- Actual cause [Bug]: As the possible cause says. The run that failed also leaves you on main, ahead, so the second run's park push sends main, and then only v1.0.2 goes with it.
+	- Actual fix [Bug]: When the default branch's tip holds a release tag and origin's copy is behind it or missing, a bare `release` finishes that release instead of cutting one: it pushes the branch and that tag, fast-forwards dev and pushes it. The plan shows only those steps, and a line says which release it is finishing. Typing that same version does the same. changelog.md has a line under vNEXT.
+	- Decisions:
+		- Finish rather than refuse, the first of the two outcomes the item allows, since re-running a command is meant to be safe and to get you there.
+		- A different version typed out still cuts its own tag, as [dafrq] keeps for a typed version.
+		- Any run with no version typed finishes, a candidate's promotion included, since that would also tag the same commit again and leave the candidate behind.
+		- A default branch that went its own way from origin's isn't taken as a stuck release, since its push would be refused anyway.
+		- A run whose branch push worked and tag push failed is unchanged: main is level, so the nothing-new check stands down and names the tag to push.
+	- Swept: the plan (previewRelease) and the `--staged` walk (stagedReleaseCheck), which both now skip dev's pull and the merge on a finish. release.bash refuses an existing tag in phase 1, so it can't cut a second one. Its phase 2 message for a failed `gitsby release` said no tag was cut, which a refused push makes untrue, so it now names `gitsby release <version>` and then `--publish` as the way to finish.
+	- Branch: round-20261111
+	- Test case: test.bash [df519] [df51a] [df51b] [df51c] [df51d] [df51e] [df51f] [df51g]
+	- Verified: [df51a] [df51b] [df51e] fail against the old release.go and pass after. [df519] and [df51d], the refused first runs, and [df51c], dev after the second run, pass on both. [df51g], a candidate left behind, failed on a first version of the fix that keyed on a bump, and passes after. Quick gate passed, every area: test.bash 1975/0, fuzz 310/0, parity 31/0.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261110-213630
+
+- Code Review 20261110b item 4: br switch to a local branch named like an option runs the option, and under --staged throws away unstaged edits
+	- ID: 2026111016332404
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163324
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: `git update-ref refs/heads/-f HEAD`, make an unstaged edit, then `gitsby -q --staged br switch -- -f`.
+	- Incorrect behavior [Bug]: The plan says `git checkout -f`. It commits the staged file, runs `git checkout -f`, and the unstaged edit is gone. Exit 0.
+	- Expected behavior [Bug]: A switch target that starts with a dash is refused before anything runs, as br create's is.
+	- Reproduced [Bug]: 2026-11-10 on b23, hermetic fixture.
+	- Possible cause [Bug]: preflightBranch checks only that the target exists, and branch.go:152 runs `checkout <name>`.
+	- Origin: 353f5c9 and f9716e4. Code Review 20260818 item 10 refused dash-led current, default and target branches, not the switch target. The fuzz sweep at backlog line 539 assumed the parser refuses dash-led words, which stopped holding when bbb6445 made `--` end the options on 2026-11-10. Regression. Confirmed.
+	- Sweep: Every positional that reaches git argv now that `--` lets a dash through: switch, merge, prune, hotfix, release, repo connect, create and clone.
+	- Actual cause [Bug]: preflightBranch checked only that the br switch target exists. Since bbb6445 a dash-led word gets past the parser after `--`, and one made by raw git exists, so `git checkout -f` ran as the option.
+	- Actual fix [Bug]: br switch refuses a dash-led target that exists with the line a dash-led current branch gets, and one that doesn't with "a branch name can't start with a dash", rather than a br create line that would be refused too.
+		- Swept: switch fixed. create runs check-ref-format --branch, which refuses a dash. hotfix puts `hotfix/` ahead of the name. merge's word is the message, after `-m`. prune takes none. release's must match the version pattern, which starts with a digit. clone has `--` ahead of the URL. pr's number must be digits, and its title follows `--title`. repo connect and repo create are item 18, 2026111016332231.
+	- Decisions:
+		- A missing dash-led target gets its own wording, since there is nothing to rename.
+		- No changelog entry. `--` is new in vNEXT, so no release had this.
+	- Branch: round-20261111
+	- Test case: Go [df520], test.bash [df521] and [df522]. [df520] fails with the fix stubbed out. The [df522] steps with the build before the fix made a commit and lost the unstaged edit, at exit 0.
+	- Acceptance signoff: Quick gate passed, all areas.
+	- Closed: 20261110-215801
+
+- Code Review 20261110b item 5: sync and the park pushes follow push.default, so they push branches the plan never names
+	- ID: 2026111016332392
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163323
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Set `push.default=matching`. On a feature branch, with an unpushed commit on local main, run `gitsby -q sync`.
+	- Incorrect behavior [Bug]: The plan says it pushes the feature branch. git pushes the feature branch and main, and it exits 0. That gets past `--direct`. A mirror refspec in `remote.origin.push` could delete branches on origin.
+	- Expected behavior [Bug]: gitsby pushes only the branch its plan names.
+	- Reproduced [Bug]: 2026-11-10 on b23, local bare origin.
+	- Possible cause [Bug]: pushArgs in mutate.go returns a bare `git push` once the branch has an upstream.
+	- Origin: 38cc756, 2026-10-04. The bare push is older. No round saw it. Confirmed.
+	- Sweep: Every caller of pushArgs: sync, each park, release's 2 pushes, br merge's fallback push, repo connect.
+	- Actual cause [Bug]: pushArgs returned a bare `git push`, which follows push.default and remote.origin.push. release's push of dev was a second bare push.
+	- Decisions:
+		- The push goes where a bare push would send that branch alone. pushRemote and remote.pushDefault still pick the remote, and a push refspec that renames the branch is followed. Fork users keep pushing to their fork.
+		- Where git has no one answer, as under push.default=nothing, it goes to the upstream, since the command asks to push.
+		- On a mirror remote git refuses a named branch, so the push fails and nothing moves. A `+` in a push refspec no longer forces.
+		- A remote name that starts with a dash gets `--` before it, since git takes a remote named `--all`.
+		- 1 more git call per push, a for-each-ref that also names the current branch. spawn-count `[df37w]` 37 -> 38 and `[df052]` 42 -> 43. Check: entry filed.
+	- Actual fix [Bug]: pushArgs names the remote and `HEAD:<ref>`, read from 1 for-each-ref. release's dev push uses it too. design.md and the changelog say so.
+	- Swept: every `"push"` in src-go. publishBranch, repo connect's add, the tag push, br merge's atomic push and the deletes already name their refs. pr create and the branch commands park through cmdPush.
+	- Test case: Go [df52f], test.bash [df52c] to [df52e]. [df52f] fails 9 of its 10 cases on the old pushArgs, and [df52c] to [df52e] fail against the build before the fix: main went to origin, and the mirror remote lost a branch.
+	- Acceptance signoff: Quick gate passed, all areas. gosec has no finding in the changed lines.
+	- Closed: 20261110-221524
+
+- Code Review 20261110b item 16: backlog-check passes when a removed suite check's ID is anywhere in the backlog
+	- ID: 2026111016332256
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163322
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: On a branch off dev in a copy of the tree, delete test.bash [dab6x], or fuzz.bash's `fRefuse "[dadsp]...` line. Run backlog-check.bash.
+	- Incorrect behavior [Bug]: Both pass, exit 0. [dab6x] counts as named since its ID is on the Test case row from when it was added. 1077 of the 1725 IDs it can see are already in the backlog. The fuzz.bash line isn't seen at all, since the check only knows `fAssert*`, `fSame*` and `fOk`.
+	- Expected behavior [Bug]: A removed check fails the gate unless the branch adds a backlog line naming it.
+	- Reproduced [Bug]: 2026-11-10 in a copy of the tree. Deleting [da8kz], whose ID isn't in the backlog, fails as it should.
+	- Possible cause [Bug]: backlog-check.bash:111 and :127. It also misses fuzz.bash's other helpers, checks with an env prefix or after `for`, `if` or `;`, and spawn-count.bash.
+	- Origin: 2319e09, 2026-09-10, and 4bf3215, 2026-09-26. The 2026-11-03 bug at backlog line 4383 fixed rule 1 only. Confirmed.
+	- Actual cause [Bug]: Rule 2 took a removed check as named when its ID or label was anywhere in the backlog, old rows included. It found checks with its own pattern, which knew only fAssert, fSame and fOk at the start of a diff line, over test.bash, parity.bash and fuzz.bash.
+	- Actual fix [Bug]: backlog-check.bash lists the tests at the merge base and in the working tree with test-id.bash's own scan, through a new `--list --rev REV`, so every helper at any place on its line counts, and spawn-count.bash's measures too. A removed check has to be named, by its ID as a word or by its label, on a backlog line the merge base's backlog doesn't have.
+	- Decisions:
+		- One scan for what a test is, test-id.bash's, rather than a second pattern in backlog-check.bash that drifts from it. backlog-check.bash needs test-id.bash beside it only when rule 2 runs.
+		- A line counts as added when the merge base's backlog has no line exactly like it, so a moved item names nothing new. A backlog outside the repo, or new on the branch, counts as all added, as before.
+		- A label still matches anywhere in an added line, as 4bf3215 allowed. Go tests stay out of rule 2, as they were.
+	- Branch: round-20261111
+	- Test case: test.bash [df4xc] (an ID the backlog had at the base), [df4xd] (fRefuse after an if and an env prefix), [df4xe] (spawn-count.bash removed), [df4xf] (a line the branch adds names them).
+	- Verified: [df4xc] to [df4xe] fail against dev's backlog-check.bash and pass against the new one, in a copy of the fixture. In a clone off dev, deleting [dab6x], fuzz.bash's [dadsp] and spawn-count's [dbftf] passed the old script and failed the new one, naming all 3. `--backlog-run-quick` passed, all areas: test.bash 1950/0, fuzz 310/0, parity 30/0. shellcheck clean.
+	- Swept: config.bash's stage 1 comment, which now says a line the branch adds. No other script finds removed checks. test.bash's other backlog-check fixtures, which have no integration branch, so they need no test-id.bash.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261110-193132
+
+- Code Review 20261110b item 17: release.bash tests one commit and releases another
+	- ID: 2026111016332243
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163322
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: With local dev behind origin's dev, run `cicd/release.bash <version>`.
+	- Incorrect behavior [Bug]: Phase 1 runs the full pipeline on the local tree. Phase 2's `br create` and `gitsby release` pull dev first, so the tag and the published binaries are origin's commit plus the changelog edit, which nothing tested. Run from a feature branch, it tests that branch. The Notes say it refuses unless you're on the merge target, and nothing checks that.
+	- Expected behavior [Bug]: It fetches first, refuses unless HEAD is dev and level with origin, and checks after phase 2's pull that dev is still the tested commit.
+	- Reproduced [Bug]: No. Read only, since release.bash can't run for real here.
+	- Possible cause [Bug]: release.bash:339-343 checks for unpushed commits but never fetches or checks the branch.
+	- Origin: 8d108fd, 2026-08-12. The pre-push gate on main still runs on the real commit where it's installed. No round saw it. Plausible.
+	- Actual cause [Bug]: As the possible cause says. The pipeline's sync, `br create`, `pr ok` and `gitsby release` each pull, so origin's dev could also move between the run and the tag. The release merge also took in anything main had that dev didn't.
+	- Actual fix [Bug]: release.bash fetches, and refuses unless HEAD is the branch `gitsby release` cuts from, level with origin's, and unless origin's main has nothing that branch lacks. After the pipeline it fetches again and refuses a branch origin moved. Phase 2 checks that the version branch starts at the tested commit, and that dev after the merge and the tag each hold the tested tree plus the bump. A stop at the tag publishes nothing.
+	- Decisions:
+		- The branch is found the way gitsby finds it: dev where the repo has one, else the default branch.
+		- After the merge and the tag, trees are compared, not commits, so a merge commit and a squash both pass.
+		- `--publish` skips the branch checks, since it builds from the tag, so it no longer needs an upstream.
+		- A dry run fetches too, so it refuses what a real run would.
+		- The check on main goes past the wording. The release merge would put a commit there that dev lacks into the tag untested.
+	- Swept: every pull in phase 2 (`br create`, `pr create`, `pr ok`, `gitsby release`), the header Notes, the phase 3 comment that said nothing checked the tag, and design.md "Automating a release".
+	- Branch: round-20261111
+	- Test case: test.bash [df4xt] [df4xv] [df4y1] [df4y2] [df4xx] [df4xy] [df4xz] [df4y0]
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261110-195237
+	- Verified: [df4xt] [df4xv] [df4y2] [df4xx] [df4xy] [df4xz] [df4y0] fail against the old release.bash and pass after. [df4y1], the control that dev is taken where there is one, passes on both. Quick gate passed, every area: test.bash 1959/0, fuzz 310/0, parity 30/0.
+
 - Code Review 20261109 item 1: A failed `account apply` empties a working account fragment that the global config still includes
 	- ID: 2026110912215201
 	- Type: Bug
@@ -3107,6 +2494,31 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: dup-acct
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
+
+- Demo: add a br merge scene, and hold screens long enough to read
+	- ID: 2026111010125300
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-101253
+	- Opened by:
+	- Requirements [Feature]:
+		- The demo shows the main advertised features in use. Length is no target, and a viewer who needs a second loop is fine.
+		- A `br merge` scene after `sync`, answered on camera, so the README's typical day runs start to finish.
+		- Holds long enough to read each screen, and time to read the plan at each question.
+	- Origin: Asked 2026-11-10, answering the demo length question that timed out in September.
+	- Decisions:
+		- The merge scene scrolls at about a line per frame. At the default rate it doubled the file, about +6 MB.
+		- `[defp0]` now fails at two minutes rather than one, since design.md sets no length.
+		- The plan holds 3 seconds at each question, through a new `askpause=` step setting. It was about 1.
+		- Holds 4.0 to 5.5 seconds, up from 2.6 to 3.2.
+	- Progress log:
+		- 1118 frames, 72.0 s, 6912767 bytes, up from 902 frames, 47.7 s and 5651896 bytes. At the default scroll rate the merge scene made it 11.5 MB.
+		- Rendered twice in the image to the same bytes.
+	- Branch: demomerge
+	- Test case: test.bash [defp0], [dcq6v]; the render itself
+	- Acceptance signoff: Gate passed, test.bash 1925/0, fuzz 314/0, parity 30/0.
+	- Closed: 20261110-102000
 
 - Code Review 20261109 enhancement 1: Add spawn gate rows for `br merge`, glab `pr create` and `--staged br switch`
 	- ID: 2026110912215212
@@ -4061,6 +3473,454 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- cicd.bash's go test -list compiles with every core
+	- ID: 2026111020264871
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-202629
+	- Opened by: jim-collier
+	- Related IDs: 2026111016331970
+	- Steps to reproduce [Bug]: Run the fuzz step, and watch the compile behind go test -list at cicd.bash:1195.
+	- Incorrect behavior [Bug]: It has no -p and no GOMAXPROCS, so it builds the test binary with every core, at nice 19.
+	- Expected behavior [Bug]: It takes the quarter, like the fuzz runs after it.
+	- Reproduced [Bug]: No, from reading cicd.bash. Came in with 8c53b28, 2026-11-09.
+	- Possible cause [Bug]: The line was added after [dedq2] and [dbft4] were written, and neither matches it.
+	- Estimated effort: Low
+	- Actual fix [Bug]: The list runs as `GOMAXPROCS="${HEAVY_JOBS}" go test -p "${HEAVY_JOBS}" -list`, like the fuzz runs after it. [dedq2] now matches the list line too, and wants 7 hard lines. The gate fixtures' go stubs matched `test -list` by position, so they match it with `-p` in between, and the quick run's call check wants `go test -p <n> -list Fuzz`.
+	- Decisions: The quarter, not the half, since the list is the fuzz step's and the fuzz step is a hard step.
+	- Branch: round-20261111
+	- Test case: test.bash [dedq2], widened. [dbft4] doesn't see it, since `go test -list` isn't a compile command it matches.
+	- Verified: [dedq2]'s check fails on cicd.bash with the old line and passes on the new one. --backlog-run-quick passed, all areas, after the stubs changed. The first two runs failed only on the fixtures' stubs.
+	- Swept: every go test, go build and go vet in cicd.bash, and the stubs and call checks in test.bash that name go test -list.
+	- Acceptance signoff: Self-closed. Its check fails on the old line and passes on the fix.
+	- Closed: 20261110-210557
+
+- release.bash says nothing is pushed after 'br create' pushed the version branch
+	- ID: 2026111019574118
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-195741
+	- Opened by: jim-collier
+	- Related IDs: 2026111016332243
+	- Steps to reproduce [Bug]: Have phase 2 fail at the downloads table or the Windows resource stamp, after `br create`.
+	- Incorrect behavior [Bug]: It says "the branch is created but nothing is pushed". `br create` pushes the new branch to origin as it makes it.
+	- Expected behavior [Bug]: The message says the branch is on origin, with no PR, as the check after `br create` now does.
+	- Reproduced [Bug]: No. Read only: `publishBranch` in mutate.go runs `git push -u origin HEAD`.
+	- Estimated effort: Low
+	- Origin: Seen 2026-11-10 while fixing 2026111016332243.
+	- Actual fix [Bug]: Both messages say `<branch> is pushed, with no PR. Delete it, then run again.`, as the check after `br create` does.
+	- Swept: every "nothing is pushed" in release.bash. The 3 left come before phase 2, where they hold.
+	- Branch: round-20261111
+	- Test case: test.bash [df4yq], the stop at the Windows resource stamp. The downloads table stop has the same message and no test, since the fixture can't make that step fail.
+	- Verified: [df4yq] fails against the old release.bash and passes after. Quick gate passed, every area: test.bash 1964/0, fuzz 310/0, parity 30/0.
+	- Acceptance signoff: Self-closed: its test failed before the fix and passes after.
+	- Closed: 20261110-201616
+
+- Code Review 20261110b item 25: gitsby release takes a version git can't use as a tag, and fails after the merge into main
+	- ID: 2026111016332145
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163321
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: `gitsby release 1.2.3.lock` or `1.2.3-a..b`.
+	- Incorrect behavior [Bug]: It commits the release merge on main, then `git tag` fails. Exit 1, with main 2 ahead.
+	- Expected behavior [Bug]: The version is refused before anything runs.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: release.go:27 and :61 check the version with a regexp only.
+	- Origin: 089776d, 2026-08-18. No round saw it. Confirmed.
+	- Actual cause [Bug]: releaseVerRE took `..`, a trailing `.` and a `.lock` ending, which git refuses in a tag, and nothing else checked the version before the release merge.
+	- Actual fix [Bug]: The pattern takes dot-separated parts, none of them empty, and releaseVersionOK also refuses a `.lock` ending, so `release` refuses before anything runs. changelog.md has a line under vNEXT.
+	- Decisions:
+		- A pattern plus the `.lock` rule, not `git check-ref-format`, so it costs no spawn and release.bash can use the same rule. The test asks git about every short suffix that passes.
+		- An empty part, such as `1.2.3-.a`, is refused too, which git would tag. Semver has no empty part either.
+		- `.lock` is refused in lower case only, as git does.
+	- Swept: every releaseVerRE use (resolveRelease, newestReleaseTag, isReleaseVersion) goes through releaseVersionOK. release.bash's side is 2026111016332132.
+	- Branch: round-20261111
+	- Test case: release_test.go [df4yj]
+	- Verified: [df4yj] fails on the old pattern, where `1.2.3.lock`, `1.2.3..a` and 7 more pass and git refuses them, and passes after. Quick gate passed, every area: test.bash 1964/0, fuzz 310/0, parity 30/0.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261110-201616
+
+- Code Review 20261110b item 26: release.bash takes version strings gitsby release refuses
+	- ID: 2026111016332132
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163321
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: `cicd/release.bash v3.0.0-`, `v3.0.0.` or `v3.0.0rc1`.
+	- Incorrect behavior [Bug]: release.bash's pattern takes them and Go's doesn't. With `v3.0.0-` the version PR is merged into dev before `gitsby release` refuses, which then needs a PR by hand to undo. With `v3.0.0rc1` it dies at the winres step after the whole pipeline.
+	- Expected behavior [Bug]: Both use the same pattern, checked before the pipeline runs.
+	- Reproduced [Bug]: 2026-11-10 on b23, the 2 patterns compared and `gitsby release v3.0.0rc1` run in a temp repo.
+	- Possible cause [Bug]: release.bash:304 uses `([A-Za-z0-9.-]+)?`, where releaseVerRE uses `([-.][0-9A-Za-z.-]+)?`.
+	- Origin: 8d108fd, 2026-08-12. No round saw it. Confirmed.
+	- Actual cause [Bug]: As the possible cause says. gen-winres.bash and the demo stamp in cicd.bash had the same loose pattern, and gen-winres.bash put a suffix after a dot, as in `v3.0.0.beta`, into the patch number.
+	- Actual fix [Bug]: config.bash has RELEASE_VERSION_RE, the same pattern as releaseVerRE, and fIsReleaseVersion, which also refuses a `.lock` ending. release.bash checks with it before the pipeline, gen-winres.bash takes the three numbers from it, and the demo stamp uses it.
+	- Decisions:
+		- In config.bash, which release.bash, gen-winres.bash and cicd.bash all source. The Go build can't read cicd/, so test.bash holds the two patterns together over the same versions.
+		- release.bash still wants the `v`. The shared pattern takes it as optional, for gen-winres.bash and the demo.
+		- A dotted suffix such as `v3.0.0.beta` still publishes as a full release, since release.bash calls a version a pre-release by its `-`. Unchanged.
+	- Swept: every version pattern outside legacy/. release.bash's argument check, gen-winres.bash and the demo stamp, fixed. release.bash's bump wants a plain vX.Y.Z already. test.bash's changelog heading check, and the installers' `--tag` check, which checks a tag's characters rather than a version, left. legacy/ is frozen.
+	- Branch: round-20261111
+	- Test case: test.bash [df4ym] [df4yk] [df4yn] [df4yp]
+	- Verified: all 4 fail against the old release.bash, config.bash and gen-winres.bash and pass after. [df4yk] has a dry run refuse v1.3.0-, v1.3.0., v1.3.0rc1, v1.3.0.lock and v1.3.0-a..b before the pipeline. Quick gate passed, every area: test.bash 1964/0, fuzz 310/0, parity 30/0.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261110-201616
+
+- Code Review 20261110b item 27: release.bash puts files the pipeline rewrote into the version PR
+	- ID: 2026111016332119
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163321
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Run `cicd/release.bash <version>` when the demo gif comes out different.
+	- Incorrect behavior [Bug]: The pipeline rewrites the tracked gif. `br create` takes the dirty tree to the new branch, and `pr create` commits and pushes it with the changelog edit. The script says the changelog is the only file a release edits.
+	- Expected behavior [Bug]: The release stops if the pipeline left the tree dirty, or the pipeline runs without rewriting tracked files.
+	- Reproduced [Bug]: No. Read only.
+	- Possible cause [Bug]: The clean-tree check at release.bash:339 runs before the pipeline at :359, and nothing checks again.
+	- Origin: 3a5d14f, 2026-08-14. No round saw it. Plausible.
+	- Actual cause [Bug]: As the possible cause says.
+	- Actual fix [Bug]: After the pipeline and the phase 1 cross-build, release.bash refuses a changed tree, naming the files, before anything is branched or pushed. Done with item 17, 2026111016332243.
+	- Decisions:
+		- It stops, rather than running the pipeline with the gif left as committed. A gif that came out different still gets looked at, and goes in through its own PR before the cut.
+	- Swept: what the phase 1 run writes in the tree. In cicd.bash the demo gif is the tracked file a plain run rewrites. The check reads the whole tree's status, so any other change stops it too, and the Windows resource stamp is put back before it.
+	- Branch: round-20261111
+	- Test case: test.bash [df4xw]
+	- Acceptance signoff: Self-closed: its test failed before the fix and passes after.
+	- Closed: 20261110-195256
+	- Verified: [df4xw] fails against the old release.bash and passes after. Quick gate passed, every area.
+
+- Code Review 20261110b item 37: test.bash [dab8t] and [dab8z] pass with the guard they test removed
+	- ID: 2026111016331995
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163319
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: In a copy of the tree, take out the Nothing to publish here guard at repo.go:275, build, and run those checks.
+	- Incorrect behavior [Bug]: Both still pass. They connect to a remote that [dab8g] already filled, so the command fails on already has history instead.
+	- Expected behavior [Bug]: They fail when the guard is gone.
+	- Reproduced [Bug]: 2026-11-10 in a copy of the tree. Of the 88 fAssertFail checks up to line 4382, these 2 are the only ones whose reason comes from another guard.
+	- Possible cause [Bug]: test.bash:2615 and :2618 reuse a remote with history and don't check the message.
+	- Origin: 5552726, 2026-07-24. The 2026-08-10 pass that made refusals check their reason missed these. Confirmed.
+	- Actual cause [Bug]: As the possible cause says.
+	- Actual fix [Bug]: Each check connects to an empty remote of its own, and a new check after each one wants the Nothing to publish here refusal.
+	- Decisions: The message check is what fails without the guard. With an empty remote the command still fails later, on the empty commit, so the exit code alone can't tell.
+	- Branch: round-20261111
+	- Test case: test.bash [dab8t] [df4z3], [dab8z] [df4z4]
+	- Verified: with the guard taken out of a copy of src-go, [df4z3] and [df4z4] fail and the build with it passes them. --backlog-run-quick passed, all areas: test.bash 1966/0, fuzz 310/0, parity 30/0.
+	- Swept: the other refusals in the connect block. [dab8s] has its reason checked by [dcmnb]. [dab8n] and [dab8r] fail on the guard they name, per the review's sweep of the 88 fAssertFail checks.
+	- Acceptance signoff: Self-closed. Its new checks fail without the guard and pass with it.
+	- Closed: 20261110-202629
+
+- Code Review 20261110b item 38: parity [dben1], [dben2] and [deyw8] can't fail on an alias routed to the wrong command
+	- ID: 2026111016331982
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163319
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: In a copy of the tree, route pull to sync in args.go, build, and run parity.bash.
+	- Incorrect behavior [Bug]: parity passes 30 of 30. Outside a repo, every repo command prints the same line, so the checks see only a spelling removed outright. Go [dbfqr] does catch it.
+	- Expected behavior [Bug]: They fail when an alias runs a different command.
+	- Reproduced [Bug]: 2026-11-10 in a copy of the tree.
+	- Possible cause [Bug]: fSameSpelling runs in notRepo, at parity.bash:336-338.
+	- Origin: 1928f35, 2026-08-18, and 8f6662c for [deyw8]. Confirmed.
+	- Actual cause [Bug]: [dben1], [dben2] and [deyw8] ran both spellings in a folder that isn't a repo, where every repo command refuses with the same line, so only a spelling that stopped parsing could differ.
+	- Actual fix [Bug]: parity.bash runs both spellings in a repo on a pushed feature branch, each with -q on a fresh copy at the same path and pinned commit dates, and compares the whole output. pullcom, sync and br merge print different plans and results there. New check [df4zh] fails the run if the fixture stops telling those 3 apart.
+	- Decisions: The fixture's tree is clean, since a commit's default message has the time in it, which would make 2 runs of one command differ. The checks against the frozen build, [dbemz] and [dben0], stay outside a repo, since they ask only that the old name is still taken.
+	- Branch: round-20261111
+	- Test case: parity.bash [dben1], [dben2], [deyw8], and [df4zh] for the fixture.
+	- Verified: with pull routed to sync in args.go, the old parity.bash passed 30/0 and the new one failed [deyw8]. update to sync failed [dben1], br land to br prune and to br list failed [dben2]. Unchanged build: parity 31/0. Quick run passed, all areas: test.bash 1967/0, fuzz 310/0, parity 31/0, spawn counts passed. shellcheck and test-id.bash --check clean.
+	- Swept: parity.bash's other notRepo checks, [dbemz] and [dben0], which compare against the frozen build and are kept. test.bash greps no fSameSpelling or notRepo.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261110-203845
+
+- Code Review 20261110b item 39: test.bash [dbft4] and [dbft3] miss most build sites
+	- ID: 2026111016331970
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163319
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: In a copy of the tree, remove `-p "${BUILD_JOBS}"` from cicd.bash:1295 and release.bash:126. Run [dbft4].
+	- Incorrect behavior [Bug]: It passes. It greps only lines starting `go build`, and the cross-builds go through fImageGo. [dbft3] only checks that config.bash sets BUILD_JOBS.
+	- Expected behavior [Bug]: They fail when any build site drops the job cap.
+	- Reproduced [Bug]: 2026-11-10 in a copy of the tree.
+	- Possible cause [Bug]: test.bash:6060 and :6069.
+	- Origin: The checks predate eb6aa5e and 0748e25, 2026-10-25, which moved the builds. Confirmed.
+	- Actual cause [Bug]: As the possible cause says. [dbft4] saw only the 2 native builds, and [dbft3] read no value.
+	- Actual fix [Bug]: [dbft4] reads every compile in cicd.bash, release.bash and remote-tests.bash, continuation lines joined: a bare go build and every fImageGo call. Each needs -p with BUILD_JOBS or HEAVY_JOBS, and it fails under 5 sites. [dbft3] sources config.bash with 8 stand-in cores and wants BUILD_JOBS between 1 and 7.
+	- Decisions: remote-tests.bash's test build counts as a build site, since it compiles the whole package. [de56v] already treats it as one.
+	- Branch: round-20261111
+	- Test case: test.bash [dbft4], [dbft3], kept under their IDs since what they assert didn't change.
+	- Verified: in a copy, taking -p out of any one of the 5 sites fails [dbft4], and so does the issue's 2-site edit, which the old check passed. An empty remote-tests.bash fails it too. [dbft3] fails with BUILD_JOBS set to every core in config.bash. --backlog-run-quick passed, all areas: test.bash 1966/0, fuzz 310/0, parity 30/0.
+	- Swept: every go build, go test and go vet in cicd/ and its utility scripts. The vet, race, soak and fuzz runs have -p, GOMAXPROCS or both, and [dedq2] watches the hard ones. Only the fuzz step's go test -list has neither, filed as Bug 2026111020264871.
+	- Acceptance signoff: Self-closed. Both checks fail on the fault and pass on the tree.
+	- Closed: 20261110-202629
+
+- Code Review 20261110b item 40: spawn-count passes a measure whose command failed, and [df052] measures a failed run
+	- ID: 2026111016331957
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163319
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Run spawn-count.bash and log each command's exit code.
+	- Incorrect behavior [Bug]: [df052], pr create in a tea ssh folder, exits 1 since the fake tea doesn't answer `pulls create`. Its count of 37 is the cost of a failed run. A command that starts failing early drops its count and passes as improved.
+	- Expected behavior [Bug]: A measure fails when its command fails.
+	- Reproduced [Bug]: 2026-11-10 in a copy of the tree. The other 23 measures exit 0.
+	- Possible cause [Bug]: spawn-count.bash:285 ends the run with `|| true`.
+	- Origin: e6fca88, 2026-10-03, and c31a204, 2026-11-07, for [df052]. Confirmed.
+	- Actual cause [Bug]: fMeasure ended each run with '|| true', so a command's exit code was never read. The fake tea answered neither 'pulls list' nor 'pulls create', so [df052] stopped at the create.
+	- Actual fix [Bug]: fMeasure keeps the exit code, which strace and script -e both pass on. A measure whose command exits nonzero prints FAIL with the code and the run records nothing, ahead of the limit and baseline checks. The fake tea lists no open pull request and prints a link for a create.
+	- Decisions: [df052]'s expected count goes from 37 to 42 (dated 2026-11-10), today's count of a run that ends at exit 0. Every box's spawn baseline has 37 for it, so the first run after this one on a box needs --record, as a deliberate rise does. The main checkout's baseline was recorded at 42.
+	- Branch: round-20261111
+	- Test case: test.bash [df4zg] (a build that exits 1 for whoami fails dbjeq and records nothing), and spawn-count.bash [df052].
+	- Verified: [df4zg]'s check, run against the old spawn-count.bash, exits 0 and fails; against the new one it passes. The new script with the old fake tea fails [df052] as exited 1 at 37. With the new fake, all 24 measures exit 0. Quick run passed, all areas: test.bash 1967/0, fuzz 310/0, parity 31/0, spawn counts passed. shellcheck clean.
+	- Swept: every fMeasure run path, pipe and tty. The other fake tools: gh, ssh and glab answer every call the measures make, since the other 23 exit 0.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261110-203845
+
+- Code Review 20261110b item 41: 114 test.bash checks drop out with no SKIP line where pwsh or a pty is missing
+	- ID: 2026111016331944
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163319
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Run test.bash on a box with no pwsh, such as vmFreeBSD, or no `script -qec`.
+	- Incorrect behavior [Bug]: The checks in 9 `if ((hasPty))` blocks and 2 `if command -v pwsh` blocks vanish from the count without a SKIP. That's 15 and 99 checks.
+	- Expected behavior [Bug]: Each block a box can't run calls fSkipBlock, per the 2026-10-26 test line rule.
+	- Reproduced [Bug]: Yes, 2026-11-10 on b23. `[df4zw]`'s check, run on the unfixed test.bash, names the 11 blocks, and 18 more behind other probes of the box.
+	- Possible cause [Bug]: The blocks at test.bash:1748, 2424, 2448, 3474, 3604, 3887, 3892, 4033, 8313, 8473 and 8496 have no else. fEveryBlockSkips checks only existing calls.
+	- Origin: 2026102618140158 added fSkipBlock. These blocks weren't swept. Plausible.
+	- Actual cause [Bug]: As above. Nothing checked that a block behind a probe of the box has an else, so 29 blocks never got one.
+	- Actual effort: Low
+	- Decisions:
+		- The 18 other blocks are the same class, behind `isWindows`, `canNoTty`, `shNoTty`, a writable `/usr/local/bin`, `ln -s`, `/proc/self/mem`, GNU `date -d`, `OSTYPE` and root. They got the same else. A Linux box with pwsh now prints one SKIP, `[db5xm]`, which runs only on Windows.
+		- An if/else on `isMac` or `isWindows` with tests in both arms counts as covered, since each arm is that platform's form of the check.
+		- No changelog line. Only the suite's output changes.
+	- Actual fix [Bug]: Each of the 29 blocks has an else that calls fSkipBlock. fUnskippedBlocks finds a block behind a probe of the box that holds tests and skips none.
+	- Swept: every multi-line `if` in test.bash that holds a test and has no SKIP. Left out: a `gateTool` loop branch, a soak branch inside a quoted script, and an awk line, none of them a probe of the box.
+	- Branch: round-20261111
+	- Commit: 6c6baad
+	- Test case: test.bash `[df4zv]` (the check finds a bare probe block in a fixture, and passes one with a SKIP or a tested else) and `[df4zw]` (no such block in test.bash).
+		- Verified: `[df4zw]`'s check fails on the unfixed test.bash, naming the 29 blocks, and passes after. Quick gate passed, all areas: test.bash 1969/0 with 1 SKIP, fuzz 310/0, parity 31/0.
+	- Acceptance signoff: Self-closed: its tests passed, and the check was watched to fail.
+	- Closed: 20261110-204858
+
+- test.bash [df4c4] fails on macOS
+	- ID: 2026111014390966
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-143909
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Run test.bash on a Mac.
+	- Incorrect behavior [Bug]: [df4c4] fails, since demo-repo's `--remove` is refused by the guard and leaves the world behind.
+	- Expected behavior [Bug]: It passes on any box.
+	- Reproduced [Bug]: In the 2026-11-10 full run, on b26 and vmKt6m, and on b23 with the fixture under a folder not named tmp.
+	- Possible cause [Bug]: The fixture's stand-in HOST_TEMP is a folder named `ht`. The guard takes a path under a folder named tmp, or under HOST_TEMP/gitsby. On Linux the fixture sits under /tmp, and on macOS under /var/folders/.../T, so there it matches neither.
+	- Origin: The rc.1 full run. The check came in with Bug 2026111010125301 earlier the same day, and was only run on Linux.
+	- Actual cause [Bug]: As read.
+	- Actual fix [Bug]: The stand-in HOST_TEMP is a folder named tmp, as /tmp is. The check asserts the same thing.
+	- Branch: rc1prep
+	- Test case: [df4c4] itself, kept under its ID since what it asserts didn't change. It passed on b26 and vmKt6m at 4159937. Under a path with no tmp in it, the old fixture fails and the new one passes. With the parent-folder removal taken out of demo-repo, the new one fails.
+	- Closed: 20261110-1512
+
+- Go [df35x] fails on Windows
+	- ID: 2026111014390949
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-143909
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Run the Go tests on Windows, natively or under Wine.
+	- Incorrect behavior [Bug]: TestFixLiteralsPaste fails at its first mkdir: `The system cannot find the path specified.`
+	- Expected behavior [Bug]: It passes, or skips where its folders can't be made.
+	- Reproduced [Bug]: In the 2026-11-10 full run, on b29w and under Wine on vmDebARM64.
+	- Possible cause [Bug]: The test makes folders whose names have a double quote and a backslash, which Windows can't hold.
+	- Origin: The rc.1 full run. The test came in with round-20261109, and no full run with the Windows boxes had run since.
+	- Actual cause [Bug]: As read.
+	- Actual fix [Bug]: The shellQuote part runs everywhere. The folder part skips on Windows, since it makes those names and tests commands for a POSIX shell.
+	- Branch: rc1prep
+	- Test case: [df35x] itself. The full run showed it failing on b29w and under Wine. It skips there now, passed on b29w at 4159937, and the whole Windows test binary passes under Wine on b23.
+	- Closed: 20261110-1512
+
+- A missing option value names the option wrong
+	- ID: 2026111012595856
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-125958
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: `gitsby pullcom -m`, with nothing after `-m`.
+	- Incorrect behavior [Bug]: It says `Never received a parameter for switch '--m'.` Nobody typed `--m`, and the help calls them options, not switches.
+	- Expected behavior [Bug]: `-m needs a value.`, with the option as it was typed.
+	- Reproduced [Bug]: Every time, in the Go build and in v2.1.0.
+	- Possible cause [Bug]: The message puts `--` in front of the name with its dashes stripped.
+	- Origin: Release prep for v3.0.0-rc.1, a quick pass over the option parser. It came over from v2.1.0, and no round looked at this message.
+	- Actual cause [Bug]: As read.
+	- Actual fix [Bug]: The refusal keeps the option as typed and says `<option> needs a value.`
+	- Branch: rc1prep
+	- Test case: Go [df4hb] TestMissingValueNamesOption, which fails 4 of 4 cases with the old name put back.
+	- Closed: 20261110-1301
+
+- test.bash [dee5h] fails when the gate run starts more than 6 seconds after its fixture
+	- ID: 2026111011385413
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-113854
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Run `cicd.bash --backlog-run-quick suite` on a loaded box.
+	- Incorrect behavior [Bug]: [dee5h] fails now and then, and passes on a rerun. It failed once on 2026-11-10 at load 10, between 2 passing runs.
+	- Expected behavior [Bug]: It passes however long the run takes to start.
+	- Reproduced [Bug]: Once in 3 runs on b23, 2026-11-10, in the image.
+	- Possible cause [Bug]: fGateRunFolder makes the `_001` folders for the next 6 seconds only, then expects the run to take `_002`. A run that picks its stamp later finds `_001` free.
+	- Origin: fGateRunFolder in test.bash, from the 2026-10-24 CICD reset. No round saw it. Plausible: the cause is read, not reproduced on demand.
+	- Actual cause [Bug]: As read. The window was 6 seconds, and a loaded box took longer than that to start the run.
+	- Actual fix [Bug]: The fixture makes the `_001` folders for 120 seconds ahead.
+	- Branch: cr1110
+	- Test case: [dee5h] itself. With a 7-second sleep put in ahead of the run, it passes. The old 6-second window can't, and it failed on its own once at load 10.
+	- Closed: 20261110-1142
+
+- Code Review 20261110 item 1: An option a command doesn't read is taken and dropped
+	- ID: 2026111010494811
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104948
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: In any repo, run `gitsby --staged raw git commit`, `gitsby -m msg raw git commit`, `gitsby status -m hello`, `gitsby repo connect <url> --public` or `gitsby pullcom --direct`.
+	- Incorrect behavior [Bug]: Each runs with the option dropped and says nothing. `gitsby --staged status` is refused, so only `raw` lets `--staged` through, and design.md:180 says any other command refuses it, since ignoring it would sweep in the edits it was typed to keep out.
+	- Expected behavior [Bug]: A command refuses an option it doesn't read, the way `--staged` is refused, and names the commands that take it. `-q`, `--any-identity` and `--config` stay valid wherever they mean something.
+	- Reproduced [Bug]: 2026-11-10 on b23, built binary in a temp repo.
+	- Possible cause [Bug]: parseArgs and scanPassthrough each keep their own list of options, and only `--staged` is checked against the commands that read it, in staged.go:20. Nothing ties the other options to theirs.
+	- Origin: `--staged` in scanPassthrough from 9f53a91, and `--direct` from e1cc030, both 2026-10-05. `--public` and `--private` from 8da8951, 2026-08-17. A 2026-08 round fixed trailing arguments that were silently ignored, not options. No round saw this. Confirmed.
+	- Notes: 1 table of options and the commands that read each, used by both parsers, is where a new option can't get past the check. `-m` on `br create` and `br switch` is read by the commit that parks work, so it stays there.
+	- Against: A script that passes an option to a command that ignores it starts failing.
+	- Actual cause [Bug]: Only `--staged` was checked against the commands that read it, and `raw`'s scan took every option and kept 3.
+	- Decisions:
+		- `-q`, `--no-fetch`, `--any-identity` and `--config` stay valid on every command. `--no-fetch` asks for nothing a command could fail to do where nothing fetches, and parity `[db601]` pins v2.1.0 taking `-NoFetch` ahead of `raw`.
+		- So the refused set is `-m` outside the 10 commands that commit, `--direct` outside `sync`, `--public` and `--private` outside `repo create`, and `--staged` as before, now ahead of `raw` too.
+	- Actual fix [Bug]: 1 table of options, `optSpecs` in args.go, which both parsers read. An option with a command list is refused on any other command, as "-m works with pullcom, ... and repo connect." `checkStagedFlag` folded into it, with the same wording.
+	- Swept: every option the 2 parsers took. design.md's Execution flow and the UI style guide's Commands and options say the rule.
+	- Branch: cr1110
+	- Test case: Go [df4e9] and [df4ea], test.bash [df4eb] to [df4ed], [ddht9] kept. [df4e9], [df4ea] and [ddht9] fail with the check stubbed out. [df4eb] and [df4ec] fail against the build before the fix.
+	- Checks changed: test.bash [db5yb] loops over `-NoFetch` and `-AnyIdentity` only. It pinned `-Public` ahead of `raw` being taken rather than blamed on `raw`, and `-Public` is now refused by its own name, which [df4eh] checks. The point it was written for still holds.
+	- Acceptance signoff: Quick gate passed, all areas.
+	- Closed: 20261110-1140
+
+- Code Review 20261110 item 2: The docs call -q the machine-readable mode, and its output is the same human layout
+	- ID: 2026111010494798
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: style-guide_ui-ux.md under Scripts and design.md:153 say `-q` is the machine-readable mode. `gitsby -q status` prints the same labeled, dot-padded block as without it, and a mutating `-q` run prints its plan and status lines. Only the build line goes. design.md's non-goals say there is no scripting surface beyond `raw`.
+	- Expected behavior [Bug]: The docs call `-q` the unattended mode: it answers yes, asks nothing, and leaves out the build line.
+	- Reproduced [Bug]: 2026-11-10, `gitsby -q status` in a temp repo.
+	- Origin: style-guide_ui-ux.md:176 from 578b34e, and design.md:153 from 483ebc5, 2026-10-06. No round saw it. Confirmed.
+	- Notes: A real machine-readable mode would be a new feature, against the `raw`-only non-goal, and isn't proposed here.
+	- Actual fix [Bug]: design.md, the UI style guide and printBanner's comment call `-q` the unattended mode. The guide's Scripts section says what it does: answers yes, asks nothing, and leaves out the build line, with the rest of the output unchanged.
+	- Swept: every "machine-readable" in the Go source, the docs and the scripts.
+	- Branch: cr1110
+	- Test case: none, wording only. What the guide now says `-q` does is pinned by [dbshn], [dbfhk] and the no-terminal checks.
+	- Closed: 20261110-1127
+
+- Code Review 20261110 item 3: One placeholder has several names across the help, the README and the Syntax lines
+	- ID: 2026111010494785
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Incorrect behavior [Bug]: `repo connect` takes `[url]` in the help, `[target]` in the README and `[url | owner/name]` in its Syntax line. A PR number is `n` in the help, `<#>` in the README and `<number>` in the Syntax line. `repo create` takes `<o/n>` in the help and `<owner/name>` in the README and its Syntax line.
+	- Expected behavior [Bug]: One name per placeholder everywhere, per the UI style guide's "One word per thing" and the output sweep's row for it in design.md.
+	- Reproduced [Bug]: 2026-11-10, `gitsby --help`, `gitsby pr list` and `gitsby repo` against the README's Commands table.
+	- Origin: help.go:65 from 2206206, 2026-10-05, help.go:78 from 197677f, 2026-10-22, and README.md:105 from d446496, 2026-07-26. No round saw it. Confirmed.
+	- Notes: The help's left column is 20 wide, which is why it shortens them. Widening it, or moving the arguments into the description as `account set` already does, are the 2 ways.
+	- Decided against: making the Syntax line's `e.g. 'work', 'personal'` match the `github.com_my-work-login` examples. An account name is any string, and both are valid.
+	- Actual cause [Bug]: Each Syntax line, the help's command list and the README's table wrote their placeholders out by hand. The Syntax lines disagreed with each other too: `br create <new branch name>` against `<branch>`, and `repo connect` as both `[url | owner/name]` and `<url | owner/name>`.
+	- Decisions:
+		- `[message]`, `[version]`, `[directory]` and `<number>` everywhere, the Syntax lines' names. `repo connect` takes `[<url> | <owner/name>]`, so its Syntax line names the placeholders it defines.
+		- The help lists `pr`, `pr <number>`, `pr create [title]` and `pr ok <number>` on 4 lines, the way the README does, and `raw <tool> <arguments ...>` on 1. A syntax too long for the 20-wide column moves into the line's text, as `account set` already did.
+	- Actual fix [Bug]: 1 table, `usages` in usage.go, with each command's placeholders, their meanings and its help line. Every Syntax refusal and the help's command list read it, and a noun's block, such as bare `repo`, is built from its verbs. The README's Commands table uses the same names.
+	- Swept: every `syntaxUsage` call, the 3 inline `repo connect <url | owner/name>` fix lines, app.go's comment, and the README table. design.md's Output sweep has a row for it. The fix lines now say `repo connect <url>, or <owner/name> for a GitHub repo`, with no `|` a pasted line would hand the shell.
+	- Checks changed: test.bash [dbefw] and [dbefx] pinned the help's `pullcom [msg]` and `br merge [msg]`, to show the renamed commands lead. They are off, and [df4ej] and [df4ek] check the same with `[message]`.
+	- Branch: cr1110
+	- Test case: Go [df4ef], [df4eg] and [df4f8], test.bash [df4ee]. [df4f8] fails with a fix line put back to the `|` form. [df4ef] and [df4eg] fail with a placeholder renamed in the table. [df4ee] fails against the README before the fix, and against the build before it.
+	- Acceptance signoff: Quick gate passed, all areas.
+	- Closed: 20261110-1140
+
+- Demo world at /tmp/gitsby-demo is never removed where HOST_TEMP is /tmp
+	- ID: 2026111010125301
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-101253
+	- Opened by:
+	- Steps to reproduce [Bug]: Render the demo in the image, or on a box with no HOST_TEMP set.
+	- Incorrect behavior [Bug]: `safe-rm: refused, not under a tmp folder, or a whole project temp folder: /tmp/gitsby-demo`, then `WARNING: left the demo's repos in place`. On a box, the next render stops at the same refusal and the gif isn't drawn.
+	- Expected behavior [Bug]: The world is removed after each render, on any box.
+	- Possible cause [Bug]: Since 2026-10-28 the guard refuses a folder right under HOST_TEMP. HOST_TEMP falls back to /tmp, as in the image.
+	- Origin: Seen 2026-11-10 rendering the demo for demomerge. b23 sets HOST_TEMP, so runs here missed it.
+	- Actual cause [Bug]: As the possible cause says. Not seen before because the image's /tmp goes with the container, and b23's HOST_TEMP is elsewhere.
+	- Actual fix [Bug]: The world is built at /tmp/gitsby-demo/home, and `--remove` also takes the folder above it once it's empty.
+	- Branch: demomerge
+	- Test case: test.bash [df4c4], [df4c5], [df4c6]
+	- Verified: [df4c4] and [df4c5] fail against dev's demo-repo.bash, and [df4c6] fails with the new builder and dev's scenario. All 3 pass on the branch. A render in the image no longer warns, and leaves no /tmp/gitsby-demo.
+	- Closed: 20261110-102000
+
+- test.bash [dee5h] fails on a box not on UTC
+	- ID: 2026110920200900
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-202009
+	- Opened by:
+	- Steps to reproduce [Bug]: On b23 (Pacific time), run `bash cicd/test.bash` outside cicd.bash, or `cicd.bash --backlog-run-quick suite --no-container`.
+	- Incorrect behavior [Bug]: `FAIL dee5h`. The run's folder is `<UTC time>_001`, where the check wants `_002`.
+	- Expected behavior [Bug]: Passes in any time zone.
+	- Possible cause [Bug]: `fGateRunFolder` makes the taken `_001` names with a plain `date`, in local time. Since af96363 cicd.bash names its run folder with `date -u`, so the names never clash off UTC. The gate passes only because test.bash runs in the image, which is on UTC.
+	- Requirements [Bug fix]: The fixture takes its names in UTC. Sweep test.bash for other fixtures that build a stamp cicd.bash now writes in UTC.
+	- Estimated effort: Low
+	- Origin: Seen 2026-11-09 on the fuzzretry branch, running test.bash on its own. Fails the same on d4ab0d3 and e0952c4. Stage 7 on b26 runs test.bash in local time too.
+	- Actual cause [Bug]: As the possible cause says.
+	- Actual fix [Bug]: `fGateRunFolder` makes the taken names with `date -u`.
+	- Swept: every `date` in cicd/ that builds a stamp. release.bash, remote-tests.bash and keep-build.bash name their own files in local time, and nothing compares those with a UTC name. `[df386]` already sets its zone.
+	- Branch: utcstamp
+	- Test case: test.bash [dee5h]
+	- Verified: [dee5h] fails on dev run outside cicd.bash, and passes after. test.bash 1922/0 on its own, in the image through `--backlog-run-quick`, and on the box with `--no-container`.
+	- Closed: 20261109-204000
+
+- Native fuzz step fails on a fuzz deadline, not a crasher
+	- ID: 2026110915475544
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261109-154755
+	- Opened by:
+	- Incorrect behavior [Bug]: The native fuzz step stopped with `--- FAIL: FuzzParseTeaTable (5.42s) context deadline exceeded` and printed `fuzzing found a crasher`, with no reproducer under src-go/testdata/fuzz/. Load was about 14 on b23, in the image, during a --backlog-run-full on round-20261109 at 4e70dce.
+	- Expected behavior [Bug]: A fuzz run that ends on its own deadline with no reproducer passes, or retries once. Only a saved reproducer counts as a crasher.
+	- Estimated effort: Low
+	- Origin: Seen 2026-11-09 in the gate step's security run. 3 reruns alone with the same flags (-fuzztime 5s, 8 workers) passed. The round didn't change parseTeaTable.
+	- Actual cause [Bug]: The step read any nonzero exit from `go test -fuzz` as a crasher. Go saves a crasher's input and says "Failing input written to". A worker stopped at -fuzztime saves nothing.
+	- Actual fix [Bug]: Only output naming a saved input is a crasher, and it stops the run at once. Any other failure runs the target once more, and fails as "failed twice and saved no failing input" if that one fails too.
+	- Decisions:
+		- A second failure still fails the step. A target that hangs looks the same as a slow worker, and it shouldn't pass.
+	- Branch: fuzzretry
+	- Test case: test.bash [df3gx], [df3gy], [df3gz]
+	- Verified: [df3gy] and [df3gz] fail on dev's cicd.bash. [df3gx] fails with crashers retried too. `--backlog-run-quick` passed, test.bash 1922/0. The real fuzz step passed on all 9 targets.
+	- Closed: 20261109-195600
 
 - spawn-count.bash names its records in local time, and the run in the image in UTC
 	- ID: 2026110914575286
@@ -5277,6 +5137,146 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddf4q] and [ddf4r] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- Code Review 20261110b enhancement 3: safe-rm.ps1 passes its path to cmd unquoted
+	- ID: 2026111016331906
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163319
+	- Opened by: jim-collier
+	- Requirements [Feature]: Refuse a path with any of `&|<>^%"()`, or quote it for cmd.
+	- Origin: da39cf8, 2026-11-06. Plausible: Windows PowerShell 5.1 quotes an argument only when it has a space, so a TEMP with `&` would split the rmdir. No box has one.
+	- Actual fix: safe-rm.ps1 refuses a folder whose full path holds any of &|<>^%"(), with a note, before rmdir runs.
+	- Decisions: Refuse, not quote. Windows PowerShell 5.1 re-quotes an argument that has a space, so a quote added here could double up, and a % is expanded by cmd even inside quotes.
+	- Branch: round-20261111
+	- Test case: test.bash [df50j] runs the guard under pwsh with TEMP holding an &, and a cmd.exe stub that would move the folder. Skips where there's no pwsh.
+	- Verified: [df50j] fails on the previous safe-rm.ps1 (the stub moves the folder) and passes after; [dez5g] passes on both. --backlog-run-quick lint suite passed on the new guard. Not run on a Windows box. The refusal runs before cmd, so the stage 7 run covers only that the usual path is still taken.
+	- Swept: safe-rm.sh and safe-rm.bash don't go through cmd. No other cmd.exe call takes the guard's path.
+	- Acceptance signoff: Self-closed: its test passed.
+	- Closed: 20261110-211004
+
+- Code Review 20261110b enhancement 4: The image installs markdownlint-cli's dependencies with no lock
+	- ID: 2026111016331893
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163318
+	- Opened by: jim-collier
+	- Requirements [Feature]: Install from a committed lock file with `npm ci --ignore-scripts`, or fetch by sha256, as the image's other tools are.
+	- Origin: Dockerfile:128, 8249e95, 2026-10-10. The file's header says the tools are pinned. Confirmed by reading.
+	- Progress log:
+		- 2026-11-11: markdownlint-cli comes from `cicd/container/markdownlint/package-lock.json` with `npm ci --ignore-scripts`, each of its 73 packages checked by sha512. The build stops on a markdownlint other than the one config.bash records. The image tag hashes the package and lock, so it moved to `gitsby-cicd:c153ffacafc4`. Every package version is the same as in the old image.
+	- Decisions:
+		- A lock rather than sha256 downloads, since npm checks each package's sha512 from the lock and the tree is 73 packages. It sits in its own folder, so npm ci has a project to install into, at /opt/markdownlint.
+		- VER_markdownlint stays in config.bash, and the build checks the installed version against it, as for ruff. A bump means a new lock: `npm install --package-lock-only --ignore-scripts` in that folder.
+		- npm's cache goes in the step's folder, so the image no longer keeps a /root/.npm.
+	- Branch: round-20261111
+	- Test case: test.bash [df50y] [df50z]
+	- Verified: `--backlog-run-quick` passed in the new image, every area, test.bash 1967/0, fuzz 310/0, parity 31/0, markdownlint clean. [df50y] fails on the previous Dockerfile, on npm ci without --ignore-scripts, on a stray npm install, on a lock at another version, and on a package with no sha512, and passes as it is. [df50z]: the previous tag hash stays the same when the lock changes, and the new one moves.
+	- Swept: test.bash's two fixtures that copy the recipe (the gate's and release.bash's) copy the lock folder too. contributing.md's host install line is for the host, and stays.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261110-212434
+
+- Code Review 20261110b enhancement 5: gh-account.bash is never sourced
+	- ID: 2026111016331881
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163318
+	- Opened by: jim-collier
+	- Requirements [Feature]: Remove it, with the lint checks and the test.bash fixture copy that name it.
+	- Origin: No script sources it. test.bash:312 copies it into a fixture, and 5 lint checks read it. `gitsby raw gh` replaced what it did. Confirmed by grep.
+	- Actual fix [Enhancement]: Deleted cicd/utility/include/gh-account.bash and its name in test.bash's gate fixture copy. The lint checks read it by glob, so they went with the file. changelog.md has a Removed entry under vNEXT. The v2.1.0 Added line stays as history.
+	- Decisions: Reverses the 2026-10-04 answer to keep it, since `gitsby raw gh` now does what it did and nothing sources it. No suite check was removed, only the per-file instances.
+	- Test case: none, a deletion. The gate's test.bash fixture builds without it.
+	- Verified: --backlog-run-quick lint suite passed, backlog-check passed.
+	- Swept: grep for gh-account across the repo outside logs, artifacts and backlog history.
+	- Branch: round-20261111
+
+- Code Review 20261110 enhancement 5: The README says nothing about exit statuses to someone scripting gitsby
+	- ID: 2026111010494722
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: The README gets the exit status table from style-guide_ui-ux.md: 0 for success and for nothing to do, 1 for a refusal, a failed step or a no at the prompt, and the tool's own status from `raw`. A check fails if the two tables differ.
+	- Origin: The exit status table in style-guide_ui-ux.md, and 2.1.0 before it. No round raised it. Confirmed: `gitsby pr foo`, `gitsby br list extra` and a refused `pullcom` with no terminal all exit 1, and the README doesn't say so.
+	- Notes: The UI style guide is the only place the exit statuses are written down, and it isn't where a script author looks.
+	- Decisions:
+		- Usage errors keep exit 1 (2026-11-10). The README's promise that nothing scripted stops working outweighs the convention, and most scripts test for non-zero anyway.
+	- Decided against: exit 2 for usage errors, as getopt-based tools and bash builtins do, or 129 as git does. A script that tests for exactly 1 would change, and parity.bash would need its usage cases carved out.
+	- Actual fix [Enhancement]: The README's Commands section ends with what a script can rely on: `-q` answers yes and asks nothing, `raw` hands stdout to its tool, and the exit status table, copied from the UI style guide.
+	- Branch: cr1110
+	- Test case: test.bash [df4f7]. It fails against the README before the change, and with the guide's table changed by one letter.
+	- Closed: 20261110-1213
+
+- Code Review 20261110 enhancement 1: pr takes no list, and an unknown word after it gets the Syntax block
+	- ID: 2026111010494773
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: `pr list` is the same as a bare `pr`, as `br list` and `account list` are, and the help shows `pr [list]`. An unknown word after `pr` gets the line the other nouns give, such as "Unknown 'pr' subcommand 'foo'. One of: list, create, ok, or a number." `pr` folds to tokens in collapseCommand like `repo`, `br` and `account`, so sortCommand stops parsing subcommand words for 1 noun only.
+	- Origin: args.go:239 from 3d22222, 2026-08-17, the port, which kept 2.1.0's `pr` handling. No round saw it. Confirmed: `gitsby pr list` and `gitsby pr foo` both print the Syntax block and exit 1.
+	- Decided against: listing `acct`, `account show` and `br clean` beside `new` and `go` in design.md. They are v2.1.0 spellings, kept by the permanent alias rule like the rest.
+	- Decisions:
+		- The flat name stays `pr`, with the verb settled in collapseCommand. About 15 sites read the verb from `pr.sub`, and renaming them to tokens before rc.1 would change a lot for what it buys. What the item asked for, an unknown word refused the way the other nouns refuse one, needs only the word settled.
+	- Actual fix [Enhancement]: `pr list` is a bare `pr`, and the help and the README show `pr [list]`. An unknown word gets "Unknown 'pr' subcommand 'foo'. One of: list, create, ok, or a pull request number." sortPr's number check, which collapseCommand now makes, is gone.
+	- Swept: design.md's `pr <n>` is `pr <number>`.
+	- Branch: cr1110
+	- Test case: Go [df4em], test.bash [df4en] and [df4ep]. [df4em] fails with the `pr` case taken out of collapseCommand, and [df4en] and [df4ep] fail against the build before it.
+	- Closed: 20261110-1150
+
+- Code Review 20261110 enhancement 2: -- isn't taken as the end of options
+	- ID: 2026111010494760
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: `--` ends gitsby's options, and everything after it is positional, as POSIX's utility guidelines and git have it. `gitsby pullcom -- '-v bump'` commits with that message. A `--` after `raw <tool>` stays the tool's.
+	- Origin: switchRegex at args.go:21 from 8da8951, 2026-08-17, which matches neither `-` nor `--`. 2.1.0 did the same. Confirmed: `gitsby -q pullcom --` made a commit with the subject `--`, and `gitsby pullcom -- msg` refuses with "Unexpected extra argument 'msg'". Today `-m` is the only way to give a message that starts with a dash.
+	- Notes: gitsby already passes `--` to git ahead of a clone's folder, for the same reason.
+	- Actual fix [Enhancement]: Both parsers take a first `--` as the end of gitsby's options. A value an option is waiting for still wins, so `-m --` is the message `--`. The help's option list, the README's Options line and the UI style guide name it.
+	- Branch: cr1110
+	- Test case: Go [df4eq], test.bash [df4er]. [df4eq] fails against the parser before it, and [df4er]'s command made no commit with the build before it.
+	- Checks changed: fuzz.bash's bad subcommands no longer include `--`, so [dadv5], [db002] and [db003] don't feed it. After a noun it now leaves the bare noun, which `br`, `repo url` and `account` take. It stays among the bad commands for [dabe3], where it is still refused.
+	- Closed: 20261110-1155
+
+- Code Review 20261110 enhancement 3: A command's --help prints the whole help screen, not that command's syntax
+	- ID: 2026111010494747
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: `--help` or `-h` after a command prints that command's Syntax block, the one a wrong argument count gets, and exits 0. A bare `--help` keeps the whole screen. Commands with no Syntax block yet get one.
+	- Origin: args.go:62 from 2a3ab8f, 2026-09-28. Confirmed: `gitsby br create -h` prints the full help. `--help` after a command was made to work on purpose in the 2.x days, since asking a subcommand for help is the reflex every git user has. Syntax blocks exist for `repo`, `pr`, `raw`, `account set` and `account unset`.
+	- Decisions:
+		- `help <command>` and `-h <command>` ask about that command too, as `git help` does. Before, a help word in the first slot always printed the whole screen.
+		- The block also names the options the command takes, read from the same option table as the refusals.
+		- A noun alone, such as `br --help`, gets the noun's block with every verb, and a line naming each verb's own `--help`.
+	- Actual fix [Enhancement]: `helpFor` in usage.go reads the command words past the options and prints that entry of the `usages` table: its Syntax block, its help line, and its options. `raw --help` stops at gitsby's parser instead of being refused as an option after `raw`.
+	- Branch: cr1110
+	- Test case: Go [df4f1], test.bash [df4f2] to [df4f5]. [df4f1] fails with helpFor stubbed out, and [df4f2] to [df4f5] each fail against the build before it.
+	- Closed: 20261110-1205
+
+- Code Review 20261110 enhancement 4: The help's opening lines leave out the plan and the question
+	- ID: 2026111010494735
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-104947
+	- Opened by: jim-collier
+	- Requirements [Feature]: The opening paragraph of `gitsby --help` says that a command which changes anything shows the git it will run and asks first, as well as checking state.
+	- Origin: help.go:29 from 4918b5b, 2026-08-19. No round saw it. Confirmed by reading: the help says each command checks state and is safe to re-run. The README opens on showing the git and asking, and that is design.md's second goal. design.md:126 says the help is the only documentation most people read.
+	- Actual fix [Enhancement]: The help's opening says a command that changes anything shows the repo state and the exact git it will run, then asks first, before the state checks. `--about` prints the same lines.
+	- Branch: cr1110
+	- Test case: test.bash [df4f6], which fails against the build before it.
+	- Closed: 20261110-1208
 
 - Code Review 20261109 enhancement 2: The last rounds left Go duplicates and leftovers
 	- ID: 2026110912215213
