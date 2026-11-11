@@ -18,6 +18,8 @@
 ##		- Each command has an expected count, written beside it below. Its limit is
 ##		  that plus 2, or a tenth again, whichever is larger. A count over the limit
 ##		  fails, --record or not. A fix that lowers a count lowers the number too.
+##		- A command that exits nonzero fails its measure, since the count of a run that
+##		  stopped early is not the cost of the command.
 ##		- Baseline is the newest previous run in the artifact dir, GFS-rotated like the
 ##		  lint logs. No baseline yet means the first run records one and passes.
 ##	Syntax:
@@ -119,12 +121,15 @@ for arg in "\$@"; do
 done
 exit 255
 EOF
-## tea has one login, for the Gitea folder's host.
+## tea has one login, for the Gitea folder's host. No pull request is open yet, and creating one
+## prints its link.
 cat > "${work}/bin/tea" <<EOF
 #!${BASH}
 case "\$1 \$2" in
 	"--version ") echo "Version: 0.10.1	golang: 1.24.4" ;;
 	"logins list") printf '"Name"\t"URL"\t"SSHHost"\t"User"\t"Default"\n"work"\t"https://gitea.example.test"\t""\t"acme"\t"true"\n' ;;
+	"pulls list")  printf '"index"\t"head"\n' ;;
+	"pulls create") echo "https://gitea.example.test/acme/proj/pulls/1" ;;
 	*)             printf '%s\n' "fake tea: unhandled: \$*" >&2; exit 2 ;;
 esac
 EOF
@@ -266,10 +271,12 @@ if command -v script >/dev/null 2>&1 && script -qec true /dev/null </dev/null >/
 ## Label: test ID (kept out of the baseline), expected count, pipe or tty, folder. A folder
 ## starting 'acct' gets the accounts file. Headroom for a git that adds a helper: 2, or a tenth.
 fHeadroom(){ local n=$(( $1 / 10 )); (( n < 2 )) && n=2; echo "${n}"; }
-declare -a ids=() labels=() counts=() expects=() limits=() skipped=()
+declare -a ids=() labels=() counts=() expects=() limits=() skipped=() exits=()
 fMeasure(){
 	local label="${1#\[*\] }" id="${1%%\] *}" expect="$2" how="$3" folder="$4"; shift 4
 	local config="${noAccounts}" traceFile="${work}/trace.out" n=0 skip=""
+	## strace and script -e both exit as the traced command did.
+	local -i rc=0
 	[[ "${folder}" == acct* ]] && config="${accounts}"
 	fRestore
 	: > "${traceFile}"
@@ -280,9 +287,9 @@ fMeasure(){
 		printf -v traced '%q ' strace -f -e trace=execve -o "${traceFile}" "${exe}" "$@"
 		## The pty gets a size outside the trace, as a real terminal's has. A pty nobody sized
 		## reads as width 0, and gitsby then asks tput. TERM is set so tput has an answer.
-		( cd "${work}/live/${folder}" && GITSBY_CONFIG="${config}" TERM=xterm SHELL="${BASH}" script -qec "stty cols 120 rows 40 2>/dev/null; ${traced}" /dev/null </dev/null ) >/dev/null 2>&1 || true
+		( cd "${work}/live/${folder}" && GITSBY_CONFIG="${config}" TERM=xterm SHELL="${BASH}" script -qec "stty cols 120 rows 40 2>/dev/null; ${traced}" /dev/null </dev/null ) >/dev/null 2>&1 || rc=$?
 	else
-		( cd "${work}/live/${folder}" && GITSBY_CONFIG="${config}" strace -f -e trace=execve -o "${traceFile}" "${exe}" "$@" ) >/dev/null 2>&1 || true
+		( cd "${work}/live/${folder}" && GITSBY_CONFIG="${config}" strace -f -e trace=execve -o "${traceFile}" "${exe}" "$@" ) >/dev/null 2>&1 || rc=$?
 	fi
 	[[ -n "${skip}" ]] || n="$(grep -c 'execve(' "${traceFile}" 2>/dev/null || true)"
 	ids+=("${id#\[}")
@@ -291,6 +298,7 @@ fMeasure(){
 	expects+=("${expect}")
 	limits+=("$(( expect + $(fHeadroom "${expect}") ))")
 	skipped+=("${skip}")
+	exits+=("${rc}")
 }
 
 ## Expected counts are today's. --no-fetch on all but 3, since a fetch's cost is mostly git's own.
@@ -318,7 +326,7 @@ fMeasure "[df04s] status in a tea ssh folder"          16 tty  acct-gitea  --no-
 fMeasure "[df04t] whoami in a tea ssh folder"          12 tty  acct-gitea  --no-fetch whoami
 fMeasure "[df04v] repo url in a tea ssh folder"         8 pipe acct-gitea  -q --no-fetch repo url
 fMeasure "[df051] pullcom in a tea ssh folder"         27 pipe acct-gitea  -q --no-fetch pullcom "spawn count"
-fMeasure "[df052] pr create in a tea ssh folder"       37 pipe acct-gitea  -q --no-fetch pr create
+fMeasure "[df052] pr create in a tea ssh folder"       42 pipe acct-gitea  -q --no-fetch pr create
 fMeasure "[df37x] pr create in a glab ssh folder"      31 pipe acct-glab   -q --no-fetch pr create
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -329,7 +337,7 @@ mkdir -p "${countDir}"
 baseline=""
 for f in "${countDir}"/spawn_*.tsv; do [[ -f "${f}" ]] && baseline="${f}"; done
 
-declare -i regressed=0 overLimit=0 underLimit=0
+declare -i regressed=0 overLimit=0 underLimit=0 failedRun=0
 ## One line per command, whatever it did, so a -q-less run shows each count and its verdict:
 ## PASS, FAIL or SKIP, then its test ID, as the suites print theirs.
 if [[ -z "${baseline}" ]]; then
@@ -340,6 +348,11 @@ fi
 for ((i = 0; i < ${#labels[@]}; i++)); do
 	if [[ -n "${skipped[i]}" ]]; then
 		((quiet)) || fEcho_Clean "  SKIP ${ids[i]} ${labels[i]} (${skipped[i]})"
+		continue
+	fi
+	if (( exits[i] != 0 )); then
+		fEcho_Clean "  FAIL ${ids[i]} ${labels[i]}: exited ${exits[i]}, so ${counts[i]} is the count of a failed run"
+		failedRun=1
 		continue
 	fi
 	if (( counts[i] > limits[i] )); then
@@ -372,6 +385,9 @@ else fFail "[dez8s] the fixture's origins are as built, after every command"; or
 
 if ((originMoved)); then
 	fDie "spawn counts ran against an origin a command had changed; nothing recorded."
+fi
+if ((failedRun)); then
+	fDie "a measured command failed; nothing recorded."
 fi
 if ((overLimit)); then
 	fDie "spawn counts went over their limits; nothing recorded."$'\n'"  A deliberate rise raises the expected count beside the command in ${BASH_SOURCE[0]##*/}."
@@ -415,3 +431,4 @@ TZ=UTC0 gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript.
 ##		- 20261109 JC: br merge, with and without a fetch, br switch with --staged, and pr create in a GitLab folder over ssh, with a fake glab.
 ##		- 20261109 JC: Records are named and rotated in UTC. The box named them in its own time and the image in UTC, so west of UTC a box run took the image's older record as its baseline, and rotation dropped its own.
+##		- 20261110 JC: A measure fails when its command exits nonzero. The fake tea answers pulls list and pulls create, so pr create in the Gitea folder runs to the end.

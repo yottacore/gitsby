@@ -307,7 +307,7 @@ fSameExit "[db602] a bad 'raw' tool is refused by both"           "${tree}" -q r
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Renamed commands. 'update' and 'br land' are permanent aliases, so the old name must still
-## route to the same place. Run outside a repo, where both builds refuse.
+## route to the same place. Against the frozen build, outside a repo, where both refuse.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fEcho_Clean
 fEcho_Clean "-- renamed commands, old spellings"
@@ -318,14 +318,37 @@ fSame "[dbemz] 'update' answers as it always did"      "${notRepo}" -q -NoFetch 
 fSame "[dben0] 'br land' answers as it always did"     "${notRepo}" -q -NoFetch br land
 
 ## Against itself, since the frozen build never heard the new names. Two spellings of one
-## command have to be one command, not merely two that are both accepted.
+## command have to be one command, not merely two that are both accepted. Outside a repo every
+## repo command prints the same refusal, so these run in one where pullcom, sync and br merge
+## each do something the others don't: a feature branch, pushed, with a clean tree. Each run
+## acts, under -q, on a fresh copy at the same path, with the commit dates pinned, so one command
+## gives the same bytes every time.
+aliasPristine="${work}/alias-pristine"; aliasLive="${work}/alias"
+git init --quiet --bare -b main "${aliasPristine}/origin.git"
+git clone --quiet "${aliasPristine}/origin.git" "${aliasPristine}/tree" 2>/dev/null
+( cd "${aliasPristine}/tree" && echo a > a.txt && git add a.txt && git commit --quiet -m init && git push --quiet -u origin main \
+	&& git checkout --quiet -b feature && echo b > b.txt && git add b.txt && git commit --quiet -m b && git push --quiet -u origin feature 2>/dev/null )
+## cp -a keeps the clone's absolute origin, so it names the live copy's.
+git -C "${aliasPristine}/tree" remote set-url origin "${aliasLive}/origin.git"
+fRunAlias(){
+	fSafeRm_IfThere "${aliasLive}"; cp -a "${aliasPristine}" "${aliasLive}"
+	( export GIT_AUTHOR_DATE='2026-01-01T00:00:00Z' GIT_COMMITTER_DATE='2026-01-01T00:00:00Z'
+	  fRunNew "${aliasLive}/tree" -q -NoFetch "${@}" )
+}
+## The fixture has to tell the commands apart, or every check below passes on any routing.
+aliasPullcom="$(fRunAlias pullcom)"; aliasSync="$(fRunAlias sync)"; aliasMerge="$(fRunAlias br merge)"
+if [[ "${aliasPullcom}" != "${aliasSync}" && "${aliasPullcom}" != "${aliasMerge}" && "${aliasSync}" != "${aliasMerge}" ]]; then
+	fOk  "[df4zh] the alias fixture tells pullcom, sync and br merge apart"
+else
+	fBad "[df4zh] the alias fixture tells pullcom, sync and br merge apart"
+fi
 fSameSpelling(){
-	local -r label="${1}"; local -r dir="${2}"; local -r old="${3}"; local -r new="${4}"; shift 4
+	local -r label="${1}"; local -r old="${2}"; local -r new="${3}"; shift 3
 	local a="" b=""
 	# shellcheck disable=SC2086  ## deliberate word-split: these are multi-word commands ('br land').
-	a="$(fRunNew "${dir}" -q -NoFetch ${old})"
+	a="$(fRunAlias ${old})"
 	# shellcheck disable=SC2086  ## ${new} is a list of arguments, split on purpose.
-	b="$(fRunNew "${dir}" -q -NoFetch ${new})"
+	b="$(fRunAlias ${new})"
 	if [[ "${a}" == "${b}" ]]; then
 		fOk "${label}"
 	else
@@ -333,9 +356,9 @@ fSameSpelling(){
 		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
 	fi
 }
-fSameSpelling "[dben1] 'pullcom' and 'update' are one command"   "${notRepo}" "update"   "pullcom"
-fSameSpelling "[dben2] 'br merge' and 'br land' are one command" "${notRepo}" "br land"  "br merge"
-fSameSpelling "[deyw8] 'pull' and 'pullcom' are one command"     "${notRepo}" "pull"     "pullcom"
+fSameSpelling "[dben1] 'pullcom' and 'update' are one command"   "update"   "pullcom"
+fSameSpelling "[dben2] 'br merge' and 'br land' are one command" "br land"  "br merge"
+fSameSpelling "[deyw8] 'pull' and 'pullcom' are one command"     "pull"     "pullcom"
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Plans. The pull step changed on purpose on 2026-10-03, merging the fetched upstream rather than
@@ -412,3 +435,4 @@ fEcho_Clean "parity passed: ${pass}, differed: ${fail}"
 ##		- 20261109 JC: No build at src-go/gitsby fails, as in fuzz.bash, rather than skipping.
 ##		- 20261109 JC: Each flat fixture is written to its own file, since a second conversion of one path in the same second kept it flat.
 ##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript.
+##		- 20261110 JC: The new spellings are compared in a repo where pullcom, sync and br merge each print something of their own, since outside one every repo command prints the same refusal and an alias routed to the wrong command passed.

@@ -6453,6 +6453,15 @@ GHEOF
 		chmod +x "${sc}/cicd/utility/spawn-count-near.bash"
 		fAssert "[ddf82] and passes a count one over its expected one" \
 			bash -c "out=\$('${sc}/cicd/utility/spawn-count-near.bash' 2>&1) && grep -qE '^  PASS dbftf status: 4\$' <<< \"\$out\""
+		## A command that stops early starts fewer processes, which would read as a gain.
+		cp -R "${sc}" "${work}/scx"
+		fStub "${work}/scx/src-go/gitsby" <<-'EOF'
+			#!/bin/sh
+			/bin/sh -c :; /bin/sh -c :; /bin/sh -c :
+			case " $* " in *" whoami "*) exit 1 ;; esac
+		EOF
+		fAssert "[df4zg] and fails a command that exits nonzero, whatever its count, and records nothing" \
+			bash -c "was=\$(ls '${work}/scx/cicd/artifacts/spawn'); out=\$('${work}/scx/cicd/utility/spawn-count.bash' -q 2>&1); [[ \$? == 1 ]] && grep -qE '^  FAIL dbjeq whoami: exited 1, so [0-9]+ is the count of a failed run\$' <<< \"\$out\" && ! grep -q 'FAIL dbftf' <<< \"\$out\" && [[ \$(ls '${work}/scx/cicd/artifacts/spawn') == \"\$was\" ]]"
 		## A record from the image an hour ago, in UTC. A run on a box west of UTC is newer, so it's
 		## the one left as latest, not named hours before the image's.
 		cp -R "${sc}" "${work}/sctz"

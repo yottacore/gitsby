@@ -701,7 +701,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 38: parity [dben1], [dben2] and [deyw8] can't fail on an alias routed to the wrong command
 	- ID: 2026111016331982
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
@@ -711,6 +711,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 in a copy of the tree.
 	- Possible cause [Bug]: fSameSpelling runs in notRepo, at parity.bash:336-338.
 	- Origin: 1928f35, 2026-08-18, and 8f6662c for [deyw8]. Confirmed.
+	- Actual cause [Bug]: [dben1], [dben2] and [deyw8] ran both spellings in a folder that isn't a repo, where every repo command refuses with the same line, so only a spelling that stopped parsing could differ.
+	- Actual fix [Bug]: parity.bash runs both spellings in a repo on a pushed feature branch, each with -q on a fresh copy at the same path and pinned commit dates, and compares the whole output. pullcom, sync and br merge print different plans and results there. New check [df4zh] fails the run if the fixture stops telling those 3 apart.
+	- Decisions: The fixture's tree is clean, since a commit's default message has the time in it, which would make 2 runs of one command differ. The checks against the frozen build, [dbemz] and [dben0], stay outside a repo, since they ask only that the old name is still taken.
+	- Branch: round-20261111
+	- Test case: parity.bash [dben1], [dben2], [deyw8], and [df4zh] for the fixture.
+	- Verified: with pull routed to sync in args.go, the old parity.bash passed 30/0 and the new one failed [deyw8]. update to sync failed [dben1], br land to br prune and to br list failed [dben2]. Unchanged build: parity 31/0. Quick run passed, all areas: test.bash 1967/0, fuzz 310/0, parity 31/0, spawn counts passed. shellcheck and test-id.bash --check clean.
+	- Swept: parity.bash's other notRepo checks, [dbemz] and [dben0], which compare against the frozen build and are kept. test.bash greps no fSameSpelling or notRepo.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261110-203845
 
 - Code Review 20261110b item 39: test.bash [dbft4] and [dbft3] miss most build sites
 	- ID: 2026111016331970
@@ -738,7 +747,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 40: spawn-count passes a measure whose command failed, and [df052] measures a failed run
 	- ID: 2026111016331957
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
@@ -748,6 +757,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 in a copy of the tree. The other 23 measures exit 0.
 	- Possible cause [Bug]: spawn-count.bash:285 ends the run with `|| true`.
 	- Origin: e6fca88, 2026-10-03, and c31a204, 2026-11-07, for [df052]. Confirmed.
+	- Actual cause [Bug]: fMeasure ended each run with '|| true', so a command's exit code was never read. The fake tea answered neither 'pulls list' nor 'pulls create', so [df052] stopped at the create.
+	- Actual fix [Bug]: fMeasure keeps the exit code, which strace and script -e both pass on. A measure whose command exits nonzero prints FAIL with the code and the run records nothing, ahead of the limit and baseline checks. The fake tea lists no open pull request and prints a link for a create.
+	- Decisions: [df052]'s expected count goes from 37 to 42 (dated 2026-11-10), today's count of a run that ends at exit 0. Every box's spawn baseline has 37 for it, so the first run after this one on a box needs --record, as a deliberate rise does. The main checkout's baseline was recorded at 42.
+	- Branch: round-20261111
+	- Test case: test.bash [df4zg] (a build that exits 1 for whoami fails dbjeq and records nothing), and spawn-count.bash [df052].
+	- Verified: [df4zg]'s check, run against the old spawn-count.bash, exits 0 and fails; against the new one it passes. The new script with the old fake tea fails [df052] as exited 1 at 37. With the new fake, all 24 measures exit 0. Quick run passed, all areas: test.bash 1967/0, fuzz 310/0, parity 31/0, spawn counts passed. shellcheck clean.
+	- Swept: every fMeasure run path, pipe and tty. The other fake tools: gh, ssh and glab answer every call the measures make, since the other 23 exit 0.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261110-203845
 
 - Code Review 20261110b item 41: 114 test.bash checks drop out with no SKIP line where pwsh or a pty is missing
 	- ID: 2026111016331944
