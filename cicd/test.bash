@@ -7749,8 +7749,14 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 					&& out="$(pwsh -NoProfile -NonInteractive -File "$1" </dev/null)" && [[ "${out}" == "removed ${TEMP}/$2" && ! -e "${TEMP}/$2" && -d "${TEMP}/$2.gone/sub" ]] \
 					&& pwsh -NoProfile -NonInteractive -Command ". \"$1.fn.ps1\"; if ((fSafeRm \"${TEMP}/test_gitsby_2\") -or (fSafeRm \"${TEMP}/other_1\") -or (fSafeRm \"${TEMP}/test_gitsby_3\") -or (fSafeRm \"${TEMP}/kept/../$2.gone\")) { exit 1 }" </dev/null \
 					&& [[ -L "${TEMP}/test_gitsby_2" && -d "${TEMP}/other_1" && -d "${TEMP}/kept" && -d "${TEMP}/$2.gone" ]]' _ "${rtGuard}" "${rtLeaf}"
+			## A temp folder with a cmd metacharacter in its path is refused, and nothing is removed.
+			# shellcheck disable=SC2016  ## the inner shell does the expanding.
+			fAssert "[df50j] the Windows box's guard refuses a folder whose path holds a character cmd acts on, and leaves it" \
+				env PATH="${rtWinBin}:${PATH}" bash -c 'mkdir -p "$1/a&b/test_gitsby_1/sub" && out="$(TEMP="$1/a&b" pwsh -NoProfile -NonInteractive -Command ". \"$2\"; if (fSafeRm \"$1/a&b/test_gitsby_1\") { exit 1 }" 2>&1 </dev/null)" \
+					&& [[ "${out}" == *"safe-rm: refused, a character cmd would act on:"* && -d "$1/a&b/test_gitsby_1/sub" ]]' _ "${rtWinTemp}" "${rtGuard}.fn.ps1"
 		else
 			fSkip "[dez5g] needs pwsh"
+			fSkip "[df50j] needs pwsh"
 		fi
 		## Handed an image, as stage 7 does, every box's Go tests come from its Go, with the folder
 		## the build goes in mounted at its own path. A docker that writes the -o file stands in.

@@ -827,12 +827,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b enhancement 3: safe-rm.ps1 passes its path to cmd unquoted
 	- ID: 2026111016331906
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
 	- Requirements [Feature]: Refuse a path with any of `&|<>^%"()`, or quote it for cmd.
 	- Origin: da39cf8, 2026-11-06. Plausible: Windows PowerShell 5.1 quotes an argument only when it has a space, so a TEMP with `&` would split the rmdir. No box has one.
+	- Actual fix: safe-rm.ps1 refuses a folder whose full path holds any of &|<>^%"(), with a note, before rmdir runs.
+	- Decisions: Refuse, not quote. Windows PowerShell 5.1 re-quotes an argument that has a space, so a quote added here could double up, and a % is expanded by cmd even inside quotes.
+	- Branch: round-20261111
+	- Test case: test.bash [df50j] runs the guard under pwsh with TEMP holding an &, and a cmd.exe stub that would move the folder. Skips where there's no pwsh.
+	- Verified: [df50j] fails on the previous safe-rm.ps1 (the stub moves the folder) and passes after; [dez5g] passes on both. --backlog-run-quick lint suite passed on the new guard. Not run on a Windows box. The refusal runs before cmd, so the stage 7 run covers only that the usual path is still taken.
+	- Swept: safe-rm.sh and safe-rm.bash don't go through cmd. No other cmd.exe call takes the guard's path.
+	- Acceptance signoff: Self-closed: its test passed.
+	- Closed: 20261110-211004
 
 - Code Review 20261110b enhancement 4: The image installs markdownlint-cli's dependencies with no lock
 	- ID: 2026111016331893
