@@ -33,6 +33,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- release.bash says nothing is pushed after 'br create' pushed the version branch
+	- ID: 2026111019574118
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-195741
+	- Opened by: jim-collier
+	- Related IDs: 2026111016332243
+	- Steps to reproduce [Bug]: Have phase 2 fail at the downloads table or the Windows resource stamp, after `br create`.
+	- Incorrect behavior [Bug]: It says "the branch is created but nothing is pushed". `br create` pushes the new branch to origin as it makes it.
+	- Expected behavior [Bug]: The message says the branch is on origin, with no PR, as the check after `br create` now does.
+	- Reproduced [Bug]: No. Read only: `publishBranch` in mutate.go runs `git push -u origin HEAD`.
+	- Estimated effort: Low
+	- Origin: Seen 2026-11-10 while fixing 2026111016332243.
+
 - Code Review 20261110b item 1: raw glab sends the folder account's token to any GitLab host glab is pointed at
 	- ID: 2026111016332442
 	- Type: Bug
