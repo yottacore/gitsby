@@ -1760,6 +1760,8 @@ fRunSuite(){
 	if ((hasPty)); then
 		fAssertOut  "[ddj6s] asked in person, it warns above the prompt" "WARNING: This pushes your work straight to 'main'\\. But the recommended workflow" \
 			fAnswerPrompt n "cd '${cloneA}' && '${gitsby}' sync 'push file2'"
+	else
+		fSkipBlock "the warning above the prompt (no pty)"
 	fi
 	fAssertOut  "[ddj6t] help lists --direct"  '^  --direct \.+: Let sync push straight to' "${gitsby}" --help
 	## sync: publishes; remote matches local
@@ -2454,6 +2456,8 @@ fRunSuite(){
 		fAssertOut "[dd5c4] a branch moved off dev during the prompt is kept"  "'stray' is no longer contained"  cat "${work}/$1-pn11.out"
 		fAssert    "[dd5c5] and kept here"  bash -c "[[ \"\$(git -C '${pnA}' rev-parse refs/heads/stray)\" == \"\$(cat '${work}/$1-pn11off')\" ]]"
 		fAssert    "[dd5c6] and on origin"  bash -c "git -C '${pnOrigin}' show-ref --verify --quiet refs/heads/stray"
+	else
+		fSkipBlock "br prune with a branch moved during the prompt (no pty)"
 	fi
 	## With the fetch on, someone pushes while the prompt waits. The second clone's output is kept
 	## off the pipe, since everything on it is typed at the prompt.
@@ -2480,6 +2484,8 @@ fRunSuite(){
 		} | script -qec "cd '${pnA}' && '${gitsby}' br prune" /dev/null > "${work}/$1-pn4.out" 2>&1 || true
 		fAssert "[dcmhh] a branch moved on origin during the prompt is kept" \
 			bash -c "[[ \"\$(git -C '${pnOrigin}' rev-parse refs/heads/late)\" == \"\$(cat '${work}/$1-pn4late')\" ]]"
+	else
+		fSkipBlock "br prune with origin moved during the prompt (no pty)"
 	fi
 	## Last, since origin goes away for it: renamed rather than removed, and put back after.
 	(
@@ -2542,6 +2548,8 @@ fRunSuite(){
 		## The folder goes on that File line, not inside the status sentence.
 		fAssertOut "[df36e] and the status line has no path"  '^\[ Cloned\. \]$' \
 			bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${origin}' sub/named3"
+	else
+		fSkipBlock "repo clone's folder in full (not on Windows)"
 	fi
 	fAssertFail "[dab8y] repo clone over a different-url clone refused"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o3}' cl1"
 	fAssertOut "[df363] and names the folder in full on its own line"  "^  File: ${cl//./\\.}/cl1$" \
@@ -3497,6 +3505,8 @@ GHEOF
 			fAnswerPrompt n "${idSync} '${gitsby}' -NoFetch --config '${id}/mine.shcl' sync 'W'"
 		fAssertOut    "[dd5cv] an interactive pr create does say it"  'gh does the GitHub side of this, so it happens as .alice.' \
 			fAnswerPrompt n "cd '${idc}' && ${idEnv} FAKE_GH_LOGIN=alice FAKE_SSH_LOGIN=bob '${gitsby}' -NoFetch pr create 'T'"
+	else
+		fSkipBlock "the interactive sync warning (no pty)"
 	fi
 	## Keyed on pushing, not on mutating: 'pullcom' commits locally and sends nothing, so the key
 	## origin would push with is nothing to refuse over - and the refusal paid a live ssh probe for
@@ -3618,6 +3628,8 @@ GHEOF
 		## declined. It used to be reported only afterwards, and on the dev path not at all -
 		## so the one route that installs an unverified file was the quiet one.
 		fAssertOut "[db5xj] the dev plan says it will not verify"   'NOT verify the download'      bash -c "${iRun} --target user </dev/null"
+	else
+		fSkipBlock "installer --target runs (no setsid, and a /dev/tty to fall back to)"
 	fi
 	## The PowerShell installer's ValidateSet does the same job as the case arms above.
 	if command -v pwsh >/dev/null 2>&1; then
@@ -3635,6 +3647,8 @@ GHEOF
 		if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
 			fAssertOut "[db5xm] ps plan announces the PATH change"  'to your account PATH' \
 				bash -c "pwsh -NoProfile -File '${instPs}' -Release dev </dev/null 2>&1"
+		else
+			fSkipBlock "the ps plan's PATH change (Windows only)"
 		fi
 		## Git Bash rewrites a unix-absolute argument into a Windows path before the native
 		## pwsh sees it, so '/etc/passwd' would arrive as 'C:/Program Files/Git/etc/passwd'
@@ -3667,6 +3681,8 @@ GHEOF
 			fAssertOut "[dafre] installer leaks no StrictMode"      'strict stayed off' fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; try { \$q = \$neverSet; 'strict stayed off' } catch { 'STRICT LEAKED' }"
 			fAssertOut "[dafrf] installer leaks no ErrorAction"     'EAP=Continue'      fPwshText "${readInst}; try { \$t | Invoke-Expression } catch { }; \"EAP=\$ErrorActionPreference\""
 			fAssertOut "[dafrg] dev setup's iex form asks first"    'CAUGHT: Aborted'   fPwshText "\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${instDevNative}')); try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }"
+		else
+			fSkipBlock "the iex form without a tty (no setsid)"
 		fi
 		## Byte 0 must be the shebang: a BOM ahead of it means the kernel won't run the
 		## file directly either, which the one-liner checks above can't see.
@@ -3681,6 +3697,8 @@ GHEOF
 		## pins the decode in the source rather than exercising it.
 		fAssert "[dan3s] install.ps1 decodes the SHA256SUMS body from bytes" \
 			bash -c "grep -q 'byte\[\]' '${instPs}'"
+	else
+		fSkipBlock "the PowerShell installer checks (no pwsh)"
 	fi
 
 	## The published installers. Past the argument parse they need the network, so these stop
@@ -3906,6 +3924,8 @@ GHEOF
 	if ((hasPty)); then
 		fAssert    "[dcntz] and a declined prompt"  fBlankAfter '^Aborted\.$' \
 			fAnswerPrompt n "env HOME='${eu}/h4' PATH='${ei}/bin:${PATH}' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset' bash '${goInst}'"
+	else
+		fSkipBlock "the installer's declined prompt (no pty)"
 	fi
 	## Ctrl-D at the prompt is a no, the same as a closed stdin.
 	if ((hasPty)); then
@@ -3914,6 +3934,8 @@ GHEOF
 			bash -c "grep -q '/SHA256SUMS\$' '${eu}/calls6' && ! grep -q '/gitsby-' '${eu}/calls6' && [[ ! -e '${eu}/h6/.local/bin/gitsby' ]]"
 		## The failed read used to end the script before the answer was looked at, with no word said.
 		fAssert    "[dd80m] and says so, with the blank line after"  fBlankAfter '^Aborted\.$' cat "${eu}/out6"
+	else
+		fSkipBlock "the installer's end of input at the prompt (no pty)"
 	fi
 	## Each of these refusals has to leave nothing behind. Turned into a warning, any one of them
 	## puts an unverified binary on PATH and the run still looks like a success.
@@ -3969,6 +3991,8 @@ GHEOF
 		fAssert    "[dd5dh] go installer creates the system dir before installing into it" \
 			bash -c "env HOME='${es}/home' PATH='${es}/bin:${ei}/bin:${PATH}' FAKE_SUDO_LOG='${es}/log' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset' bash '${goInst}' --target system -y >/dev/null 2>&1; \
 				[[ \"\$(head -n 1 '${es}/log')\" == 'mkdir -p /usr/local/bin' ]] && [[ \"\$(sed -n 2p '${es}/log')\" == 'install -m 755 '* ]]"
+	else
+		fSkipBlock "go installer system dir checks (/usr/local/bin is writable here)"
 	fi
 	## Both of these were found at the copy, after the download, or promised in the plan and then
 	## failed as a missing command.
@@ -3981,6 +4005,8 @@ GHEOF
 	if [[ ! -w /usr/local/bin ]]; then
 		fAssertOut "[dd817] go installer refuses a system install with no sudo, before the plan"  'there is no sudo here' \
 			bash -c "env HOME='${eno}/home' PATH='${eno}/bin' FAKE_SUMS='${ei}/SHA256SUMS' FAKE_ASSET='${ei}/asset' '${eno}/bin/bash' '${goInst}' --target system -y 2>&1"
+	else
+		fSkipBlock "go installer write checks (/usr/local/bin is writable here)"
 	fi
 	mkdir -p "${eno}/rohome/.local"; chmod 555 "${eno}/rohome/.local"
 	fAssertOut "[dd818] go installer refuses a user folder it can't write, before the plan"  "\.local isn't writable by you" \
@@ -4120,6 +4146,8 @@ GHEOF
 			fAssertOut "[dbfm1] and leaves the session alive too"  'HOST ALIVE'        fPwshText "${goReadInst}; try { & ([scriptblock]::Create(\$t)) -Release dev -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 			fAssertOut "[dbfm2] go installer leaks no StrictMode"  'strict stayed off' fPwshText "${goReadInst}; try { \$t | Invoke-Expression } catch { }; try { \$q = \$neverSet; 'strict stayed off' } catch { 'STRICT LEAKED' }"
 			fAssertOut "[dbfm3] go installer leaks no ErrorAction" 'EAP=Continue'      fPwshText "${goReadInst}; try { \$t | Invoke-Expression } catch { }; \"EAP=\$ErrorActionPreference\""
+		else
+			fSkipBlock "the go iex form without a tty (no setsid)"
 		fi
 		## Whole installs through install.ps1, with the network stood in for by fPsInstall's
 		## stubs. The asset is the Bash one's stand-in, so these need a box that runs it.
@@ -4186,6 +4214,8 @@ GHEOF
 				fAssertOut "[dcnt2] go ps installer refuses a system install it can't write, before the plan"  "which this shell doesn't have" \
 					fPsInstall "${psi}" "${psi}/hsys" 7 "${goInstPs}" -Target system -Yes
 				fAssert    "[dcnt3] and downloads nothing first"  bash -c "! grep -q '/gitsby-' '${psi}/calls'"
+			else
+				fSkipBlock "go ps installer system write checks (/usr/local/bin is writable here)"
 			fi
 			## The options belong to the function inside, so Get-Help on the file listed none.
 			fAssert    "[dcnt4] go install.ps1's comment help names every option"  fPsHelpNamesAll "${goInstPs}" get-help
@@ -4347,7 +4377,11 @@ GHEOF
 				fRlPsInstall tagb v3.0.0 "${rl}/full.json" -Tag v3.0.0-beta.1 -Yes
 			fAssert    "[ddf9s] without looking anything up" \
 				bash -c "grep -q '/download/v3\.0\.0-beta\.1/gitsby-' '${rlp}/calls' && ! grep -qE 'releases/latest|/repos/' '${rlp}/calls'"
+		else
+			fSkipBlock "whole installs through install.ps1 (not on Windows)"
 		fi
+	else
+		fSkipBlock "the Go PowerShell installer checks (no pwsh)"
 	fi
 
 	## PowerShell only. Set-Location moves PowerShell's own location, not the process cwd, so a
@@ -4561,6 +4595,8 @@ GHEOF
 			bash -c "cd '${acWork}' && env ${acEnv} GITSBY_CONFIG='${ac}/home/${confRel}/linked.shcl' '${gitsby}' -q -NoFetch status"
 		fAssertOut "[dbfx1] and 'account list' marks it as the one in force"  '^-> linked' \
 			bash -c "cd '${acWork}' && env ${acEnv} GITSBY_CONFIG='${ac}/home/${confRel}/linked.shcl' '${gitsby}' account list"
+	else
+		fSkipBlock "folder rules through a symlink (no symlinks here)"
 	fi
 	## Overrides, both directions.
 	fAssertOut "[db00j] GITSBY_ACCOUNT overrides the folder"  '^Account .*homeacct'  bash -c "cd '${acWork}' && env ${acEnv} GITSBY_ACCOUNT=home '${gitsby}' -q -NoFetch status"
@@ -4897,6 +4933,8 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acNoDiscovery} HOME='${acNew}' PATH='${ac}/bin:${PATH}' '${gitsby}' -q -NoFetch account 2>&1"
 	if ! ((isWindows)); then
 		fAssert "[dbsrs] and nobody else can read it"  bash -c "[[ \"\$(fMode '${acNew}/${confRel}/config.shcl')\" == 600 ]]"
+	else
+		fSkipBlock "accounts file mode checks (not on Windows)"
 	fi
 	## Two edits at once each read the whole file and save it whole, and the later save dropped the
 	## earlier one's key. Now the second waits on a lock beside the file and refuses if the file
@@ -4980,8 +5018,12 @@ GHEOF
 			mkdir -p "${acUnr}/memhome/${confRel}"; ln -sf /proc/self/mem "${acUnr}/memhome/${confRel}/config.shcl"
 			fAssertOut "[dcmpm] and a found one is refused by 'account set' as a file it can't read"  "is already there, and it can't be read" \
 				bash -c "cd '${acWork}' && env ${acNoDiscovery} HOME='${acUnr}/memhome' PATH='${ac}/bin:${PATH}' ${acUnrSet} 2>&1"
+		else
+			fSkipBlock "a file that fails to read (no /proc/self/mem)"
 		fi
 		chmod 600 "${acUnrFile}"
+	else
+		fSkipBlock "unreadable accounts file checks (Windows, or root)"
 	fi
 	## A named file that isn't there is a typo, not a reason to fall back silently.
 	fAssertFail "[db00m] a named config that isn't there is refused"        bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch --config '${ac}/nope.shcl' status"
@@ -5297,6 +5339,8 @@ GHEOF
 			bash -c "cd '${acWork}' && env ${acFragEnv} '${gitsby}' -q -NoFetch --config '${ac}/frag/config.shcl' account apply 2>&1"
 		fAssertNotOut "[ddf44] and doesn't blame permissions for it"  'ermission|writable' \
 			bash -c "cd '${acWork}' && env ${acFragEnv} '${gitsby}' -q -NoFetch --config '${ac}/frag/config.shcl' account apply 2>&1"
+	else
+		fSkipBlock "the reason a write failed (not on Windows)"
 	fi
 	fAssert       "[dbfh5] and wrote no includeIf rule either"  bash -c "! grep -q 'bacct\.gitconfig' '${ac}/fraghome/.gitconfig'"
 	## The same for the global config itself: a path under a plain file can't be locked for writing.
@@ -5319,6 +5363,8 @@ GHEOF
 	if ((! isWindows)); then
 		fAssert "[dbfvv] account apply tightens a fragment left readable by an earlier run" \
 			bash -c "chmod 644 '${ac}/home/${confRel}/accounts/github.com_workacct.gitconfig' && cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(fMode '${ac}/home/${confRel}/accounts/github.com_workacct.gitconfig')\" == 600 ]]"
+	else
+		fSkipBlock "a fragment left readable (not on Windows)"
 	fi
 
 	## The sshKey value is concatenated into GIT_SSH_COMMAND and into core.sshCommand, and git hands
@@ -5501,6 +5547,8 @@ GHEOF
 			bash -c "cd '${rl}/create' && env ${acEnv} PATH='${rl}/link:${rl}/git' '${goBin}' -q repo create me/proj 2>&1"
 		fAssertOut "[de89y] and pr on another host, with only a tea that is gitsby"  "Not found in path: tea\\. '.*/rawloop/link/tea' is gitsby itself" \
 			bash -c "cd '${rl}/gitea' && env ${acEnv} PATH='${rl}/link:${rl}/git' '${goBin}' -q -NoFetch pr 2>&1"
+	else
+		fSkipBlock "a gh on PATH that is gitsby (no links on Windows)"
 	fi
 	fAssertFail "[db01h] raw with no tool is refused"              bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw"
 	fAssertOut  "[db32n] and says what it wanted"  'Syntax: gitsby(\.ps1)? raw'  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q raw 2>&1"
@@ -6539,6 +6587,31 @@ GHEOF
 	fAssert "[defq0] a skipped block gives a SKIP for each test in it, whichever branch skips"  fSkipFixLines
 	fEveryBlockSkips(){ local n=""; while IFS=: read -r n _; do [[ -n "$(fBlockIds "${root}/cicd/test.bash" "${n}")" ]] || return 1; done < <(grep -n '^[[:space:]]*fSkipBlock "' "${root}/cicd/test.bash") ;}
 	fAssert "[defq1] and every one in this suite names at least one test"  fEveryBlockSkips
+	## A block behind a probe of the box, with no else, dropped its tests from the count with no
+	## SKIP where the probe failed. The line of each such block that skips nothing. An else arm
+	## with tests of its own is that box's form of the check, so it counts.
+	fUnskippedBlocks(){ awk -v probe='hasPty|command -v |isWindows|isMac|canNoTty|shNoTty|-w /usr/local/bin|ln -s |/proc/self/mem|date -u -d|OSTYPE|id -u' '
+		{ line[NR] = $0; match($0, /^\t*/); tabs[NR] = RLENGTH }
+		END {
+			for (s = 1; s <= NR; s++) {
+				k = tabs[s]; c = substr(line[s], k + 1)
+				if (c !~ /^if .*; then/ || c !~ probe || c ~ /;[[:space:]]*fi([[:space:];]|$)/) continue
+				tests = 0; covered = 0; inElse = 0
+				for (e = s + 1; e <= NR; e++) {
+					if (tabs[e] == k && substr(line[e], k + 1) ~ /^fi([[:space:];]|$)/) break
+					if (tabs[e] == k && substr(line[e], k + 1) ~ /^(else|elif)/) inElse = 1
+					if (tabs[e] == k + 1 && substr(line[e], k + 2) ~ /^fSkip(Block)? "/) covered = 1
+					if (line[e] !~ /^[[:space:]]*#/ && line[e] ~ /f[A-Za-z]+[[:space:]]+"\[[0-9A-Za-z]+\] /) { tests = 1; if (inElse) covered = 1 }
+				}
+				if (tests && !covered) { print s; bad = 1 }
+			}
+			exit bad
+		}' "$1" ;}
+	printf '%s\n' 'if ((hasPty)); then' '	fCheck "[aaaaa] one"' 'fi' 'if command -v pwsh >/dev/null 2>&1; then' '	fCheck "[aaaab] two"' 'else' '	fSkipBlock "no pwsh"' 'fi' \
+		'if ((isMac)); then' '	fCheck "[aaaac] three"' 'else' '	fCheck "[aaaad] four"' 'fi' 'if ((isWindows)); then x; fi' > "${work}/skip-probe.bash"
+	fProbeFixFlags(){ [[ "$(fUnskippedBlocks "${work}/skip-probe.bash")" == 1 ]] ;}
+	fAssert "[df4zv] a block behind a probe of the box with no SKIP is found, and one with a SKIP or an else of its own isn't"  fProbeFixFlags
+	fAssert "[df4zw] and every such block in this suite skips its tests where the box can't run them"  fUnskippedBlocks "${root}/cicd/test.bash"
 	## The Go test lines cicd.bash and remote-tests.bash print, from a log and the IDs in the source.
 	mkdir -p "${work}/gtl"
 	printf 'package x\n\nfunc TestA(t *testing.T) { // [aaaaa]\n}\nfunc TestB(t *testing.T) { // [aaaab]\n}\n' > "${work}/gtl/x_test.go"
@@ -6630,6 +6703,8 @@ GHEOF
 		## into --check and passing.
 		fAssert "[dd5kz] and a date before 2000 is refused, not checked" \
 			bash -c "out=\$('${root}/cicd/utility/test-id.bash' --at 1960-01-01 2>&1); [[ \$? == 2 ]] && grep -qx 'test-id: 1960-01-01 is before 2000' <<< \"\$out\""
+	else
+		fSkipBlock "test-id.bash --at (no GNU date)"
 	fi
 	fAssert "[dd5m0] the ID check fails a tree where it finds no tests" \
 		bash -c "out=\$('${root}/cicd/utility/test-id.bash' --check --root '${work}/no-such-tree' 2>&1); [[ \$? == 1 ]] && grep -q '^test-id: found no tests under ' <<< \"\$out\""
@@ -8088,6 +8163,8 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q -NoFetch --config '${dr}/token.shcl' identity 2>&1"
 		fAssert "[dbfsg] the account fragments are yours alone" \
 			bash -c "[[ \"\$(fMode '${dr}/home/${confRel}/accounts')\" == 700 ]] && [[ \"\$(fMode '${dr}/home/${confRel}/accounts/github.com_abe.gitconfig')\" == 600 ]]"
+	else
+		fSkipBlock "token file and fragment folder modes (not on Windows)"
 	fi
 
 	##••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -8534,6 +8611,8 @@ GLEOF
 	if ((hasPty)); then
 		fAssertNotOut "[dcnrf] and asks nothing"  'Continue\?' \
 			fAnswerPrompt y "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/spaced.shcl' account set work host 'a b'"
+	else
+		fSkipBlock "the refused account set prompt (no pty)"
 	fi
 	## Only https and ssh are acted on. Anything else was written, shown as set, and ignored.
 	fAssertOut "[dcnrg] a protocol gitsby doesn't use is refused"  "isn't a protocol gitsby uses" \
@@ -8694,6 +8773,8 @@ SSHEOF
 	if ((hasPty)); then
 		fAssertNotOut "[df026] the interactive tea warning does not name gh's account"  'gh does the GitHub side' \
 			fAnswerPrompt n "cd '${fgSsh}' && PATH='${fgPath}' FAKE_TEA_USER=gitfriend FAKE_SSH_LOGIN=keyowner FAKE_GH_LOGIN=octocat '${gitsby}' -NoFetch pr create 'T'"
+	else
+		fSkipBlock "the interactive tea warning (no pty)"
 	fi
 	## Offline, the refusal names the git host, which here isn't GitHub.
 	fAssertOut "[df029] the offline pr refusal says git host, not GitHub"  'lives on the git host' \
@@ -8723,6 +8804,8 @@ SSHEOF
 		## clone took only a full URL, and said so after the plan was confirmed rather than before.
 		fAssertOut "[dbfhv] 'repo clone owner/name' plans a github URL"  'git clone .*github\.com[:/]octo/demo' \
 			fAnswerPrompt n "cd '${work}' && '${gitsby}' repo clone octo/demo"
+	else
+		fSkipBlock "prompt answers and repo clone plans (no pty)"
 	fi
 }
 

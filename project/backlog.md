@@ -770,16 +770,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 41: 114 test.bash checks drop out with no SKIP line where pwsh or a pty is missing
 	- ID: 2026111016331944
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
 	- Steps to reproduce [Bug]: Run test.bash on a box with no pwsh, such as vmFreeBSD, or no `script -qec`.
 	- Incorrect behavior [Bug]: The checks in 9 `if ((hasPty))` blocks and 2 `if command -v pwsh` blocks vanish from the count without a SKIP. That's 15 and 99 checks.
 	- Expected behavior [Bug]: Each block a box can't run calls fSkipBlock, per the 2026-10-26 test line rule.
-	- Reproduced [Bug]: No. Read only.
+	- Reproduced [Bug]: Yes, 2026-11-10 on b23. `[df4zw]`'s check, run on the unfixed test.bash, names the 11 blocks, and 18 more behind other probes of the box.
 	- Possible cause [Bug]: The blocks at test.bash:1748, 2424, 2448, 3474, 3604, 3887, 3892, 4033, 8313, 8473 and 8496 have no else. fEveryBlockSkips checks only existing calls.
 	- Origin: 2026102618140158 added fSkipBlock. These blocks weren't swept. Plausible.
+	- Actual cause [Bug]: As above. Nothing checked that a block behind a probe of the box has an else, so 29 blocks never got one.
+	- Actual effort: Low
+	- Decisions:
+		- The 18 other blocks are the same class, behind `isWindows`, `canNoTty`, `shNoTty`, a writable `/usr/local/bin`, `ln -s`, `/proc/self/mem`, GNU `date -d`, `OSTYPE` and root. They got the same else. A Linux box with pwsh now prints one SKIP, `[db5xm]`, which runs only on Windows.
+		- An if/else on `isMac` or `isWindows` with tests in both arms counts as covered, since each arm is that platform's form of the check.
+		- No changelog line. Only the suite's output changes.
+	- Actual fix [Bug]: Each of the 29 blocks has an else that calls fSkipBlock. fUnskippedBlocks finds a block behind a probe of the box that holds tests and skips none.
+	- Swept: every multi-line `if` in test.bash that holds a test and has no SKIP. Left out: a `gateTool` loop branch, a soak branch inside a quoted script, and an awk line, none of them a probe of the box.
+	- Branch: round-20261111
+	- Test case: test.bash `[df4zv]` (the check finds a bare probe block in a fixture, and passes one with a SKIP or a tested else) and `[df4zw]` (no such block in test.bash).
+		- Verified: `[df4zw]`'s check fails on the unfixed test.bash, naming the 29 blocks, and passes after. Quick gate passed, all areas: test.bash 1969/0 with 1 SKIP, fuzz 310/0, parity 31/0.
+	- Acceptance signoff: Self-closed: its tests passed, and the check was watched to fail.
+	- Closed: 20261110-204858
 
 - Code Review 20261110b enhancement 1: sync re-creates a branch on origin that was deleted after its PR merged
 	- ID: 2026111016331930
