@@ -65,7 +65,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 2: After account apply, a nested account's folder uses the outer account's token file and name
 	- ID: 2026111016332429
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261110-163324
 	- Opened by: jim-collier
@@ -75,6 +75,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23, hermetic fixture with a fake gh.
 	- Possible cause [Bug]: Both fragments are included in the nested folder. writeAccountFragment skips empty values, so a key only the outer fragment sets wins: `gitsby.ghTokenFile`, `user.name` and the credential username. tokenFor's fallback to `gitsby.ghTokenFile` then reads it too.
 	- Origin: The fallback from d92a157, 2026-08-19. The ghTokenFile key from 0ad1374, 2026-09-16. The plain-git half from 08e7452, 2026-11-08. The 20260812 fix for apply's rule order covered only keys both accounts set. Confirmed.
+	- Actual cause [Bug]: git includes every fragment whose rule matches, and a later include can't unset a key. The inner fragment left out what its account doesn't set, so the outer one's token file, name, ssh key and ghAccount held there.
+	- Actual effort: Avg
+	- Decisions:
+		- Where an outer account's fragment can come first in a folder, the inner one writes each key its account leaves unset that the outer one sets. The value is what the global or system git config gives it outside the fragments, read at apply time. Departs from "unset", which git has no way to do from an include.
+		- Where that config gives none, the key is written empty. gitsby reads an empty `gitsby.ghAccount` or `gitsby.ghTokenFile` as none, and so does the helper. An empty `user.name` makes git refuse a commit and ask who you are, rather than use the outer name. `core.sshCommand` gets plain `ssh`, since git runs an empty one as a command.
+		- Only for accounts whose fragments can stack: a folder-name rule, or a path at or above the inner path, case aside. Elsewhere nothing changes, so the copied value can only go stale where accounts nest. accounts.md says to run `apply` again after changing one of those keys.
+		- The credential helper isn't put back. It's a list, and the outer one reads only the keys that are.
+		- Changelog under Fixed.
+	- Actual fix [Bug]: `account apply` gathers every account's keys first, and `withOuterKeys` adds the outer accounts' keys to the inner fragment, with `valueOutsideFragments` for the value.
+	- Branch: round-20261111
+	- Commit: 6770e4f
+	- Test case: test.bash `[df4ws]` to `[df4wx]` (token through plain git and `raw git`, the whoami name, the ssh key, and the outer folder still gets its token). Go `[df4x3]` for which accounts stack.
+		- Verified: `[df4ws]` to `[df4ww]` fail on the unfixed build (1942/4) and pass after, with `[df4wx]` passing both ways. `[df4x3]` fails with the folder-name case broken. Quick gate passed, all areas: test.bash 1946/0, fuzz 310/0, parity 30/0.
+		- Swept: every key the fragment writes, the token lookup in gitsby's own runs (`accountToken`'s fallback reads the put-back value), and `resolveAccount`'s `gitsby.ghAccount` pin. `writeAccountFragment` has no other caller.
+		- Not run on Windows. The origin compare goes through `canonPath`, as `accountManagedIncludes` does.
+	- Acceptance signoff: Self-closed: its tests passed. The value choice has a Check: entry in questions.md.
+	- Closed: 20261110-192044
 
 - Code Review 20261110b item 3: A second release after a failed push of main cuts a new tag on the same commit
 	- ID: 2026111016332417
