@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 1: raw glab sends the folder account's token to any GitLab host glab is pointed at
 	- ID: 2026111016332442
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261110-163324
 	- Opened by: jim-collier
@@ -47,6 +47,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: hostTokenEnv in githost.go puts the token in `GITLAB_TOKEN`, and glab applies that to every host. The code comment says the host beside it keeps the token where it came from, which holds for tea but not for glab.
 	- Origin: 483ebc5 and d8d3c69, 2026-10. Same class as Bug 2026102209210000, whose fix pinned only `raw glab auth status`. Confirmed.
 	- Sweep: Every glab subcommand that takes a host: `api --hostname`, `-R host/...`, `repo clone <url>`. Also tea's `--login` and any other variable a host CLI applies to every host.
+	- Actual cause [Bug]: glab reads `GITLAB_TOKEN` before it looks at the host, so the token goes to any host a command names. `GITLAB_API_HOST`, from the caller's own environment, also sent it elsewhere.
+	- Actual fix [Bug]: `glabTokenEnv` in githost.go. `raw glab` and `pr` hand the token only with `GITLAB_API_HOST` pinned to the account's host, since glab sends every API call there whatever host it's told. A run that names another host gets no token and no changed variables, and says so on stderr.
+	- Decisions:
+		- Pin and refuse both. The pin alone sends `api --hostname gitlab.com` to the account's host, a wrong answer. The refusal alone misses any spelling not listed.
+		- A host named by `--hostname`, `-h`, `-R`, a URL or `user@host:path` argument, a repo command's `host/group/name`, or the caller's `GITLAB_API_HOST`. glab takes a dotted first part as a host only when its config knows it, which gitsby can't read, so a dotted first part always counts. Too many means no token, never a token sent astray.
+		- An argument counts as a URL only from its first byte, so a label such as `priority:high` or an api field such as `url=https://...` doesn't.
+	- Progress log:
+		- 2026-11-10: Checked against glab 1.53.0 through a logging proxy: `GITLAB_API_HOST` wins over `--hostname`, `-R` and a URL, and with `GITLAB_HOST` set glab skips remotes on other hosts, so a second remote in the clone isn't a way out.
+		- 2026-11-10: test.bash `[ddk65]` assert updated: `raw glab` now also prints `api=git.example.test`, from the pin. Old `^host=https://git\.example\.test token=tok_ghonly$`, new `^host=https://git\.example\.test token=tok_ghonly api=git\.example\.test$`.
+	- Test case: Go `[df4w4]` `[df4w5]`, test.bash `[df4w6]` `[df4w7]` `[df4w8]`.
+	- Verified: test.bash `[df4w6]` `[df4w7]` `[df4w8]` fail on the unfixed build (1937/4, with `[ddk65]`) and pass after. Quick gate passed, all areas, test.bash 1941/0, fuzz 310/0, parity 30/0. Real glab 1.53.0 through the built gitsby: `api user` and `mr list` go to gitlab.gnome.org as the account, `api --hostname gitlab.com user` and `mr list -R gitlab.com/someone/else` say they aren't acting as the account.
+	- Swept: `hostTokenEnv`'s 3 callers. `raw glab` and `pr` now go through `glabTokenEnv`. `raw tea` keeps its env login on `GITEA_INSTANCE_URL`, and `--login` picks a stored login with its own token, so tea isn't affected, by reading only, since this box has tea 0.9.2. gh's `GH_TOKEN` is for github.com only, and Enterprise is item 20. lazygit and tig go through git's host-scoped credential helper.
+	- Acceptance signoff: Closed on tests.
+	- Closed: 20261110-185317
 
 - Code Review 20261110b item 2: After account apply, a nested account's folder uses the outer account's token file and name
 	- ID: 2026111016332429

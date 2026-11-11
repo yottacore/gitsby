@@ -8020,10 +8020,10 @@ GHEOF
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' identity 2>&1"
 
 	## raw tea and glab. Each takes a token from its own variables, so the account's goes there, with
-	## its host beside it so the token only goes back where it came from.
+	## its host beside it. glab sends its token to any host, so its API is pinned to the account's too.
 	fAssertOut "[ddk64] raw tea hands tea the account's token and host"  '^url=https://git\.example\.test token=tok_ghonly$' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_ENV=1 '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami"
-	fAssertOut "[ddk65] and so does raw glab"  '^host=https://git\.example\.test token=tok_ghonly$' \
+	fAssertOut "[ddk65] and so does raw glab"  '^host=https://git\.example\.test token=tok_ghonly api=git\.example\.test$' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw glab auth status"
 	## glab auth status with no host checks every host glab knows, and sends our one token to all of them.
 	: > "${fg}/glab.log"
@@ -8076,6 +8076,15 @@ GLEOF
 	: > "${fg}/glab.log"
 	fAssert "[dea3p] raw glab names the remote's ssh host, with the API on the account's" \
 		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_LOG='${fg}/glab.log' '${gitsby}' -q -NoFetch --config '${fg}/gl-acct.shcl' raw glab repo view && grep -qx 'repo view api=gitlab\.example\.test host=https://ssh\.gitlab\.example\.test token=tok_ghonly' '${fg}/glab.log'"
+	## glab sends GITLAB_TOKEN to any host it's pointed at, so a run aimed at another host gets none.
+	: > "${fg}/glab.log"
+	fAssert "[df4w6] raw glab pointed at another host gets no token" \
+		bash -c "cd '${fgGl}' && env -u GITLAB_TOKEN -u GITLAB_HOST -u GITLAB_API_HOST PATH='${fgGlPath}' FAKE_GLAB_LOG='${fg}/glab.log' '${gitsby}' -q -NoFetch --config '${fg}/gl-acct.shcl' raw glab api --hostname gitlab.com user >/dev/null && grep -qx 'api --hostname gitlab.com user api= host= token=' '${fg}/glab.log'"
+	fAssertOut "[df4w7] and says so" 'not acting as the account: glab is pointed at gitlab\.com' \
+		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' '${gitsby}' -NoFetch --config '${fg}/gl-acct.shcl' raw glab api --hostname gitlab.com user 2>&1 >/dev/null"
+	: > "${fg}/glab.log"
+	fAssert "[df4w8] nor does one with -R on another host" \
+		bash -c "cd '${fgGl}' && env -u GITLAB_TOKEN -u GITLAB_HOST -u GITLAB_API_HOST PATH='${fgGlPath}' FAKE_GLAB_LOG='${fg}/glab.log' '${gitsby}' -q -NoFetch --config '${fg}/gl-acct.shcl' raw glab mr list -R gitlab.com/someone/else >/dev/null && grep -qx 'mr list -R gitlab.com/someone/else api= host= token=' '${fg}/glab.log'"
 	fAssertOut "[dea19] pr create refuses a branch that already has an open merge request" 'PR #3 is already open' \
 		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_EXISTING=3 '${gitsby}' -q -NoFetch pr create 2>&1 || true"
 	fAssertOut "[dea1a] pr ok reads glab's 'merged' as not open" 'PR #7 is merged, not open' \

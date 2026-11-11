@@ -406,6 +406,79 @@ func TestGlabScopeAuth(t *testing.T) { // [de9ja]
 	}
 }
 
+// Each spelling glab takes a host in, checked against glab 1.53.
+func TestGlabNamedHosts(t *testing.T) { // [df4w4]
+	for _, c := range []struct{ in, want string }{
+		{"api --hostname gitlab.com user", "gitlab.com"},
+		{"api user --hostname=gitlab.com", "gitlab.com"},
+		{"auth status -h gitlab.com", "gitlab.com"},
+		{"mr list -R gitlab.com/someone/else", "gitlab.com"},
+		{"mr list -Rgitlab.com/a/b", "gitlab.com"},
+		{"mr list -R=gitlab.com/a/b", "gitlab.com"},
+		{"mr list --repo https://gitlab.com/a/b", "gitlab.com"},
+		{"mr list --repo=git@gitlab.com:a/b.git", "gitlab.com"},
+		{"issue view https://gitlab.com/a/b/-/issues/1", "gitlab.com"},
+		{"api https://gitlab.com/api/v4/user", "gitlab.com"},
+		{"repo clone gitlab.com/a/b", "gitlab.com"},
+		{"repo clone git@ssh.gitlab.gnome.org:a/b.git ./my.dir/x/y", "ssh.gitlab.gnome.org"},
+		{"mr list -R a.b/c/d", "a.b"},
+		{"mr list -R grp/sub/proj", ""},
+		{"mr list -R someone/else", ""},
+		{"mr list", ""},
+		{"mr list -R", ""},
+		{"mr create --label priority:high --title a.b/c/d", ""},
+		{"release upload v1 out.d/x/y.tgz", ""},
+		{"api projects/:id/merge_requests", ""},
+		{"api projects/:id/hooks -f url=https://ci.other.test/hook", ""},
+		{"mr create --description https://other.test/x", "other.test"},
+		{"mr note 1 -m see:https://other.test", ""},
+	} {
+		if got := strings.Join(glabNamedHosts(strings.Fields(c.in)), " "); got != c.want {
+			t.Errorf("%q -> %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// glab sends GITLAB_TOKEN to whatever host it's pointed at, so the token goes only
+// with the API pinned to the account's host, and not at all when pointed elsewhere.
+func TestGlabTokenEnvStaysHome(t *testing.T) { // [df4w5]
+	host := "gitlab.example.test"
+	for _, c := range []struct {
+		args, callerAPI string
+		gave            bool
+		elsewhere       string
+	}{
+		{"api user", "", true, ""},
+		{"mr list -R gitlab.example.test/a/b", "", true, ""},
+		{"mr list -R https://www.GitLab.example.test/a/b", "", true, ""},
+		{"repo clone git@ssh.gitlab.example.test:a/b.git", "", true, ""},
+		{"api user", "https://gitlab.example.test/", true, ""},
+		{"api --hostname gitlab.com user", "", false, "gitlab.com"},
+		{"mr list -R gitlab.com/someone/else", "", false, "gitlab.com"},
+		{"repo clone https://other.test/a/b", "", false, "other.test"},
+		{"api user", "gitlab.com", false, "gitlab.com"},
+	} {
+		t.Setenv("GITSBY_HOST_TOKEN", "tok_gl")
+		t.Setenv("GITLAB_TOKEN", "before")
+		t.Setenv("GITLAB_HOST", "before")
+		t.Setenv("GITLAB_API_HOST", c.callerAPI)
+		a := newApp(newPrinter())
+		a.acct.tokenEnv, a.acct.credHost = "GITSBY_HOST_TOKEN", host
+		gave, elsewhere, err := a.glabTokenEnv(strings.Fields(c.args))
+		if err != nil || gave != c.gave || elsewhere != c.elsewhere {
+			t.Errorf("%q api=%q: gave=%v elsewhere=%q err=%v, want %v %q", c.args, c.callerAPI, gave, elsewhere, err, c.gave, c.elsewhere)
+			continue
+		}
+		tok, gl, api := os.Getenv("GITLAB_TOKEN"), os.Getenv("GITLAB_HOST"), os.Getenv("GITLAB_API_HOST")
+		if gave && (tok != "tok_gl" || gl != "https://"+host || api != host) {
+			t.Errorf("%q: GITLAB_TOKEN=%q GITLAB_HOST=%q GITLAB_API_HOST=%q", c.args, tok, gl, api)
+		}
+		if !gave && (tok != "before" || gl != "before" || api != c.callerAPI) {
+			t.Errorf("%q: env changed with no token given: %q %q %q", c.args, tok, gl, api)
+		}
+	}
+}
+
 func TestServiceHost(t *testing.T) { // [de9k6]
 	for in, want := range map[string]string{
 		"ssh.gitlab.gnome.org": "gitlab.gnome.org",

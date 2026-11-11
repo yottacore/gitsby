@@ -162,7 +162,7 @@ gitsby raw gh pr list --json number
 gitsby -q raw git rev-parse HEAD
 ~~~
 
-`tea` and `glab` get the account's token for the repo's host in their own variables, `GITEA_TOKEN` and `GITLAB_TOKEN`, with the host beside it. A GitHub token is never handed to either one. tea before 0.11 ignores those variables and uses the first login it has for the host. When that login is somebody else Gitsby warns, and with `-q` it refuses. Debian 13's `tea-cli` is 0.9.2, so it's one of those.
+`tea` and `glab` get the account's token for the repo's host in their own variables, `GITEA_TOKEN` and `GITLAB_TOKEN`, with the host beside it. A GitHub token is never handed to either one. glab sends its token to whatever host it's pointed at, so Gitsby pins its API to the account's host, and a `raw glab` run that names some other host, with `--hostname`, `-R` or a URL, gets no token at all and runs as plain glab would. tea before 0.11 ignores those variables and uses the first login it has for the host. When that login is somebody else Gitsby warns, and with `-q` it refuses. Debian 13's `tea-cli` is 0.9.2, so it's one of those.
 
 `lazygit` and `tig` run git underneath, so they get the account the same way `git` does. gitui isn't on the list because it doesn't go through git, and wouldn't see the account at all.
 
