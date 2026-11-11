@@ -371,9 +371,9 @@ fMakeGateFixture(){
 	fGateStub "${gateDir}/bin/gofmt" gofmt "if [[ -e '${gateFail}/gofmt' ]]; then echo main.go; fi; exit 0"
 	## go fails by subcommand (go-vet, go-test, go-build); 'version -m' names no module; a build
 	## leaves its -o file. The soak needs its rounds ('soak' fails, 'soak-skip' skips). 'hang'
-	## stalls go vet. 'test -list' names one fuzz target.
+	## stalls go vet. 'test ... -list' names one fuzz target.
 	fGateStub "${gateDir}/bin/go" "go-\${1:-}" "[[ \"\${1:-}\" != version ]] || exit 0
-		[[ \"\${1:-} \${2:-}\" != 'test -list' ]] || echo FuzzA
+		[[ \"\${1:-}\" != test || \" \$*\" != *' -list '* ]] || echo FuzzA
 		[[ \"\${1:-}\" != vet || ! -e '${gateFail}/hang' ]] || { : > '${gateFail}/hung'; sleep 5; }
 		if [[ ! -e \"${gateFail}/go-\${1:-}\" ]]; then o=''; for a in \"\$@\"; do [[ \"\${o}\" != 1 ]] || : > \"\${a}\"; o=''; [[ \"\${a}\" != -o ]] || o=1; done; fi
 		if [[ -n \"\${GITSBY_SOAK_ROUNDS:-}\" ]]; then
@@ -551,7 +551,7 @@ fGateFullRun(){
 ## the gif, CodeQL and what reaches a host other than origin.
 fGateQuickRun(){
 	fGateSays 0 'CI/CD: done\.' -y --no-container --quick --no-sync --no-publish --no-dogfood \
-		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^fuzz\.bash' '^go test -list Fuzz' '^spawn-count\.bash' '^parity\.bash' \
+		&& fGateCalled '^go vet' '^go build' '^go test -race' '^test\.bash' '^fuzz\.bash' '^go test -p [0-9]+ -list Fuzz' '^spawn-count\.bash' '^parity\.bash' \
 		&& ! grep -qE '^remote-tests\.bash|^govulncheck|^codeql database|^python3 cicd/utility/demo/gen-demo-gif' "${gateCalls}" \
 		&& grep -qxF 'govulncheck skipped (--quick: it reaches vuln.go.dev)' "${gateOut}"
 }
@@ -6298,8 +6298,8 @@ GHEOF
 	## steps, never under 1. A stand-in core count is how the container gets the box's.
 	fAssert "[dedq1] the core budget is half the cores, or a quarter when busy or for the hard steps, never under 1" \
 		bash -c "cd '${root}' && source cicd/config.bash && for c in '32 0.50 0 16' '32 16.00 0 16' '32 16.01 0 8' '32 1 1 8' '7 3 0 3' '7 3.6 0 1' '3 0.00 0 1' '1 9.00 1 1' '9 x 0 4'; do set -- \${c}; fCpuJobs j \"\$1\" \"\$2\" \"\$3\"; [[ \"\${j}\" == \"\$4\" ]] || exit 1; done; [[ \"\$(GITSBY_CICD_CPUS=12 bash -c 'source cicd/config.bash && echo \"\${cpuCores}\"')\" == 12 ]]"
-	fAssert "[dedq2] go test -race, the native fuzzing, the soak test and CodeQL take the quarter" \
-		bash -c "hard=\$(grep -E 'go test -race|-fuzz \"|GITSBY_SOAK_OUT=|--threads=' '${root}/cicd/cicd.bash' | grep -v '^[[:space:]]*#'); [[ \$(grep -c . <<< \"\${hard}\") -ge 6 ]] && ! grep -v HEAVY_JOBS <<< \"\${hard}\" | grep -q ."
+	fAssert "[dedq2] go test -race, the native fuzzing and its target list, the soak test and CodeQL take the quarter" \
+		bash -c "hard=\$(grep -E 'go test -race|go test .*-list .Fuzz|-fuzz \"|GITSBY_SOAK_OUT=|--threads=' '${root}/cicd/cicd.bash' | grep -v '^[[:space:]]*#'); [[ \$(grep -c . <<< \"\${hard}\") -ge 7 ]] && ! grep -v HEAVY_JOBS <<< \"\${hard}\" | grep -q ."
 	fAssert "[dedq4] cicd.bash, release.bash and remote-tests.bash run at low priority, and so does what they start" \
 		bash -c "cd '${root}' && for f in cicd/cicd.bash cicd/release.bash cicd/remote-tests.bash; do [[ \$(grep -cx 'fLowPriority' \"\${f}\") == 1 ]] || exit 1; done; source cicd/config.bash && fLowPriority && if [[ -r /proc/\$\$/stat ]]; then read -ra n < /proc/\$\$/stat; n=\${n[18]}; else n=\$(ps -o nice= -p \$\$); fi && [[ \"\${n// /}\" == 19 ]] && { ! command -v ionice >/dev/null || ionice -p \$\$ | grep -q idle; }"
 	fAssert "[dbft4] no go build call is missing -p"  fBuildSitesCapped
@@ -7238,7 +7238,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			case "\${1:-} \${2:-}" in
 				"version -m") for s in ${gatePipeTools}; do [[ "\${s%%=*}" != "\$(basename "\${3:-}")" ]] || printf 'mod\tx\t%s\th1:x\n' "\${s#*=}"; done; exit 0 ;;
 				"env GOPATH") echo '${gateDir}/gopath'; exit 0 ;;
-				"test -list") [[ ! -e '${gateFail}/go-testlist' ]] || { echo 'a_test.go:3:1: syntax error' >&2; exit 1; }
+				"test -p") [[ ! -e '${gateFail}/go-testlist' ]] || { echo 'a_test.go:3:1: syntax error' >&2; exit 1; }
 					[[ -e '${gateFail}/go-testlist-none' ]] || echo FuzzA; printf 'ok  \tgitsby\t0.01s\n'; exit 0 ;;
 				"test -race") if [[ -e '${gateFail}/go-test' ]]; then printf -- '--- FAIL: TestA (0.00s)\n    a_test.go:4: boom\n'
 					else printf -- '=== RUN   TestA\n--- PASS: TestA (0.00s)\n    --- PASS: TestA/sub (0.00s)\n--- PASS: TestC (0.00s)\n'; fi ;;

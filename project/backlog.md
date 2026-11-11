@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - cicd.bash's go test -list compiles with every core
 	- ID: 2026111020264871
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-202629
 	- Opened by: jim-collier
@@ -46,6 +46,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: It takes the quarter, like the fuzz runs after it.
 	- Reproduced [Bug]: No, from reading cicd.bash. Came in with 8c53b28, 2026-11-09.
 	- Possible cause [Bug]: The line was added after [dedq2] and [dbft4] were written, and neither matches it.
+	- Estimated effort: Low
+	- Actual fix [Bug]: The list runs as `GOMAXPROCS="${HEAVY_JOBS}" go test -p "${HEAVY_JOBS}" -list`, like the fuzz runs after it. [dedq2] now matches the list line too, and wants 7 hard lines. The gate fixtures' go stubs matched `test -list` by position, so they match it with `-p` in between, and the quick run's call check wants `go test -p <n> -list Fuzz`.
+	- Decisions: The quarter, not the half, since the list is the fuzz step's and the fuzz step is a hard step.
+	- Branch: round-20261111
+	- Test case: test.bash [dedq2], widened. [dbft4] doesn't see it, since `go test -list` isn't a compile command it matches.
+	- Verified: [dedq2]'s check fails on cicd.bash with the old line and passes on the new one. --backlog-run-quick passed, all areas, after the stubs changed. The first two runs failed only on the fixtures' stubs.
+	- Swept: every go test, go build and go vet in cicd.bash, and the stubs and call checks in test.bash that name go test -list.
+	- Acceptance signoff: Self-closed. Its check fails on the old line and passes on the fix.
+	- Closed: 20261110-210557
 
 - release.bash says nothing is pushed after 'br create' pushed the version branch
 	- ID: 2026111019574118

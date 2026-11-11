@@ -1192,7 +1192,7 @@ fi
 ## invocation is go's rule, and a crasher goes in src-go/testdata/fuzz/ as evidence.
 ## A list that failed or came back empty would fuzz nothing and still pass.
 if ((doFuzz)); then
-	fuzzList="$(cd "${root}/${GO_MODULE_DIR}" && go test -list 'Fuzz.*' . 2>&1)" \
+	fuzzList="$(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${HEAVY_JOBS}" go test -p "${HEAVY_JOBS}" -list 'Fuzz.*' . 2>&1)" \
 		|| { fEcho_Clean "$(tail -n 40 <<< "${fuzzList}")"; fDie "go test -list failed, so no fuzz target could run"; }
 	mapfile -t fuzzTargets < <(grep '^Fuzz' <<< "${fuzzList}" || true)
 	((${#fuzzTargets[@]})) || fDie "go test -list found no fuzz targets in ${GO_MODULE_DIR}"
