@@ -333,7 +333,9 @@ if [[ -z "${version}" ]]; then
 	fi
 	fEcho_Clean "no version given; the next one after ${lastTag} is ${version}"
 fi
-[[ "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.-]+)?$ ]] || fDie "'${version}' is not a vX.Y.Z version."
+## The shape 'gitsby release' takes, checked here, since past the pipeline it refuses only after
+## the version PR is merged.
+if [[ "${version}" != v* ]] || ! fIsReleaseVersion "${version}"; then fDie "'${version}' is not a vX.Y.Z version."; fi
 if ((publishOnly)); then
 	git rev-parse -q --verify "refs/tags/${version}" >/dev/null || fDie "--publish: there is no tag ${version} here."
 	[[ -n "$(git ls-remote --tags origin "refs/tags/${version}" 2>/dev/null || true)" ]] || fDie "--publish: origin has no tag ${version}; push it first."
@@ -486,11 +488,11 @@ else
 		if [[ -z "${dlTable}" ]]; then
 			fEcho_Clean "WARNING: phase 1 built no binaries to link, so the changelog gets no downloads table."
 		else
-			fpChangelogAddDownloads "${clLine}" "${dlTable}" || fDie "couldn't add the downloads table to the changelog; the branch is created but nothing is pushed."
+			fpChangelogAddDownloads "${clLine}" "${dlTable}" || fDie "couldn't add the downloads table to the changelog; ${relBranch} is pushed, with no PR. Delete it, then run again."
 		fi
 		## And the Windows resource, which is the other thing in the tree that names a version. It
 		## goes in the same commit, so the tag it is reachable from is the one it claims.
-		"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; the branch is created but nothing is pushed."
+		"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; ${relBranch} is pushed, with no PR. Delete it, then run again."
 		## gitsby's own 'pr create' rather than gh directly: it already knows this repo's merge target,
 		## which is the one thing a hand-written --base can get wrong.
 		prOut="$("${gitsby}" -q pr create "${version}" 2>&1)" || { printf '%s\n' "${prOut}" >&2; fDie "couldn't open the version-bump PR."; }
@@ -676,3 +678,4 @@ echo
 ##		- 20261107 JC: The footer check reads the .ps1 files' one-# entries, and warns about a changed script with no footer at all.
 ##		- 20261108 JC: --publish runs phase 3 alone, for a tag pushed by hand after phase 2 stopped. The v3.0.0-beta.1 cut stopped at the gated push to main.
 ##		- 20261110 JC: Fetches first, and refuses unless HEAD is the branch 'gitsby release' cuts from, level with origin's. It ran the pipeline on whatever was checked out, and phase 2's pulls then tagged origin's commit. Stops before phase 2 when the pipeline left the tree changed, which the version PR took in, or origin's branch moved during the run. Phase 2 checks the new branch, the merged branch and the tag each hold the tested tree.
+##		- 20261110 JC: The version is checked against RELEASE_VERSION_RE, the shape 'gitsby release' takes. A version it refused, such as v3.0.0-, got the bump merged first. A stop after 'br create' says the branch is pushed, which it is.

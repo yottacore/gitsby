@@ -5543,6 +5543,20 @@ GHEOF
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[dd5em] and reads a footer date written 20260819 or 2026-08-19, after ## or a .ps1 file's one #" \
 		bash -c '[[ -n "$1" ]] && grep -qE "$1" <<< "$2" && grep -qE "$1" <<< "$3" && grep -qE "$1" <<< "$4" && ! grep -qE "$1" <<< "$5"' _ "${relFootRe}" $'##\t- 20260819 JC: x' $'##\t- 2026-08-19 JC: x' '#   - 20260915 JC: x' '#   20260821 JC: x'
+	## release.bash took v3.0.0- and v3.0.0rc1, which 'gitsby release' refuses only after the
+	## version PR is merged. The two patterns have to take the same versions, with or without the 'v'.
+	local goVerRe="" shVerRe=""
+	# shellcheck disable=SC2016  ## the backticks are Go's raw string, read as text.
+	goVerRe="$(sed -n 's/^[[:space:]]*releaseVerRE = regexp\.MustCompile(`\(.*\)`)$/\1/p' "${root}/src-go/release.go")"
+	shVerRe="$(sed -n "s/^RELEASE_VERSION_RE='\(.*\)'\$/\1/p" "${root}/cicd/config.bash")"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssert "[df4ym] RELEASE_VERSION_RE in config.bash takes the versions releaseVerRE in release.go does" \
+		bash -c '[[ -n "$1" && -n "$2" ]] || exit 1; n=0
+			for a in "" - . a 0 lock; do for b in "" - . a 0 lock; do for c in "" - . a 0 lock; do
+				s="1.2.3${a}${b}${c}"; g=0; h=0; v=0
+				[[ "${s}" =~ $1 ]] && g=1; [[ "${s}" =~ $2 ]] && h=1; [[ "v${s}" =~ $2 ]] && v=1
+				[[ "${g}${h}${v}" == 000 || "${g}${h}${v}" == 111 ]] || exit 1; n=$((n + g))
+			done; done; done; ((n >= 20))' _ "${goVerRe}" "${shVerRe}"
 	if [[ "$(uname -s)" != Linux ]]; then
 		fSkipBlock "release.bash --dry-run checks (Linux only)"
 	else
@@ -5565,6 +5579,8 @@ GHEOF
 			if [[ "\$(basename "\$0") \${1:-}" == "go env" ]]; then case "\${2:-}" in GOOS) echo linux ;; GOARCH) echo amd64 ;; esac; fi
 			## What a pipeline run does to the tree or to origin, where a check sets one.
 			[[ "\$(basename "\$0")" != cicd.bash || ! -x '${rel}/pipeline-hook' ]] || '${rel}/pipeline-hook'
+			## A step that fails, where a check sets one.
+			[[ ! -x '${rel}/stub-fail' ]] || '${rel}/stub-fail' "\$(basename "\$0")" "\$@" || exit 1
 			exit 0
 		EOF
 		for relStub in cicd/cicd.bash cicd/utility/gen-winres.bash cicd/utility/gen-checksums.bash cicd/utility/macho-universal.bash src-go/gitsby; do cp "${rel}/stub" "${relRepo}/${relStub}"; done
@@ -5600,6 +5616,14 @@ GHEOF
 		fRelRun --dry-run v1.3.0-beta.1
 		fAssert "[dd5es] a suffixed version says it publishes as a pre-release" \
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'v1.3.0-beta.1 has a semver suffix, so it publishes as a pre-release.' '${relOut}' && grep -qF 'would: gh release create v1.3.0-beta.1 as a pre-release with ' '${relOut}'"
+		## Each of these passed, and 'gitsby release' refused it after the pipeline and the merge, or
+		## git refused the tag after the release merge.
+		local relBad="" relBadOk=1
+		for relBad in v1.3.0- v1.3.0. v1.3.0rc1 v1.3.0.lock v1.3.0-a..b; do
+			fRelRun --dry-run "${relBad}"
+			if [[ "${relRc}" != 1 ]] || ! grep -qF "'${relBad}' is not a vX.Y.Z version." "${relOut}" || grep -qF 'would: run cicd' "${relOut}"; then relBadOk=0; fi
+		done
+		fAssert "[df4yk] release.bash refuses a version 'gitsby release' or git would, before the pipeline" test "${relBadOk}" = 1
 		## v3.0.0-beta.1 stopped at the gated push to main, with the bump already merged. --publish
 		## picks up from a tag pushed by hand.
 		fRelRun --dry-run --publish v1.2.3
@@ -5888,6 +5912,19 @@ GHEOF
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" reset --quiet --keep "${relHead}"
 		git -C "${relRepo}" tag -d v1.2.4 >/dev/null 2>&1 || true
+		## 'br create' pushes the branch as it makes it, and a stop after it said nothing was pushed.
+		## Phase 1's stamp is the first, and phase 2's the second.
+		fStub "${rel}/stub-fail" <<-EOF
+			#!/usr/bin/env bash
+			[[ "\${1:-} \${2:-}" == 'gen-winres.bash -q' ]] || exit 0
+			(( \$(grep -c '^gen-winres\.bash -q v' '${relCalls}') < 2 ))
+		EOF
+		fRelRun -y
+		rm -f -- "${rel:?}/stub-fail"
+		fAssert "[df4yq] release.bash says the version branch is pushed when phase 2 stops after 'br create'" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"couldn't stamp the Windows resource; rel-1.2.4 is pushed, with no PR. Delete it, then run again.\" '${relOut}' && ! grep -qF 'opened PR' '${relOut}'"
+		git -C "${relRepo}" checkout -q -- .
+		git -C "${relRepo}" tag -d v1.2.4 >/dev/null 2>&1 || true
 		## A Mac build that isn't Mach-O is refused by the joiner, and that stops phase 1.
 		fStub "${rel}/bin/go" <<-'EOF'
 			#!/usr/bin/env bash
@@ -5948,6 +5985,22 @@ GHEOF
 		cp "${root}/cicd/utility/gen-winres.bash" "${rel}/winres/cicd/utility/"
 		fAssertOut "[ddf3v] and so does gen-winres.bash" 'gen-winres: no icon at assets/gitsby\.ico' \
 			bash "${rel}/winres/cicd/utility/gen-winres.bash" -q
+		## v1.2.3rc1 made a patch number of 0rc1, and the resource failed to build after the pipeline.
+		# shellcheck disable=SC2016  ## the inner shell does the expanding.
+		fAssert "[df4yn] gen-winres.bash refuses a version 'gitsby release' or git would, and takes v1.2.3.4" \
+			bash -c 'for v in v1.2.3rc1 v1.2.3.lock v1.2.3-; do o="$(bash "$1" -q "${v}" 2>&1)"; [[ "${o}" == *"'"'"'${v}'"'"' is not a vX.Y.Z version."* ]] || exit 1; done
+				o="$(bash "$1" -q v1.2.3.4 2>&1)"; [[ "${o}" == *"no icon at assets/gitsby.ico"* ]]' _ "${rel}/winres/cicd/utility/gen-winres.bash"
+		## A suffix after a dot went into the patch number: v1.2.3.beta gave "Patch": 3.beta.
+		mkdir -p "${rel}/winres/assets" "${rel}/winbin"; : > "${rel}/winres/assets/gitsby.ico"
+		printf '\tcopyrightYear = "2026"\n' > "${rel}/winres/src-go/main.go"
+		fStub "${rel}/winbin/goversioninfo" <<-EOF
+			#!/usr/bin/env bash
+			while ((\$# > 1)); do [[ "\$1" != -o ]] || : > "\$2"; shift; done
+			cp "\$1" '${rel}/winres.json'
+		EOF
+		PATH="${rel}/winbin:${PATH}" bash "${rel}/winres/cicd/utility/gen-winres.bash" -q v1.2.3.beta >/dev/null 2>&1 || true
+		fAssert "[df4yp] and stamps v1.2.3.beta as 1.2.3, with the suffix only in the strings" \
+			bash -c "grep -qF '\"FileVersion\":    { \"Major\": 1, \"Minor\": 2, \"Patch\": 3, \"Build\": 0 }' '${rel}/winres.json' && grep -qF '\"ProductVersion\": \"1.2.3.beta\"' '${rel}/winres.json'"
 	fi
 
 	## Phase 3 is the build that gets published, and no dry run reaches it. It compiled the working
@@ -8802,3 +8855,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261110 JC: a nested account's folder takes no key from the outer account's fragment after apply, [df4ws] to [df4wx].
 ##		- 20261111 JC: the backlog gate wants a removed check named on a line the branch adds, and sees every helper and spawn-count.bash, [df4xc] to [df4xf].
 ##		- 20261110 JC: release.bash cuts only from the branch 'gitsby release' cuts from, level with origin's, and stops when the pipeline changed the tree, or what is branched, merged or tagged isn't what was tested, [df4xt] to [df4y2].
+##		- 20261110 JC: release.bash, gen-winres.bash and 'gitsby release' take one version shape, and the two scripts refuse what git can't tag. A stop after 'br create' says the branch is pushed. [df4yk] to [df4yq].

@@ -108,11 +108,11 @@ if [[ -z "${version}" ]]; then
 	version="${versions%%$'\n'*}"
 	[[ -n "${version}" ]] || fDie "no v* tag to take a version from; pass one."
 fi
-[[ "${version}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.-]+)?$ ]] || fDie "'${version}' is not a vX.Y.Z version."
+fIsReleaseVersion "${version}" || fDie "'${version}' is not a vX.Y.Z version."
 verStr="${version#v}"
 ## FIXEDFILEINFO is four numbers and nothing else, so a candidate's suffix survives only in the
 ## strings Explorer displays.
-IFS='.' read -r verMajor verMinor verPatch <<< "${verStr%%-*}"
+verMajor="${BASH_REMATCH[1]}"; verMinor="${BASH_REMATCH[2]}"; verPatch="${BASH_REMATCH[3]}"
 
 [[ -f "${icon}" ]] || fDie "no icon at assets/$(basename "${icon}") - run with --icon."
 
@@ -223,3 +223,4 @@ exit 0
 ##		  printf. Every expansion braced, and shellcheck enforces it.
 ##		- 20261106 JC: Its scratch folders go through fSafeRm.
 ##		- 20261107 JC: Errors go through fUsage and printf.
+##		- 20261110 JC: The version is checked against RELEASE_VERSION_RE, and the three numbers come from it. A suffix after a dot, as in v3.0.0.beta, went into the patch number.

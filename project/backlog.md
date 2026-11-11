@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - release.bash says nothing is pushed after 'br create' pushed the version branch
 	- ID: 2026111019574118
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-195741
 	- Opened by: jim-collier
@@ -47,6 +47,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: No. Read only: `publishBranch` in mutate.go runs `git push -u origin HEAD`.
 	- Estimated effort: Low
 	- Origin: Seen 2026-11-10 while fixing 2026111016332243.
+	- Actual fix [Bug]: Both messages say `<branch> is pushed, with no PR. Delete it, then run again.`, as the check after `br create` does.
+	- Swept: every "nothing is pushed" in release.bash. The 3 left come before phase 2, where they hold.
+	- Branch: round-20261111
+	- Test case: test.bash [df4yq], the stop at the Windows resource stamp. The downloads table stop has the same message and no test, since the fixture can't make that step fail.
+	- Verified: [df4yq] fails against the old release.bash and passes after. Quick gate passed, every area: test.bash 1964/0, fuzz 310/0, parity 30/0.
+	- Acceptance signoff: Self-closed: its test failed before the fix and passes after.
+	- Closed: 20261110-201616
 
 - Code Review 20261110b item 1: raw glab sends the folder account's token to any GitLab host glab is pointed at
 	- ID: 2026111016332442
@@ -454,7 +461,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 25: gitsby release takes a version git can't use as a tag, and fails after the merge into main
 	- ID: 2026111016332145
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
 	- Opened by: jim-collier
@@ -464,11 +471,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23.
 	- Possible cause [Bug]: release.go:27 and :61 check the version with a regexp only.
 	- Origin: 089776d, 2026-08-18. No round saw it. Confirmed.
+	- Actual cause [Bug]: releaseVerRE took `..`, a trailing `.` and a `.lock` ending, which git refuses in a tag, and nothing else checked the version before the release merge.
+	- Actual fix [Bug]: The pattern takes dot-separated parts, none of them empty, and releaseVersionOK also refuses a `.lock` ending, so `release` refuses before anything runs. changelog.md has a line under vNEXT.
+	- Decisions:
+		- A pattern plus the `.lock` rule, not `git check-ref-format`, so it costs no spawn and release.bash can use the same rule. The test asks git about every short suffix that passes.
+		- An empty part, such as `1.2.3-.a`, is refused too, which git would tag. Semver has no empty part either.
+		- `.lock` is refused in lower case only, as git does.
+	- Swept: every releaseVerRE use (resolveRelease, newestReleaseTag, isReleaseVersion) goes through releaseVersionOK. release.bash's side is 2026111016332132.
+	- Branch: round-20261111
+	- Test case: release_test.go [df4yj]
+	- Verified: [df4yj] fails on the old pattern, where `1.2.3.lock`, `1.2.3..a` and 7 more pass and git refuses them, and passes after. Quick gate passed, every area: test.bash 1964/0, fuzz 310/0, parity 30/0.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261110-201616
 
 - Code Review 20261110b item 26: release.bash takes version strings gitsby release refuses
 	- ID: 2026111016332132
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
 	- Opened by: jim-collier
@@ -478,6 +497,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23, the 2 patterns compared and `gitsby release v3.0.0rc1` run in a temp repo.
 	- Possible cause [Bug]: release.bash:304 uses `([A-Za-z0-9.-]+)?`, where releaseVerRE uses `([-.][0-9A-Za-z.-]+)?`.
 	- Origin: 8d108fd, 2026-08-12. No round saw it. Confirmed.
+	- Actual cause [Bug]: As the possible cause says. gen-winres.bash and the demo stamp in cicd.bash had the same loose pattern, and gen-winres.bash put a suffix after a dot, as in `v3.0.0.beta`, into the patch number.
+	- Actual fix [Bug]: config.bash has RELEASE_VERSION_RE, the same pattern as releaseVerRE, and fIsReleaseVersion, which also refuses a `.lock` ending. release.bash checks with it before the pipeline, gen-winres.bash takes the three numbers from it, and the demo stamp uses it.
+	- Decisions:
+		- In config.bash, which release.bash, gen-winres.bash and cicd.bash all source. The Go build can't read cicd/, so test.bash holds the two patterns together over the same versions.
+		- release.bash still wants the `v`. The shared pattern takes it as optional, for gen-winres.bash and the demo.
+		- A dotted suffix such as `v3.0.0.beta` still publishes as a full release, since release.bash calls a version a pre-release by its `-`. Unchanged.
+	- Swept: every version pattern outside legacy/. release.bash's argument check, gen-winres.bash and the demo stamp, fixed. release.bash's bump wants a plain vX.Y.Z already. test.bash's changelog heading check, and the installers' `--tag` check, which checks a tag's characters rather than a version, left. legacy/ is frozen.
+	- Branch: round-20261111
+	- Test case: test.bash [df4ym] [df4yk] [df4yn] [df4yp]
+	- Verified: all 4 fail against the old release.bash, config.bash and gen-winres.bash and pass after. [df4yk] has a dry run refuse v1.3.0-, v1.3.0., v1.3.0rc1, v1.3.0.lock and v1.3.0-a..b before the pipeline. Quick gate passed, every area: test.bash 1964/0, fuzz 310/0, parity 30/0.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261110-201616
 
 - Code Review 20261110b item 27: release.bash puts files the pipeline rewrote into the version PR
 	- ID: 2026111016332119

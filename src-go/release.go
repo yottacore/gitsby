@@ -23,10 +23,20 @@ type releasePlan struct {
 	bumped bool
 }
 
+// releaseVerRE is X.Y.Z, then a '-' or '.' and dot-separated parts, none of them
+// empty. RELEASE_VERSION_RE in cicd/config.bash is the same, for release.bash, and
+// test.bash holds the two together.
 var (
-	releaseVerRE = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$`)
+	releaseVerRE = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
 	releaseTagRE = regexp.MustCompile(`^v?([0-9]+)(\.([0-9]+))?(\.([0-9]+))?(.*)$`)
 )
+
+// releaseVersionOK is a version git can also take as a tag, with or without the
+// 'v'. Within the pattern's characters, the only name git refuses is one ending
+// in ".lock", and a tag git refuses fails only after the release merge is made.
+func releaseVersionOK(ver string) bool {
+	return releaseVerRE.MatchString(ver) && !strings.HasSuffix(ver, ".lock")
+}
 
 // nextVersion is the version that follows a tag. A candidate's own version is
 // what comes next: v2.0.0-rc1 -> v2.0.0, not v2.0.1 - promoting a candidate is a
@@ -58,7 +68,7 @@ func nextVersion(latest string) (version string, bumped bool) {
 // latest tag in the repo.
 func (a *app) resolveRelease() error {
 	if ver := strings.TrimPrefix(a.cmd.arg, "v"); ver != "" {
-		if !releaseVerRE.MatchString(ver) {
+		if !releaseVersionOK(ver) {
 			return usageOf("release").refuse("'" + ver + "' is not a version.")
 		}
 		a.rel.tag = a.cmd.arg
@@ -93,7 +103,7 @@ func newestReleaseTag(sorted []string) string {
 			if newestV == "" {
 				newestV = tag
 			}
-		case newestBare == "" && releaseVerRE.MatchString(tag):
+		case newestBare == "" && releaseVersionOK(tag):
 			newestBare = tag
 		}
 		if newestV != "" && newestBare != "" {
