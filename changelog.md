@@ -23,9 +23,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `account apply` adds a credential helper for each account. With two accounts logged in to gh, plain `git push` over https in the folder of the one that isn't active used to fail, because gh's own helper only answers for the active account. The helper asks gh for that account's token when git needs it, then tries its `tokenfile`. On other hosts it tries only the `tokenfile`. No token is written to disk, and a credential manager already set up is still asked first. Re-run `gitsby account apply` to get it.
 
+- `gitsby <command> --help`, `gitsby help <command>` and `gitsby -h <command>` print just that command: its syntax, what each placeholder means, what it does, and the options it takes. They used to print the whole help screen.
+
+- `pr list` lists the open pull requests, the same as a bare `pr`.
+
+- `--` ends Gitsby's options, so a commit message can start with a dash: `gitsby pullcom -- '-v bump'`.
+
+- The README lists the exit statuses, for scripts that call Gitsby.
+
 ### Changed
 
 - The SSH line in `status` and `whoami` names the key file on a `File:` line under it, not inside its parentheses, where a long path wrapped the line. `repo clone` ends with `[ Cloned. ]`, with the folder on a `File:` line. `account apply` and `account set` do the same for each file they write, and for a fragment `account apply` no longer uses.
+
+- An option a command doesn't read is refused, with the commands it works with: `gitsby status --direct` says `--direct works with sync.` It used to be ignored. `-q`, `--no-fetch`, `--any-identity` and `--config` still work with every command. Options typed before `raw` follow the same rule. An option left without its value is named as it was typed: `-m needs a value.`
+
+- Each placeholder has one name in the help screen, every syntax error, and the README: `[message]`, `[version]`, `[directory]`, `<owner/name>`. A `pr` word Gitsby doesn't know is named in the error, with the ones it takes.
+
+- The help screen opens by saying what Gitsby does differently: a command that changes anything shows the repo state and the exact git it will run, then asks first.
 
 ### Fixed
 

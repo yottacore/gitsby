@@ -484,3 +484,18 @@ func TestDoubleDashEndsOptions(t *testing.T) { // [df4eq]
 		t.Errorf("-- raw git log -- x: tool=%q args=%v err=%v", tool, args, err)
 	}
 }
+
+// A missing value names the option as it was typed.
+func TestMissingValueNamesOption(t *testing.T) { // [df4hb]
+	for argv, want := range map[string]string{
+		"pullcom -m":         "-m needs a value.",
+		"pullcom --MESSAGE":  "--MESSAGE needs a value.",
+		"status --config":    "--config needs a value.",
+		"-q pullcom -Config": "-Config needs a value.",
+	} {
+		_, _, _, err := parseArgs(strings.Fields(argv))
+		if err == nil || err.Error() != want {
+			t.Errorf("%s: got %v, want %q", argv, err, want)
+		}
+	}
+}
