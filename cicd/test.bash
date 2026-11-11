@@ -306,9 +306,10 @@ fGateStub(){
 }
 fMakeGateFixture(){
 	local s
-	mkdir -p "${gateDir}/cicd/utility/include" "${gateDir}/cicd/utility/demo" "${gateDir}/cicd/container" "${gateDir}/bin" "${gateDir}/home" "${gateDir}/src-go" "${gateFail}"
+	mkdir -p "${gateDir}/cicd/utility/include" "${gateDir}/cicd/utility/demo" "${gateDir}/cicd/container/markdownlint" "${gateDir}/bin" "${gateDir}/home" "${gateDir}/src-go" "${gateFail}"
 	cp "${root}/cicd/cicd.bash" "${root}/cicd/config.bash" "${gateDir}/cicd/"
 	cp "${root}/cicd/container/Dockerfile" "${root}/cicd/container/requirements.txt" "${gateDir}/cicd/container/"
+	cp "${root}/cicd/container/markdownlint/package.json" "${root}/cicd/container/markdownlint/package-lock.json" "${gateDir}/cicd/container/markdownlint/"
 	cp "${root}/cicd/utility/include/gfs-rotate.bash" "${root}/cicd/utility/include/go-test-lines.bash" "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${root}/cicd/utility/include/safe-rm.sh" "${gateDir}/cicd/utility/include/"
 	## Empty, so the lint globs and PY_LINT_FILES resolve, and stage 6 finds a scenario.
 	: > "${gateDir}/install.bash"; : > "${gateDir}/install.ps1"; : > "${gateDir}/cicd/utility/demo/gen-demo-gif.py"
@@ -1444,6 +1445,30 @@ fPillowFromLock(){
 fPyYamlFromLock(){
 	local dockerfile="${root}/cicd/container/Dockerfile"
 	fSysPyFromLock pyyaml && grep -qF "python3 -I -c 'import yaml'" "${dockerfile}" && ! grep -qwE 'python3-yaml' "${dockerfile}"
+}
+## markdownlint-cli comes from its lock, at the version TOOL_VERSIONS records, with every package
+## in the lock pinned by sha512 to the npm registry. The image installs it with npm ci and runs no
+## package's scripts. $1 the recipe and $2 the lock's folder, the repo's own by default.
+# shellcheck disable=SC2016  ## The recipe's ${PATH} is matched as written.
+fMarkdownlintFromLock(){
+	local dockerfile="${1:-${root}/cicd/container/Dockerfile}" dir="${2:-${root}/cicd/container/markdownlint}" want=""
+	# shellcheck source=/dev/null
+	want="$(cd "${root}" && source cicd/config.bash && printf '%s\n' "${TOOL_VERSIONS[@]}" | sed -n 's/^markdownlint=//p')"
+	[[ -n "${want}" ]] && grep -qxF 'COPY container/markdownlint/package.json container/markdownlint/package-lock.json /opt/markdownlint/' "${dockerfile}" \
+		&& grep -qF '(cd /opt/markdownlint && PATH="/opt/node/bin:${PATH}" npm ci --ignore-scripts ' "${dockerfile}" \
+		&& ! grep -qE 'npm (install|i) |npx ' "${dockerfile}" \
+		&& python3 -I -c '
+import json, re, sys
+want, d = sys.argv[1], sys.argv[2]
+pkg = json.load(open(d + "/package.json"))
+lock = json.load(open(d + "/package-lock.json"))
+pk = lock["packages"]
+deps = {"markdownlint-cli": want}
+others = [v for k, v in pk.items() if k]
+ok = pkg.get("dependencies") == deps and pk[""].get("dependencies") == deps and lock.get("lockfileVersion") == 3 \
+	and pk.get("node_modules/markdownlint-cli", {}).get("version") == want and others \
+	and all(re.fullmatch(r"sha512-[A-Za-z0-9+/]{86}==", v.get("integrity", "")) and v.get("resolved", "").startswith("https://registry.npmjs.org/") for v in others)
+sys.exit(0 if ok else 1)' "${want}" "${dir}"
 }
 ## Whether the script $1 refuses a bash below its floor before running anything: a copy with the
 ## floor raised past any real bash, named as the original, has to exit 1 with the one line. A
@@ -5635,11 +5660,12 @@ GHEOF
 		mkdir -p "${rel}/bin"
 		git init --quiet --bare -b main "${rel}/origin.git"
 		git clone --quiet "${rel}/origin.git" "${relRepo}" 2>/dev/null
-		mkdir -p "${relRepo}/cicd/utility/include" "${relRepo}/cicd/container" "${relRepo}/src-go"
+		mkdir -p "${relRepo}/cicd/utility/include" "${relRepo}/cicd/container/markdownlint" "${relRepo}/src-go"
 		printf '%s\n' 'module x' '' 'require example.com/m v1.2.0' > "${relRepo}/src-go/go.mod"
 		cp "${root}/cicd/release.bash" "${root}/cicd/config.bash" "${relRepo}/cicd/"
 		cp "${root}/cicd/utility/include/image-go.bash" "${root}/cicd/utility/include/safe-rm.bash" "${root}/cicd/utility/include/safe-rm.sh" "${relRepo}/cicd/utility/include/"
 		cp "${root}/cicd/container/Dockerfile" "${root}/cicd/container/requirements.txt" "${relRepo}/cicd/container/"
+		cp "${root}/cicd/container/markdownlint/package.json" "${root}/cicd/container/markdownlint/package-lock.json" "${relRepo}/cicd/container/markdownlint/"
 		fStub "${rel}/stub" <<-EOF
 			#!/usr/bin/env bash
 			printf '%s\n' "\$(basename "\$0") \$*" >> '${relCalls}'
@@ -6733,6 +6759,8 @@ GHEOF
 	## test.bash's own probe for [dea4c] runs the system python, so the image's PyYAML has to be there.
 	fAssert "[deavy] the lock pins PyYAML, the image puts it on the system python and checks it imports, and apt installs none" \
 		fPyYamlFromLock
+	fAssert "[df50y] markdownlint-cli and its packages come from the lock, pinned by sha512, at the version config.bash records, and the image runs none of their scripts" \
+		fMarkdownlintFromLock
 	## What --leakcheck makes of CodeQL's report, on reports written here.
 	if command -v python3 >/dev/null 2>&1; then
 		local cqAll="main.go main_test.go vendor/x/y.go" cqMissing=""
@@ -7140,6 +7168,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[de5ma] and --no-leakcheck"  fGateContainerNoLeak
 		fAssert "[de54f] the image's tag changes with the Python tools' lock"  fGateFileInTag container/requirements.txt
 		fAssert "[dez69] and with the guard it copies in"  fGateFileInTag utility/include/safe-rm.sh
+		fAssert "[df50z] and with markdownlint's lock"  fGateFileInTag container/markdownlint/package-lock.json
 		fAssert "[ddrrn] and the demo gif as well"  fGateContainerDemo
 		fAssert "[dedn8] dogfood and stage 7 build with the image's Go and copy here, and the harness is handed the image"  fGateContainerBuilds
 		fAssert "[dedn9] and so do --quick's cross-builds"  fGateContainerQuickBuilds
@@ -8973,3 +9002,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261111 JC: the backlog gate wants a removed check named on a line the branch adds, and sees every helper and spawn-count.bash, [df4xc] to [df4xf].
 ##		- 20261110 JC: release.bash cuts only from the branch 'gitsby release' cuts from, level with origin's, and stops when the pipeline changed the tree, or what is branched, merged or tagged isn't what was tested, [df4xt] to [df4y2].
 ##		- 20261110 JC: release.bash, gen-winres.bash and 'gitsby release' take one version shape, and the two scripts refuse what git can't tag. A stop after 'br create' says the branch is pushed. [df4yk] to [df4yq].
+##		- 20261111 JC: markdownlint-cli from its lock, by sha512, with no scripts, [df50y], and the image tag follows the lock, [df50z].

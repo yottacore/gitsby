@@ -845,12 +845,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b enhancement 4: The image installs markdownlint-cli's dependencies with no lock
 	- ID: 2026111016331893
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163318
 	- Opened by: jim-collier
 	- Requirements [Feature]: Install from a committed lock file with `npm ci --ignore-scripts`, or fetch by sha256, as the image's other tools are.
 	- Origin: Dockerfile:128, 8249e95, 2026-10-10. The file's header says the tools are pinned. Confirmed by reading.
+	- Progress log:
+		- 2026-11-11: markdownlint-cli comes from `cicd/container/markdownlint/package-lock.json` with `npm ci --ignore-scripts`, each of its 73 packages checked by sha512. The build stops on a markdownlint other than the one config.bash records. The image tag hashes the package and lock, so it moved to `gitsby-cicd:c153ffacafc4`. Every package version is the same as in the old image.
+	- Decisions:
+		- A lock rather than sha256 downloads, since npm checks each package's sha512 from the lock and the tree is 73 packages. It sits in its own folder, so npm ci has a project to install into, at /opt/markdownlint.
+		- VER_markdownlint stays in config.bash, and the build checks the installed version against it, as for ruff. A bump means a new lock: `npm install --package-lock-only --ignore-scripts` in that folder.
+		- npm's cache goes in the step's folder, so the image no longer keeps a /root/.npm.
+	- Branch: round-20261111
+	- Test case: test.bash [df50y] [df50z]
+	- Verified: `--backlog-run-quick` passed in the new image, every area, test.bash 1967/0, fuzz 310/0, parity 31/0, markdownlint clean. [df50y] fails on the previous Dockerfile, on npm ci without --ignore-scripts, on a stray npm install, on a lock at another version, and on a package with no sha512, and passes as it is. [df50z]: the previous tag hash stays the same when the lock changes, and the new one moves.
+	- Swept: test.bash's two fixtures that copy the recipe (the gate's and release.bash's) copy the lock folder too. contributing.md's host install line is for the host, and stays.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261110-212434
 
 - Code Review 20261110b enhancement 5: gh-account.bash is never sourced
 	- ID: 2026111016331881
