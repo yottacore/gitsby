@@ -3092,10 +3092,9 @@ GHEOF
 		bash -c "cd '${pnc}' && [[ \"\$(git status --porcelain | tr '\n' ,)\" == ' M t.txt,?? u.txt,' ]] && grep -qx t2 t.txt"
 	fAssertOut "[ddhvp] pr ok still refuses --staged"  'staged works with pullcom, sync'  bash -c "cd '${pnc}' && PATH='${ghp}' '${gitsby}' -q pr ok 7 --staged 2>&1"
 
-	## A branch whose name starts with a dash can't be typed here - the parser reads a leading dash
-	## as an option of ours - but a clone brings whatever the remote has, and then git reads it as
-	## options too: 'git checkout -evil' answers "unknown switch". There is no separator that
-	## rescues it in that position, so it is refused once, up front.
+	## A branch whose name starts with a dash comes from a clone or raw git, or is typed after '--',
+	## and git reads it as options: 'git checkout -evil' answers "unknown switch". There is no
+	## separator that rescues it in that position, so it is refused once, up front.
 	local dsh="${work}/$1-dash"
 	mkdir -p "${dsh}"
 	git init --quiet --bare -b main "${dsh}/origin.git"
@@ -3111,6 +3110,18 @@ GHEOF
 	fAssertFail "[dbfgt] a dash-led branch name is refused before it reaches git"  bash -c "cd '${dsh}/c' && '${gitsby}' -q pullcom 'x'"
 	fAssertOut  "[dbfgv] and says why"  'reads it as an option'  bash -c "cd '${dsh}/c' && '${gitsby}' -q pullcom 'x' 2>&1"
 	fAssert     "[dbfgw] but status still reports the repo it is wrong about"  bash -c "cd '${dsh}/c' && '${gitsby}' -q status >/dev/null"
+	## A br switch target after '--' is one too. 'checkout -f' committed the staged file and then
+	## threw away the unstaged edit, at exit 0.
+	git init --quiet -b main "${dsh}/sw"
+	(
+		cd "${dsh}/sw" || exit 1
+		echo a > a.txt && echo b > b.txt && git add --all && git commit --quiet -m init
+		git update-ref refs/heads/-f HEAD && git checkout --quiet -b work
+		echo a2 > a.txt && git add a.txt && echo b2 > b.txt
+	)
+	fAssertOut  "[df521] br switch -- <dash-led branch> is refused before it reaches git"  'reads it as an option' \
+		bash -c "cd '${dsh}/sw' && '${gitsby}' -q --staged br switch -- -f 2>&1"
+	fAssert     "[df522] and nothing ran: no commit, and both edits still there"  bash -c "cd '${dsh}/sw' && [[ \"\$(git rev-list --count HEAD)\" == 1 && \"\$(git branch --show-current)\" == work && \"\$(git status --porcelain | tr '\n' ,)\" == 'M  a.txt, M b.txt,' ]]"
 
 	## Identity: which account a remote-touching command acts as. A real github.com origin, since
 	## the owner is parsed after insteadOf. --no-fetch and a stub gh keep it off the network.

@@ -441,7 +441,15 @@ func (a *app) preflightBranch() error {
 		}
 	case "br-switch":
 		if a.cmd.arg != "" && !a.branchExistsLocal(a.cmd.arg) && !a.branchExistsRemote(a.cmd.arg) {
+			if strings.HasPrefix(a.cmd.arg, "-") {
+				return usagef("No branch '%s' locally or on origin, and a branch name can't start with a dash.", a.cmd.arg)
+			}
 			return usagef("No branch '%s' locally or on origin. To create it: %s br create %s", a.cmd.arg, meName, a.cmd.arg)
+		}
+		// After '--' the target can start with a dash, and checkout would read it as an
+		// option. One made by raw git or a clone exists, so it gets past the check above.
+		if err := refuseOptionShapedRefs(a.cmd.arg); err != nil {
+			return err
 		}
 		// Refusing a dirty protected branch belongs here too, before the plan is shown
 		// and confirmed.

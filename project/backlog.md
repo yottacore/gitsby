@@ -169,7 +169,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 4: br switch to a local branch named like an option runs the option, and under --staged throws away unstaged edits
 	- ID: 2026111016332404
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163324
 	- Opened by: jim-collier
@@ -180,6 +180,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: preflightBranch checks only that the target exists, and branch.go:152 runs `checkout <name>`.
 	- Origin: 353f5c9 and f9716e4. Code Review 20260818 item 10 refused dash-led current, default and target branches, not the switch target. The fuzz sweep at backlog line 539 assumed the parser refuses dash-led words, which stopped holding when bbb6445 made `--` end the options on 2026-11-10. Regression. Confirmed.
 	- Sweep: Every positional that reaches git argv now that `--` lets a dash through: switch, merge, prune, hotfix, release, repo connect, create and clone.
+	- Actual cause [Bug]: preflightBranch checked only that the br switch target exists. Since bbb6445 a dash-led word gets past the parser after `--`, and one made by raw git exists, so `git checkout -f` ran as the option.
+	- Actual fix [Bug]: br switch refuses a dash-led target that exists with the line a dash-led current branch gets, and one that doesn't with "a branch name can't start with a dash", rather than a br create line that would be refused too.
+		- Swept: switch fixed. create runs check-ref-format --branch, which refuses a dash. hotfix puts `hotfix/` ahead of the name. merge's word is the message, after `-m`. prune takes none. release's must match the version pattern, which starts with a digit. clone has `--` ahead of the URL. pr's number must be digits, and its title follows `--title`. repo connect and repo create are item 18, 2026111016332231.
+	- Decisions:
+		- A missing dash-led target gets its own wording, since there is nothing to rename.
+		- No changelog entry. `--` is new in vNEXT, so no release had this.
+	- Branch: round-20261111
+	- Test case: Go [df520], test.bash [df521] and [df522]. [df520] fails with the fix stubbed out. The [df522] steps with the build before the fix made a commit and lost the unstaged edit, at exit 0.
+	- Acceptance signoff: Quick gate passed, all areas.
+	- Closed: 20261110-215801
 
 - Code Review 20261110b item 5: sync and the park pushes follow push.default, so they push branches the plan never names
 	- ID: 2026111016332392
