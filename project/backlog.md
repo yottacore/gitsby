@@ -349,6 +349,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: config.go:558 and cfgformat.go:272 go by an upper bound only. The old pin began at ca0e55c, 2026-09-24, so anything older can't be from it.
 	- Origin: The mtime rule from Bug 2026110710480989. Confirmed.
 	- Against: The answer on 2026110710480989 to go by the file's mtime. A lower bound and keeping the backup's mtime don't change that rule.
+	- Answered 2026-11-10: fix it as filed.
 
 - Code Review 20261110b item 23: 2 accounts can get the same fragment file, and the later one wins
 	- ID: 2026111016332169
