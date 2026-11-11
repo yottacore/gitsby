@@ -17,10 +17,12 @@ import (
 )
 
 // releasePlan is the version this run cuts, and whether we invented it - the
-// guards below only speak for the invented ones.
+// guards below only speak for the invented ones. resume is a release already
+// merged and tagged here whose push failed, so this run only sends it.
 type releasePlan struct {
 	tag    string
 	bumped bool
+	resume bool
 }
 
 // releaseVerRE is X.Y.Z, then a '-' or '.' and dot-separated parts, none of them
@@ -136,9 +138,19 @@ func tagNewer(tag, than string) bool {
 // releasePreflight refuses up front rather than mid-command: by the time
 // cmdRelease runs it has already committed and pushed.
 func (a *app) releasePreflight() error {
+	ver := strings.TrimPrefix(a.rel.tag, "v")
+	// After a failed push the next run finishes that release. A version worked out
+	// here, a candidate's promotion included, would tag the same commit again and push
+	// it, and the first tag would never go. A different version typed out is
+	// deliberate, so it still cuts its own.
+	typed := strings.TrimPrefix(a.cmd.arg, "v") != ""
+	if pending := a.unpushedRelease(); pending != "" && (!typed || strings.TrimPrefix(pending, "v") == ver) {
+		a.rel = releasePlan{tag: pending, resume: true}
+		a.out.status("Release " + pending + " is tagged here but never reached origin; finishing it.")
+		return nil
+	}
 	// Either spelling, or 'release 1.2.3' in a repo tagged v1.2.3 cuts a second tag
 	// for the same version.
-	ver := strings.TrimPrefix(a.rel.tag, "v")
 	if have := runLines("git", "tag", "--list", "v"+ver, ver); len(have) > 0 {
 		return usagef("Tag '%s' already exists.", have[0])
 	}
@@ -185,8 +197,34 @@ func (a *app) releasePreflight() error {
 	return nil
 }
 
+// unpushedRelease is the release tag on the tip of the local default branch while
+// origin's copy is behind it or missing: a release cut here whose push failed. A
+// default branch that went its own way from origin's isn't one, since its push
+// would be refused anyway.
+func (a *app) unpushedRelease() string {
+	relMain := a.defaultBranch()
+	if !a.branchExistsLocal(relMain) {
+		return ""
+	}
+	local := "refs/heads/" + relMain
+	if a.branchExistsRemote(relMain) {
+		// "<behind> <ahead>" of origin's copy.
+		counts := strings.Fields(runOut("git", "rev-list", "--left-right", "--count", "refs/remotes/origin/"+relMain+"..."+local))
+		if len(counts) != 2 || counts[0] != "0" || counts[1] == "0" {
+			return ""
+		}
+	}
+	var tags []string
+	for _, tag := range runLines("git", "-c", "versionsort.suffix=-", "tag", "--list", "--points-at", local, "v[0-9]*", "[0-9]*", "--sort=-v:refname") {
+		if releaseVersionOK(strings.TrimPrefix(tag, "v")) {
+			tags = append(tags, tag)
+		}
+	}
+	return newestReleaseTag(tags)
+}
+
 // cmdRelease merges dev into main/master --no-ff (if the repo has a dev), tags,
-// and pushes both.
+// and pushes both. A resumed release has the merge and the tag already.
 func (a *app) cmdRelease() error {
 	mainBranch := a.defaultBranch()
 	// The same answer the plan read, so the run can't take a dev the plan never showed.
@@ -198,39 +236,13 @@ func (a *app) cmdRelease() error {
 	if err := a.cmdPush(); err != nil { // park current work safely first
 		return err
 	}
-	if devBranch != "" && a.currentBranch() != devBranch {
-		// Freshen dev so the release has all of it.
-		if err := a.checkout(devBranch); err != nil {
-			return err
-		}
-		if err := a.pullIfOnline(); err != nil {
-			return err
-		}
-	}
-	if a.currentBranch() != mainBranch {
-		if err := a.checkout(mainBranch); err != nil {
-			return err
-		}
-	}
-	if err := a.pullIfOnline(); err != nil {
-		return err
-	}
-	if devBranch != "" {
-		mergeMessage := a.opt.message
-		if mergeMessage == "" {
-			mergeMessage = "Release " + a.rel.tag
-		}
-		// By full ref: git merge reads a tag of the same name ahead of the branch.
-		if err := a.step("git", "merge", "--no-ff", "refs/heads/"+devBranch, "-m", mergeMessage); err != nil {
-			rerun := meName + " release"
-			if a.cmd.arg != "" {
-				rerun += " " + typedArg(a.cmd.arg, runtime.GOOS)
+	if a.rel.resume {
+		if a.currentBranch() != mainBranch {
+			if err := a.checkout(mainBranch); err != nil {
+				return err
 			}
-			return a.backOutMerge(err, devBranch, mainBranch, startBranch,
-				[]string{"git checkout " + typedArg(devBranch, runtime.GOOS), "git merge " + typedArg(mainBranch, runtime.GOOS)}, rerun)
 		}
-	}
-	if err := a.step("git", "tag", "-a", a.rel.tag, "-m", a.rel.tag); err != nil {
+	} else if err := a.cutRelease(mainBranch, devBranch, startBranch); err != nil {
 		return err
 	}
 	// The branch has to reach origin, not just the tag - otherwise origin gets the
@@ -271,4 +283,42 @@ func (a *app) cmdRelease() error {
 		return a.checkout(startBranch)
 	}
 	return nil
+}
+
+// cutRelease freshens dev, merges it into the default branch and tags the result,
+// leaving the default branch checked out for the pushes.
+func (a *app) cutRelease(mainBranch, devBranch, startBranch string) error {
+	if devBranch != "" && a.currentBranch() != devBranch {
+		// Freshen dev so the release has all of it.
+		if err := a.checkout(devBranch); err != nil {
+			return err
+		}
+		if err := a.pullIfOnline(); err != nil {
+			return err
+		}
+	}
+	if a.currentBranch() != mainBranch {
+		if err := a.checkout(mainBranch); err != nil {
+			return err
+		}
+	}
+	if err := a.pullIfOnline(); err != nil {
+		return err
+	}
+	if devBranch != "" {
+		mergeMessage := a.opt.message
+		if mergeMessage == "" {
+			mergeMessage = "Release " + a.rel.tag
+		}
+		// By full ref: git merge reads a tag of the same name ahead of the branch.
+		if err := a.step("git", "merge", "--no-ff", "refs/heads/"+devBranch, "-m", mergeMessage); err != nil {
+			rerun := meName + " release"
+			if a.cmd.arg != "" {
+				rerun += " " + typedArg(a.cmd.arg, runtime.GOOS)
+			}
+			return a.backOutMerge(err, devBranch, mainBranch, startBranch,
+				[]string{"git checkout " + typedArg(devBranch, runtime.GOOS), "git merge " + typedArg(mainBranch, runtime.GOOS)}, rerun)
+		}
+	}
+	return a.step("git", "tag", "-a", a.rel.tag, "-m", a.rel.tag)
 }

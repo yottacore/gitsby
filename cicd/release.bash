@@ -507,7 +507,7 @@ else
 			|| fDie "'${relSource}' holds more than PR #${prNum} on the tested commit, since origin's moved. The bump is merged, and nothing is tagged."
 	fi
 	if ! fWould "gitsby release ${version}"; then
-		"${gitsby}" -q release "${version}" || fDie "'gitsby release' failed; the version commit is pushed but no tag was cut."
+		"${gitsby}" -q release "${version}" || fDie "'gitsby release' failed; the version commit is pushed and nothing is published. If it stopped at a push, ${version} may be tagged here only: 'gitsby release ${version}' finishes it, then 'cicd/release.bash ${version} --publish'."
 		## 'gitsby release' pulls both branches before it merges, so the tag is checked as well.
 		[[ "$(git rev-parse "refs/tags/${version}^{tree}")" == "${relTree}" ]] \
 			|| fDie "the ${version} tag holds more than PR #${prNum} on the tested commit. It's pushed, and nothing is published. Check it, then run 'cicd/release.bash ${version} --publish'."

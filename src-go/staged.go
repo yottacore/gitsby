@@ -162,10 +162,11 @@ func (a *app) stagedMoveCheck(target string, all, left map[string]bool) error {
 }
 
 // stagedReleaseCheck follows cmdRelease's checkouts, with the index standing in for the
-// branch being left. A file that passes is the same on every branch read so far.
+// branch being left. A file that passes is the same on every branch read so far. A
+// resumed release goes straight to the default branch.
 func (a *app) stagedReleaseCheck(current string, all, left map[string]bool) error {
 	here := current
-	if a.mergeTarget() == "dev" && here != "dev" {
+	if a.mergeTarget() == "dev" && here != "dev" && !a.rel.resume {
 		if err := a.stagedMoveCheck("dev", all, left); err != nil {
 			return err
 		}

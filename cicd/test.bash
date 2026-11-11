@@ -1902,6 +1902,34 @@ fRunSuite(){
 	## A version you typed is deliberate, so it still works on an already-released commit.
 	fAssert     "[dafrq] an explicit version still releases the same commit"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.4.0 && git rev-parse -q --verify refs/tags/v1.4.0 >/dev/null"
 
+	## A refused push of main leaves the release merged and tagged here only. The next run
+	## finishes it, rather than tagging the same commit again and pushing only the new tag.
+	cat > "${origin}/hooks/pre-receive.off" <<-'EOF'
+		#!/bin/sh
+		while read -r old new ref; do
+			[ "${ref}" = refs/heads/main ] && { echo "main is protected" >&2; exit 1; }
+		done
+		exit 0
+	EOF
+	chmod +x "${origin}/hooks/pre-receive.off"
+	( cd "${cloneA}" && echo hooked > hooked.txt && mv "${origin}/hooks/pre-receive.off" "${origin}/hooks/pre-receive" )
+	fAssertFail "[df519] a release whose push of main is refused fails"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
+	mv "${origin}/hooks/pre-receive" "${origin}/hooks/pre-receive.off"
+	fAssert     "[df51a] the next bare release pushes main and that release's tag"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]] && git ls-remote --exit-code --tags origin refs/tags/v1.4.1 >/dev/null"
+	fAssert     "[df51b] and cuts no second tag on the same commit"  bash -c "cd '${cloneA}' && ! git rev-parse -q --verify refs/tags/v1.4.2 >/dev/null && ! git ls-remote --exit-code --tags origin refs/tags/v1.4.2 >/dev/null"
+	fAssert     "[df51c] and fast-forwards dev and pushes it"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse main)\" && \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" ]]"
+	( cd "${cloneA}" && git checkout --quiet dev && echo hooked2 > hooked2.txt && mv "${origin}/hooks/pre-receive.off" "${origin}/hooks/pre-receive" )
+	fAssertFail "[df51d] the same with a version typed"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.5.0"
+	mv "${origin}/hooks/pre-receive" "${origin}/hooks/pre-receive.off"
+	fAssert     "[df51e] typing that version again finishes it"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.5.0 && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]] && git ls-remote --exit-code --tags origin refs/tags/v1.5.0 >/dev/null"
+	## A bare release after a candidate isn't a bump, and still finishes the candidate rather than
+	## promoting it on the same commit.
+	( cd "${cloneA}" && git checkout --quiet dev && echo hooked3 > hooked3.txt && mv "${origin}/hooks/pre-receive.off" "${origin}/hooks/pre-receive" )
+	fAssertFail "[df51f] the same with a candidate"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.6.0-rc1"
+	mv "${origin}/hooks/pre-receive" "${origin}/hooks/pre-receive.off"
+	fAssert     "[df51g] a bare release then pushes the candidate, and promotes nothing"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && git ls-remote --exit-code --tags origin refs/tags/v1.6.0-rc1 >/dev/null && ! git rev-parse -q --verify refs/tags/v1.6.0 >/dev/null"
+	( cd "${cloneA}" && git checkout --quiet dev )
+
 	## Tags with no 'v' were invisible to the scan, so release started over at 0.1.0 and pushed it.
 	local bt="${work}/$1-baretag"
 	git init --quiet --bare -b main "${bt}/origin.git"

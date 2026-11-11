@@ -141,7 +141,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 3: A second release after a failed push of main cuts a new tag on the same commit
 	- ID: 2026111016332417
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163324
 	- Opened by: jim-collier
@@ -151,6 +151,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23, local bare origin with a pre-receive hook.
 	- Possible cause [Bug]: release.go:142 treats main being ahead as new work. The tag is made before main is pushed, at release.go:223-237.
 	- Origin: 089776d, 2026-08-18, the Go port of a bash fix. Code Review 20260727b item 12 fixed this case, and its tests [dafrk] to [dafrq] cover only a run whose push worked. Regression. Confirmed.
+	- Actual cause [Bug]: As the possible cause says. The run that failed also leaves you on main, ahead, so the second run's park push sends main, and then only v1.0.2 goes with it.
+	- Actual fix [Bug]: When the default branch's tip holds a release tag and origin's copy is behind it or missing, a bare `release` finishes that release instead of cutting one: it pushes the branch and that tag, fast-forwards dev and pushes it. The plan shows only those steps, and a line says which release it is finishing. Typing that same version does the same. changelog.md has a line under vNEXT.
+	- Decisions:
+		- Finish rather than refuse, the first of the two outcomes the item allows, since re-running a command is meant to be safe and to get you there.
+		- A different version typed out still cuts its own tag, as [dafrq] keeps for a typed version.
+		- Any run with no version typed finishes, a candidate's promotion included, since that would also tag the same commit again and leave the candidate behind.
+		- A default branch that went its own way from origin's isn't taken as a stuck release, since its push would be refused anyway.
+		- A run whose branch push worked and tag push failed is unchanged: main is level, so the nothing-new check stands down and names the tag to push.
+	- Swept: the plan (previewRelease) and the `--staged` walk (stagedReleaseCheck), which both now skip dev's pull and the merge on a finish. release.bash refuses an existing tag in phase 1, so it can't cut a second one. Its phase 2 message for a failed `gitsby release` said no tag was cut, which a refused push makes untrue, so it now names `gitsby release <version>` and then `--publish` as the way to finish.
+	- Branch: round-20261111
+	- Test case: test.bash [df519] [df51a] [df51b] [df51c] [df51d] [df51e] [df51f] [df51g]
+	- Verified: [df51a] [df51b] [df51e] fail against the old release.go and pass after. [df519] and [df51d], the refused first runs, and [df51c], dev after the second run, pass on both. [df51g], a candidate left behind, failed on a first version of the fix that keyed on a bump, and passes after. Quick gate passed, every area: test.bash 1975/0, fuzz 310/0, parity 31/0.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261110-213630
 
 - Code Review 20261110b item 4: br switch to a local branch named like an option runs the option, and under --staged throws away unstaged edits
 	- ID: 2026111016332404
