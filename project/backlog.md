@@ -33,6 +33,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- cicd.bash's go test -list compiles with every core
+	- ID: 2026111020264871
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-202629
+	- Opened by: jim-collier
+	- Related IDs: 2026111016331970
+	- Steps to reproduce [Bug]: Run the fuzz step, and watch the compile behind go test -list at cicd.bash:1195.
+	- Incorrect behavior [Bug]: It has no -p and no GOMAXPROCS, so it builds the test binary with every core, at nice 19.
+	- Expected behavior [Bug]: It takes the quarter, like the fuzz runs after it.
+	- Reproduced [Bug]: No, from reading cicd.bash. Came in with 8c53b28, 2026-11-09.
+	- Possible cause [Bug]: The line was added after [dedq2] and [dbft4] were written, and neither matches it.
+
 - release.bash says nothing is pushed after 'br create' pushed the version branch
 	- ID: 2026111019574118
 	- Type: Bug
@@ -664,7 +678,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 37: test.bash [dab8t] and [dab8z] pass with the guard they test removed
 	- ID: 2026111016331995
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
@@ -674,6 +688,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 in a copy of the tree. Of the 88 fAssertFail checks up to line 4382, these 2 are the only ones whose reason comes from another guard.
 	- Possible cause [Bug]: test.bash:2615 and :2618 reuse a remote with history and don't check the message.
 	- Origin: 5552726, 2026-07-24. The 2026-08-10 pass that made refusals check their reason missed these. Confirmed.
+	- Actual cause [Bug]: As the possible cause says.
+	- Actual fix [Bug]: Each check connects to an empty remote of its own, and a new check after each one wants the Nothing to publish here refusal.
+	- Decisions: The message check is what fails without the guard. With an empty remote the command still fails later, on the empty commit, so the exit code alone can't tell.
+	- Branch: round-20261111
+	- Test case: test.bash [dab8t] [df4z3], [dab8z] [df4z4]
+	- Verified: with the guard taken out of a copy of src-go, [df4z3] and [df4z4] fail and the build with it passes them. --backlog-run-quick passed, all areas: test.bash 1966/0, fuzz 310/0, parity 30/0.
+	- Swept: the other refusals in the connect block. [dab8s] has its reason checked by [dcmnb]. [dab8n] and [dab8r] fail on the guard they name, per the review's sweep of the 88 fAssertFail checks.
+	- Acceptance signoff: Self-closed. Its new checks fail without the guard and pass with it.
+	- Closed: 20261110-202629
 
 - Code Review 20261110b item 38: parity [dben1], [dben2] and [deyw8] can't fail on an alias routed to the wrong command
 	- ID: 2026111016331982
@@ -692,7 +715,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 39: test.bash [dbft4] and [dbft3] miss most build sites
 	- ID: 2026111016331970
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
@@ -702,6 +725,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 in a copy of the tree.
 	- Possible cause [Bug]: test.bash:6060 and :6069.
 	- Origin: The checks predate eb6aa5e and 0748e25, 2026-10-25, which moved the builds. Confirmed.
+	- Actual cause [Bug]: As the possible cause says. [dbft4] saw only the 2 native builds, and [dbft3] read no value.
+	- Actual fix [Bug]: [dbft4] reads every compile in cicd.bash, release.bash and remote-tests.bash, continuation lines joined: a bare go build and every fImageGo call. Each needs -p with BUILD_JOBS or HEAVY_JOBS, and it fails under 5 sites. [dbft3] sources config.bash with 8 stand-in cores and wants BUILD_JOBS between 1 and 7.
+	- Decisions: remote-tests.bash's test build counts as a build site, since it compiles the whole package. [de56v] already treats it as one.
+	- Branch: round-20261111
+	- Test case: test.bash [dbft4], [dbft3], kept under their IDs since what they assert didn't change.
+	- Verified: in a copy, taking -p out of any one of the 5 sites fails [dbft4], and so does the issue's 2-site edit, which the old check passed. An empty remote-tests.bash fails it too. [dbft3] fails with BUILD_JOBS set to every core in config.bash. --backlog-run-quick passed, all areas: test.bash 1966/0, fuzz 310/0, parity 30/0.
+	- Swept: every go build, go test and go vet in cicd/ and its utility scripts. The vet, race, soak and fuzz runs have -p, GOMAXPROCS or both, and [dedq2] watches the hard ones. Only the fuzz step's go test -list has neither, filed as Bug 2026111020264871.
+	- Acceptance signoff: Self-closed. Both checks fail on the fault and pass on the tree.
+	- Closed: 20261110-202629
 
 - Code Review 20261110b item 40: spawn-count passes a measure whose command failed, and [df052] measures a failed run
 	- ID: 2026111016331957

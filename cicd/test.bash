@@ -1587,6 +1587,18 @@ fExitTable(){ awk '/^\| Exit status/{f=1} f && !/^\|/{exit} f' "$1" ;}
 fExitTablesMatch(){ local readme="" guide=""
 	readme="$(fExitTable "${root}/README.md")"; guide="$(fExitTable "${root}/project/style-guide_ui-ux.md")"
 	[[ -n "${readme}" && "${readme}" == "${guide}" ]] ;}
+## Every Go compile in the pipeline scripts, one per line with its continuations joined: a
+## bare 'go build' or 'go test -c' as a command, or an fImageGo call. Messages that name
+## 'go build' don't start a command, so they stay out.
+fBuildSites(){
+	local f
+	for f in cicd/cicd.bash cicd/release.bash cicd/remote-tests.bash; do
+		awk '/^[[:space:]]*#/{next} { if (sub(/\\$/, "")) { j = j $0 " "; next } print j $0; j = "" }' "${root}/${f}"
+	done | grep -E '^[[:space:]]*fImageGo[[:space:]]|(^|&&|\(|;)[[:space:]]*([A-Z_][A-Z0-9_]*=[^[:space:]]*[[:space:]]+)*go (build|test -c)[[:space:]]'
+}
+## Five sites at least, so a pattern that stops matching can't pass on none.
+fBuildSitesCapped(){ local sites=""; sites="$(fBuildSites)" || return 1
+	[[ $(grep -c . <<< "${sites}") -ge 5 ]] && ! grep -qvE -- '-p "\$\{(BUILD|HEAVY)_JOBS\}"' <<< "${sites}" ;}
 fRunSuite(){
 	fEcho_Clean "suite: ${1} (${gitsby})"
 
@@ -2612,10 +2624,17 @@ fRunSuite(){
 	local cnCred="cd '${cnOff}/clone' && env -u https_proxy -u HTTPS_PROXY -u ALL_PROXY -u all_proxy '${gitsby}' -q repo clone 'https://me:tok_s3cret@127.0.0.1:1/x.git' credc 2>&1"
 	fAssertOut    "[dd5c7] a credential in a step's url is masked in its echo"  '^\[ git clone .*https://\*\*\*@127\.0\.0\.1:1/x\.git'  bash -c "${cnCred}"
 	fAssertNotOut "[dd5c8] and is printed nowhere in the run"                   'tok_s3cret'                                         bash -c "${cnCred}"
-	fAssertFail "[dab8t] repo connect in an empty dir rejected"     bash -c "mkdir -p '${cn}/empty' && cd '${cn}/empty' && '${gitsby}' -q repo connect '${cn}/remote.git'"
+	## Empty remotes of their own, so the only thing left to refuse is the empty folder.
+	git init --quiet --bare -b main "${cn}/remote-e1.git"
+	git init --quiet --bare -b main "${cn}/remote-e2.git"
+	fAssertFail "[dab8t] repo connect in an empty dir rejected"     bash -c "mkdir -p '${cn}/empty' && cd '${cn}/empty' && '${gitsby}' -q repo connect '${cn}/remote-e1.git'"
+	fAssertOut  "[df4z3] and says there is nothing to publish"      'Nothing to publish here: no commits and no files' \
+		bash -c "cd '${cn}/empty' && '${gitsby}' -q repo connect '${cn}/remote-e1.git' 2>&1"
 	## an inited repo with no commit and no files is nothing to connect; a matching explicit url re-connects fine (push mode)
 	git init --quiet -b main "${cn}/bare-repo"
-	fAssertFail "[dab8z] repo connect an empty inited repo rejected"  bash -c "cd '${cn}/bare-repo' && '${gitsby}' -q repo connect '${cn}/remote.git'"
+	fAssertFail "[dab8z] repo connect an empty inited repo rejected"  bash -c "cd '${cn}/bare-repo' && '${gitsby}' -q repo connect '${cn}/remote-e2.git'"
+	fAssertOut  "[df4z4] and says there is nothing to publish"        'Nothing to publish here: no commits and no files' \
+		bash -c "cd '${cn}/bare-repo' && '${gitsby}' -q repo connect '${cn}/remote-e2.git' 2>&1"
 	fAssert "[dab90] repo connect accepts a matching explicit url"    bash -c "cd '${cn}/proj' && '${gitsby}' -q repo connect '${cn}/remote.git'"
 
 	## The SSH identity line, through a fake ssh with an scp-like origin: -G defaults 'user' to
@@ -6225,7 +6244,8 @@ GHEOF
 		bash -c "[[ \"\$(grep -c 'GO_BUILD_FLAGS\[@\]' '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | awk -F: '{t+=\$2} END{print t}')\" == 4 ]]"
 	## The compiler takes every core by default, in every build and in the eight-target
 	## release loop, which makes the machine unusable for the duration.
-	fAssert "[dbft3] no build step takes every core"  bash -c "grep -q 'BUILD_JOBS=' '${root}/cicd/config.bash'"
+	fAssert "[dbft3] no build step takes every core" \
+		bash -c "cd '${root}' && GITSBY_CICD_CPUS=8 bash -c 'source cicd/config.bash && [[ \"\${cpuCores}\" == 8 && \"\${BUILD_JOBS}\" =~ ^[1-7]\$ ]]'"
 	## Per 'Machine use': half the cores rounded down, a quarter on a busy box and for the hard
 	## steps, never under 1. A stand-in core count is how the container gets the box's.
 	fAssert "[dedq1] the core budget is half the cores, or a quarter when busy or for the hard steps, never under 1" \
@@ -6234,8 +6254,7 @@ GHEOF
 		bash -c "hard=\$(grep -E 'go test -race|-fuzz \"|GITSBY_SOAK_OUT=|--threads=' '${root}/cicd/cicd.bash' | grep -v '^[[:space:]]*#'); [[ \$(grep -c . <<< \"\${hard}\") -ge 6 ]] && ! grep -v HEAVY_JOBS <<< \"\${hard}\" | grep -q ."
 	fAssert "[dedq4] cicd.bash, release.bash and remote-tests.bash run at low priority, and so does what they start" \
 		bash -c "cd '${root}' && for f in cicd/cicd.bash cicd/release.bash cicd/remote-tests.bash; do [[ \$(grep -cx 'fLowPriority' \"\${f}\") == 1 ]] || exit 1; done; source cicd/config.bash && fLowPriority && if [[ -r /proc/\$\$/stat ]]; then read -ra n < /proc/\$\$/stat; n=\${n[18]}; else n=\$(ps -o nice= -p \$\$); fi && [[ \"\${n// /}\" == 19 ]] && { ! command -v ionice >/dev/null || ionice -p \$\$ | grep -q idle; }"
-	fAssertFail "[dbft4] no go build call is missing -p" \
-		bash -c "grep -hE '^[[:space:]]*(go build|.*&& *go build)' '${root}/cicd/cicd.bash' '${root}/cicd/release.bash' | grep -qv 'BUILD_JOBS'"
+	fAssert "[dbft4] no go build call is missing -p"  fBuildSitesCapped
 	## Same source, same bytes: the last input-derived stamp dropped, cgo off wherever those flags
 	## link, and the release built by the compiler it names.
 	fAssert "[dd5ew] the link flags drop the build id"  grep -qE '^GO_LDFLAGS_COMMON=.*-buildid=' "${root}/cicd/config.bash"
