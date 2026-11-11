@@ -6395,12 +6395,13 @@ GHEOF
 		bash -c "out=\$('${bl}/cicd/utility/backlog-check.bash' -q --backlog '${bl}/project/new-format.md' 2>&1); [[ \$? == 1 ]] && [[ \$(grep -c '^  ' <<< \"\$out\") == 1 ]] && grep -qxF '  Code Review 20260102 item 2' <<< \"\$out\""
 	## A test is known by its ID, so a new label on an old ID is an edit. The fixture lines spell
 	## the check names through %s, or the ID gate below would read them as checks of this file.
-	local bi="${work}/bl-ids" chk=fAssert
+	local bi="${work}/bl-ids" chk=fAssert ref=fRefuse mea=fMeasure
 	mkdir -p "${bi}/cicd/utility" "${bi}/project"
-	cp "${root}/cicd/utility/backlog-check.bash" "${bi}/cicd/utility/"
+	cp "${root}/cicd/utility/backlog-check.bash" "${root}/cicd/utility/test-id.bash" "${bi}/cicd/utility/"
 	git init --quiet -b dev "${bi}"
-	printf '%s "[aaaaa] one" true\n%s "[aaaab] two" true\n' "${chk}" "${chk}" > "${bi}/cicd/test.bash"
-	printf '# Backlog\n' > "${bi}/project/backlog.md"
+	printf '%s "[aaaaa] one" true\n%s "[aaaab] two" true\n%s "[aaaac] three" true\nif true; then X=1 %s "[aaaad] four" x; fi\n' "${chk}" "${chk}" "${chk}" "${ref}" > "${bi}/cicd/test.bash"
+	printf '%s "[aaaae] five" 1 x\n' "${mea}" > "${bi}/cicd/utility/spawn-count.bash"
+	printf '# Backlog\n\n- Added with [aaaac].\n' > "${bi}/project/backlog.md"
 	( cd "${bi}" && git add --all && git commit --quiet -m base && git checkout --quiet -b feat )
 	sed -i.bak 's/\[aaaaa\] one/[aaaaa] one, reworded/' "${bi}/cicd/test.bash" && rm -f "${bi:?}/cicd/test.bash.bak"
 	fAssertOut "[dd5kv] the backlog gate reads a relabeled check as edited, by its ID"  '\(0 removed since dev\)' \
@@ -6410,6 +6411,21 @@ GHEOF
 		"${bi}/cicd/utility/backlog-check.bash"
 	echo 'aaaab went with the command it tested.' >> "${bi}/project/backlog.md"
 	fAssertOut "[dd5kx] and passes once the backlog names it by ID"  '\(1 removed since dev\)' \
+		"${bi}/cicd/utility/backlog-check.bash"
+	## A removed check counted as named when its ID was anywhere in the backlog, such as on the
+	## row of the item that added it. And only fAssert, fSame and fOk at the start of a line were
+	## checks, so the rest of fuzz.bash's helpers and spawn-count.bash's measures went unseen.
+	sed -i.bak '/aaaac/d' "${bi}/cicd/test.bash" && rm -f "${bi:?}/cicd/test.bash.bak"
+	fAssertOut "[df4xc] and fails one whose ID the backlog had before the branch"  '^  "\[aaaac\] three"$' \
+		"${bi}/cicd/utility/backlog-check.bash"
+	sed -i.bak '/aaaad/d' "${bi}/cicd/test.bash" && rm -f "${bi:?}/cicd/test.bash.bak"
+	fAssertOut "[df4xd] and sees a check by any helper, after an env prefix or an if"  '^  "\[aaaad\] four"$' \
+		"${bi}/cicd/utility/backlog-check.bash"
+	rm -f "${bi:?}/cicd/utility/spawn-count.bash"
+	fAssertOut "[df4xe] and sees spawn-count's measures go, its whole file included"  '^  "\[aaaae\] five"$' \
+		"${bi}/cicd/utility/backlog-check.bash"
+	echo '- aaaac, aaaad and aaaae went too.' >> "${bi}/project/backlog.md"
+	fAssertOut "[df4xf] and passes once a line the branch adds names them"  '\(4 removed since dev\)' \
 		"${bi}/cicd/utility/backlog-check.bash"
 	## Every check and Go test has an ID, dated from when it was written, and no two share one.
 	fAssert "[dd5kr] every suite check and Go test has its own ID"  "${root}/cicd/utility/test-id.bash" --check -q
@@ -8691,3 +8707,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261109 JC: spawn-count.bash and cicd.bash name their records in UTC, [df385] [df386].
 ##		- 20261109 JC: gfs-rotate.bash run directly, [df3fd].
 ##		- 20261110 JC: a nested account's folder takes no key from the outer account's fragment after apply, [df4ws] to [df4wx].
+##		- 20261111 JC: the backlog gate wants a removed check named on a line the branch adds, and sees every helper and spawn-count.bash, [df4xc] to [df4xf].

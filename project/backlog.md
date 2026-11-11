@@ -283,7 +283,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 16: backlog-check passes when a removed suite check's ID is anywhere in the backlog
 	- ID: 2026111016332256
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163322
 	- Opened by: jim-collier
@@ -293,6 +293,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 in a copy of the tree. Deleting [da8kz], whose ID isn't in the backlog, fails as it should.
 	- Possible cause [Bug]: backlog-check.bash:111 and :127. It also misses fuzz.bash's other helpers, checks with an env prefix or after `for`, `if` or `;`, and spawn-count.bash.
 	- Origin: 2319e09, 2026-09-10, and 4bf3215, 2026-09-26. The 2026-11-03 bug at backlog line 4383 fixed rule 1 only. Confirmed.
+	- Actual cause [Bug]: Rule 2 took a removed check as named when its ID or label was anywhere in the backlog, old rows included. It found checks with its own pattern, which knew only fAssert, fSame and fOk at the start of a diff line, over test.bash, parity.bash and fuzz.bash.
+	- Actual fix [Bug]: backlog-check.bash lists the tests at the merge base and in the working tree with test-id.bash's own scan, through a new `--list --rev REV`, so every helper at any place on its line counts, and spawn-count.bash's measures too. A removed check has to be named, by its ID as a word or by its label, on a backlog line the merge base's backlog doesn't have.
+	- Decisions:
+		- One scan for what a test is, test-id.bash's, rather than a second pattern in backlog-check.bash that drifts from it. backlog-check.bash needs test-id.bash beside it only when rule 2 runs.
+		- A line counts as added when the merge base's backlog has no line exactly like it, so a moved item names nothing new. A backlog outside the repo, or new on the branch, counts as all added, as before.
+		- A label still matches anywhere in an added line, as 4bf3215 allowed. Go tests stay out of rule 2, as they were.
+	- Branch: round-20261111
+	- Test case: test.bash [df4xc] (an ID the backlog had at the base), [df4xd] (fRefuse after an if and an env prefix), [df4xe] (spawn-count.bash removed), [df4xf] (a line the branch adds names them).
+	- Verified: [df4xc] to [df4xe] fail against dev's backlog-check.bash and pass against the new one, in a copy of the fixture. In a clone off dev, deleting [dab6x], fuzz.bash's [dadsp] and spawn-count's [dbftf] passed the old script and failed the new one, naming all 3. `--backlog-run-quick` passed, all areas: test.bash 1950/0, fuzz 310/0, parity 30/0. shellcheck clean.
+	- Swept: config.bash's stage 1 comment, which now says a line the branch adds. No other script finds removed checks. test.bash's other backlog-check fixtures, which have no integration branch, so they need no test-id.bash.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261110-193132
 
 - Code Review 20261110b item 17: release.bash tests one commit and releases another
 	- ID: 2026111016332243

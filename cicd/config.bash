@@ -193,7 +193,7 @@ PS_LINT_SETTINGS="PSScriptAnalyzerSettings.psd1"
 WINRES_CMD=(cicd/utility/gen-winres.bash)
 
 ## Stage 1: backlog rules. Open review items have an "Origin:" line, and a suite check
-## removed on the branch is named in the backlog. See the script's header for why.
+## removed on the branch is named on a backlog line the branch adds. See the script's header for why.
 BACKLOG_CHECK_CMD=(cicd/utility/backlog-check.bash)
 
 ## Stage 2: build + regression tests. The suite runs against the compiled binary and gates.
