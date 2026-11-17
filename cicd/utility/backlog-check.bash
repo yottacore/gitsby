@@ -81,7 +81,7 @@ reviewScan="$(awk '
 	fmt == "new" && /^\t- Origin:/   { found = 1 }
 	fmt == "new" && /^\t- Status:/ {
 		status = $0; sub(/^\t- Status:[ \t]*/, "", status)
-		if (status ~ /^(Done|Canceled|Moot|Deferred)([^A-Za-z]|$)/) open = 0
+		if (status ~ /^(Closed|Canceled|Deferred)([^A-Za-z]|$)/) open = 0
 	}
 	END { flush() }
 ' "${backlog}")"

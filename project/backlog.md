@@ -37,6 +37,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332380
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
 	- Opened by: jim-collier
@@ -52,6 +53,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332367
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
 	- Opened by: jim-collier
@@ -66,6 +68,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332355
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
 	- Opened by: jim-collier
@@ -80,6 +83,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332342
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
 	- Opened by: jim-collier
@@ -94,6 +98,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332330
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
 	- Opened by: jim-collier
@@ -108,6 +113,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332317
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
 	- Opened by: jim-collier
@@ -122,6 +128,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332305
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
 	- Opened by: jim-collier
@@ -137,6 +144,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332293
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163322
 	- Opened by: jim-collier
@@ -152,6 +160,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332280
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163322
 	- Opened by: jim-collier
@@ -166,6 +175,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332268
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163322
 	- Opened by: jim-collier
@@ -180,6 +190,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332231
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163322
 	- Opened by: jim-collier
@@ -195,6 +206,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332218
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163322
 	- Opened by: jim-collier
@@ -210,6 +222,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332206
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163322
 	- Opened by: jim-collier
@@ -224,6 +237,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332194
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
 	- Opened by: jim-collier
@@ -238,6 +252,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332181
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
 	- Opened by: jim-collier
@@ -254,6 +269,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332169
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
 	- Opened by: jim-collier
@@ -268,6 +284,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332157
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
 	- Opened by: jim-collier
@@ -282,6 +299,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332107
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
 	- Opened by: jim-collier
@@ -296,6 +314,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332095
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
 	- Opened by: jim-collier
@@ -310,6 +329,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332082
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
 	- Opened by: jim-collier
@@ -324,6 +344,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332070
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
 	- Opened by: jim-collier
@@ -338,6 +359,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332057
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
 	- Opened by: jim-collier
@@ -353,6 +375,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332045
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
 	- Opened by: jim-collier
@@ -367,6 +390,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332033
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
 	- Opened by: jim-collier
@@ -381,6 +405,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332021
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
 	- Opened by: jim-collier
@@ -395,6 +420,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016332008
 	- Type: Bug
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
 	- Opened by: jim-collier
@@ -409,6 +435,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016331930
 	- Type: Enhancement
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
@@ -419,6 +446,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- ID: 2026111016331918
 	- Type: Enhancement
 	- Status: Queued
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
@@ -428,7 +456,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No. test.bash ran 1597/0.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Critical
 	- Opened: 20261019-165333
@@ -482,7 +511,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 1: raw glab sends the folder account's token to any GitLab host glab is pointed at
 	- ID: 2026111016332442
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261110-163324
 	- Opened by: jim-collier
@@ -511,7 +542,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 2: After account apply, a nested account's folder uses the outer account's token file and name
 	- ID: 2026111016332429
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261110-163324
 	- Opened by: jim-collier
@@ -542,7 +575,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The pre-push gate fails every release merge to main, on a check that wants a vNEXT heading
 	- ID: 2026110811340000
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No. test.bash ran 1874/0.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261108-113400
@@ -563,7 +597,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The pipeline prunes every project's docker build cache
 	- ID: 2026110311291903
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: High
 	- Opened: 20261103-112919
 	- Opened by: JC
@@ -587,7 +622,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `--backlog-run-quick lint` fails markdownlint MD038 on backlog.md
 	- ID: 2026102619025437
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-190254
 	- Opened by: jim-collier
@@ -606,7 +642,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash's stage 7 checks fail on vmDebARM64 after round-20261025b
 	- ID: 2026102519554107
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-195541
 	- Opened by: jim-collier
@@ -634,7 +671,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The quick run fails staticcheck in the hook's gate worktree
 	- ID: 2026102518002917
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-180029
 	- Opened by: jim-collier
@@ -662,7 +700,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `repo clone` hands git a folder name taken from the URL, and git can read it as an option
 	- ID: 2026100607545802
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: High
 	- Opened: 20261006-074900
 	- Closed: 20261006-104608
@@ -681,7 +720,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash removes the folder it was started from when mktemp fails
 	- ID: 2026100415391365
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: High
 	- Opened: 20261004-153913
 	- Opened by: jim-collier
@@ -709,7 +749,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The README install line fails while v2.1.0 is the newest full release
 	- ID: 2026100315501800
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: High
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -744,7 +785,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 1: release.bash can stop partway with no message
 	- ID: 2026100313123851
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: High
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -769,7 +811,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `account apply` writes no credential helper per account, so plain `git push` over https fails in the folder of an account gh isn't active as
 	- ID: 2026110810100400
 	- Type: Feature
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Needs external testing: No. The same checks ran on vm925w, below. Stage 7 runs only the Go tests on a Windows box, not test.bash.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261108-101004
@@ -804,7 +848,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, code reviews 20260726, 20260725 and 20260723
 	- ID: 2026110611410037
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261106-114100
 	- Opened by: jim-collier
@@ -830,7 +875,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, code reviews 20260731 to 20260727
 	- ID: 2026110611410019
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261106-114100
 	- Opened by: jim-collier
@@ -857,7 +903,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: CPU and priority on the Windows box
 	- ID: 2026102508333054
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 		- 2026-10-26: Back from testing. The class and the count hold on Windows, but the exit code doesn't come back. The template has no Re-opened, so Queued.
 		- 2026-10-26: The exit code comes back now, so closed.
 	- Needs external testing: Done. On vm925w, 2026-10-26, as below.
@@ -897,7 +944,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: standard flags
 	- ID: 2026102416313104
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -920,7 +968,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: step output
 	- ID: 2026102416313105
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -958,7 +1007,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item
 	- ID: 2026102416313106
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -976,7 +1026,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, the 20260812 groups and the 20260819 to 20260821 reviews
 	- ID: 2026102617594210
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-175942
 	- Opened by: jim-collier
@@ -1003,7 +1054,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, Code review 20260819a
 	- ID: 2026102617594212
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-175942
 	- Opened by: jim-collier
@@ -1030,7 +1082,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, code reviews 20260818, 20260813 and 20260812
 	- ID: 2026102617594214
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-175942
 	- Opened by: jim-collier
@@ -1058,7 +1111,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, code reviews 20260731 to 20260723
 	- ID: 2026102617594216
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-175942
 	- Opened by: jim-collier
@@ -1077,7 +1131,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, features, first half
 	- ID: 2026102617594218
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-175942
 	- Opened by: jim-collier
@@ -1103,7 +1158,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, features, second half
 	- ID: 2026102617594221
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-175942
 	- Opened by: jim-collier
@@ -1130,7 +1186,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: test IDs
 	- ID: 2026102416313107
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -1165,7 +1222,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: PASS, FAIL and SKIP test lines
 	- ID: 2026102618140158
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-181401
 	- Opened by: jim-collier
@@ -1201,7 +1259,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, Code review 20260909
 	- ID: 2026102617594208
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-175942
 	- Opened by: jim-collier
@@ -1228,7 +1287,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: a test for every Done item, the top-level bugs
 	- ID: 2026102617594206
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-175942
 	- Opened by: jim-collier
@@ -1254,7 +1314,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: the hook runs `--merge-gate`
 	- ID: 2026102506452488
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-064524
@@ -1286,7 +1347,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: containers
 	- ID: 2026102416313100
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -1307,7 +1369,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: `--quick` in about 10 minutes
 	- ID: 2026102506452483
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No. A real `--quick` passed in the image, and so did `--backlog-run-quick`.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-064524
@@ -1334,7 +1397,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: release builds from the image's Go
 	- ID: 2026102507133283
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No. `--backlog-run-quick` passed in the image, and a full run doesn't run release.bash.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-071332
@@ -1360,7 +1424,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: container cleanup
 	- ID: 2026102416313102
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No. `--backlog-run-quick` passed in the image.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
@@ -1398,7 +1463,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: `--keep-temp` and `--list`
 	- ID: 2026102506452478
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No. `--backlog-run-quick` passed, test.bash 1725/0.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-064524
@@ -1426,7 +1492,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: dogfood and stage 7 builds from the image's Go
 	- ID: 2026102507133278
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: Done. The round's `--backlog-run-full` at c266d62 passed in the container, with stage 7's builds from the image.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-071332
@@ -1452,7 +1519,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: other hosts and VMs
 	- ID: 2026102416313101
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: Done. The round's `--backlog-run-full` at c266d62 passed stage 7 on b26, vmFreeBSD and vmDebARM64.
 	- Needs external testing: Done. vmKt6m and b29w passed at e47bd23, under the real lock and VM helper.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
@@ -1504,7 +1572,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: CPU and priority
 	- ID: 2026102416313103
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: Done. The round's `--backlog-run-full` at c266d62 passed in the container.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-163131
@@ -1545,7 +1614,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: run flags and aliases
 	- ID: 2026102506452473
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: Done. The round's `--backlog-run-full` at c266d62 ran end to end.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-064524
@@ -1575,7 +1645,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: the quick run in the image
 	- ID: 2026102507133273
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-071332
 	- Opened by: jim-collier
@@ -1599,7 +1670,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Updates to CICD script flags
 	- ID: 2026101816064793
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261018-160647
 	- Opened by: jim-collier
@@ -1633,7 +1705,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - pip-audit fails every full run in the container on 8 new Pillow 12.3.0 advisories
 	- ID: 2026102113100000
 	- Type: Task
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No. The plain full run in the container passed 2026-10-22.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261021-131000
@@ -1661,7 +1734,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `--staged`: commit only what is staged, and leave the rest of the tree alone
 	- ID: 2026100512025340
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: High
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -1715,7 +1789,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 3: A second release after a failed push of main cuts a new tag on the same commit
 	- ID: 2026111016332417
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163324
 	- Opened by: jim-collier
@@ -1743,7 +1819,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 4: br switch to a local branch named like an option runs the option, and under --staged throws away unstaged edits
 	- ID: 2026111016332404
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163324
 	- Opened by: jim-collier
@@ -1768,7 +1846,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 5: sync and the park pushes follow push.default, so they push branches the plan never names
 	- ID: 2026111016332392
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
 	- Opened by: jim-collier
@@ -1795,7 +1875,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 16: backlog-check passes when a removed suite check's ID is anywhere in the backlog
 	- ID: 2026111016332256
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163322
 	- Opened by: jim-collier
@@ -1821,7 +1903,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 17: release.bash tests one commit and releases another
 	- ID: 2026111016332243
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163322
 	- Opened by: jim-collier
@@ -1849,7 +1933,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 1: A failed `account apply` empties a working account fragment that the global config still includes
 	- ID: 2026110912215201
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -1885,7 +1971,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 2: Ctrl+C on a cicd.bash run skips its cleanup
 	- ID: 2026110912215202
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -1910,7 +1998,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 3: Two pipeline steps can pass having checked nothing
 	- ID: 2026110912215203
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -1939,7 +2029,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash hangs on Windows at [df1s7]: Git for Windows' askpass opens a password dialog
 	- ID: 2026110814215941
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261108-142159
 	- Closed: 20261109
@@ -1962,7 +2054,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - On macOS test.bash df05h and df05k compare a padded wc -l count to 1
 	- ID: 2026110715412517
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No
 	- Needs external testing: No
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
@@ -1989,7 +2082,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - On macOS the config conversion notice names the old file by its resolved path
 	- ID: 2026110715250050
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No
 	- Needs external testing: No
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
@@ -2017,7 +2111,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 item 3: The release check for history footers skips both PowerShell scripts
 	- ID: 2026110708000103
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -2040,7 +2135,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 item 1: Two small crypto imports made the binary 25% bigger and slower to start
 	- ID: 2026110708000101
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -2063,7 +2159,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 item 2: The wrong-account warning names gh and its GitHub login on a Gitea remote
 	- ID: 2026110708000102
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -2084,7 +2181,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 item 4: `pr ok` fetches mid-run without showing it in the plan, even with `--no-fetch`
 	- ID: 2026110708000104
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -2102,7 +2200,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash [dd5e4] fails on the macOS workflow: install.ps1 leaves its bracketed temp dir
 	- ID: 2026110617122394
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs external testing: No
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-171223
@@ -2133,7 +2232,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `--backlog-run-quick lint` fails markdownlint MD038 on backlog.md, again
 	- ID: 2026110611063063
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-110630
 	- Opened by: jim-collier
@@ -2148,7 +2248,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The Pillow lock check fails on FreeBSD
 	- ID: 2026110610343700
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-103437
 	- Opened by: jim-collier
@@ -2168,7 +2269,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Stage 7 can't start vm925w once it has started vmKt6m or vmFreeBSD
 	- ID: 2026102510404322
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261025-104043
 	- Opened by: jim-collier
@@ -2196,7 +2298,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - A `gh` wrapper that calls `gitsby raw gh` still fails, and gitsby's own `gh` calls fail behind it
 	- ID: 2026102306584122
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No. test.bash ran 1667/0.
 	- Needs external testing: No. Stage 7 on vmDebARM64 ran them 2026-10-23.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
@@ -2249,7 +2352,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash's goleak check `[de54n]` fails on macOS, since BSD find has no `-printf`
 	- ID: 2026102220274491
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs external testing: No
 	- Priority|Severity [Bug]: Avg
 	- Opened: 20261022-202744
@@ -2277,7 +2381,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Stage 7 fails b26 when a Finder window is open on the test folder
 	- ID: 2026100611181887
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Avg
 	- Opened: 20261006-111818
 	- Opened by: jim-collier
@@ -2296,7 +2401,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash's `--direct` prompt check fails on FreeBSD and macOS
 	- ID: 2026100611181886
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Avg
 	- Opened: 20261006-111818
 	- Opened by: jim-collier
@@ -2312,7 +2418,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261005 item 1: workflows.md says gitsby won't push your own work to `main` or `dev`, and it does
 	- ID: 2026100516202544
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -2339,7 +2446,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `br switch HEAD` commits and pushes the working tree, then fails
 	- ID: 2026100607545807
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Avg
 	- Opened: 20261006-074900
 	- Opened by: jim-collier
@@ -2359,7 +2467,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash's binary checks fail on macOS
 	- ID: 2026100409453279
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Avg
 	- Opened: 20261004-094532
 	- Opened by: jim-collier
@@ -2390,7 +2499,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 3: Write and read failures in account commands guess at the cause
 	- ID: 2026100313123881
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -2417,7 +2527,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 4: `br merge` says the target is as it was without checking
 	- ID: 2026100313123895
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -2444,7 +2555,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 2: A pipeline reader that quits early can fail its writer
 	- ID: 2026100313123865
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -2469,7 +2581,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Two account blocks with one name merge without a word
 	- ID: 2026093013034093
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Avg
 	- Opened: 2026-09-30
 	- Opened by: jim-collier
@@ -2498,7 +2611,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Demo: add a br merge scene, and hold screens long enough to read
 	- ID: 2026111010125300
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-101253
 	- Opened by:
@@ -2523,7 +2638,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 enhancement 1: Add spawn gate rows for `br merge`, glab `pr create` and `--staged br switch`
 	- ID: 2026110912215212
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -2549,7 +2666,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Convert config files from every earlier version
 	- ID: 2026110707345874
 	- Type: Task
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261107-073458
 	- Opened by: jim-collier
@@ -2581,7 +2699,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `--version` prints only its first line
 	- ID: 2026110707345868
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261107-073458
 	- Opened by: jim-collier
@@ -2607,7 +2726,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 enhancement 2: Every non-GitHub ssh remote costs an extra `ssh -G`
 	- ID: 2026110708000113
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -2639,7 +2759,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 enhancement 1: `encoding/json` costs 344 KB for 2 glab reads
 	- ID: 2026110708000112
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -2667,7 +2788,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: temp files and safe removal
 	- ID: 2026102416313108
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -2698,7 +2820,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: every other recursive removal through the guard
 	- ID: 2026102516194062
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261025-161940
 	- Opened by: jim-collier
@@ -2718,7 +2841,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: stage 7's removals on the boxes through a guard
 	- ID: 2026110612393822
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-123938
 	- Opened by: jim-collier
@@ -2749,7 +2873,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: the image build's removals through a guard
 	- ID: 2026110612595461
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-125954
 	- Opened by: jim-collier
@@ -2776,7 +2901,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: CICD process gaps
 	- ID: 2026102416313109
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-163131
 	- Opened by: jim-collier
@@ -2796,7 +2922,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: prune Go's module cache in the volume
 	- ID: 2026102617543961
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261026-175439
 	- Opened by: jim-collier
@@ -2826,7 +2953,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: the harnesses, utilities and release.bash through the guard
 	- ID: 2026110612393817
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs external testing: Done 2026-11-06. Stage 7 on b26 and vmFreeBSD passed at 2508656, as below.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-123938
@@ -2855,7 +2983,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: the installer's removal through a guard
 	- ID: 2026110612551903
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs external testing: Done 2026-11-06 on vm925w, as below.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-125519
@@ -2877,7 +3006,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD reset: one line at the end of a run for what it removed
 	- ID: 2026102617543861
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261026-175438
 	- Opened by: jim-collier
@@ -2900,7 +3030,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Builds should clean up stale artifacts and side-effects when done
 	- ID: 2026101912030138
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261019-120301
 	- Opened by: jim-collier
@@ -2924,7 +3055,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD gets `--leakcheck` and `--no-leakcheck` flags
 	- ID: 2026101912030152
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261019-120301
 	- Opened by: jim-collier
@@ -2950,7 +3082,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Leak, memory, and correctness checks in CICD
 	- ID: 2026101816064794
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs external testing: Done 2026-10-19. A full run passed stage 7 on b26, vmFreeBSD, vmDebARM64 and vm925w.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261018-160647
@@ -3036,7 +3169,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Run the lint and test stages in a pinned container
 	- ID: 2026101009380628
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Feature]: Avg
 	- Opened: 2026-10-10
 	- Opened by: jim-collier
@@ -3058,7 +3192,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `raw` runs tea and other common CLIs, not only git and gh
 	- ID: 2026100611524343
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Avg
 	- Opened: 20261006-115243
 	- Opened by: jim-collier
@@ -3079,7 +3214,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - macOS release gets a universal binary
 	- ID: 2026100313491873
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -3110,7 +3246,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Run the windows/arm64 build somewhere
 	- ID: 2026100507345200
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -3147,7 +3284,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 2: Network probes run one after another
 	- ID: 2026100313123988
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -3180,7 +3318,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Release notes group the downloads in a table
 	- ID: 2026100415020736
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-04
 	- Opened by: jim-collier
@@ -3216,7 +3355,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Run the tests on a Mac and a Windows box as part of the pipeline
 	- ID: 2026100312332924
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs external testing: None left. It ran on b26 and vm925w on 2026-10-04. b29w runs only when vm925w is taken.
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
@@ -3260,7 +3400,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Build the stage
 	- ID: 2026100313002135
 	- Type: Task
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -3289,7 +3430,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Pipeline test for converting old SHCL settings files
 	- ID: 2026100313483664
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -3315,7 +3457,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 1: The spawn-count fixture can't see the account paths
 	- ID: 2026100313123975
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -3343,7 +3486,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 4: PowerShell lint starts pwsh four times
 	- ID: 2026100313124015
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -3367,7 +3511,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 3: `sync` and `pullcom` fetch twice
 	- ID: 2026100313124002
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -3397,7 +3542,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Dogfood builds macOS for both CPUs
 	- ID: 2026100312571262
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -3414,7 +3560,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Convert an accounts file from an older SHCL format
 	- ID: 2026100312145843
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Feature]: Avg
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -3433,7 +3580,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Run the tests on FreeBSD and on Linux arm64 in stage 7 too
 	- ID: 2026100413264100
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs external testing: None left. b26 ran on 2026-10-04.
 	- Priority [Feature]: Avg
 	- Opened: 20261004-132641
@@ -3477,7 +3625,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - cicd.bash's go test -list compiles with every core
 	- ID: 2026111020264871
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-202629
 	- Opened by: jim-collier
@@ -3500,7 +3650,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - release.bash says nothing is pushed after 'br create' pushed the version branch
 	- ID: 2026111019574118
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-195741
 	- Opened by: jim-collier
@@ -3522,7 +3674,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 25: gitsby release takes a version git can't use as a tag, and fails after the merge into main
 	- ID: 2026111016332145
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
 	- Opened by: jim-collier
@@ -3548,7 +3702,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 26: release.bash takes version strings gitsby release refuses
 	- ID: 2026111016332132
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
 	- Opened by: jim-collier
@@ -3574,7 +3730,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 27: release.bash puts files the pipeline rewrote into the version PR
 	- ID: 2026111016332119
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
 	- Opened by: jim-collier
@@ -3598,7 +3756,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 37: test.bash [dab8t] and [dab8z] pass with the guard they test removed
 	- ID: 2026111016331995
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
@@ -3621,7 +3781,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 38: parity [dben1], [dben2] and [deyw8] can't fail on an alias routed to the wrong command
 	- ID: 2026111016331982
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
@@ -3644,7 +3806,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 39: test.bash [dbft4] and [dbft3] miss most build sites
 	- ID: 2026111016331970
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
@@ -3667,7 +3831,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 40: spawn-count passes a measure whose command failed, and [df052] measures a failed run
 	- ID: 2026111016331957
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
@@ -3690,7 +3856,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 41: 114 test.bash checks drop out with no SKIP line where pwsh or a pty is missing
 	- ID: 2026111016331944
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
@@ -3718,7 +3886,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash [df4c4] fails on macOS
 	- ID: 2026111014390966
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-143909
 	- Opened by: jim-collier
@@ -3737,7 +3907,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Go [df35x] fails on Windows
 	- ID: 2026111014390949
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-143909
 	- Opened by: jim-collier
@@ -3756,7 +3928,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - A missing option value names the option wrong
 	- ID: 2026111012595856
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-125958
 	- Opened by: jim-collier
@@ -3775,7 +3949,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash [dee5h] fails when the gate run starts more than 6 seconds after its fixture
 	- ID: 2026111011385413
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-113854
 	- Opened by: jim-collier
@@ -3794,7 +3970,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 item 1: An option a command doesn't read is taken and dropped
 	- ID: 2026111010494811
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104948
 	- Opened by: jim-collier
@@ -3821,7 +3999,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 item 2: The docs call -q the machine-readable mode, and its output is the same human layout
 	- ID: 2026111010494798
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
@@ -3839,7 +4019,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 item 3: One placeholder has several names across the help, the README and the Syntax lines
 	- ID: 2026111010494785
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
@@ -3864,7 +4046,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Demo world at /tmp/gitsby-demo is never removed where HOST_TEMP is /tmp
 	- ID: 2026111010125301
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-101253
 	- Opened by:
@@ -3883,7 +4067,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash [dee5h] fails on a box not on UTC
 	- ID: 2026110920200900
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-202009
 	- Opened by:
@@ -3905,7 +4091,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Native fuzz step fails on a fuzz deadline, not a crasher
 	- ID: 2026110915475544
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-154755
 	- Opened by:
@@ -3925,7 +4113,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - spawn-count.bash names its records in local time, and the run in the image in UTC
 	- ID: 2026110914575286
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Opened: 20261109-145752
 	- Opened by: jim-collier
 	- Related IDs: 2026110912215212
@@ -3953,7 +4143,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `account apply` still puts paths inside its Wrote and safe-to-remove lines
 	- ID: 2026110914151101
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-141511
 	- Opened by:
@@ -3979,7 +4171,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The UI guide's own example status line puts a path inside the sentence
 	- ID: 2026110914045043
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-140450
 	- Opened by:
@@ -4005,7 +4199,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The SSH line puts the key's path inside parentheses
 	- ID: 2026110914001448
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-140014
 	- Opened by: jim-collier
@@ -4031,7 +4227,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 4: The test harnesses run a command hidden in an inherited GIT_CONFIG_COUNT
 	- ID: 2026110912215204
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -4056,7 +4254,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 5: `release` and `raw` print control characters raw in their syntax errors
 	- ID: 2026110912215205
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -4084,7 +4284,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 6: Fix lines give commands that won't paste
 	- ID: 2026110912215206
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -4113,7 +4315,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 7: Output still breaks 4 UI guide rules that Code Review 20261107 item 6 fixed elsewhere
 	- ID: 2026110912215207
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -4151,7 +4355,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 8: Two package-level caches break the code guide's rule on package state
 	- ID: 2026110912215208
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -4174,7 +4380,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 9: Go errors are still discarded with `_` and no comment
 	- ID: 2026110912215209
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -4199,7 +4407,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 10: Output text and comments use words the writing rules ban
 	- ID: 2026110912215210
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -4233,7 +4443,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 10, part 2: test.bash comments and check labels
 	- ID: 2026110914395015
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-143950
 	- Opened by: jim-collier
@@ -4257,7 +4469,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 item 11: config.bash's sourced-only guard prints its error to stdout with `echo -e`
 	- ID: 2026110912215211
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -4281,7 +4495,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CodeQL flags the old-pin unquote's rune conversion
 	- ID: 2026110717545261
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No
 	- Needs external testing: No
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
@@ -4302,7 +4517,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - A value with an apostrophe and a backslash, written under the old shcl 3 pin, reads with its backslashes doubled
 	- ID: 2026110710480989
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261107-104809
 	- Opened by: jim-collier
@@ -4324,7 +4540,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 item 6: Output in show.go, main.go, accountcmd.go and cfgformat.go breaks 4 UI guide rules
 	- ID: 2026110708000106
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -4355,7 +4572,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 item 9: `safe-rm.ps1` can report a failed removal as done
 	- ID: 2026110708000109
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -4378,7 +4596,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 item 10: install.bash says the module has no dependencies
 	- ID: 2026110708000110
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -4399,7 +4618,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 item 11: Newer cicd scripts miss the header, shellcheck and error helper rules
 	- ID: 2026110708000111
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -4430,7 +4650,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 item 5: Messages for every git host still say GitHub or gh
 	- ID: 2026110708000105
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -4450,7 +4671,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 item 7: Go errors discarded with `_` and no comment
 	- ID: 2026110708000107
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -4468,7 +4690,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 item 8: `sshConnectTarget` mangles a URL with `@` in its path
 	- ID: 2026110708000108
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -4486,7 +4709,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - backlog_sort.py exits 1 after a sort that moves items
 	- ID: 2026110613150884
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261106-131508
 	- Opened by:
@@ -4504,7 +4728,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - spawn-count.bash says it restores each command's origin, and doesn't
 	- ID: 2026110611364366
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261106-113643
 	- Opened by: jim-collier
@@ -4531,7 +4756,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The cleanup line says a run folder freed about 8B
 	- ID: 2026102620355012
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261026-203550
 	- Opened by: jim-collier
@@ -4557,7 +4783,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - release.bash --help prints nothing
 	- ID: 2026102517464688
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261025-174646
 	- Opened by: jim-collier
@@ -4579,7 +4806,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash's remote harness checks fail when stage 7 is narrowed to one box
 	- ID: 2026102321011743
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No. test.bash ran 1677/0, narrowed and not.
 	- Needs external testing: No.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
@@ -4609,7 +4837,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `pr` and `repo create` run `gh` by bare name, so one on PATH that is gitsby runs gitsby
 	- ID: 2026102111572785
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No. test.bash ran after the fix.
 	- Needs external testing: Stage 7. Every spawn now runs by the path the PATH walk found, git included, and that walk is only cross-built for macOS, FreeBSD and Windows.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
@@ -4641,7 +4870,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - test.bash on b26 prints `grep: warning: stray \ before -` 22 times
 	- ID: 2026102120365577
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No. test.bash ran 1661/0 on 2026-10-22.
 	- Needs external testing: No. Stage 7 passed on every box 2026-10-22.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
@@ -4668,7 +4898,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `--no-fuzz` still runs govulncheck and pip-audit
 	- ID: 2026102113100100
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261021-131001
 	- Opened by: jim-collier
@@ -4692,7 +4923,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261005 item 3: The help and design.md disagree on which commands are daily
 	- ID: 2026100516202618
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -4710,7 +4942,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261005 item 4: Help says "GitHub accounts" where an account can be on any git host
 	- ID: 2026100516202655
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -4732,7 +4965,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261005 item 5: The README's count of subcommands is stale
 	- ID: 2026100516202693
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -4750,7 +4984,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `account` prints a value with a newline in it across 2 lines
 	- ID: 2026100607545812
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261006-075458
 	- Opened by: jim-collier
@@ -4775,7 +5010,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261005 item 2: design.md still states decisions that were reversed or outgrown
 	- ID: 2026100516202581
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -4801,7 +5037,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Stage 7 names b26 as a Windows host to the lock
 	- ID: 2026100410340781
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261004-103407
 	- Opened by: jim-collier
@@ -4830,7 +5067,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `TestLockAccountsFile` fails on FreeBSD
 	- ID: 2026100416430451
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261004-164304
 	- Opened by: jim-collier
@@ -4861,7 +5099,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `[ddg72]` fails on the emulated arm64 box
 	- ID: 2026100416430456
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261004-164304
 	- Opened by: jim-collier
@@ -4892,7 +5131,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Pushes and remote-only checkouts name a branch short, so a tag can break them
 	- ID: 2026100411431800
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261004-114318
 	- Opened by: jim-collier
@@ -4916,7 +5156,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The dogfood check passes on the release target list too
 	- ID: 2026100315501801
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -4940,7 +5181,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - A tag named after origin's default branch breaks the default branch read
 	- ID: 2026100411344972
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261004-113449
 	- Opened by: jim-collier
@@ -4965,7 +5207,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The release guard names branches short, so a tag can stand in for one
 	- ID: 2026100411392800
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261004-113928
 	- Opened by: jim-collier
@@ -4988,7 +5231,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `[ddf5x]` counts git's origin/HEAD repair on git before 2.47
 	- ID: 2026100409453281
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261004-094532
 	- Opened by: jim-collier
@@ -5017,7 +5261,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `TestConfigLoadBackslashes` fails on Windows
 	- ID: 2026100409453283
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 20261004-094532
 	- Opened by: jim-collier
@@ -5045,7 +5290,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 5: The style guide says Bash 4.4 is enforced, and nothing checks
 	- ID: 2026100313123908
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -5072,7 +5318,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 7: Spawn reports do arithmetic on numbers read from files
 	- ID: 2026100313123935
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -5095,7 +5342,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 6: Doc comments sit on the wrong function or name an old one
 	- ID: 2026100313123922
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -5119,7 +5367,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 item 8: The Origin gate doesn't read new-format items
 	- ID: 2026100313150825
 	- Type: Bug
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Bug]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -5141,7 +5390,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b enhancement 3: safe-rm.ps1 passes its path to cmd unquoted
 	- ID: 2026111016331906
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
@@ -5159,7 +5410,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b enhancement 4: The image installs markdownlint-cli's dependencies with no lock
 	- ID: 2026111016331893
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163318
 	- Opened by: jim-collier
@@ -5181,7 +5434,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b enhancement 5: gh-account.bash is never sourced
 	- ID: 2026111016331881
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163318
 	- Opened by: jim-collier
@@ -5197,7 +5452,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 enhancement 5: The README says nothing about exit statuses to someone scripting gitsby
 	- ID: 2026111010494722
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
@@ -5215,7 +5472,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 enhancement 1: pr takes no list, and an unknown word after it gets the Syntax block
 	- ID: 2026111010494773
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
@@ -5233,7 +5492,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 enhancement 2: -- isn't taken as the end of options
 	- ID: 2026111010494760
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
@@ -5249,7 +5510,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 enhancement 3: A command's --help prints the whole help screen, not that command's syntax
 	- ID: 2026111010494747
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
@@ -5267,7 +5530,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110 enhancement 4: The help's opening lines leave out the plan and the question
 	- ID: 2026111010494735
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-104947
 	- Opened by: jim-collier
@@ -5281,7 +5546,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 enhancement 2: The last rounds left Go duplicates and leftovers
 	- ID: 2026110912215213
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -5311,7 +5578,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 enhancement 3: Some comments no longer match the code
 	- ID: 2026110912215214
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -5332,7 +5601,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 enhancement 4: fuzz.bash's config vectors are in the v2.1.0 flat layout, which the build converts on first read
 	- ID: 2026110912215215
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -5362,7 +5633,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 enhancement 5: The memory cap's probe and size check are looser than the run
 	- ID: 2026110912215216
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-122152
 	- Opened by: jim-collier
@@ -5389,7 +5662,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 enhancement 6: Cut long code comments down to a line or 2
 	- ID: 2026110912215217
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-132000
 	- Opened by: jim-collier
@@ -5424,7 +5699,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261109 enhancement 6, scripts: Cut long comments in the bash scripts down to a line or 2
 	- ID: 2026110915231888
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261109-152318
 	- Opened by: jim-collier
@@ -5451,7 +5728,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 enhancement 3: `br merge` and `release` talk to origin more often than they need to
 	- ID: 2026110708000114
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -5479,7 +5757,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 enhancement 4: The Go files the last rounds didn't read have duplicates and leftovers
 	- ID: 2026110708000115
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -5504,7 +5783,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 enhancement 7: run-latest.ps1 names its copies in the current culture
 	- ID: 2026110708000118
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -5525,7 +5805,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 enhancement 6: The Python helpers don't follow the Python rules, and nothing checks them
 	- ID: 2026110708000117
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -5553,7 +5834,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261107 enhancement 5: Stale, misplaced and garbled Go comments
 	- ID: 2026110708000116
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261107-080001
 	- Opened by: jim-collier
@@ -5574,7 +5856,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Stage 7 takes every box through the VM state helper's wrap
 	- ID: 2026102511210617
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261025-112106
 	- Opened by: jim-collier
@@ -5601,7 +5884,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - A full run's container has no name or label, so a stop can't tell it from another project's
 	- ID: 2026102307533128
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261023-075331
 	- Opened by: jim-collier
@@ -5623,7 +5907,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The workflow YAML check `[dea4c]` skips in the container and on most boxes
 	- ID: 2026102220133673
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261022-201336
 	- Opened by: jim-collier
@@ -5648,7 +5933,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Check the demo's Pillow and fontTools advisories against Debian's fixes
 	- ID: 2026101905585018
 	- Type: Task
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261019-055850
 	- Opened by: jim-collier
@@ -5681,7 +5967,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Run CodeQL over the demo script and its Python libraries
 	- ID: 2026101907065426
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261019-070654
 	- Opened by: jim-collier
@@ -5718,7 +6005,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161852
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs external testing: Yes, on an old CPU or an emulated one.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261013-011618
@@ -5747,7 +6035,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Builds between releases show their date after the build number
 	- ID: 2026102317400737
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No. test.bash ran it.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261023-174007
@@ -5770,7 +6059,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - gitsby refuses to run under the name of a tool `raw` runs
 	- ID: 2026102306584132
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs local test suite run?: No. test.bash ran it.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261023-065841
@@ -5792,7 +6082,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261005 enhancement 1: Step lines print their arguments unquoted
 	- ID: 2026100516202730
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Feature]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -5812,7 +6103,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261005 enhancement 2: The help leaves out what the README shows
 	- ID: 2026100516202767
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Feature]: Low
 	- Opened: 2026-10-05
 	- Opened by: jim-collier
@@ -5831,7 +6123,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `assets/logo.png` is 512x512 and 254 KB for a 128 px README image
 	- ID: 2026100519502150
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority|Severity [Feature]: Low
 	- Opened: 20261005-195021
 	- Opened by: jim-collier
@@ -5851,7 +6144,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The plan shows `@{u}` where it could name the branch
 	- ID: 2026100316463300
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -5882,7 +6176,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 7: Go code tidy
 	- ID: 2026100313130047
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -5918,7 +6213,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 6: Spawns that are repeated or not needed
 	- ID: 2026100313124028
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -5951,7 +6247,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 5: Answer branch checks from one read
 	- ID: 2026100313123948
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -5979,7 +6276,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261003 enhancement 8: Pipeline scripts and the style guide against the new Bash rules
 	- ID: 2026100313130060
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Low
 	- Opened: 2026-10-03
 	- Opened by: jim-collier
@@ -6039,7 +6337,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Rename stage 7 to "Remote tests"
 	- ID: 2026100418431100
 	- Type: Task
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Priority [Feature]: Low
 	- Opened: 20261004-184311
 	- Opened by: jim-collier
@@ -6062,7 +6361,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - gitsby should work with glab
 	- ID: 2026102209210000
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 		- Waits on a person trying the writing `pr` forms on a GitLab repo of their own.
 	- Needs local test suite run?: No. test.bash ran 1659/0.
 	- Needs hand testing: on a GitLab repo you can write to, `gitsby pr create` from a feature branch, then `gitsby pr ok <n>` on it. Both write to the remote, so they were not run here.
@@ -6093,7 +6393,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD runs on GitHub's free macOS runners
 	- ID: 2026102218410000
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Needs external testing: No
 	- Opened: 20261022-184100
 	- Opened by: jim-collier
@@ -6121,7 +6422,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - `account apply` names fragments by host and login
 	- ID: 2026093013031520
 	- Type: Enhancement
-	- Status: Done
+	- Status: Closed
+	- Closed reason: Done
 	- Opened: 2026-09-30
 	- Opened by: jim-collier
 	- Requirements  [Feature]:
@@ -9239,12 +9541,16 @@ Waiting on hardware, an upstream module, or a decision.
 
 	- The ID is the local time to the hundredth of a second. Opened is when it was written down, which may differ. (Use a keyboard macro and possibly something like project 'zuid' to generate.)
 
-	- Status values meaning: Testing means the fix is in and checks are running or still to run. Waiting on signoff means automated testing passed. Moot means something else changed that made it irrelevant. Canceled means it still applies but was decided against. Waiting on automated testing means the fix is in and waits on a test run with no person needed. Waiting on a partial CICD run means it waits on a run of some stages, started by a person or automatically. Waiting on a full CICD run means the same for the whole pipeline, including a remote test host. Waiting on UAT means a person has to try it, such as on a box only they have. Can't reproduce means a real attempt to reproduce it failed.
+	- Status values meaning: Testing means the fix is in and checks are running or still to run. Waiting on signoff means automated testing passed. Canceled means it still applies but was decided against. Waiting on automated testing means the fix is in and waits on a test run with no person needed. Waiting on a partial CICD run means it waits on a run of some stages, started by a person or automatically. Waiting on a full CICD run means the same for the whole pipeline, including a remote test host. Waiting on UAT means a person has to try it, such as on a box only they have. Closed means work on it is over, and its Closed reason row says why.
+
+	- Closed reason values: Done means it was fixed or built. Could not reproduce means a real attempt to reproduce it failed. Won't fix means the bug is real and stays as it is. Moot means something else changed that made it irrelevant. Duplicate means another item covers it, named in Superseded by ID. Works as intended means the behavior is correct and nothing changes.
+
+	- Target version is the release the item is meant for. Every open item has one, and so does every item closed since the last release. Deferred and Canceled items have none.
 
 	- An item waiting on signoff that is hard to test by hand is closed once the fix is sure and a regression test covers it, where one can be written.
 
 	- As issues are worked, and statuses change, place them in correct sorting order within the list:
-		- First by status: Waiting for answers, Waiting on signoff, Testing, Waiting on automated testing, Waiting on a partial CICD run, Waiting on a full CICD run, Waiting on UAT, Can't reproduce, Stalled, Started, Queued, Done, Deferred, Canceled, Moot
+		- First by status: Waiting for answers, Waiting on signoff, Testing, Waiting on automated testing, Waiting on a partial CICD run, Waiting on a full CICD run, Waiting on UAT, Stalled, Started, Queued, Closed, Deferred, Canceled
 		- Then by severity|priority: Critical, High, Avg, Low
 		- Then by type: Bugs, [not bugs together]
 
@@ -9255,7 +9561,9 @@ Template:
 - Title
 	- ID: YYYYmmDDHHMMSSNN
 	- Type: [Bug|Feature|Enhancement|Task]
-	- Status: [Queued|Waiting for answers|Waiting on signoff|Waiting on automated testing|Waiting on a partial CICD run|Waiting on a full CICD run|Waiting on UAT|Started|Testing|Stalled|Can't reproduce|Moot|Canceled|Deferred|Done]
+	- Status: [Queued|Waiting for answers|Waiting on signoff|Waiting on automated testing|Waiting on a partial CICD run|Waiting on a full CICD run|Waiting on UAT|Started|Testing|Stalled|Closed|Deferred|Canceled]
+	- Closed reason [Closed]: [Done|Could not reproduce|Won't fix|Moot|Duplicate|Works as intended]
+	- Target version:
 	- Needs local test suite run?:
 	- Needs external testing:
 	- Priority [Feature|Enhancement] | Severity [Bug]: [Critical|High|Avg|Low]
