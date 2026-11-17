@@ -6447,7 +6447,7 @@ GHEOF
 	cp "${root}/cicd/utility/backlog-check.bash" "${blc}/cicd/utility/"
 	git init -q "${blc}"
 	printf '%s\n' '- Code Review 20260101 item 1: open' $'\t- Status: Queued' $'\t- Origin: x' \
-		'- Code Review 20260101 item 2: closed' $'\t- Status: Done' $'\t- Origin: x' \
+		'- Code Review 20260101 item 2: closed' $'\t- Status: Closed' $'\t- Origin: x' \
 		'- ✅ Code review 20260102' $'\t- 🔘 Code Review 20260102 item 1: open' $'\t\t- Origin: x' \
 		$'\t- ✅ Code Review 20260102 item 2: closed' $'\t\t- Origin: x' > "${blc}/backlog.md"
 	fAssertOut "[defny] the backlog gate counts the open review items, and only those" '\(2 listed\)$' \
@@ -6725,7 +6725,7 @@ GHEOF
 		bash -c "out=\$('${bl}/cicd/utility/backlog-check.bash' -q --backlog '${bl}/project/no-origin.md' 2>&1); [[ \$? == 1 ]] && grep -qxF '  Code Review 20260101 item 4' <<< \"\$out\" && ! grep -qF 'item 1' <<< \"\$out\""
 	## The new item format: a top-level title with its rows a tab in, open by its Status row. The
 	## gate read only the old one, so a round filed this way was never checked.
-	printf '# Backlog\n\n## Issues\n\n- Code Review 20260102 item 1: x\n\t- Status: Waiting on signoff\n\t- Origin: y\n\n- Code Review 20260102 item 2: x\n\t- Status: Queued\n\t- Why: z\n\n- Code Review 20260102 enhancement 3: x\n\t- Status: Done\n\n- Code Review 20260102 item 4: x\n\t- Status: Moot\n\n- Code Review 20260102 item 5: x\n\t- Status: Canceled\n\n- Code Review 20260102 item 6: x\n\t- Status: Deferred\n\n- Another item\n\t- Status: Queued\n\n## Old format\n\n\t- 🔘 Code Review 20260101 item 1: x\n\t\t- Origin: y\n' > "${bl}/project/new-format.md"
+	printf '# Backlog\n\n## Issues\n\n- Code Review 20260102 item 1: x\n\t- Status: Waiting on signoff\n\t- Origin: y\n\n- Code Review 20260102 item 2: x\n\t- Status: Queued\n\t- Why: z\n\n- Code Review 20260102 enhancement 3: x\n\t- Status: Closed\n\t- Closed reason: Done\n\n- Code Review 20260102 item 4: x\n\t- Status: Closed\n\t- Closed reason: Moot\n\n- Code Review 20260102 item 5: x\n\t- Status: Canceled\n\n- Code Review 20260102 item 6: x\n\t- Status: Deferred\n\n- Another item\n\t- Status: Queued\n\n## Old format\n\n\t- 🔘 Code Review 20260101 item 1: x\n\t\t- Origin: y\n' > "${bl}/project/new-format.md"
 	fAssertOut "[ddf4q] and counts open review items in the new format too" 'Origin: present on every open review item \(3 listed\)' \
 		bash -c "sed '/item 2: x/,/Why: z/ s/Why: z/Origin: y/' '${bl}/project/new-format.md' > '${bl}/project/new-format-ok.md' && '${bl}/cicd/utility/backlog-check.bash' --backlog '${bl}/project/new-format-ok.md'"
 	fAssert "[ddf4r] and fails an open one with no Origin row, by name, leaving the closed ones be" \
