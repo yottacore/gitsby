@@ -404,7 +404,7 @@ func TestOptionsOnlyWhereRead(t *testing.T) { // [df4e9]
 	for _, argv := range [][]string{
 		{"status", "-m", "x"}, {"status", "--public"}, {"pullcom", "--direct"}, {"pullcom", "--private"},
 		{"repo", "connect", "--public"}, {"br", "prune", "-m", "x"}, {"pr", "ok", "7", "-m", "x"}, {"pr", "--message=x"},
-		{"whoami", "--staged"}, {"account", "--direct"},
+		{"whoami", "--staged"}, {"account", "--direct"}, {"br", "create", "x", "--direct"},
 	} {
 		if err := settle(argv...); err == nil {
 			t.Errorf("%v: took an option it doesn't read", argv)
@@ -412,7 +412,7 @@ func TestOptionsOnlyWhereRead(t *testing.T) { // [df4e9]
 	}
 	for _, argv := range [][]string{
 		{"sync", "--direct"}, {"repo", "create", "o/n", "--public"}, {"repo", "connect", "-m", "x"}, {"pr", "create", "-m", "t"},
-		{"release", "-m", "x"}, {"br", "switch", "-m", "x"}, {"-q", "-NoFetch", "--any-identity", "--config", "f", "account"},
+		{"release", "-m", "x"}, {"br", "switch", "-m", "x"}, {"br", "switch", "--direct"}, {"-q", "-NoFetch", "--any-identity", "--config", "f", "account"},
 		{"--no-fetch", "repo", "clone", "u"}, {"status", "-y"},
 	} {
 		if err := settle(argv...); err != nil {

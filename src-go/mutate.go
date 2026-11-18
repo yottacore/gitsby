@@ -124,10 +124,23 @@ func (a *app) pushIfOnline() error {
 	return nil
 }
 
-// directPush: sync is about to send your own commits straight to main, dev or the
-// default branch. A merge left for sync doesn't count. design.md "--direct".
+// directPush: sync, or br switch's park push, is about to send your own commits
+// straight to main, dev or the default branch. A merge left for sync doesn't count.
+// design.md "--direct". br create and br hotfix carry the tree off a protected branch
+// instead of pushing it, br merge refuses one, and release exists to push one.
 func (a *app) directPush() bool {
-	if a.cmd.name != "sync" || a.opt.direct || !a.hasOrigin() || !a.isProtectedBranch("") {
+	switch a.cmd.name {
+	case "sync":
+	case "br-switch":
+		// Only a move parks, and offline its push is skipped. A dirty protected tree
+		// was refused before this.
+		if a.currentBranch() == a.switchTarget() || a.isOffline() {
+			return false
+		}
+	default:
+		return false
+	}
+	if a.opt.direct || !a.hasOrigin() || !a.isProtectedBranch("") {
 		return false
 	}
 	if a.hasUpstream() && runOut("git", "rev-list", "--first-parent", "--no-merges", "-n", "1", "@{u}..HEAD") != "" {
@@ -137,6 +150,14 @@ func (a *app) directPush() bool {
 		return !runOK("git", "diff", "--cached", "--quiet")
 	}
 	return runOut("git", "status", "--porcelain") != ""
+}
+
+// refuseDirectPush: nobody is there to read the warning, so -q refuses instead.
+func (a *app) refuseDirectPush() error {
+	if a.opt.quiet && a.directPush() {
+		return usagef("%s Nothing was done. Re-run with --direct if that is intended, or move the work to a branch with '%s br create <branch-name>'.", a.directPushText(), meName)
+	}
+	return nil
 }
 
 func (a *app) directPushText() string {

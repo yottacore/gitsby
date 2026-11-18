@@ -40,7 +40,7 @@ var optSpecs = []optSpec{
 	{shown: "--config", spellings: []string{"config"}, value: true, set: func(o *options, v string) { o.configFile, o.configGiven = v, true }},
 	{shown: "--public", spellings: []string{"public"}, cmds: []string{"repo create"}, set: func(o *options, _ string) { o.visibility, o.sawPublic = "public", true }},
 	{shown: "--private", spellings: []string{"private"}, cmds: []string{"repo create"}, set: func(o *options, _ string) { o.visibility, o.sawPrivate = "private", true }},
-	{shown: "--direct", spellings: []string{"direct"}, cmds: []string{"sync"}, set: func(o *options, _ string) { o.direct = true }},
+	{shown: "--direct", spellings: []string{"direct"}, cmds: []string{"sync", "br switch"}, set: func(o *options, _ string) { o.direct = true }},
 	{shown: "--staged", spellings: []string{"staged"}, cmds: stagedCmds, set: func(o *options, _ string) { o.staged = true }},
 	// The commands that commit, which is the --staged list plus the 2 that publish a
 	// directory.

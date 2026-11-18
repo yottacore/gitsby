@@ -1788,11 +1788,32 @@ fRunSuite(){
 	else
 		fSkipBlock "the warning above the prompt (no pty)"
 	fi
-	fAssertOut  "[ddj6t] help lists --direct"  '^  --direct \.+: Let sync push straight to' "${gitsby}" --help
+	fAssertOut  "[ddj6t] help lists --direct"  '^  --direct \.+: Let sync or br switch push straight to' "${gitsby}" --help
 	## sync: publishes; remote matches local
 	fAssert "[da8m8] sync runs"            bash -c "cd '${cloneA}' && '${gitsby}' -q --direct sync 'push file2'"
 	fAssert "[da8m9] remote main matches"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
 	fAssert "[ddj6v] with nothing left to send, sync on main runs without --direct" bash -c "cd '${cloneA}' && '${gitsby}' -q sync 'noop'"
+	## br switch parks before it moves, and from main that park push is the same push sync
+	## makes, so it gets the same warning and the same -q refusal. A merge doesn't count.
+	local directO="${work}/$1-directo.git" directA="${work}/$1-directa"
+	git init --quiet --bare -b main "${directO}"
+	git clone --quiet "${directO}" "${directA}" 2>/dev/null
+	( cd "${directA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git branch --quiet side && echo two > g.txt && git add --all && git commit --quiet -m "on main" )
+	fAssert "[dffyd] br switch -q from main with a commit to send refuses, naming --direct" \
+		bash -c "cd '${directA}' && out=\"\$('${gitsby}' -q br switch side 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'Re-run with --direct' <<< \"\${out}\""
+	fAssert "[dffye] and pushed nothing, and stayed on main" \
+		bash -c "cd '${directA}' && [[ \"\$(git -C '${directO}' rev-parse main)\" != \"\$(git rev-parse main)\" ]] && [[ \"\$(git branch --show-current)\" == main ]]"
+	if ((hasPty)); then
+		fAssertOut "[dffyf] asked in person, br switch warns above the prompt" "WARNING: This pushes your work straight to 'main'\\." \
+			fAnswerPrompt n "cd '${directA}' && '${gitsby}' br switch side"
+	else
+		fSkipBlock "the br switch warning above the prompt (no pty)"
+	fi
+	fAssert "[dffyg] --direct br switch sends it and moves" \
+		bash -c "cd '${directA}' && '${gitsby}' -q --direct br switch side && [[ \"\$(git -C '${directO}' rev-parse main)\" == \"\$(git rev-parse main)\" ]] && [[ \"\$(git branch --show-current)\" == side ]]"
+	( cd "${directA}" && echo three > h.txt && git add --all && git commit --quiet -m "on side" && git checkout --quiet main && git merge --quiet --no-ff side -m "merge side" )
+	fAssert "[dffyh] a merge on main needs no --direct for br switch to send it" \
+		bash -c "cd '${directA}' && '${gitsby}' -q br switch side && [[ \"\$(git -C '${directO}' rev-parse main)\" == \"\$(git rev-parse main)\" ]]"
 
 	## remote moved ahead + local dirty -> update commits the local work, then fast-forwards
 	(
@@ -1831,7 +1852,9 @@ fRunSuite(){
 	## gobr: switch back and forth; bogus target rejected
 	fAssert "[da8mn] br switch (default: main)"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch"
 	fAssert "[da8mp] now on main"           bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == main ]]"
-	fAssert "[da8mq] br switch feat"             bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
+	## main still holds update's 'local edit', which the switch's park push sends, so it says
+	## that's meant.
+	fAssert "[da8mq] br switch feat"             bash -c "cd '${cloneA}' && '${gitsby}' -q --direct br switch feat"
 	fAssert "[da8mr] back on feat"          bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == feat ]]"
 	fAssertFail "[da8ms] br switch nonexistent rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch nosuch"
 

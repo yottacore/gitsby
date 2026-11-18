@@ -33,10 +33,25 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- The --direct refusal and warning advise br create for commits already on main, which br create leaves there
+	- ID: 2026111815522440
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261118-155224
+	- Opened by: jim-collier
+	- Related IDs: 2026111016332380
+	- Steps to reproduce [Bug]: On main in a repo with dev, commit a change with pullcom, then run gitsby -q sync or gitsby -q br switch dev. Follow the advice and run gitsby br create x.
+	- Incorrect behavior [Bug]: The refusal says to move the work to a branch with br create. br create from main checks out dev first, so the commit stays on main, still unpushed, and the next sync or br switch from main refuses again. Without dev the new branch has the commit, and main still holds it too.
+	- Expected behavior [Bug]: The advice names a way out that works for committed work, or speaks only of a dirty tree when the work is uncommitted.
+	- Reproduced [Bug]: No. Read from cmdNewBranch and refuseDirectPush in src-go on nov18.
+	- Origin: e1cc030, 2026-10-05, the sync warning. Plausible.
+
 - Code Review 20261110b item 6: br switch from main or dev pushes commits straight to the protected branch without --direct
 	- ID: 2026111016332380
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
@@ -48,6 +63,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: directPush in mutate.go checks only when the command is sync.
 	- Origin: e1cc030, 2026-10-05. A missed twin of 2026100516202544, Code Review 20261005 item 1, which fixed sync only. Confirmed.
 	- Sweep: Every command whose park step pushes: br switch, br create, br merge, br hotfix, release.
+	- Closed reason: Done
+	- Actual cause [Bug]: directPush returned false for every command but sync, so br switch's park push from a protected branch never warned or refused.
+	- Actual fix [Bug]: directPush also covers br switch when it moves and is online. Under -q its refusal now runs after the dirty-tree refusal, and --direct is taken by br switch. Help, README, changelog and design.md say so.
+	- Branch: nov18-2026111016332380
+	- Commit: 878b05b
+	- Test case: test.bash [dffyd] to [dffyh]; [ddj6t] for the help line; TestOptionsOnlyWhereRead [df4e9] and TestHelpForEveryCommand [df4f1] for --direct on br switch.
+	- Verified: [dffyd] to [dffyg] fail on the dev build, where br switch -q pushed main and exited 0, and pass with the fix. [dffyh] passes on both. The quick gate passed with every area: test.bash 1985/0, fuzz 310/0, parity 31/0. gosec reports the same 27 hits as before, none in the changed lines.
+		- Swept: br create and br hotfix take a dirty tree from a protected branch to the new one, and push only the new branch (cmdNewBranch). br merge refuses a protected current branch up front (preflightBranch), and its push of the target is the merge. release is left out, per Decisions. pr create refuses main, dev and the default branch in prPreflight. A leftover master that isn't the default is the one protected branch it would park-push, which was left alone.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261118-155243
+	- Decisions:
+		- release is left out. It exists to push main and dev, and the admin bypass in design.md Enforcement is what lets it.
+		- The warning and refusal are sync's own text, and so is the 'br create' advice. That advice doesn't move committed work, for sync either, so it's filed as 2026111815522440 rather than changed here.
+		- 20261118: test.bash [da8mq] now runs 'br switch feat' with --direct. main held update's 'local edit' there, and the old switch pushed it as a side effect, which [dab66] later relied on. The check is otherwise as it was.
 
 - Code Review 20261110b item 7: raw git -C <other repo> acts as the current folder's account
 	- ID: 2026111016332367

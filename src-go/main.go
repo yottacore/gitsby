@@ -365,9 +365,8 @@ func (a *app) preflight() error {
 		if err := a.requireOnline("sync", "Offline, '"+meName+" pullcom' skips the pull and just commits; run '"+meName+" sync' when you are back online."); err != nil {
 			return err
 		}
-		// Nobody is there to read the warning, so -q refuses instead.
-		if a.opt.quiet && a.directPush() {
-			return usagef("%s Nothing was done. Re-run with --direct if that is intended, or move the work to a branch with '%s br create <branch-name>'.", a.directPushText(), meName)
+		if err := a.refuseDirectPush(); err != nil {
+			return err
 		}
 	case "release":
 		// With no remote at all the check below never trips - there is nothing to find
@@ -456,6 +455,8 @@ func (a *app) preflightBranch() error {
 		if a.currentBranch() != a.switchTarget() && a.isProtectedBranch("") && runOut("git", "status", "--porcelain") != "" {
 			return usagef("Working tree has changes on '%s'; won't auto-commit to a protected branch. Carry them to a new branch (%s br create <name>), or commit them here deliberately (%s pullcom) first.", a.currentBranch(), meName, meName)
 		}
+		// A clean one can still be ahead, and the park push would send that.
+		return a.refuseDirectPush()
 	}
 	return nil
 }
