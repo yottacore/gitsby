@@ -224,7 +224,8 @@ func dedupe(names []string) []string {
 
 // shclValue spells a value the way the file will hold it - quoted and escaped
 // where the format needs it - by asking the module, so the plan on screen and the
-// line on disk cannot disagree.
+// line on disk cannot disagree. Only for a new line: an edited one keeps its own
+// quotes, so account set's plan reads that one back from the save's text.
 func shclValue(value string) string {
 	doc := shcl.New()
 	doc.SetString("v", value)

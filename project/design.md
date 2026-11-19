@@ -160,6 +160,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 - An account's credentials are only credentials where that account banks.
 	- Accounts gained `host` (defaulting to `github.com`, which is what every config written before the key existed meant) and `user`. If an account's host is not the host `origin` is on, nothing is applied and the identity block names both hosts.
 	- A non-GitHub token is exported under its own variable, never as `GH_TOKEN`: `gh` reads that one, and every child process would otherwise inherit a credential for a host `gh` would try to use it on.
+	- A GitHub token goes where `gh` reads it for that host: `GH_TOKEN` for github.com and a `*.ghe.com` tenant, `GH_ENTERPRISE_TOKEN` for an Enterprise Server host that `GH_HOST` names, since `gh` never reads `GH_TOKEN` there. The credential helper reads the same variable.
 	- The credential helper is written for the host actually being authenticated to. `user` exists because Gitea checks the username an HTTPS push presents where GitHub ignores it.
 	- Neither the token nor the username is interpolated into the helper - both are read from the environment when it runs. The helper is a string Git hands to a shell, and the login reaching it can come from `GITSBY_ACCOUNT`, from a git config key, or from the config file, none of which is a place to accept shell. Interpolating the login put whatever those said inside the command Git runs; the environment removes the class rather than filtering it.
 
@@ -206,6 +207,12 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- `pullcom` stays quiet. It sends nothing, and the push is what the workflow is about.
 	- The flag is for this one case, not a general `--no-warn`. Flags are permanent, and a general one would also hide whatever warning comes next.
 	- `br switch` parks before it moves, and from `main` or `dev` its park push is the same push, so it gets the same warning, refusal and flag (2026-11-18). `br create` and `br hotfix` carry the tree off a protected branch rather than push it, `br merge` refuses to run from one, and `release` exists to push one.
+
+- `sync` and `br switch` warn before they push a branch back up that origin deleted, most often when its pull request merged on the git host (2026-11-19). Once the fetch prunes it, git reads the branch's upstream as none, so the push was a first publish that put the branch back.
+	- The state line shows such a branch as `(origin/<branch> gone)`, and the pull step says it's gone rather than that there's no upstream.
+	- The warning goes last before the prompt, and `-q` refuses, as for a push straight to `main`.
+	- There is no flag for it. `git branch --unset-upstream` makes the next push an ordinary first publish, and `git switch` leaves the branch without pushing it, since `br switch` would park it.
+	- `br merge` pushes it back and deletes origin's copy again in the same run, and `pr create` needs it on origin, so neither asks.
 
 - Being offline must never turn a good commit into a failed command, now that `pullcom` is the only way to commit.
 	- A remote that can't be reached warns and skips the pull. A remote that *is* reachable but can't fast-forward is a real problem and still fails hard - the distinction is what the pre-command fetch already discovered.

@@ -260,15 +260,32 @@ func (a *app) authHost() string {
 	return a.accountHost()
 }
 
-// tokenEnvVar is the variable the credential helper reads the token out of. GH_TOKEN
-// for GitHub, because gh itself reads that one and the two have to agree; anything
-// else gets its own name, so a Gitea token is never exported into every child
-// process under a variable gh will pick up and act on.
+// tokenEnvVar is the variable the credential helper reads the token out of. For a
+// host gh serves it's the one gh reads for that host, since the two have to agree:
+// GH_TOKEN for github.com, GH_ENTERPRISE_TOKEN for an Enterprise Server host, where
+// gh never looks at GH_TOKEN. Anything else gets its own name, so a Gitea token is
+// never exported into every child process under a variable gh will pick up and act on.
 func tokenEnvVar(host string) string {
-	if isGitHubHost(host) {
-		return "GH_TOKEN"
+	if !isGitHubHost(host) {
+		return "GITSBY_HOST_TOKEN"
 	}
-	return "GITSBY_HOST_TOKEN"
+	if ghEnterpriseHost(host) {
+		return "GH_ENTERPRISE_TOKEN"
+	}
+	return "GH_TOKEN"
+}
+
+// ghEnterpriseHost: gh reads GH_ENTERPRISE_TOKEN for this host rather than GH_TOKEN.
+// gh's own rule (go-gh auth.IsEnterprise): anything but github.com, github.localhost,
+// their subdomains, and a *.ghe.com tenant. Checked against gh 2.96.
+func ghEnterpriseHost(host string) bool {
+	h := strings.ToLower(host)
+	for _, gh := range []string{"github.com", "github.localhost"} {
+		if h == gh || strings.HasSuffix(h, "."+gh) {
+			return false
+		}
+	}
+	return !strings.HasSuffix(h, ".ghe.com")
 }
 
 // userEnvVar is where the credential helper reads the username from. Ours alone -
@@ -403,8 +420,8 @@ func gitConfigEnv(key, value string) error {
 	return setEnv("GIT_CONFIG_COUNT", strconv.Itoa(n+1))
 }
 
-// selectAccount points this run and its children at this folder's account. GH_TOKEN
-// scopes gh to this process, where 'gh auth switch' is global. skipGhProbe: no identity
+// selectAccount points this run and its children at this folder's account. The token
+// in gh's own variable scopes gh to this process, where 'gh auth switch' is global. skipGhProbe: no identity
 // block prints.
 func (a *app) selectAccount(skipGhProbe bool) error {
 	if a.opt.anyIdentity {
@@ -441,7 +458,7 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 			}
 		}
 		// Export whenever a token was found, not only when it replaces a different
-		// active account: the helper below reads GH_TOKEN when git runs it, and the
+		// active account: the helper below reads it when git runs it, and the
 		// reset that precedes it has already evicted any credential manager.
 		envVar := tokenEnvVar(credHost)
 		a.acct.tokenEnv = envVar

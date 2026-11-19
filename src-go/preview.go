@@ -82,7 +82,7 @@ func (a *app) preview(what string) {
 		a.previewRelease()
 	case "repo-clone":
 		a.out.clean(planPad + "git clone -- " + maskURL(a.tgt.cloneURL) + " " + a.tgt.cloneDir)
-		a.out.clean(planPad + "git -C " + a.tgt.cloneDir + " checkout dev *")
+		a.out.clean(planPad + "git " + strings.Join(cloneDevArgs(a.tgt.cloneDir), " ") + " *")
 	case "repo-url":
 		a.out.clean(planPad + "git remote set-url origin " + a.respelledURL(a.cmd.arg))
 	case "account-set", "account-unset":
@@ -108,8 +108,15 @@ func (a *app) preview(what string) {
 			a.out.clean(planPad + "edit " + nativePath(t.file))
 		}
 		if t.exists {
-			a.out.clean(planPad + "  was:     " + t.field + ": " + t.old)
-			a.out.clean(planPad + "  becomes: " + t.field + ": " + shclValue(t.value))
+			was, becomes := t.oldLine, t.newLine
+			if was == "" {
+				was = t.field + ": " + t.old
+			}
+			if becomes == "" {
+				becomes = t.field + ": " + shclValue(t.value)
+			}
+			a.out.clean(planPad + "  was:     " + was)
+			a.out.clean(planPad + "  becomes: " + becomes)
 		} else {
 			a.out.clean(planPad + "  add:     " + t.disp + "." + t.field + ": " + shclValue(t.value))
 		}
@@ -261,5 +268,9 @@ func (a *app) previewRelease() {
 		a.out.clean(planPad + "git merge --ff-only " + a.defaultBranch() + " *")
 		a.out.clean(planPad + "git push *")
 	}
-	a.out.clean(planPad + a.checkoutDisp(a.currentBranch()) + " *")
+	// cmdRelease goes back only to a branch that isn't main or dev, so a run started
+	// on either ends on the last branch shown above.
+	if start := a.currentBranch(); start != a.defaultBranch() && (!hasDev || start != "dev") {
+		a.out.clean(planPad + a.checkoutDisp(start) + " *")
+	}
 }

@@ -47,7 +47,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- After the PowerShell installer adds gitsby to PATH on Windows, a new PowerShell or Command Prompt opened from the Start menu or taskbar finds it. It used to need a sign-out first, since the installer changed PATH without telling Windows.
+
 - `raw glab` and `pr` no longer send the account's GitLab token to some other host. glab sends its token to whatever host it's pointed at, so `raw glab api --hostname gitlab.com user` in a gitlab.gnome.org folder sent the GNOME token to gitlab.com. A run that names another host, with `--hostname`, `-R` or a URL, now gets no token and runs as plain glab would, and says so.
+
+- On a GitHub Enterprise host, `gh` acts as the folder's account. Its token went into `GH_TOKEN`, which `gh` reads only for github.com, so `pr`, `repo create` and `raw gh` acted as `gh`'s own login there while git pushed as the account. The token now goes into `GH_ENTERPRISE_TOKEN` for a host `GH_HOST` names.
 
 - `raw git -C <folder>` acts as the account of the repo git works in. It acted as the account of the folder it was started in, so a commit or push into another account's repo went out with the wrong name, email and token. The same goes for `--git-dir` and `GIT_DIR`, `raw tig -C`, and `raw lazygit -p`, `-w` and `-g`.
 
@@ -62,6 +66,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `release` refuses a version git can't tag, such as `1.2.3.lock` or `1.2.3-a..b`, before it changes anything. It used to make the release merge on the default branch, then stop when `git tag` failed.
 
 - After a `release` whose push of the default branch was refused, as by a hook or branch protection, running `release` again finishes it: it pushes the branch and that release's tag, then fast-forwards `dev`. It used to tag the same commit with the next version and push only that, so the first tag never left the machine. Typing the same version again finishes it too.
+
+- The plan for `release` started on `main` no longer ends with `git checkout main`. The run ends on `dev`, as it always has, and the plan's last step now says so.
 
 - `sync`, and every command that pushes the branch it's on, pushes only that branch. Under `push.default=matching`, or a push refspec for every branch, they pushed other branches with it, so a commit on `main` reached origin without `--direct`. On a mirror remote they deleted origin's branches that aren't here. git now refuses that push, and nothing moves.
 
@@ -88,6 +94,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Converting an SHCL 2.x accounts file keeps a value holding a byte that isn't UTF-8 the way 2.x read it, as the replacement character U+FFFD. It used to keep the byte, so the value read differently after the conversion, with no word about it.
 
 - An accounts file last written before the first SHCL 3 module Gitsby used, or with no real time, as a Nix store gives, is read as it is rather than re-spelled as that module's. The copy a conversion keeps has the file's own time, so moving it back reads as the file did. Where the folder can't be written, the notice says so rather than blaming a lock.
+
+- `repo clone` ends on the `dev` branch, tracking origin's, when origin also has a tag named `dev`. It used to leave the clone detached at the tag and say Done, and the next command refused.
+
+- A message typed as a word beside `-m`, as in `gitsby pullcom 'first message' -m second`, is refused. It used to commit with the `-m` one and drop the other without a word. A `pr create` title typed beside `-m` is refused the same way.
+
+- `account apply` gives each account its own fragment. Two accounts with the same login add their names to it, and that could be a third account's own name, such as `work` beside `jim_work`, so both wrote one file and a repo in one folder took the other account's email. The one named for its own login keeps the name, and the other gets a number on the end, such as `github.com_jim_work_2.gitconfig`. Re-run `gitsby account apply` to get it.
+
+- The `was:` and `becomes:` lines in `account set`'s plan show the line as the file has it, key, quotes and comment included. They used to rebuild it from the key and value, so the plan could show `email: c@d.e` where the file got `Email: "c@d.e"   # work mail`.
 
 ## v3.0.0-beta.1 - 2026-11-08
 

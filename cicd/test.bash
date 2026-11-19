@@ -209,14 +209,49 @@ fPsHelpNamesAll(){ local inst="$1" which="$2" help="" opts="" opt=""
 		grep -qE -- "(^|[^A-Za-z])-${opt}([^A-Za-z]|\$)" <<< "${help}" || { echo "not in ${which}: ${opt}"; return 1; }
 	done <<< "${opts}"
 }
+## Defines install.ps1's Send-EnvironmentChange from the file and calls it. Off Windows the call
+## gets into the compiled P/Invoke stub and fails loading user32.dll, which proves the Add-Type
+## definition compiles and the call binds to it. Prints REACHED when it got there, or sent on Windows.
+# shellcheck disable=SC2016  ## pwsh's own variables; pwsh does the expanding.
+fPsSettingChange(){ PS_FILE="$1" POWERSHELL_TELEMETRY_OPTOUT=1 pwsh -NoProfile -Command '$ErrorActionPreference = "Stop"
+	$fn = [Management.Automation.Language.Parser]::ParseFile($env:PS_FILE, [ref]$null, [ref]$null).Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq "Send-EnvironmentChange" }, $true)
+	if (-not $fn) { "no Send-EnvironmentChange"; exit 1 }
+	. ([scriptblock]::Create($fn.Extent.Text))
+	try { Send-EnvironmentChange; "REACHED (sent)" } catch { $m = $_.Exception.ToString(); if ($m -match "at GitsbyInstall\.Win32\.SendMessageTimeout\(") { "REACHED (no user32 here)" } else { "FAILED: $m" } }' </dev/null 2>&1 ;}
+## Succeeds when install.ps1 tells Windows about the PATH it wrote: Send-EnvironmentChange is
+## called after the registry write, outside the try whose catch reports PATH as not updated.
+# shellcheck disable=SC2016  ## pwsh's own variables; pwsh does the expanding.
+fPsPathTold(){ PS_FILE="$1" pwsh -NoProfile -Command '$ast = [Management.Automation.Language.Parser]::ParseFile($env:PS_FILE, [ref]$null, [ref]$null)
+	$cmds = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] }, $true)
+	$write = @($cmds | Where-Object { $_.GetCommandName() -eq "Set-ItemProperty" -and $_.Extent.Text -match "-Name .PATH." })
+	$tell = @($cmds | Where-Object { $_.GetCommandName() -eq "Send-EnvironmentChange" })
+	if ($write.Count -ne 1 -or $tell.Count -lt 1) { "writes: $($write.Count), tells: $($tell.Count)"; exit 1 }
+	$tries = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $n.Body.Extent.StartOffset -le $write[0].Extent.StartOffset -and $n.Body.Extent.EndOffset -ge $write[0].Extent.EndOffset }, $true)
+	$inner = $tries | Sort-Object { $_.Body.Extent.EndOffset - $_.Body.Extent.StartOffset } | Select-Object -First 1
+	foreach ($t in $tell) {
+		if ($t.Extent.StartOffset -le $write[0].Extent.EndOffset) { "told before the write"; exit 1 }
+		if ($inner -and $t.Extent.StartOffset -lt $inner.Extent.EndOffset) { "told inside the write'"'"'s try"; exit 1 }
+	}' </dev/null 2>&1 ;}
 ## Succeeds when install.bash's --help names every option its argument loop takes.
 fBashHelpNamesAll(){ local inst="$1" help="" opts="" opt=""
 	help="$(bash "${inst}" --help)"
-	opts="$(sed -n '/^while \[\[ \$# -gt 0 \]\]; do/,/^done/p' "${inst}" | sed -n 's/^[[:space:]]*\(-[^)]*\)).*/\1/p' | tr '|' '\n' | sed 's/=\*$//')"
+	opts="$(sed -n '/^[[:space:]]*while \[\[ \$# -gt 0 \]\]; do/,/^[[:space:]]*done/p' "${inst}" | sed -n 's/^[[:space:]]*\(-[^)]*\)).*/\1/p' | tr '|' '\n' | sed 's/=\*$//')"
 	[[ -n "${opts}" ]] || return 1
 	while IFS= read -r opt; do
 		grep -qE -- "(^|[ ,])${opt}([ ,=]|\$)" <<< "${help}" || { echo "not in --help: ${opt}"; return 1; }
 	done <<< "${opts}"
+}
+## Succeeds when no line-boundary cut of install.bash short of its last line, piped to bash as the
+## one-liner does, asks for anything or installs anything. <dir> has the stub curl, sums and asset.
+fBashCutRunsNothing(){ local inst="$1" dir="$2" cut="$2/cut" lines=0 n=0
+	lines="$(wc -l < "${inst}")"; mkdir -p "${cut}"
+	((lines > 10)) || return 1
+	for ((n = 1; n < lines; n++)); do
+		: > "${cut}/calls"
+		head -n "${n}" "${inst}" | env HOME="${cut}/home" PATH="${dir}/bin:${PATH}" FAKE_CALLS="${cut}/calls" \
+			FAKE_SUMS="${dir}/SHA256SUMS" FAKE_ASSET="${dir}/asset" bash -s -- -y >/dev/null 2>&1 || true
+		if [[ -s "${cut}/calls" || -e "${cut}/home" ]]; then echo "cut after line ${n} ran"; return 1; fi
+	done
 }
 ## A release list the way GitHub's API sends one, newest first: an author block ahead of the tag,
 ## then the pre-release flag, then each asset with an uploader block and its download URL. The
@@ -277,6 +312,15 @@ fAssertNotPlan(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$
 fPlanRan(){ local pat="$1"; shift; local out="" line=""; out="$("$@" 2>&1 || true)"
 	line="$(grep -m1 -E -- "${pat}" <<< "$(fPlanOf <<< "${out}")" || true)"; line="${line#"${line%%[! ]*}"}"; line="${line% \*}"
 	[[ -n "${line}" ]] && grep -qxF -- "[ ${line} ... ]" <<< "${out}" ;}
+## Succeeds when the command passes in <dir> and the last checkout its plan shows names the
+## branch the run ended on.
+fPlanEnds(){ local dir="$1"; shift; local out="" line="" want="" w=""; local -a words=()
+	out="$("$@" 2>&1)" || return 1
+	line="$(fPlanOf <<< "${out}" | awk '/^ +git checkout /{l=$0} END{print l}')"; line="${line% \*}"
+	read -ra words <<< "${line}"; [[ ${#words[@]} -gt 2 ]] || return 1
+	want="${words[-1]}"
+	for w in "${!words[@]}"; do [[ "${words[w]}" != -b ]] || want="${words[w+1]}"; done
+	[[ "$(git -C "${dir}" branch --show-current)" == "${want}" ]] ;}
 
 ## Fixture: bare origin with an initial commit on main, plus two clones.
 fMakeFixture(){
@@ -1816,6 +1860,29 @@ fRunSuite(){
 	( cd "${directA}" && echo three > h.txt && git add --all && git commit --quiet -m "on side" && git checkout --quiet main && git merge --quiet --no-ff side -m "merge side" )
 	fAssert "[dffyh] a merge on main needs no --direct for br switch to send it" \
 		bash -c "cd '${directA}' && '${gitsby}' -q br switch side && [[ \"\$(git -C '${directO}' rev-parse main)\" == \"\$(git rev-parse main)\" ]]"
+	## A branch deleted on origin after its pull request merged still has its upstream set, and
+	## git reads that as none once the fetch prunes it. sync and br switch's park push would put
+	## it back as a first publish, so they warn above the prompt, and -q refuses.
+	local goneO="${work}/$1-goneo.git" goneA="${work}/$1-gonea"
+	git init --quiet --bare -b main "${goneO}"
+	git clone --quiet "${goneO}" "${goneA}" 2>/dev/null
+	( cd "${goneA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git checkout --quiet -b feat && echo two > g.txt && git add --all && git commit --quiet -m "on feat" && git push --quiet -u origin feat && git -C "${goneO}" branch --quiet -D feat && echo three > h.txt )
+	fAssert "[dfgxn] sync -q on a branch deleted on origin refuses, naming the way to publish it again" \
+		bash -c "cd '${goneA}' && out=\"\$('${gitsby}' -q sync 'more' 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'origin/feat' is gone\" <<< \"\${out}\" && grep -qF \"'git switch main'\" <<< \"\${out}\" && grep -qF 'git branch --unset-upstream' <<< \"\${out}\""
+	fAssert "[dfgxp] and br switch -q too, staying put, with nothing pushed or committed" \
+		bash -c "cd '${goneA}' && ! '${gitsby}' -q br switch main >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == feat ]] && [[ -z \"\$(git ls-remote '${goneO}' refs/heads/feat)\" ]] && [[ -n \"\$(git status --porcelain)\" ]]"
+	if ((hasPty)); then
+		fAssertOut "[dfgxq] asked in person, sync warns above the prompt" "WARNING: 'origin/feat' is gone, most often because its pull request merged" \
+			fAnswerPrompt n "cd '${goneA}' && '${gitsby}' sync 'more'"
+	else
+		fSkipBlock "the gone-branch warning above the prompt (no pty)"
+	fi
+	fAssertOut "[dfgxr] status names the gone upstream" "^Current branch: main :: feat \\(origin/feat gone\\)" \
+		bash -c "cd '${goneA}' && '${gitsby}' status"
+	fAssertOut "[dfgxs] pullcom says it's gone rather than never pushed" "'origin/feat' is gone; nothing to pull\\." \
+		bash -c "cd '${goneA}' && '${gitsby}' -q pullcom 'more'"
+	fAssert "[dfgxt] after 'git branch --unset-upstream', sync -q publishes it as new" \
+		bash -c "cd '${goneA}' && git branch --unset-upstream && '${gitsby}' -q sync >/dev/null 2>&1 && [[ \"\$(git ls-remote '${goneO}' refs/heads/feat | cut -f1)\" == \"\$(git rev-parse feat)\" ]]"
 	## The way off main that the refusal names has to work for what is there. br create takes a
 	## dirty tree along but leaves commits on main, where the next sync refuses again.
 	local offO="${work}/$1-wayoffo.git" offA="${work}/$1-wayoffa" offFix=""
@@ -1992,6 +2059,21 @@ fRunSuite(){
 	fAssert     "[df51g] a bare release then pushes the candidate, and promotes nothing"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && git ls-remote --exit-code --tags origin refs/tags/v1.6.0-rc1 >/dev/null && ! git rev-parse -q --verify refs/tags/v1.6.0 >/dev/null"
 	( cd "${cloneA}" && git checkout --quiet dev )
 
+	## The plan ends where the run does. Started on main it ends on dev, and the plan's last line
+	## used to promise a checkout of main.
+	( cd "${cloneA}" || exit 1; echo end1 > end1.txt && git add end1.txt && git commit --quiet -m end1 && git push --quiet && git checkout --quiet main )
+	fAssert     "[dfgwy] a release from main: the plan's last checkout is where it ends"  fPlanEnds "${cloneA}"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.7.0"
+	fAssert     "[dfgwz] and that is dev"  bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == dev ]]"
+	( cd "${cloneA}" || exit 1; echo end2 > end2.txt && git add end2.txt && git commit --quiet -m end2 && git push --quiet && git checkout --quiet main && mv "${origin}/hooks/pre-receive.off" "${origin}/hooks/pre-receive" )
+	fAssertFail "[dfgx0] a release from main whose push is refused fails"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.7.1"
+	mv "${origin}/hooks/pre-receive" "${origin}/hooks/pre-receive.off"
+	fAssert     "[dfgx1] finishing it from main: the plan's last checkout is where it ends"  fPlanEnds "${cloneA}"  bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == main ]] && '${gitsby}' -q release v1.7.1"
+	( cd "${cloneA}" || exit 1; echo end3 > end3.txt && git add end3.txt && git commit --quiet -m end3 && git push --quiet )
+	fAssert     "[dfgx2] the same from dev"  fPlanEnds "${cloneA}"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.7.2"
+	( cd "${cloneA}" || exit 1; git checkout --quiet -b relend && echo end4 > end4.txt )
+	fAssert     "[dfgx3] the same from a feature branch"  fPlanEnds "${cloneA}"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.7.3 && [[ \"\$(git branch --show-current)\" == relend ]]"
+	( cd "${cloneA}" || exit 1; git checkout --quiet dev && git branch --quiet -D relend && git push --quiet origin --delete relend )
+
 	## Tags with no 'v' were invisible to the scan, so release started over at 0.1.0 and pushed it.
 	local bt="${work}/$1-baretag"
 	git init --quiet --bare -b main "${bt}/origin.git"
@@ -2007,6 +2089,8 @@ fRunSuite(){
 	fAssertFail "[dcnq8] a typed version already tagged with no v is refused"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release 1.4.2"
 	fAssertOut  "[dcnq9] and names that tag"  "Tag '1\.4\.2' already exists"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release 1.4.2 2>&1"
 	fAssert     "[dcnqn] a typed version is tagged as typed"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release 2.0.0 && git rev-parse -q --verify refs/tags/2.0.0 >/dev/null && ! git rev-parse -q --verify refs/tags/v2.0.0 >/dev/null"
+	( cd "${bt}/c" && echo e > e.txt )
+	fAssert     "[dfgx4] with no dev, a release from main: the plan's last checkout is where it ends"  fPlanEnds "${bt}/c"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release 2.0.1 && [[ \"\$(git branch --show-current)\" == main ]]"
 	## git merge reads a tag ahead of a branch with the same name, so a tag called 'dev' on an
 	## older commit would be released in dev's place.
 	local rtag="${work}/$1-reltag"
@@ -2054,6 +2138,11 @@ fRunSuite(){
 	( cd "${cloneA}" && echo m4 > m4.txt )
 	fAssert "[dafr3] message starting with a dash commits"    bash -c "cd '${cloneA}' && '${gitsby}' -q update -m '-Wall added to CFLAGS' && git log -1 --format=%s | grep -qx -- '-Wall added to CFLAGS'"
 	fAssertFail "[dab6q] unquoted two-word message rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q update Fixed bug"
+	## A typed message beside -m used to be dropped for the -m one, at exit 0.
+	( cd "${cloneA}" && echo m5 > m5.txt )
+	fAssert "[dfgw0] a typed message beside -m is refused, and nothing is committed" \
+		bash -c "cd '${cloneA}' && h=\"\$(git rev-parse HEAD)\"; out=\"\$('${gitsby}' -q pullcom 'first message' -m second 2>&1)\"; [[ \$? == 1 ]] && grep -qF \"Two commit messages given: 'first message', and -m 'second'.\" <<< \"\${out}\" && [[ \"\$(git rev-parse HEAD)\" == \"\${h}\" ]]"
+	rm -f "${cloneA:?}/m5.txt"
 
 	## Non-tty: mutating commands fail closed without -q; read-only ones go quiet
 	( cd "${cloneA}" && echo nt > nt.txt )
@@ -2686,6 +2775,16 @@ fRunSuite(){
 	git clone --quiet "${o3}" "${cl}/nodev-seed" 2>/dev/null
 	( cd "${cl}/nodev-seed" && echo n > n.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main )
 	fAssert "[dab8w] repo clone of a no-dev repo stays on default"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o3}' nd && [[ \"\$(cd nd && git branch --show-current)\" == main ]]"
+	## A tag named dev beside origin's dev branch: a plain 'checkout dev' took the tag and left
+	## HEAD detached, and the clone still said Cloned, at exit 0.
+	local o4="${cl}/tagdev.git"
+	git init --quiet --bare -b main "${o4}"
+	git clone --quiet "${o4}" "${cl}/tagdev-seed" 2>/dev/null
+	( cd "${cl}/tagdev-seed" && echo t > t.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main \
+		&& git tag dev && git push --quiet origin refs/tags/dev && git checkout --quiet -b work && echo d > d.txt && git add --all \
+		&& git commit --quiet -m dev && git push --quiet origin refs/heads/work:refs/heads/dev )
+	fAssert "[dfgw1] repo clone ends on the dev branch beside a tag named dev, tracking origin's" \
+		bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o4}' td >/dev/null 2>&1 && cd td && [[ \"\$(git symbolic-ref --quiet HEAD)\" == refs/heads/dev && \"\$(git for-each-ref --format='%(upstream)' refs/heads/dev)\" == refs/remotes/origin/dev && \"\$(git rev-parse HEAD)\" == \"\$(git rev-parse refs/remotes/origin/dev)\" ]]"
 	fAssert "[dab8x] repo clone into a pre-existing empty dir"      bash -c "cd '${cl}' && mkdir -p pre && '${gitsby}' -q repo clone '${origin}' pre && [[ -d pre/.git ]]"
 	## A folder given relative was shown the way it was typed, which leaves the reader to work out
 	## where it ends up. The git command keeps the typed form.
@@ -4152,6 +4251,11 @@ GHEOF
 		bash -c "env ${eiEnv} bash '${goInst}' -y >/dev/null 2>&1 && '${ei}/home/.local/bin/gitsby' --version | grep -q 'stand-in'"
 	fAssert    "[dbfsq] and leaves no staging file behind" \
 		bash -c "! compgen -G '${ei}/home/.local/bin/.gitsby.install.*' >/dev/null"
+	## curl | bash runs each line as it arrives, so a download cut short ran whatever part of the
+	## installer got through. One cut said Checksum verified and exited 0 with nothing installed.
+	fAssert    "[dfgxx] go installer cut short at any line runs nothing"  fBashCutRunsNothing "${goInst}" "${ei}"
+	fAssert    "[dfgxy] and the whole of it, piped the same way, installs" \
+		bash -c "env ${eiEnv} HOME='${ei}/pipehome' bash -s -- -y < '${goInst}' >/dev/null 2>&1 && '${ei}/pipehome/.local/bin/gitsby' --version | grep -q 'stand-in'"
 	## A Mac release is one universal binary, so every Mac CPU asks for the same file. A fake
 	## uname reports Darwin and the CPU named in FAKE_CPU.
 	local em="${work}/instmac"; mkdir -p "${em}/bin"
@@ -4387,6 +4491,12 @@ GHEOF
 		## bakes %USERPROFILE%-style entries in as literals for good.
 		fAssert "[dbfmr] go install.ps1 reads PATH raw before rewriting it" \
 			bash -c "grep -q 'DoNotExpandEnvironmentNames' '${goInstPs}'"
+		## Writing PATH in the registry tells nobody, so a shell opened from the Start menu
+		## didn't find gitsby until sign-out. The broadcast itself needs a Windows desktop.
+		fAssertOut "[dfgxc] go install.ps1's PATH broadcast compiles and calls user32" 'REACHED' \
+			fPsSettingChange "${goInstPs}"
+		fAssert    "[dfgxd] and is sent after the PATH write, outside its try" \
+			fPsPathTold "${goInstPs}"
 		## The portal check looks at one byte, and once read the whole download for it.
 		fAssert "[deysn] go install.ps1 reads one byte of the download for the portal check" \
 			bash -c "n=\$(grep -cE 'Get-Content -LiteralPath \\\$tmpFile ' '${goInstPs}'); [[ \${n} -ge 1 && \$(grep -cE 'Get-Content -LiteralPath \\\$tmpFile .*-TotalCount 1( |\$)' '${goInstPs}') == \"\${n}\" ]] && ! grep -q 'ReadAllBytes' '${goInstPs}'"
@@ -5243,7 +5353,7 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw host gitea.example 2>&1"
 	fAssertOut "[dbsrj] and the block now has it"  '^ +host: gitea\.example$'  cat "${ac}/hier-set.shcl"
 	fAssertOut "[dbsrk] with the comment above it kept"  '^# blocks$'  cat "${ac}/hier-set.shcl"
-	fAssertOut "[dbsrm] and an existing key is shown before and after"  'was: +ghaccount: hieracct' \
+	fAssertOut "[dbsrm] and an existing key is shown before and after"  'was: +ghAccount: hieracct' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw ghaccount other 2>&1"
 	fAssertOut "[df36v] and says it wrote the file with no path in the status line"  '^\[ Wrote the accounts file\. \]$' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw ghaccount other2 2>&1"
@@ -5682,6 +5792,14 @@ LGEOF
 		bash -c "${acRelRun} '${acRel}/cfg/relkey.shcl' account list"
 	fAssert "[dcnnx] a relative sshkey goes into no git config fragment" \
 		bash -c "${acRelRun} '${acRel}/cfg/relkey.shcl' account apply >/dev/null && grep -q rk@example.com '${acRel}/cfg/accounts/github.com_rk.gitconfig' && ! grep -qi sshcommand '${acRel}/cfg/accounts/github.com_rk.gitconfig'"
+	## 2 accounts sharing a login add their names, and also work's came out as jim_work's own name.
+	printf 'account: personal\n\tghaccount: jim\n\temail: p@example.com\naccount: work\n\tghaccount: jim\n\temail: w@example.com\naccount: jim_work\n\temail: jw@example.com\n' > "${acRel}/cfg/samefrag.shcl"
+	fAssert "[dfgwf] account apply gives each account its own fragment when an added name is another's" \
+		bash -c "${acRelRun} '${acRel}/cfg/samefrag.shcl' account apply >/dev/null && grep -q w@example.com '${acRel}/cfg/accounts/github.com_jim_work_2.gitconfig' && grep -q jw@example.com '${acRel}/cfg/accounts/github.com_jim_work.gitconfig' && grep -q p@example.com '${acRel}/cfg/accounts/github.com_jim_personal.gitconfig'"
+	## The plan shows the line as the save writes it, key case, quotes and comment included.
+	printf 'account: rk\n\tEmail: "a@b.c"   # work mail\n' > "${acRel}/cfg/planline.shcl"
+	fAssertOut "[dfgwg] account set's plan shows the line it writes"  'becomes: Email: "c@d\.e"   # work mail$' \
+		bash -c "${acRelRun} '${acRel}/cfg/planline.shcl' account set rk email c@d.e 2>&1"
 	: > "${acRel}/cfg/keyset.shcl"
 	fAssert "[dcnny] account set writes a relative tokenfile as the file it names from here" \
 		bash -c "${acRelRun} '${acRel}/cfg/keyset.shcl' account set rk tokenfile tok.txt >/dev/null && grep -qF -e 'tokenfile: ${acRelProj}/tok.txt' -e 'tokenfile: \"${acRelProj}/tok.txt\"' '${acRel}/cfg/keyset.shcl'"
@@ -6836,7 +6954,7 @@ LGEOF
 			bash -c "HOME='${rlTree}/home' pwsh -NoProfile -NonInteractive -File '${rlTree}/cicd/utility/run-latest.ps1' >/dev/null 2>&1; echo \"rc=\$?\""
 		printf '#!/bin/sh\necho "pooled build ran $*"\n' > "${rlTree}/src-go/gitsby"
 		chmod +x "${rlTree}/src-go/gitsby"
-		touch -d '2026-01-02 03:04:05' "${rlTree}/src-go/gitsby"
+		touch -t 202601020304.05 "${rlTree}/src-go/gitsby"
 		fAssertOut "[df06j] and it names its copy by the Gregorian date under th-TH" '^gitsby_20260102-030405$' \
 			bash -c "[[ \$(HOME='${rlTree}/home' pwsh -NoProfile -NonInteractive -Command \"[cultureinfo]::CurrentCulture = 'th-TH'; & '${rlTree}/cicd/utility/run-latest.ps1' a b\") == 'pooled build ran a b' ]] && ls '${rlTree}/home/.cache/gitsby-runs'"
 	fi
@@ -8837,6 +8955,21 @@ GLEOF
 		bash -c "cd '${fgRepo}' && PATH='${fgDeb}' FAKE_TEA_LOG='${fg}/rawdeb.log' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami && grep -qx whoami '${fg}/rawdeb.log'"
 	fAssertOut "[ddk68] raw tig gets the account through git"  'password=\$\{GITSBY_HOST_TOKEN\}' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tig"
+	## gh reads GH_ENTERPRISE_TOKEN for an Enterprise host and never GH_TOKEN, so on a host GH_HOST
+	## names the token goes there, and git's helper reads it from the same place.
+	mkdir -p "${fg}/ghebin"
+	fStub "${fg}/ghebin/gh" <<'GHEOF'
+#!/usr/bin/env bash
+case "$1 $2" in
+"auth token") echo "gh=${GH_TOKEN:-} ghe=${GH_ENTERPRISE_TOKEN:-}" ;;
+"api user")   echo giteauser ;;
+esac
+exit 0
+GHEOF
+	fAssertOut "[dfgvn] raw gh on an Enterprise host gets the token where gh reads it"  '^gh= ghe=tok_ghonly$' \
+		bash -c "cd '${fgRepo}' && PATH='${fg}/ghebin:${fgPath}' GH_HOST=git.example.test '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw gh auth token"
+	fAssertOut "[dfgvp] and git's helper answers with it there"  '^password=tok_ghonly$' \
+		bash -c "cd '${fgRepo}' && printf 'protocol=https\nhost=git.example.test\n\n' | PATH='${fg}/ghebin:${fgPath}' GH_HOST=git.example.test '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw git credential fill"
 	## A Gitea account has no GitHub login, and the line used to read only that one.
 	fAssertOut "[ddk69] raw names the Gitea account it acts as"  'acting as giteauser' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_VERSION=0.11.0 '${gitsby}' -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
@@ -8954,7 +9087,7 @@ GLEOF
 	mkdir -p "${fg}/oldpin" "${fg}/newpin"
 	printf 'account: work\n\tname: "O%sBrien \\\\ x"\n##\n##    Format   3\n##\n' "'" > "${fg}/oldpin/config.shcl"
 	cp "${fg}/oldpin/config.shcl" "${fg}/newpin/config.shcl"
-	touch -d '2026-11-01 12:00:00' "${fg}/oldpin/config.shcl"
+	touch -t 202611011200.00 "${fg}/oldpin/config.shcl"
 	fAssertOut "[df08w] a Format 3 accounts file last written before the move to v3.0.0-beta1 has its escapes re-spelled"  'Converted the accounts file from the earlier SHCL 3 spelling.* 1 line\(s\) were re-spelled' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/oldpin/config.shcl' identity 2>&1"
 	fAssertOut "[df08x] so the value reads as that module read it, and the old file sits beside it"  "^	name: \"O'Brien \\\\ x\"\$" \
@@ -8965,7 +9098,7 @@ GLEOF
 	## so, and an edit refuses before its plan, since the module would refuse the save after it.
 	mkdir -p "${fg}/newer"
 	printf 'account: work\n\tname: Ada\n##\n##    Format   4\n##\n' > "${fg}/newer/config.shcl"
-	touch -d '2026-11-01 12:00:00' "${fg}/newer/config.shcl"
+	touch -t 202611011200.00 "${fg}/newer/config.shcl"
 	fAssertOut "[dfg47] a file stamped with a newer SHCL format is read, and the run says so"  '^ok$' \
 		bash -c "cd '${fgRepo}' && out=\$(PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/newer/config.shcl' account list 2>&1); [[ \$out == *'is in SHCL format 4, newer than this build reads'* && \$out == *'commits .: Ada'* ]] && echo ok"
 	fAssertOut "[dfg48] and account set refuses before its plan, exit 1, file as it was"  '^ok$' \
@@ -8974,11 +9107,14 @@ GLEOF
 	## its file, so the escapes read as text and nothing tries to convert it on every run.
 	mkdir -p "${fg}/nixpin"
 	cp "${fg}/newpin/config.shcl" "${fg}/nixpin/config.shcl"
-	touch -d '@1' "${fg}/nixpin/config.shcl"
+	TZ=UTC touch -t 197001010000.01 "${fg}/nixpin/config.shcl"
 	chmod 0555 "${fg}/nixpin"
 	fAssertNotOut "[dfg4c] a Format 3 file older than the earlier module is read as it is, with no notice"  'Converted|converted|O.Brien \\ x' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/nixpin/config.shcl' account list 2>&1 | grep -v '^Config file'; ls '${fg}/nixpin' | grep -vx config.shcl"
 	chmod 0755 "${fg}/nixpin"
+	## BSD touch has no '@epoch' form, which stopped this suite on macOS and FreeBSD. Use -t, with TZ=UTC for an epoch.
+	fAssert "[dfgvd] no touch in this suite takes an '@epoch' date, which BSD touch refuses" \
+		bash -c "! grep -nE 'touch -d .?@' '${root}/cicd/test.bash'"
 	## A hand-typed 2.x value where a quote opened a run, so the '#' after it was text. The module
 	## alone ends the value there; the converted file has to read what 2.x read.
 	mkdir -p "${fg}/old2xrun"

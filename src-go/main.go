@@ -368,6 +368,9 @@ func (a *app) preflight() error {
 		if err := a.refuseDirectPush(); err != nil {
 			return err
 		}
+		if err := a.refuseGoneBranch(); err != nil {
+			return err
+		}
 	case "release":
 		// With no remote at all the check below never trips - there is nothing to find
 		// unreachable - and the tag would be cut, pushed nowhere, and reported as done.
@@ -456,7 +459,10 @@ func (a *app) preflightBranch() error {
 			return usagef("Working tree has changes on '%s'; won't auto-commit to a protected branch. Carry them to a new branch (%s br create <name>), or commit them here deliberately (%s pullcom) first.", a.currentBranch(), meName, meName)
 		}
 		// A clean one can still be ahead, and the park push would send that.
-		return a.refuseDirectPush()
+		if err := a.refuseDirectPush(); err != nil {
+			return err
+		}
+		return a.refuseGoneBranch()
 	}
 	return nil
 }
@@ -681,6 +687,11 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 			a.out.clean("")
 			a.out.warn("WARNING: " + a.directPushText())
 			a.out.warn("  To keep it off '" + a.currentBranch() + "', answer n and run " + a.keepOffText(committed) + ". (The '--direct' flag silences this warning.)")
+		}
+		if gone := a.pushesGoneBranch(); gone != "" {
+			a.out.clean("")
+			a.out.warn("WARNING: " + a.goneBranchText(gone))
+			a.out.warn("  To leave it gone, answer n and run " + a.goneBranchLeave() + ". ('git branch --unset-upstream' first publishes it as new, without this warning.)")
 		}
 		a.out.clean("")
 		if !a.out.confirm("Continue? (y|n): ") {

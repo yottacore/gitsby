@@ -278,7 +278,7 @@ func (a *app) cmdRelease() error {
 			}
 		}
 	}
-	// Don't leave the user parked on main.
+	// Don't leave the user parked on main. previewRelease's last line follows this.
 	if startBranch != "" && startBranch != a.currentBranch() && startBranch != mainBranch {
 		return a.checkout(startBranch)
 	}

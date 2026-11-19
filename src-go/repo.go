@@ -374,11 +374,19 @@ func (a *app) cmdClone() error {
 	if err := a.step("git", "clone", "--", a.tgt.cloneURL, a.tgt.cloneDir); err != nil {
 		return err
 	}
-	// Opinionated: if the repo works dev-first, start there.
-	if runOK("git", "-C", a.tgt.cloneDir, "show-ref", "--verify", "--quiet", "refs/remotes/origin/dev") {
-		return a.step("git", "-C", a.tgt.cloneDir, "checkout", "dev")
+	// Opinionated: if the repo works dev-first, start there. A local dev means it's
+	// the default branch and already checked out.
+	if runOK("git", "-C", a.tgt.cloneDir, "show-ref", "--verify", "--quiet", "refs/remotes/origin/dev") &&
+		!runOK("git", "-C", a.tgt.cloneDir, "show-ref", "--verify", "--quiet", "refs/heads/dev") {
+		return a.step("git", cloneDevArgs(a.tgt.cloneDir)...)
 	}
 	return nil
+}
+
+// cloneDevArgs names the branch in full, since a plain 'checkout dev' takes a tag
+// named dev over origin's branch and leaves HEAD detached.
+func cloneDevArgs(dir string) []string {
+	return []string{"-C", dir, "checkout", "-b", "dev", "--track", "refs/remotes/origin/dev"}
 }
 
 // cmdConnect serves both 'repo create' and 'repo connect'; connectMode is what

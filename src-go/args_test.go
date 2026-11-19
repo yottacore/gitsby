@@ -314,8 +314,8 @@ func TestSortCommandMutating(t *testing.T) { // [dbfqv]
 	}
 }
 
-// A bare positional is the commit message when no -m was given, and -m wins when
-// both are.
+// A bare positional is the commit message when no -m was given, and refused beside
+// -m, since one of the 2 would be dropped (2026111016332070).
 func TestSortCommandPositionalMessage(t *testing.T) { // [dbfqw]
 	opt, cmd, _, err := parseArgs([]string{"pullcom", "typed here"})
 	if err != nil {
@@ -337,11 +337,51 @@ func TestSortCommandPositionalMessage(t *testing.T) { // [dbfqw]
 	if cmd, err = collapseCommand(cmd); err != nil {
 		t.Fatalf("collapse: %v", err)
 	}
-	if _, err := sortCommand(cmd, &opt); err != nil {
-		t.Fatalf("sort: %v", err)
+	if _, err := sortCommand(cmd, &opt); err == nil {
+		t.Errorf("a typed message beside -m was accepted, as %q", opt.message)
 	}
-	if opt.message != "flag" {
-		t.Errorf("-m did not win: %q", opt.message)
+}
+
+// Every command that takes a typed message or title refuses one beside -m, in both
+// spellings of -m, and names both.
+func TestSortCommandRefusesTwoMessages(t *testing.T) { // [dfgvz]
+	tests := []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"pullcom", "first message", "-m", "second"}, "Two commit messages given: 'first message', and -m 'second'."},
+		{[]string{"sync", "-m=second", "first"}, "Two commit messages given: 'first', and -m 'second'."},
+		{[]string{"br", "merge", "first", "--message", "second"}, "Two commit messages given: 'first', and -m 'second'."},
+		{[]string{"pr", "create", "a title", "-m", "other"}, "Two titles given: 'a title', and -m 'other'."},
+		{[]string{"pr", "new", "-m", "other", "a title"}, "Two titles given: 'a title', and -m 'other'."},
+	}
+	for _, tc := range tests {
+		t.Run(joinArgs(tc.argv), func(t *testing.T) {
+			opt, cmd, _, err := parseArgs(tc.argv)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if cmd, err = collapseCommand(cmd); err != nil {
+				t.Fatalf("collapse: %v", err)
+			}
+			_, err = sortCommand(cmd, &opt)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("got %v, want %q", err, tc.want)
+			}
+		})
+	}
+	// -m alone still goes through, and so does a title alone.
+	for _, argv := range [][]string{{"pullcom", "-m", "only"}, {"pr", "create", "-m", "only"}, {"pr", "create", "only"}} {
+		opt, cmd, _, err := parseArgs(argv)
+		if err == nil {
+			cmd, err = collapseCommand(cmd)
+		}
+		if err == nil {
+			_, err = sortCommand(cmd, &opt)
+		}
+		if err != nil {
+			t.Errorf("%v refused: %v", argv, err)
+		}
 	}
 }
 

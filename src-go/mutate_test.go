@@ -82,3 +82,49 @@ func TestPushArgs(t *testing.T) { // [df52f]
 		})
 	}
 }
+
+// A branch origin deleted, once a fetch prunes its ref, still has its upstream set,
+// and git reads that as none. sync and br switch's park push would publish it again
+// under the old name, so they have to see it as gone rather than as never pushed.
+func TestGoneUpstream(t *testing.T) { // [dfgxm]
+	origin, clone := gitTestRepo(t)
+	runGit(t, clone, "checkout", "-q", "-b", "feat")
+	runGit(t, clone, "push", "-q", "-u", "origin", "feat")
+	runGit(t, clone, "branch", "-q", "lone")
+	runGit(t, clone, "branch", "-q", "--track", "local", "lone")
+	t.Chdir(clone)
+	tests := []struct {
+		name, branch, cmd, wantGone, wantPush string
+	}{
+		{"upstream still there", "feat", "sync", "", ""},
+		{"never pushed", "lone", "sync", "", ""},
+		{"local upstream", "local", "sync", "", ""},
+	}
+	check := func(tc struct{ name, branch, cmd, wantGone, wantPush string }) {
+		t.Run(tc.name, func(t *testing.T) {
+			runGit(t, clone, "checkout", "-q", tc.branch)
+			a := newApp(newPrinter())
+			a.cmd.name = tc.cmd
+			if got := a.goneUpstream(); got != tc.wantGone {
+				t.Errorf("goneUpstream() = %q, want %q", got, tc.wantGone)
+			}
+			if got := a.pushesGoneBranch(); got != tc.wantPush {
+				t.Errorf("pushesGoneBranch() = %q, want %q", got, tc.wantPush)
+			}
+		})
+	}
+	for _, tc := range tests {
+		check(tc)
+	}
+	runGit(t, origin, "branch", "-q", "-D", "feat")
+	runGit(t, clone, "fetch", "-q", "--prune", "origin")
+	runGit(t, clone, "branch", "-q", "-D", "lone")
+	for _, tc := range []struct{ name, branch, cmd, wantGone, wantPush string }{
+		{"deleted on origin", "feat", "sync", "origin/feat", "origin/feat"},
+		{"deleted on origin, br switch parks it", "feat", "br-switch", "origin/feat", "origin/feat"},
+		{"deleted on origin, pr create needs it there", "feat", "pr", "origin/feat", ""},
+		{"local upstream deleted", "local", "sync", "", ""},
+	} {
+		check(tc)
+	}
+}
