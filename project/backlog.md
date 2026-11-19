@@ -262,13 +262,26 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b enhancement 2: install.bash runs whatever part of itself arrived through curl | bash
 	- ID: 2026111016331918
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
 	- Requirements [Feature]: The body goes in a function called on the last line, so a cut download runs nothing.
 	- Origin: No round raised it. Confirmed: every line-boundary cut of install.bash, fed to `bash -s -- -y` with a fake curl, either refused or exited 0. One cut prints Checksum verified and exits 0 without installing. None installed an unverified file.
+	- Closed reason: Done
+	- Fixed: install.bash defines its helpers and one fMain function, and its last line calls it. A download cut anywhere before that line defines functions and runs nothing.
+	- Decisions:
+		- The call is bare, not 'fMain || exit', since 'set -e' is off inside a function called behind '||'. A comment at the site says so.
+		- The History block sits above the call, so the call is the last line as asked. A cut inside History already holds the whole function, so it would run as before even with the call above History.
+		- A cut that ends exactly at 'fMain', with the arguments cut off, still runs the installer with no options. Without -y it asks first, or refuses with no terminal, and the download is still verified. Left as is.
+		- The run's variables stay global rather than local, since the EXIT trap reads tmpFile and staged after fMain has returned.
+	- Swept: install.ps1 is fetched whole by irm before iex runs it, so a cut never runs part of it. legacy/install.bash and legacy/install-dev.bash are frozen at v2.1.0, per the standing decision. test.bash's fBashHelpNamesAll read the option loop at column 0 and now takes it indented.
+	- Verified: [dfgxx] fails on the old install.bash (first cut that ran: after line 213) and passes on the new one. Quick run of every area passed (test.bash 2088/0/1 skipped, fuzz 310/0, parity 31/0).
+	- Branch: nov19-2026111016331918
+	- Test case: [dfgxx] pipes every line-boundary cut of install.bash short of its last line to 'bash -s -- -y' with the stub curl, and fails if any cut fetches or installs. [dfgxy] pipes the whole file the same way and checks it installs.
+	- Acceptance signoff: Self-closed: the change does what the requirement says, and its test failed before and passes after.
+	- Closed: 20261119-083346
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300

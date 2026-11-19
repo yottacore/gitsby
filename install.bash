@@ -20,10 +20,6 @@
 
 set -eu; set -o pipefail
 
-repo="yottacore/gitsby"
-doSystem=0; doYes=0; tag=""
-releaseChannel=""; targetScope=""; arch=""
-
 fEcho(){  echo "[ $* ]"; }
 fErr(){   { echo; echo "Error: $*"; echo; } >&2; exit 1; }
 fLower(){ printf '%s' "${1}" | tr '[:upper:]' '[:lower:]'; }
@@ -46,281 +42,290 @@ fSyntax(){
 	echo
 }
 
-while [[ $# -gt 0 ]]; do
-	case "$1" in
-		## Both spellings of every option that takes a value. The joined form is what anyone
-		## used to long options types, and refusing it as unknown reads as the option itself
-		## not existing.
-		--release)   [[ $# -ge 2 ]] || fErr "--release needs a value."; releaseChannel="$(fLower "$2")"; shift ;;
-		--release=*) releaseChannel="$(fLower "${1#*=}")" ;;
-		--target)    [[ $# -ge 2 ]] || fErr "--target needs a value (user or system)."; targetScope="$(fLower "$2")"; shift ;;
-		--target=*)  targetScope="$(fLower "${1#*=}")" ;;
-		--arch)      [[ $# -ge 2 ]] || fErr "--arch needs a value (amd64 or arm64)."; arch="$(fLower "$2")"; shift ;;
-		--arch=*)    arch="$(fLower "${1#*=}")" ;;
-		-s|--system) targetScope="system" ;;
-		-y|--yes)    doYes=1 ;;
-		-t|--tag|-r|--ref) [[ $# -ge 2 ]] || fErr "--tag needs a value."; tag="$2"; shift ;;
-		--tag=*|--ref=*)   tag="${1#*=}" ;;
-		-h|--help)   fSyntax; exit 0 ;;
-		*)           fErr "Unknown option: '$1' (try --help)." ;;
+## The whole run is this one function, called on the script's last line. Piped from curl, bash
+## runs each line as it arrives, so a download cut short anywhere above that call defines things
+## and runs nothing. The call stays bare: behind '||' or 'if', 'set -e' is off inside it.
+fMain(){
+	repo="yottacore/gitsby"
+	doSystem=0; doYes=0; tag=""
+	releaseChannel=""; targetScope=""; arch=""
+
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+			## Both spellings of every option that takes a value. The joined form is what anyone
+			## used to long options types, and refusing it as unknown reads as the option itself
+			## not existing.
+			--release)   [[ $# -ge 2 ]] || fErr "--release needs a value."; releaseChannel="$(fLower "$2")"; shift ;;
+			--release=*) releaseChannel="$(fLower "${1#*=}")" ;;
+			--target)    [[ $# -ge 2 ]] || fErr "--target needs a value (user or system)."; targetScope="$(fLower "$2")"; shift ;;
+			--target=*)  targetScope="$(fLower "${1#*=}")" ;;
+			--arch)      [[ $# -ge 2 ]] || fErr "--arch needs a value (amd64 or arm64)."; arch="$(fLower "$2")"; shift ;;
+			--arch=*)    arch="$(fLower "${1#*=}")" ;;
+			-s|--system) targetScope="system" ;;
+			-y|--yes)    doYes=1 ;;
+			-t|--tag|-r|--ref) [[ $# -ge 2 ]] || fErr "--tag needs a value."; tag="$2"; shift ;;
+			--tag=*|--ref=*)   tag="${1#*=}" ;;
+			-h|--help)   fSyntax; exit 0 ;;
+			*)           fErr "Unknown option: '$1' (try --help)." ;;
+		esac
+		shift
+	done
+
+	case "${targetScope}" in
+		""|user) doSystem=0 ;;
+		system)  doSystem=1 ;;
+		*)       fErr "--target takes 'user' or 'system' (got '${targetScope}')." ;;
 	esac
-	shift
-done
 
-case "${targetScope}" in
-	""|user) doSystem=0 ;;
-	system)  doSystem=1 ;;
-	*)       fErr "--target takes 'user' or 'system' (got '${targetScope}')." ;;
-esac
-
-## --arch used to be accepted and ignored, back when the product was one shell script that
-## ran everywhere. It picks the binary now, so spell the two the release actually publishes.
-case "${arch}" in
-	"")                 : ;;
-	x64|x86_64|amd64)   arch="amd64" ;;
-	arm64|aarch64)      arch="arm64" ;;
-	*) fErr "--arch takes 'amd64' or 'arm64' (got '${arch}')." ;;
-esac
-
-## '--release dev' installed the tip of a branch, which meant downloading a script. There is
-## no script to download now, and a branch has no build behind it - so name what happened
-## rather than letting a familiar flag fail as an unknown option.
-case "${releaseChannel}" in
-	"") : ;;
-	stable) : ;;
-	dev) fErr "There is no '--release dev' any more: gitsby is a compiled binary, and a branch has no published build. Take a release with '--tag TAG', or build the tip yourself: git clone https://github.com/${repo}.git && cd gitsby/src-go && go build -o gitsby ." ;;
-	*)   fErr "--release takes only 'stable' now, which is the default; use '--tag TAG' for a specific release." ;;
-esac
-
-## The tag goes in a download URL, so a path-shaped one walks out of this repo and installs
-## somebody else's binary while the plan on screen still names ours. Reads as a harmless
-## version selector, which is exactly why the confirm prompt is no protection here.
-fIsPathTag(){ case "$1" in */../*|../*|*/..|..|/*|*//*) return 0 ;; esac; return 1 ;}
-[[ -z "${tag}" ]] || ! fIsPathTag "${tag}" || fErr "--tag names a published release, not a path (got '${tag}')."
-[[ -z "${tag}" || "${tag}" =~ ^[A-Za-z0-9._/-]+$ ]] || fErr "--tag has characters that aren't valid in a git tag (got '${tag}')."
-
-## Downloader: curl or wget, whichever exists.
-if   command -v curl >/dev/null 2>&1; then fFetch(){ curl -fsSL "$1"; }
-elif command -v wget >/dev/null 2>&1; then fFetch(){ wget -qO- "$1"; }
-else fErr "Need curl or wget."
-fi
-
-## Which asset belongs to this machine. Go's own spelling, since that is what the release
-## is named by. Anything else falls through to the SHA256SUMS lookup below, which is the
-## authority on what this release actually published.
-goOs="$(fLower "$(uname -s 2>/dev/null || echo unknown)")"
-case "${goOs}" in
-	linux)   : ;;
-	darwin)  : ;;
-	freebsd) : ;;
-	## Under Git Bash or Cygwin the destination is a Windows one, and nothing there puts it
-	## on PATH. install.ps1 does both, so send Windows to the installer that finishes the job.
-	mingw*|msys*|cygwin*|windows*)
-		fErr "On Windows, use the PowerShell installer, which also puts the install directory on your PATH: irm https://raw.githubusercontent.com/${repo}/main/install.ps1 | iex" ;;
-esac
-if [[ "${goOs}" == darwin ]]; then
-	## One universal binary runs on both Mac CPUs, so there is nothing to pick.
-	[[ -z "${arch}" ]] || { echo; fEcho "The macOS binary runs on both CPUs, so --arch ${arch} changes nothing here."; }
-	arch="universal"
-elif [[ -z "${arch}" ]]; then
-	case "$(uname -m 2>/dev/null || echo unknown)" in
-		x86_64|amd64)  arch="amd64" ;;
-		aarch64|arm64) arch="arm64" ;;
-		*)             arch="$(fLower "$(uname -m 2>/dev/null || echo unknown)")" ;;
+	## --arch used to be accepted and ignored, back when the product was one shell script that
+	## ran everywhere. It picks the binary now, so spell the two the release actually publishes.
+	case "${arch}" in
+		"")                 : ;;
+		x64|x86_64|amd64)   arch="amd64" ;;
+		arm64|aarch64)      arch="arm64" ;;
+		*) fErr "--arch takes 'amd64' or 'arm64' (got '${arch}')." ;;
 	esac
-fi
-asset="gitsby-${goOs}-${arch}"
 
-## Whatever names a release reaches a download URL, so it is checked the same way as a typed tag.
-fCheckTag(){
-	if [[ "$1" =~ ^[A-Za-z0-9._/-]+$ ]] && ! fIsPathTag "$1"; then return 0; fi
-	fErr "The resolved release tag ('$1') isn't a plain git tag; aborting."
-}
-## Either case of hash and either line ending, as sha256sum -c and the PowerShell installer take.
-fSums(){ fFetch "https://github.com/${repo}/releases/download/$1/SHA256SUMS" 2>/dev/null | tr -d '\r' || true ;}
-## The platforms a SHA256SUMS lists a gitsby binary for, as "linux-amd64, darwin-universal".
-fPublished(){ printf '%s\n' "$1" | sed -n 's/^[0-9a-fA-F]\{64\}[[:space:]]*\*\{0,1\}gitsby-//p' | sed 's/\.exe$//' | paste -sd, - | sed 's/,/, /g' ;}
+	## '--release dev' installed the tip of a branch, which meant downloading a script. There is
+	## no script to download now, and a branch has no build behind it - so name what happened
+	## rather than letting a familiar flag fail as an unknown option.
+	case "${releaseChannel}" in
+		"") : ;;
+		stable) : ;;
+		dev) fErr "There is no '--release dev' any more: gitsby is a compiled binary, and a branch has no published build. Take a release with '--tag TAG', or build the tip yourself: git clone https://github.com/${repo}.git && cd gitsby/src-go && go build -o gitsby ." ;;
+		*)   fErr "--release takes only 'stable' now, which is the default; use '--tag TAG' for a specific release." ;;
+	esac
 
-## SHA256SUMS decides two things at once, and it is a few hundred bytes: whether a release
-## publishes a binary for this platform, and what that binary should hash to. It is fetched
-## before the plan, so the plan can promise a specific file before anything large is downloaded.
-sums=""; sumsFor=""; published=""
+	## The tag goes in a download URL, so a path-shaped one walks out of this repo and installs
+	## somebody else's binary while the plan on screen still names ours. Reads as a harmless
+	## version selector, which is exactly why the confirm prompt is no protection here.
+	fIsPathTag(){ case "$1" in */../*|../*|*/..|..|/*|*//*) return 0 ;; esac; return 1 ;}
+	[[ -z "${tag}" ]] || ! fIsPathTag "${tag}" || fErr "--tag names a published release, not a path (got '${tag}')."
+	[[ -z "${tag}" || "${tag}" =~ ^[A-Za-z0-9._/-]+$ ]] || fErr "--tag has characters that aren't valid in a git tag (got '${tag}')."
 
-## No --tag: the newest full release with a gitsby-<os>-<arch> binary for any platform, or while
-## none has one, the newest such pre-release. Any platform, so every machine is pointed at the
-## same one.
-if [[ -z "${tag}" ]]; then
-	## releases/latest first: a redirect, so no auth and no rate limit. Every lookup needs '||
-	## true', since under 'set -e' a failed assignment ends the run silently. wget answers a
-	## declined redirect with exit 8.
-	if command -v curl >/dev/null 2>&1; then
-		tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${repo}/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p' || true)"
-	elif command -v wget >/dev/null 2>&1; then
-		tag="$(wget -q --max-redirect=0 -S -O /dev/null "https://github.com/${repo}/releases/latest" 2>&1 | sed -n 's|.*[Ll]ocation: .*/releases/tag/\([^[:space:]]*\).*|\1|p' | head -n 1 || true)"
+	## Downloader: curl or wget, whichever exists.
+	if   command -v curl >/dev/null 2>&1; then fFetch(){ curl -fsSL "$1"; }
+	elif command -v wget >/dev/null 2>&1; then fFetch(){ wget -qO- "$1"; }
+	else fErr "Need curl or wget."
 	fi
-	noBinary=""
-	if [[ -n "${tag}" ]]; then
-		## Scraped from a redirect header, so checked before it reaches a URL.
-		fCheckTag "${tag}"
-		sums="$(fSums "${tag}")"; sumsFor="${tag}"
-		published="$(fPublished "${sums}")"
-		## A full release with only the old scripts in it. One with no SHA256SUMS at all stays
-		## put, for the check below to name.
-		if [[ -n "${sums}" && -z "${published}" ]]; then noBinary="${tag}"; tag=""; fi
+
+	## Which asset belongs to this machine. Go's own spelling, since that is what the release
+	## is named by. Anything else falls through to the SHA256SUMS lookup below, which is the
+	## authority on what this release actually published.
+	goOs="$(fLower "$(uname -s 2>/dev/null || echo unknown)")"
+	case "${goOs}" in
+		linux)   : ;;
+		darwin)  : ;;
+		freebsd) : ;;
+		## Under Git Bash or Cygwin the destination is a Windows one, and nothing there puts it
+		## on PATH. install.ps1 does both, so send Windows to the installer that finishes the job.
+		mingw*|msys*|cygwin*|windows*)
+			fErr "On Windows, use the PowerShell installer, which also puts the install directory on your PATH: irm https://raw.githubusercontent.com/${repo}/main/install.ps1 | iex" ;;
+	esac
+	if [[ "${goOs}" == darwin ]]; then
+		## One universal binary runs on both Mac CPUs, so there is nothing to pick.
+		[[ -z "${arch}" ]] || { echo; fEcho "The macOS binary runs on both CPUs, so --arch ${arch} changes nothing here."; }
+		arch="universal"
+	elif [[ -z "${arch}" ]]; then
+		case "$(uname -m 2>/dev/null || echo unknown)" in
+			x86_64|amd64)  arch="amd64" ;;
+			aarch64|arm64) arch="arm64" ;;
+			*)             arch="$(fLower "$(uname -m 2>/dev/null || echo unknown)")" ;;
+		esac
 	fi
-	## The list says what each release published, so one request settles it. releases/latest
-	## skips pre-releases, and that is the other case this is for.
-	releaseFacts=""
+	asset="gitsby-${goOs}-${arch}"
+
+	## Whatever names a release reaches a download URL, so it is checked the same way as a typed tag.
+	fCheckTag(){
+		if [[ "$1" =~ ^[A-Za-z0-9._/-]+$ ]] && ! fIsPathTag "$1"; then return 0; fi
+		fErr "The resolved release tag ('$1') isn't a plain git tag; aborting."
+	}
+	## Either case of hash and either line ending, as sha256sum -c and the PowerShell installer take.
+	fSums(){ fFetch "https://github.com/${repo}/releases/download/$1/SHA256SUMS" 2>/dev/null | tr -d '\r' || true ;}
+	## The platforms a SHA256SUMS lists a gitsby binary for, as "linux-amd64, darwin-universal".
+	fPublished(){ printf '%s\n' "$1" | sed -n 's/^[0-9a-fA-F]\{64\}[[:space:]]*\*\{0,1\}gitsby-//p' | sed 's/\.exe$//' | paste -sd, - | sed 's/,/, /g' ;}
+
+	## SHA256SUMS decides two things at once, and it is a few hundred bytes: whether a release
+	## publishes a binary for this platform, and what that binary should hash to. It is fetched
+	## before the plan, so the plan can promise a specific file before anything large is downloaded.
+	sums=""; sumsFor=""; published=""
+
+	## No --tag: the newest full release with a gitsby-<os>-<arch> binary for any platform, or while
+	## none has one, the newest such pre-release. Any platform, so every machine is pointed at the
+	## same one.
 	if [[ -z "${tag}" ]]; then
-		releaseList="$(fFetch "https://api.github.com/repos/${repo}/releases" 2>/dev/null || true)"
-		## Commas and braces become newlines first, so every key sits on its own line whether
-		## GitHub pretty-prints or packs the JSON on one line. Neither character can appear in
-		## a tag name (checked below) or a boolean. Two BRE substitutions rather than one
-		## alternation: '\|' is a GNU extension and this has to run under the sed macOS comes with.
-		## A binary is known by its download URL, which names the release it belongs to.
-		#  shellcheck disable=2020  ## 'tr replaces sets of chars' - the duplicate newlines are deliberate: all three go to newline.
-		releaseFacts="$(printf '%s\n' "${releaseList}" | tr ',{[' '\n\n\n' \
-			| sed -n -e 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/T \1/p' \
-			         -e 's/^[[:space:]]*"prerelease":[[:space:]]*\([a-z]*\).*/P \1/p' \
-			         -e 's|^[[:space:]]*"browser_download_url":[[:space:]]*"[^"]*/releases/download/\(.*\)/gitsby-[^/"]*".*|B \1|p' || true)"
-		## Highest version wins, not newest listed, so a backported fix isn't taken. A tie keeps
-		## the newer listed. A full release is never weighed against a pre-release, where sort -V
-		## puts 1.0.0-rc1 first.
-		fPickTag(){
-			awk -v wantPre="$1" '
-				function vkey(t,  v,n,a,i,k) { v=t; sub(/^[vV]/,"",v); n=split(v,a,"[._-]"); k=""
-					for (i=1;i<=3;i++) k = k sprintf("%09d", a[i]+0)
-					return k }
-				$1=="T" { t=$2 }
-				$1=="P" && t!="" { pre[t]=$2; listed[++count]=t; t="" }
-				$1=="B" { binary[$2]=1 }
-				END { for (i=1;i<=count;i++) { c=listed[i]
-						if ((c in binary) && pre[c]==wantPre && vkey(c)>best) { best=vkey(c); bestT=c } }
-					if (bestT!="") print bestT }'
-		}
-		tag="$(printf '%s\n' "${releaseFacts}" | fPickTag false || true)"
-		if [[ -z "${tag}" ]]; then
-			tag="$(printf '%s\n' "${releaseFacts}" | fPickTag true || true)"
-			[[ -z "${tag}" ]] || { echo; fEcho "No full release has a gitsby binary yet; taking the newest pre-release, ${tag}."; }
+		## releases/latest first: a redirect, so no auth and no rate limit. Every lookup needs '||
+		## true', since under 'set -e' a failed assignment ends the run silently. wget answers a
+		## declined redirect with exit 8.
+		if command -v curl >/dev/null 2>&1; then
+			tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${repo}/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p' || true)"
+		elif command -v wget >/dev/null 2>&1; then
+			tag="$(wget -q --max-redirect=0 -S -O /dev/null "https://github.com/${repo}/releases/latest" 2>&1 | sed -n 's|.*[Ll]ocation: .*/releases/tag/\([^[:space:]]*\).*|\1|p' | head -n 1 || true)"
 		fi
+		noBinary=""
+		if [[ -n "${tag}" ]]; then
+			## Scraped from a redirect header, so checked before it reaches a URL.
+			fCheckTag "${tag}"
+			sums="$(fSums "${tag}")"; sumsFor="${tag}"
+			published="$(fPublished "${sums}")"
+			## A full release with only the old scripts in it. One with no SHA256SUMS at all stays
+			## put, for the check below to name.
+			if [[ -n "${sums}" && -z "${published}" ]]; then noBinary="${tag}"; tag=""; fi
+		fi
+		## The list says what each release published, so one request settles it. releases/latest
+		## skips pre-releases, and that is the other case this is for.
+		releaseFacts=""
+		if [[ -z "${tag}" ]]; then
+			releaseList="$(fFetch "https://api.github.com/repos/${repo}/releases" 2>/dev/null || true)"
+			## Commas and braces become newlines first, so every key sits on its own line whether
+			## GitHub pretty-prints or packs the JSON on one line. Neither character can appear in
+			## a tag name (checked below) or a boolean. Two BRE substitutions rather than one
+			## alternation: '\|' is a GNU extension and this has to run under the sed macOS comes with.
+			## A binary is known by its download URL, which names the release it belongs to.
+			#  shellcheck disable=2020  ## 'tr replaces sets of chars' - the duplicate newlines are deliberate: all three go to newline.
+			releaseFacts="$(printf '%s\n' "${releaseList}" | tr ',{[' '\n\n\n' \
+				| sed -n -e 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/T \1/p' \
+				         -e 's/^[[:space:]]*"prerelease":[[:space:]]*\([a-z]*\).*/P \1/p' \
+				         -e 's|^[[:space:]]*"browser_download_url":[[:space:]]*"[^"]*/releases/download/\(.*\)/gitsby-[^/"]*".*|B \1|p' || true)"
+			## Highest version wins, not newest listed, so a backported fix isn't taken. A tie keeps
+			## the newer listed. A full release is never weighed against a pre-release, where sort -V
+			## puts 1.0.0-rc1 first.
+			fPickTag(){
+				awk -v wantPre="$1" '
+					function vkey(t,  v,n,a,i,k) { v=t; sub(/^[vV]/,"",v); n=split(v,a,"[._-]"); k=""
+						for (i=1;i<=3;i++) k = k sprintf("%09d", a[i]+0)
+						return k }
+					$1=="T" { t=$2 }
+					$1=="P" && t!="" { pre[t]=$2; listed[++count]=t; t="" }
+					$1=="B" { binary[$2]=1 }
+					END { for (i=1;i<=count;i++) { c=listed[i]
+							if ((c in binary) && pre[c]==wantPre && vkey(c)>best) { best=vkey(c); bestT=c } }
+						if (bestT!="") print bestT }'
+			}
+			tag="$(printf '%s\n' "${releaseFacts}" | fPickTag false || true)"
+			if [[ -z "${tag}" ]]; then
+				tag="$(printf '%s\n' "${releaseFacts}" | fPickTag true || true)"
+				[[ -z "${tag}" ]] || { echo; fEcho "No full release has a gitsby binary yet; taking the newest pre-release, ${tag}."; }
+			fi
+		fi
+		if [[ -z "${tag}" ]]; then
+			[[ -z "${releaseFacts}" ]] || fErr "No release of ${repo} publishes a gitsby binary yet, so there is nothing to install. Build it instead: git clone https://github.com/${repo}.git && cd gitsby/src-go && go build -o gitsby ."
+			[[ -z "${noBinary}" ]] || fErr "${noBinary}, the latest full release, has no gitsby binary, and the release list that would name one couldn't be read. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: --tag TAG."
+			fErr "Couldn't work out the latest release of ${repo}. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: --tag TAG."
+		fi
+		fCheckTag "${tag}"
 	fi
-	if [[ -z "${tag}" ]]; then
-		[[ -z "${releaseFacts}" ]] || fErr "No release of ${repo} publishes a gitsby binary yet, so there is nothing to install. Build it instead: git clone https://github.com/${repo}.git && cd gitsby/src-go && go build -o gitsby ."
-		[[ -z "${noBinary}" ]] || fErr "${noBinary}, the latest full release, has no gitsby binary, and the release list that would name one couldn't be read. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: --tag TAG."
-		fErr "Couldn't work out the latest release of ${repo}. GitHub may be unreachable, or rate-limiting this address (60 requests an hour, unauthenticated). A specific release always works: --tag TAG."
+
+	## sha256 tool, before anything is promised. Every install path here is a release asset, so
+	## every one of them is verified - there is no unverified route to fall back to, and finding
+	## the tool missing after the plan has been agreed to would be finding it too late.
+	if   command -v sha256sum >/dev/null 2>&1; then fSha256(){ sha256sum "$1" | cut -d' ' -f1; }
+	elif command -v shasum    >/dev/null 2>&1; then fSha256(){ shasum -a 256 "$1" | cut -d' ' -f1; }   ## macOS
+	elif command -v openssl   >/dev/null 2>&1; then fSha256(){ openssl dgst -sha256 "$1" | sed 's/.*= *//'; }
+	else fErr "No sha256 tool here (need sha256sum, shasum or openssl), so the download can't be verified. Install one and re-run."
 	fi
-	fCheckTag "${tag}"
-fi
 
-## sha256 tool, before anything is promised. Every install path here is a release asset, so
-## every one of them is verified - there is no unverified route to fall back to, and finding
-## the tool missing after the plan has been agreed to would be finding it too late.
-if   command -v sha256sum >/dev/null 2>&1; then fSha256(){ sha256sum "$1" | cut -d' ' -f1; }
-elif command -v shasum    >/dev/null 2>&1; then fSha256(){ shasum -a 256 "$1" | cut -d' ' -f1; }   ## macOS
-elif command -v openssl   >/dev/null 2>&1; then fSha256(){ openssl dgst -sha256 "$1" | sed 's/.*= *//'; }
-else fErr "No sha256 tool here (need sha256sum, shasum or openssl), so the download can't be verified. Install one and re-run."
-fi
-
-base="https://github.com/${repo}/releases/download/${tag}"
-if [[ "${sumsFor}" != "${tag}" ]]; then sums="$(fSums "${tag}")"; published="$(fPublished "${sums}")"; fi
-[[ -n "${sums}" ]] || fErr "Release ${tag} publishes no SHA256SUMS, so nothing here can be verified. (A release published seconds ago may not be servable yet; try again shortly.)"
-want="$(printf '%s\n' "${sums}" | sed -n "s/^\([0-9a-fA-F]\{64\}\)[[:space:]]*\*\{0,1\}${asset}\$/\1/p" | sed -n '1p' | tr '[:upper:]' '[:lower:]')"
-if [[ -z "${want}" ]]; then
-	{
-		echo
-		echo "Error: release ${tag} publishes no gitsby binary for ${goOs}/${arch}."
-		[[ -z "${published}" ]] || echo "  It publishes: ${published}"
-		echo "  Build it for yours instead:"
-		echo "    git clone https://github.com/${repo}.git && cd gitsby/src-go && go build -o gitsby ."
-		echo
-	} >&2
-	exit 1
-fi
-
-## Found out before the plan, not at the copy after the download.
-destDir="${HOME}/.local/bin"; needSudo=0
-if [[ ${doSystem} -eq 1 ]]; then
-	destDir="/usr/local/bin"
-	[[ -w "${destDir}" ]] || needSudo=1
-	[[ ${needSudo} -eq 0 ]] || command -v sudo >/dev/null 2>&1 \
-		|| fErr "Installing for all users needs write access to ${destDir}, and there is no sudo here. Run it as a user who can write there, or install for this account alone, which is the default."
-else
-	## The nearest folder that exists is the one that takes the write.
-	userDir="${destDir}"
-	while [[ -n "${userDir}" && ! -d "${userDir}" ]]; do userDir="${userDir%/*}"; done
-	[[ -w "${userDir:-/}" ]] || fErr "Can't install to ${destDir}: ${userDir:-/} isn't writable by you. Check its owner and permissions."
-fi
-
-echo
-fEcho "gitsby installer"
-echo "This will:"
-echo "  - Download ${asset} (${tag}) from github.com/${repo}"
-echo "  - Verify it against the release's published SHA256SUMS"
-if [[ -e "${destDir}/gitsby" ]]; then echo "  - Install it to ${destDir}/gitsby, replacing the one already there"
-else echo "  - Install it to ${destDir}/gitsby"
-fi
-[[ -d "${destDir}" ]] || echo "  - Create ${destDir} (it doesn't exist yet)"
-[[ ${needSudo} -eq 1 ]] && echo "  - Use sudo for the install step (you may be prompted for your password)"
-echo "  - Run 'gitsby --version' to verify"
-if [[ ${doYes} -eq 0 ]]; then
-	answer=""
-	## When piped (curl | bash) stdin is the script, so confirm via the terminal.
-	## (-r /dev/tty isn't enough - it can exist yet fail to open with no
-	## controlling terminal - so test with a real open.)
-	## End of input fails the read, and it is still a no.
-	if   [[ -t 0 ]];                  then read -r -p "Continue? [y/N] " answer || true
-	elif { : </dev/tty; } 2>/dev/null; then read -r -p "Continue? [y/N] " answer </dev/tty || true
-	else fErr "No terminal to confirm on; re-run with -y (e.g. '| bash -s -- -y')."
+	base="https://github.com/${repo}/releases/download/${tag}"
+	if [[ "${sumsFor}" != "${tag}" ]]; then sums="$(fSums "${tag}")"; published="$(fPublished "${sums}")"; fi
+	[[ -n "${sums}" ]] || fErr "Release ${tag} publishes no SHA256SUMS, so nothing here can be verified. (A release published seconds ago may not be servable yet; try again shortly.)"
+	want="$(printf '%s\n' "${sums}" | sed -n "s/^\([0-9a-fA-F]\{64\}\)[[:space:]]*\*\{0,1\}${asset}\$/\1/p" | sed -n '1p' | tr '[:upper:]' '[:lower:]')"
+	if [[ -z "${want}" ]]; then
+		{
+			echo
+			echo "Error: release ${tag} publishes no gitsby binary for ${goOs}/${arch}."
+			[[ -z "${published}" ]] || echo "  It publishes: ${published}"
+			echo "  Build it for yours instead:"
+			echo "    git clone https://github.com/${repo}.git && cd gitsby/src-go && go build -o gitsby ."
+			echo
+		} >&2
+		exit 1
 	fi
-	case "${answer}" in y|Y|yes|Yes|YES) ;; *) echo; echo "Aborted."; echo; exit 1 ;; esac
-fi
 
-tmpFile="$(mktemp "${TMPDIR:-/tmp}/gitsby-install.XXXXXX")"
-staged=""
-trap 'rm -f -- "${tmpFile:?}"; [[ -z "${staged}" ]] || rm -f -- "${staged:?}" 2>/dev/null || true' EXIT
+	## Found out before the plan, not at the copy after the download.
+	destDir="${HOME}/.local/bin"; needSudo=0
+	if [[ ${doSystem} -eq 1 ]]; then
+		destDir="/usr/local/bin"
+		[[ -w "${destDir}" ]] || needSudo=1
+		[[ ${needSudo} -eq 0 ]] || command -v sudo >/dev/null 2>&1 \
+			|| fErr "Installing for all users needs write access to ${destDir}, and there is no sudo here. Run it as a user who can write there, or install for this account alone, which is the default."
+	else
+		## The nearest folder that exists is the one that takes the write.
+		userDir="${destDir}"
+		while [[ -n "${userDir}" && ! -d "${userDir}" ]]; do userDir="${userDir%/*}"; done
+		[[ -w "${userDir:-/}" ]] || fErr "Can't install to ${destDir}: ${userDir:-/} isn't writable by you. Check its owner and permissions."
+	fi
 
-echo
-fEcho "Downloading ..."
-fFetch "${base}/${asset}" > "${tmpFile}" || fErr "Couldn't download ${asset} from release ${tag}."
-[[ -s "${tmpFile}" ]] || fErr "Downloaded ${asset} is empty; aborting."
-## A captive portal or a proxy answers with a page, not a binary. It would fail the checksum
-## anyway, but as tampering rather than as the network problem it is.
-case "$(head -c 1 "${tmpFile}")" in
-	'<') fErr "The download came back as a web page, not a binary - something between here and GitHub is intercepting it." ;;
-esac
+	echo
+	fEcho "gitsby installer"
+	echo "This will:"
+	echo "  - Download ${asset} (${tag}) from github.com/${repo}"
+	echo "  - Verify it against the release's published SHA256SUMS"
+	if [[ -e "${destDir}/gitsby" ]]; then echo "  - Install it to ${destDir}/gitsby, replacing the one already there"
+	else echo "  - Install it to ${destDir}/gitsby"
+	fi
+	[[ -d "${destDir}" ]] || echo "  - Create ${destDir} (it doesn't exist yet)"
+	[[ ${needSudo} -eq 1 ]] && echo "  - Use sudo for the install step (you may be prompted for your password)"
+	echo "  - Run 'gitsby --version' to verify"
+	if [[ ${doYes} -eq 0 ]]; then
+		answer=""
+		## When piped (curl | bash) stdin is the script, so confirm via the terminal.
+		## (-r /dev/tty isn't enough - it can exist yet fail to open with no
+		## controlling terminal - so test with a real open.)
+		## End of input fails the read, and it is still a no.
+		if   [[ -t 0 ]];                  then read -r -p "Continue? [y/N] " answer || true
+		elif { : </dev/tty; } 2>/dev/null; then read -r -p "Continue? [y/N] " answer </dev/tty || true
+		else fErr "No terminal to confirm on; re-run with -y (e.g. '| bash -s -- -y')."
+		fi
+		case "${answer}" in y|Y|yes|Yes|YES) ;; *) echo; echo "Aborted."; echo; exit 1 ;; esac
+	fi
 
-got="$(fSha256 "${tmpFile}" | tr '[:upper:]' '[:lower:]')"
-[[ "${got}" = "${want}" ]] || fErr "Checksum mismatch for ${asset}; aborting. (Corrupted download or tampering.)"
-fEcho "Checksum verified."
+	tmpFile="$(mktemp "${TMPDIR:-/tmp}/gitsby-install.XXXXXX")"
+	staged=""
+	trap 'rm -f -- "${tmpFile:?}"; [[ -z "${staged}" ]] || rm -f -- "${staged:?}" 2>/dev/null || true' EXIT
 
-echo
-fEcho "Installing to ${destDir}/gitsby ..."
-## Staged beside the target and renamed over it, so an interrupt leaves the real one whole and a
-## running copy can be replaced. Same folder, since a rename is atomic only on one filesystem.
-staged="${destDir}/.gitsby.install.$$"
-if [[ ${needSudo} -eq 1 ]]; then
-	## mkdir -p, not 'install -d': on a directory that already exists, install resets its mode,
-	## and this branch is reached whenever /usr/local/bin exists but isn't writable by us.
-	sudo mkdir -p "${destDir}"
-	sudo install -m 755 "${tmpFile}" "${staged}"
-	sudo mv -f "${staged}" "${destDir}/gitsby"
-else
-	mkdir -p "${destDir}"
-	install -m 755 "${tmpFile}" "${staged}"
-	mv -f "${staged}" "${destDir}/gitsby"
-fi
-staged=""
+	echo
+	fEcho "Downloading ..."
+	fFetch "${base}/${asset}" > "${tmpFile}" || fErr "Couldn't download ${asset} from release ${tag}."
+	[[ -s "${tmpFile}" ]] || fErr "Downloaded ${asset} is empty; aborting."
+	## A captive portal or a proxy answers with a page, not a binary. It would fail the checksum
+	## anyway, but as tampering rather than as the network problem it is.
+	case "$(head -c 1 "${tmpFile}")" in
+		'<') fErr "The download came back as a web page, not a binary - something between here and GitHub is intercepting it." ;;
+	esac
 
-echo
-fEcho "Verifying ..."
-"${destDir}/gitsby" --version || fErr "Installed ${destDir}/gitsby, but it would not run (exit $?). The download verified against the release checksum, so this is the binary not being runnable on this machine rather than a bad download."
-case ":${PATH}:" in
-	*":${destDir}:"*) ;;
-	*) echo "Note: ${destDir} isn't on your PATH; add it in your shell profile." ;;
-esac
-echo
-fEcho "Done."
-echo
+	got="$(fSha256 "${tmpFile}" | tr '[:upper:]' '[:lower:]')"
+	[[ "${got}" = "${want}" ]] || fErr "Checksum mismatch for ${asset}; aborting. (Corrupted download or tampering.)"
+	fEcho "Checksum verified."
+
+	echo
+	fEcho "Installing to ${destDir}/gitsby ..."
+	## Staged beside the target and renamed over it, so an interrupt leaves the real one whole and a
+	## running copy can be replaced. Same folder, since a rename is atomic only on one filesystem.
+	staged="${destDir}/.gitsby.install.$$"
+	if [[ ${needSudo} -eq 1 ]]; then
+		## mkdir -p, not 'install -d': on a directory that already exists, install resets its mode,
+		## and this branch is reached whenever /usr/local/bin exists but isn't writable by us.
+		sudo mkdir -p "${destDir}"
+		sudo install -m 755 "${tmpFile}" "${staged}"
+		sudo mv -f "${staged}" "${destDir}/gitsby"
+	else
+		mkdir -p "${destDir}"
+		install -m 755 "${tmpFile}" "${staged}"
+		mv -f "${staged}" "${destDir}/gitsby"
+	fi
+	staged=""
+
+	echo
+	fEcho "Verifying ..."
+	"${destDir}/gitsby" --version || fErr "Installed ${destDir}/gitsby, but it would not run (exit $?). The download verified against the release checksum, so this is the binary not being runnable on this machine rather than a bad download."
+	case ":${PATH}:" in
+		*":${destDir}:"*) ;;
+		*) echo "Note: ${destDir} isn't on your PATH; add it in your shell profile." ;;
+	esac
+	echo
+	fEcho "Done."
+	echo
+}
 
 
 ##	History:
@@ -339,3 +344,6 @@ echo
 ##		- 20261003 JC: With no --tag, the newest full release that publishes a gitsby binary, or while none does, the newest pre-release that does. v2.1.0 publishes only the old scripts, so until 3.0.0 the install line found nothing to install. releases/latest is still asked first, and the release list only when its SHA256SUMS names no binary.
 ##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.
 ##		- 20261107 JC: The build-it-yourself message no longer claims there is nothing for go build to fetch.
+##		- 20261119 JC: Everything runs from one function called on the last line, so a download cut short runs nothing. One such cut said the checksum was verified and exited 0 with nothing installed.
+
+fMain "${@}"

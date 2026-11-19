@@ -235,11 +235,23 @@ fPsPathTold(){ PS_FILE="$1" pwsh -NoProfile -Command '$ast = [Management.Automat
 ## Succeeds when install.bash's --help names every option its argument loop takes.
 fBashHelpNamesAll(){ local inst="$1" help="" opts="" opt=""
 	help="$(bash "${inst}" --help)"
-	opts="$(sed -n '/^while \[\[ \$# -gt 0 \]\]; do/,/^done/p' "${inst}" | sed -n 's/^[[:space:]]*\(-[^)]*\)).*/\1/p' | tr '|' '\n' | sed 's/=\*$//')"
+	opts="$(sed -n '/^[[:space:]]*while \[\[ \$# -gt 0 \]\]; do/,/^[[:space:]]*done/p' "${inst}" | sed -n 's/^[[:space:]]*\(-[^)]*\)).*/\1/p' | tr '|' '\n' | sed 's/=\*$//')"
 	[[ -n "${opts}" ]] || return 1
 	while IFS= read -r opt; do
 		grep -qE -- "(^|[ ,])${opt}([ ,=]|\$)" <<< "${help}" || { echo "not in --help: ${opt}"; return 1; }
 	done <<< "${opts}"
+}
+## Succeeds when no line-boundary cut of install.bash short of its last line, piped to bash as the
+## one-liner does, asks for anything or installs anything. <dir> has the stub curl, sums and asset.
+fBashCutRunsNothing(){ local inst="$1" dir="$2" cut="$2/cut" lines=0 n=0
+	lines="$(wc -l < "${inst}")"; mkdir -p "${cut}"
+	((lines > 10)) || return 1
+	for ((n = 1; n < lines; n++)); do
+		: > "${cut}/calls"
+		head -n "${n}" "${inst}" | env HOME="${cut}/home" PATH="${dir}/bin:${PATH}" FAKE_CALLS="${cut}/calls" \
+			FAKE_SUMS="${dir}/SHA256SUMS" FAKE_ASSET="${dir}/asset" bash -s -- -y >/dev/null 2>&1 || true
+		if [[ -s "${cut}/calls" || -e "${cut}/home" ]]; then echo "cut after line ${n} ran"; return 1; fi
+	done
 }
 ## A release list the way GitHub's API sends one, newest first: an author block ahead of the tag,
 ## then the pre-release flag, then each asset with an uploader block and its download URL. The
@@ -4239,6 +4251,11 @@ GHEOF
 		bash -c "env ${eiEnv} bash '${goInst}' -y >/dev/null 2>&1 && '${ei}/home/.local/bin/gitsby' --version | grep -q 'stand-in'"
 	fAssert    "[dbfsq] and leaves no staging file behind" \
 		bash -c "! compgen -G '${ei}/home/.local/bin/.gitsby.install.*' >/dev/null"
+	## curl | bash runs each line as it arrives, so a download cut short ran whatever part of the
+	## installer got through. One cut said Checksum verified and exited 0 with nothing installed.
+	fAssert    "[dfgxx] go installer cut short at any line runs nothing"  fBashCutRunsNothing "${goInst}" "${ei}"
+	fAssert    "[dfgxy] and the whole of it, piped the same way, installs" \
+		bash -c "env ${eiEnv} HOME='${ei}/pipehome' bash -s -- -y < '${goInst}' >/dev/null 2>&1 && '${ei}/pipehome/.local/bin/gitsby' --version | grep -q 'stand-in'"
 	## A Mac release is one universal binary, so every Mac CPU asks for the same file. A fake
 	## uname reports Darwin and the CPU named in FAKE_CPU.
 	local em="${work}/instmac"; mkdir -p "${em}/bin"
