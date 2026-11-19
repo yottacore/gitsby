@@ -209,6 +209,29 @@ fPsHelpNamesAll(){ local inst="$1" which="$2" help="" opts="" opt=""
 		grep -qE -- "(^|[^A-Za-z])-${opt}([^A-Za-z]|\$)" <<< "${help}" || { echo "not in ${which}: ${opt}"; return 1; }
 	done <<< "${opts}"
 }
+## Defines install.ps1's Send-EnvironmentChange from the file and calls it. Off Windows the call
+## gets into the compiled P/Invoke stub and fails loading user32.dll, which proves the Add-Type
+## definition compiles and the call binds to it. Prints REACHED when it got there, or sent on Windows.
+# shellcheck disable=SC2016  ## pwsh's own variables; pwsh does the expanding.
+fPsSettingChange(){ PS_FILE="$1" POWERSHELL_TELEMETRY_OPTOUT=1 pwsh -NoProfile -Command '$ErrorActionPreference = "Stop"
+	$fn = [Management.Automation.Language.Parser]::ParseFile($env:PS_FILE, [ref]$null, [ref]$null).Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq "Send-EnvironmentChange" }, $true)
+	if (-not $fn) { "no Send-EnvironmentChange"; exit 1 }
+	. ([scriptblock]::Create($fn.Extent.Text))
+	try { Send-EnvironmentChange; "REACHED (sent)" } catch { $m = $_.Exception.ToString(); if ($m -match "at GitsbyInstall\.Win32\.SendMessageTimeout\(") { "REACHED (no user32 here)" } else { "FAILED: $m" } }' </dev/null 2>&1 ;}
+## Succeeds when install.ps1 tells Windows about the PATH it wrote: Send-EnvironmentChange is
+## called after the registry write, outside the try whose catch reports PATH as not updated.
+# shellcheck disable=SC2016  ## pwsh's own variables; pwsh does the expanding.
+fPsPathTold(){ PS_FILE="$1" pwsh -NoProfile -Command '$ast = [Management.Automation.Language.Parser]::ParseFile($env:PS_FILE, [ref]$null, [ref]$null)
+	$cmds = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] }, $true)
+	$write = @($cmds | Where-Object { $_.GetCommandName() -eq "Set-ItemProperty" -and $_.Extent.Text -match "-Name .PATH." })
+	$tell = @($cmds | Where-Object { $_.GetCommandName() -eq "Send-EnvironmentChange" })
+	if ($write.Count -ne 1 -or $tell.Count -lt 1) { "writes: $($write.Count), tells: $($tell.Count)"; exit 1 }
+	$tries = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $n.Body.Extent.StartOffset -le $write[0].Extent.StartOffset -and $n.Body.Extent.EndOffset -ge $write[0].Extent.EndOffset }, $true)
+	$inner = $tries | Sort-Object { $_.Body.Extent.EndOffset - $_.Body.Extent.StartOffset } | Select-Object -First 1
+	foreach ($t in $tell) {
+		if ($t.Extent.StartOffset -le $write[0].Extent.EndOffset) { "told before the write"; exit 1 }
+		if ($inner -and $t.Extent.StartOffset -lt $inner.Extent.EndOffset) { "told inside the write'"'"'s try"; exit 1 }
+	}' </dev/null 2>&1 ;}
 ## Succeeds when install.bash's --help names every option its argument loop takes.
 fBashHelpNamesAll(){ local inst="$1" help="" opts="" opt=""
 	help="$(bash "${inst}" --help)"
@@ -4428,6 +4451,12 @@ GHEOF
 		## bakes %USERPROFILE%-style entries in as literals for good.
 		fAssert "[dbfmr] go install.ps1 reads PATH raw before rewriting it" \
 			bash -c "grep -q 'DoNotExpandEnvironmentNames' '${goInstPs}'"
+		## Writing PATH in the registry tells nobody, so a shell opened from the Start menu
+		## didn't find gitsby until sign-out. The broadcast itself needs a Windows desktop.
+		fAssertOut "[dfgxc] go install.ps1's PATH broadcast compiles and calls user32" 'REACHED' \
+			fPsSettingChange "${goInstPs}"
+		fAssert    "[dfgxd] and is sent after the PATH write, outside its try" \
+			fPsPathTold "${goInstPs}"
 		## The portal check looks at one byte, and once read the whole download for it.
 		fAssert "[deysn] go install.ps1 reads one byte of the download for the portal check" \
 			bash -c "n=\$(grep -cE 'Get-Content -LiteralPath \\\$tmpFile ' '${goInstPs}'); [[ \${n} -ge 1 && \$(grep -cE 'Get-Content -LiteralPath \\\$tmpFile .*-TotalCount 1( |\$)' '${goInstPs}') == \"\${n}\" ]] && ! grep -q 'ReadAllBytes' '${goInstPs}'"

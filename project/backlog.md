@@ -215,7 +215,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 36: install.ps1 changes PATH without telling Windows, so a new shell from the Start menu doesn't find gitsby
 	- ID: 2026111016332008
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
@@ -226,6 +226,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: No. ssh to the Windows boxes lands in a session with no Explorer.
 	- Possible cause [Bug]: install.ps1:407 writes the registry with `Set-ItemProperty` and doesn't broadcast `WM_SETTINGCHANGE`. `SetEnvironmentVariable`, which it replaced, did.
 	- Origin: 37b7445, 2026-08-19, which kept `%VAR%` entries unexpanded. Regression. Plausible.
+	- Needs external testing: on vm925w or b29w, through the host lock, a whole install from c5ebe1b's install.ps1 with only the download stood in, in Windows PowerShell 5.1 and in pwsh 7, from a user with gitsby's folder not yet on PATH. It should print 'Open a new shell to pick it up', not 'Sign out and back in', and keep PATH's registry kind. test.bash [dfgxc] there takes its sent branch and should say 'REACHED (sent)'.
+	- Needs hand testing: after that install, at the desktop, open PowerShell from the Start menu and run 'gitsby --version' without signing out.
+	- Actual cause [Bug]: install.ps1 writes PATH with Set-ItemProperty, which doesn't broadcast WM_SETTINGCHANGE, so Explorer keeps its old environment and hands it to every shell it starts. SetEnvironmentVariable did broadcast, but it was dropped because it rewrites an expandable PATH as plain text.
+	- Actual fix [Bug]: after the PATH write, install.ps1 calls Send-EnvironmentChange, which sends WM_SETTINGCHANGE with 'Environment' through SendMessageTimeout (Add-Type, SMTO_ABORTIFHUNG, 5 s). It's sent even when the registry already had the folder, for installs by the older script. If it can't be sent, the closing line says to sign out instead of opening a new shell. changelog.md has a line under vNEXT Fixed.
+	- Decisions: Add-Type P/Invoke rather than setting and clearing a throwaway variable with SetEnvironmentVariable to get its broadcast, since that writes the registry twice for a side effect. A failed broadcast doesn't fail the install, since PATH is already written.
+	- Branch: nov19-2026111016332008
+	- Commit: c5ebe1b
+	- Test case: test.bash [dfgxc] defines Send-EnvironmentChange from install.ps1 and calls it: off Windows it gets into the compiled P/Invoke stub, which proves the Add-Type text compiles and binds. [dfgxd] checks in the parsed script that the call comes after the PATH write and outside that write's try.
+	- Verified: [dfgxc] and [dfgxd] fail on the old install.ps1 (no function, no call). [dfgxc] fails with a broken C# signature, and [dfgxd] fails with the call moved inside the write's try. Quick gate, every area, passed on c5ebe1b's tree: test.bash 2080/0, fuzz 310/0, parity 31/0. PSScriptAnalyzer clean on install.ps1. The Windows branch itself didn't run here.
+	- Swept: every PATH or environment write in the tree. install.ps1 has the one registry write. legacy/install.ps1 still uses SetEnvironmentVariable, which broadcasts, and is frozen. No cicd or Go code writes the Windows environment.
 
 - Code Review 20261110b enhancement 1: sync re-creates a branch on origin that was deleted after its PR merged
 	- ID: 2026111016331930

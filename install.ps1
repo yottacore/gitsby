@@ -388,6 +388,20 @@ function Install-Gitsby {
             throw "Installed ${destPath}, but it would not run (${how}). The download verified against the release checksum, so this is the binary not being runnable on this machine rather than a bad download."
         }
 
+        # The registry write below tells nobody, so Explorer would keep handing the old PATH to
+        # every shell it starts until sign-out. SetEnvironmentVariable sends this itself, but it
+        # rewrites an expandable PATH as plain text. SMTO_ABORTIFHUNG with a timeout, so a hung
+        # window can't stall the install.
+        function Send-EnvironmentChange {
+            if (-not ('GitsbyInstall.Win32' -as [type])) {
+                Add-Type -Namespace 'GitsbyInstall' -Name 'Win32' -MemberDefinition '[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);'
+            }
+            $result = [UIntPtr]::Zero
+            # HWND_BROADCAST, WM_SETTINGCHANGE, SMTO_ABORTIFHUNG.
+            $sent = [GitsbyInstall.Win32]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$result)
+            if ($sent -eq [IntPtr]::Zero) { throw 'WM_SETTINGCHANGE was not delivered.' }
+        }
+
         $pathSep = [IO.Path]::PathSeparator
         if (($env:PATH -split $pathSep) -notcontains $destDir) {
             if ($onWindows) {
@@ -407,9 +421,17 @@ function Install-Gitsby {
                         Set-ItemProperty -LiteralPath $pathKeyPath -Name 'PATH' -Value $joined -Type $storedKind
                     }
                     $env:PATH = $env:PATH.TrimEnd($pathSep) + $pathSep + $destDir
-                    Write-Host "[ Added ${destDir} to your ${pathScope} PATH. Open a new shell to pick it up. ]"
                 } catch {
                     Write-Host "Note: couldn't update PATH ($($_.Exception.Message)). Add ${destDir} to it to run 'gitsby' by name."
+                    $pathScope = ''
+                }
+                if ($pathScope) {
+                    # Sent even when the registry already had it, since an install by an older
+                    # copy of this script never told Explorer.
+                    $told = $true
+                    try { Send-EnvironmentChange } catch { $told = $false }
+                    if ($told) { Write-Host "[ Added ${destDir} to your ${pathScope} PATH. Open a new shell to pick it up. ]" }
+                    else { Write-Host "[ Added ${destDir} to your ${pathScope} PATH. Sign out and back in to pick it up. ]" }
                 }
             } else {
                 Write-Host "Note: ${destDir} isn't on your PATH; add it in your shell profile."
