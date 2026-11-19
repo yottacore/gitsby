@@ -349,6 +349,8 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 - The one command that publishes a directory shows what is in it first.
 	- `repo create` and `repo connect` from a plain directory list the files before asking. Everything else in the tool previews what it touches; this is the step where a stray `.env` or private key becomes public.
 	- The list has to be git's own answer, not a directory walk, or it would name files `git add --all` will skip and miss the exclusions that matter. A throwaway git dir outside the work tree asks git the real question and writes nothing into the user's directory - which is the point, since answering "n" must leave it untouched.
+	- From a repo with no origin, they list the whole tree the first push sends, from the repo's own index: what was committed before, less what `git add --all` deletes, plus what it adds. The status block shows an untracked folder as one line, which hid a `.env` inside it.
+	- With origin set, `repo connect` commits and pushes what's new, so its status block names each file in an untracked folder. What was pushed before isn't listed again.
 
 - The Bash and PowerShell scripts are frozen. The Go build in `src-go/` is the implementation that moves.
 	- Both scripts stay in the tree, read-only, as the behavioral reference the port is measured against. Only a production hotfix reopens them.

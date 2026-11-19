@@ -85,6 +85,32 @@ func TestParseArgsRefusals(t *testing.T) { // [dbfqp]
 	}
 }
 
+// After '--' a repo target can start with a dash, and git or gh would read it as an
+// option. The refusal comes from sortCommand, ahead of the account lookup and the probe.
+func TestSortCommandRefusesDashLedRepoTarget(t *testing.T) { // [dfg16]
+	for _, tc := range []struct {
+		argv []string
+		ok   bool
+	}{
+		{[]string{"repo", "connect", "--", "--upload-pack=x"}, false},
+		{[]string{"repo", "create", "--", "--x/y"}, false},
+		{[]string{"repo", "connect", "--", "./-x"}, true},
+		{[]string{"repo", "create", "me/x"}, true},
+	} {
+		opt, cmd, _, err := parseArgs(tc.argv)
+		if err != nil {
+			t.Fatalf("%v: parse: %v", tc.argv, err)
+		}
+		if cmd, err = collapseCommand(cmd); err != nil {
+			t.Fatalf("%v: collapse: %v", tc.argv, err)
+		}
+		_, err = sortCommand(cmd, &opt)
+		if (err == nil) != tc.ok {
+			t.Errorf("%v: err = %v", tc.argv, err)
+		}
+	}
+}
+
 // The tokenizer takes five positionals for 'account set <name> <key> <value>'
 // alone. Every other command has to keep rejecting the fifth, which is now
 // sortCommand's job rather than the tokenizer's - and the tail that does it was

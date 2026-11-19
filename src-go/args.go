@@ -349,6 +349,16 @@ func sortCommand(cmd command, opt *options) (command, error) {
 		if cmd.arg2 != "" {
 			return cmd, usagef("Unexpected extra argument '%s'.", cmd.arg2)
 		}
+		// After '--' the target can start with a dash. The account lookup and the probe
+		// both hand it to git or gh, which would take it as an option, so it goes here,
+		// ahead of all of them.
+		switch {
+		case !strings.HasPrefix(cmd.arg, "-"):
+		case cmd.name == "repo-create":
+			return cmd, usagef("'%s' starts with a dash, and a GitHub 'owner/name' can't, so gh would read it as an option.", cmd.arg)
+		case cmd.name == "repo-connect":
+			return cmd, usagef("'%s' starts with a dash, so git would read it as an option rather than a remote. A folder by that name can be given as ./%s.", cmd.arg, cmd.arg)
+		}
 	case "repo-url":
 		// Bare is the read-only "what is it now"; naming a transport is what makes
 		// it mutate.

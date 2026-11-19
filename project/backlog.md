@@ -187,7 +187,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 11: repo connect and repo create in an existing repo don't list the files they publish
 	- ID: 2026111016332317
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
@@ -198,6 +198,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23, local bare origin.
 	- Possible cause [Bug]: showFilesToPublish runs only outside a repo, at main.go:717-732. Inside one the plan uses the normal status block, which folds untracked folders.
 	- Origin: 4918b5b, 2026-08-19. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: The file list ran only from a plain folder. In a repo the plan had only the status block, and git status shows an untracked folder as one line.
+	- Actual fix [Bug]: From a repo with no origin, create and connect now list every file the first push sends, from the repo's own index: what was committed before, less what 'git add --all' deletes, plus what it adds, from a subfolder too. With origin set, connect's status block names each file in an untracked folder. design.md says so.
+	- Branch: nov18-2026111016332317
+	- Commit: cd5dd5c
+	- Test case: test.bash [dfg0x] to [dfg11].
+	- Verified: [dfg0x], [dfg0y] and [dfg11] fail on the nov18 build and pass with the fix. [dfg0z] and [dfg10] pass on both. The quick gate passed with every area: test.bash 2019/0, fuzz 310/0, parity 31/0. gosec reports nothing in the changed files.
+	- Swept: showFilesToPublish and showTreeToPublish are the only file lists. Both create and connect reach them through showBeforeState, in every mode. The README's claim now holds, so it's unchanged.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261118-171224
+	- Decisions:
+		- The list from a repo with no origin is the whole tree the push sends, since files committed before go public for the first time too. Files deleted before and still in history aren't listed.
+		- With origin set the remote already has history, so only what's new is named, in the status block. An origin that was added by hand and is still empty gets the same, since nothing asks it.
 
 - Code Review 20261110b item 12: br create and br hotfix say Done after the autostash conflicts
 	- ID: 2026111016332305
@@ -264,7 +277,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 18: repo connect -- <URL starting with a dash> reaches git ls-remote as an option
 	- ID: 2026111016332231
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163322
@@ -276,6 +289,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: repo.go:88 and :393 put the URL in git argv with no `--`. The 2026-10-06 sweep in Bug 2026100607545802 rested on the parser refusing dash-led words.
 	- Origin: bbb6445, 2026-11-10, made `--` end gitsby's options. The probe from 26c8a42, the remote add from 4918b5b. Regression. Confirmed.
 	- Notes: The URL is the user's own, so this matters for a script that passes one through. `repo create -- --x/y` hands `--x/y` to `gh repo view`, and the br switch refusal suggests a br create line that no longer pastes.
+	- Closed reason: Done
+	- Actual cause [Bug]: The probe's ls-remote and the remote add put the URL in git's argv with no '--'. Both relied on the parser refusing a dash-led word, which stopped once '--' ended gitsby's options.
+	- Actual fix [Bug]: repo connect and repo create refuse a dash-led target in sortCommand, ahead of the account lookup, the probe and gh. The probe's ls-remote and the remote add also pass '--' before the URL, and the plan's remote add line shows it.
+	- Branch: nov18-2026111016332317
+	- Commit: cd5dd5c
+	- Test case: test.bash [dfg12] to [dfg15]; TestSortCommandRefusesDashLedRepoTarget [dfg16]; TestProbeRemoteDashLedURL [dfg17].
+	- Verified: [dfg13] to [dfg15] fail on the nov18 build, where the probe ran the touch and 'repo create' asked gh, and pass with the fix. [dfg12] passes on both, since the old build failed later. [dfg16] fails with the refusal taken out, and [dfg17] with the probe's '--' taken out. The quick gate passed with every area.
+	- Swept: every git and gh argv in repo.go that takes the target. clone already passes '--'. 'gh repo view' and 'gh repo create' take only an 'owner/name' the parser has checked. The br switch refusal already says a branch can't start with a dash, so its br create advice is never offered for one.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-171224
 
 - Code Review 20261110b item 19: Converting a SHCL 2.x accounts file cuts off any value with a quote before a #
 	- ID: 2026111016332218

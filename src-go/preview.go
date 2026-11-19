@@ -151,7 +151,7 @@ func (a *app) preview(what string) {
 		case "create":
 			a.out.clean(planPad + "gh repo create " + a.tgt.ghTarget + " --" + a.opt.visibility + " --source . --push --remote origin")
 		case "add":
-			a.out.clean(planPad + "git remote add origin " + maskURL(a.tgt.connectURL))
+			a.out.clean(planPad + "git remote add -- origin " + maskURL(a.tgt.connectURL))
 			a.out.clean(planPad + "git push -u origin HEAD")
 		case "push":
 			a.out.clean(planPad + "git push -u origin HEAD *")

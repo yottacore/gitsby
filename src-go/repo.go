@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -85,7 +86,9 @@ func sameRemote(a, b string) bool {
 // remoteEnv. Missing only when git's words say the host said no; else unknown, with
 // git's reason.
 func (a *app) probeRemote(url string) (repoExistence, string) {
-	probe := toolCmd("git", "ls-remote", url)
+	// '--': a dash-led url is an option to git. The parser refuses one too, which
+	// stopped being enough once '--' ended gitsby's own options.
+	probe := toolCmd("git", "ls-remote", "--", url)
 	probe.Env = a.remoteEnv()
 	var errText bytes.Buffer
 	probe.Stderr = &errText
@@ -390,7 +393,7 @@ func (a *app) cmdConnect() error {
 	case "create":
 		return a.step("gh", "repo", "create", a.tgt.ghTarget, "--"+a.opt.visibility, "--source", ".", "--push", "--remote", "origin")
 	case "add":
-		if err := a.step("git", "remote", "add", "origin", a.tgt.connectURL); err != nil {
+		if err := a.step("git", "remote", "add", "--", "origin", a.tgt.connectURL); err != nil {
 			return err
 		}
 		return a.step("git", "push", "-u", "origin", "HEAD")
@@ -448,15 +451,41 @@ func (a *app) showFilesToPublish() {
 	initCmd := toolCmd("git", "init", "--quiet")
 	initCmd.Env = env
 	_ = initCmd.Run()
-	a.out.clean("")
-	a.out.clean("Files to publish:")
 	ls := toolCmd("git", "ls-files", "--others", "--exclude-standard")
 	ls.Env = env
 	var outLines []string
 	if out, _ := ls.Output(); len(out) > 0 {
 		outLines = strings.Split(strings.TrimRight(string(out), "\n"), "\n")
 	}
-	a.showLines(outLines)
+	a.listFilesToPublish(outLines)
+}
+
+// showTreeToPublish is the same list for a repo that has no origin yet. Its first
+// push sends the whole tree, what was committed before included, and the status
+// block shows an untracked folder as one line, so every file the pushed tree will
+// hold is named: tracked, less what 'git add --all' will delete, plus what it will
+// add. Read only, so 'n' still changes nothing.
+func (a *app) showTreeToPublish() {
+	// ':/' is the whole tree, from a subfolder too, the way 'git add --all' takes it.
+	gone := map[string]bool{}
+	for _, f := range runLines("git", "ls-files", "--deleted", "--", ":/") {
+		gone[f] = true
+	}
+	var files []string
+	for _, f := range runLines("git", "ls-files", "--cached", "--others", "--exclude-standard", "--", ":/") {
+		if !gone[f] {
+			gone[f] = true // an unmerged path is listed once per stage
+			files = append(files, f)
+		}
+	}
+	slices.Sort(files)
+	a.listFilesToPublish(files)
+}
+
+func (a *app) listFilesToPublish(files []string) {
+	a.out.clean("")
+	a.out.clean("Files to publish:")
+	a.showLines(files)
 	if a.lastListCount == 0 {
 		a.out.clean("    (nothing - the directory is empty, or everything in it is ignored)")
 	}

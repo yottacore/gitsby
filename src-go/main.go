@@ -711,7 +711,7 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 
 // showBeforeState leads the plan with what the repo looks like now. clone, and
 // create/connect from a plain dir, have no repo state to show; a smaller header
-// stands in.
+// stands in. create/connect list what they publish either way.
 func (a *app) showBeforeState() error {
 	switch {
 	case a.writesAccounts():
@@ -739,6 +739,9 @@ func (a *app) showBeforeState() error {
 			return errDetached()
 		}
 		a.showStatus(true)
+		if a.tgt.connectMode == "create" || a.tgt.connectMode == "add" {
+			a.showTreeToPublish()
+		}
 	}
 	return nil
 }

@@ -2702,6 +2702,46 @@ fRunSuite(){
 	mkdir -p "${pub3}"; cp -r "${pubDir}/." "${pub3}/"; fSafeRm "${pub3:?}/.git" >/dev/null
 	git init --quiet --bare -b main "${cn}/remote5.git"
 	fAssertNotOut "[daggv] the listing honors .gitignore"  'skipme\.log|skipdir'  bash -c "cd '${pub3}' && '${gitsby}' -q repo connect '${cn}/remote5.git' 2>&1"
+	## From a repo with no origin the first push sends the whole tree, and status shows an
+	## untracked folder as one line. Run from a subfolder, since 'git add --all' takes the whole
+	## tree from there too.
+	local pubRepo="${cn}/publish-repo"
+	git init --quiet --bare -b main "${cn}/remote6.git"
+	git init --quiet -b main "${pubRepo}"
+	(
+		cd "${pubRepo}" || exit 1
+		echo a > a.txt; git add a.txt; git commit --quiet -m a
+		mkdir -p secret sub; echo TOKEN=x > secret/.env; echo key > secret/id_rsa; echo n > sub/n.txt
+		echo '*.log' > .gitignore; echo noise > noise.log
+	)
+	( cd "${pubRepo}/sub" && "${gitsby}" -q repo connect "${cn}/remote6.git" ) > "${work}/$1-pubrepo.out" 2>&1 || true
+	fAssertOut    "[dfg0x] repo connect in a repo names each file of an untracked folder"  '^    \.\./secret/id_rsa$'  cat "${work}/$1-pubrepo.out"
+	fAssertOut    "[dfg0y] and the files committed before"                                  '^    \.\./a\.txt$'          cat "${work}/$1-pubrepo.out"
+	fAssertNotOut "[dfg0z] and not an ignored one"                                          'noise\.log'               cat "${work}/$1-pubrepo.out"
+	fAssert       "[dfg10] and the folder's files went up, as listed"  bash -c "git -C '${cn}/remote6.git' ls-tree -r --name-only main | grep -qx 'secret/\.env'"
+	## With origin set it commits and pushes a new folder too, so each of its files is named.
+	mkdir -p "${pubRepo}/more"; echo m > "${pubRepo}/more/m1.txt"; echo m > "${pubRepo}/more/m2.txt"
+	fAssertOut    "[dfg11] repo connect with origin set names each file of a new folder"  '^    \?\? more/m2\.txt$' \
+		bash -c "cd '${pubRepo}' && '${gitsby}' -q repo connect 2>&1"
+
+	## A target after '--' can start with a dash. git read it as an option in the probe, and
+	## ran the command it named. The branch tracks another remote, so the probe has one to ask.
+	local cnDash="${cn}/dash"
+	git init --quiet --bare -b main "${cnDash}-other.git"
+	git init --quiet -b main "${cnDash}"
+	( cd "${cnDash}" && echo d > d.txt && git add --all && git commit --quiet -m d && git remote add other "${cnDash}-other.git" && git push --quiet -u other main ) >/dev/null 2>&1
+	local cnDashRun="cd '${cnDash}' && '${gitsby}' -q repo connect -- '--upload-pack=touch PWNED;git-upload-pack' 2>&1"
+	fAssertFail   "[dfg12] repo connect refuses a target that starts with a dash"  bash -c "${cnDashRun}"
+	fAssert       "[dfg13] and git never ran what it named"                         bash -c "${cnDashRun}; [[ ! -e '${cnDash}/PWNED' ]] && [[ -z \"\$(git -C '${cnDash}' remote get-url origin 2>/dev/null)\" ]]"
+	mkdir -p "${cnDash}-bin"
+	fStub "${cnDash}-bin/gh" <<-EOF
+		#!/usr/bin/env bash
+		touch '${cnDash}-gh-ran'
+		exit 1
+	EOF
+	fAssertOut    "[dfg14] repo create refuses one too"  'starts with a dash' \
+		bash -c "cd '${cnDash}' && PATH='${cnDash}-bin':\"\${PATH}\" '${gitsby}' -q repo create -- --x/y 2>&1"
+	fAssert       "[dfg15] before asking gh"             bash -c "[[ ! -e '${cnDash}-gh-ran' ]]"
 
 	## connect refuses remotes with history, unreachable remotes, and empty dirs
 	git init --quiet -b main "${cn}/proj2"
