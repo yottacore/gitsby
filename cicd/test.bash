@@ -6836,7 +6836,7 @@ LGEOF
 			bash -c "HOME='${rlTree}/home' pwsh -NoProfile -NonInteractive -File '${rlTree}/cicd/utility/run-latest.ps1' >/dev/null 2>&1; echo \"rc=\$?\""
 		printf '#!/bin/sh\necho "pooled build ran $*"\n' > "${rlTree}/src-go/gitsby"
 		chmod +x "${rlTree}/src-go/gitsby"
-		touch -d '2026-01-02 03:04:05' "${rlTree}/src-go/gitsby"
+		touch -t 202601020304.05 "${rlTree}/src-go/gitsby"
 		fAssertOut "[df06j] and it names its copy by the Gregorian date under th-TH" '^gitsby_20260102-030405$' \
 			bash -c "[[ \$(HOME='${rlTree}/home' pwsh -NoProfile -NonInteractive -Command \"[cultureinfo]::CurrentCulture = 'th-TH'; & '${rlTree}/cicd/utility/run-latest.ps1' a b\") == 'pooled build ran a b' ]] && ls '${rlTree}/home/.cache/gitsby-runs'"
 	fi
@@ -8954,7 +8954,7 @@ GLEOF
 	mkdir -p "${fg}/oldpin" "${fg}/newpin"
 	printf 'account: work\n\tname: "O%sBrien \\\\ x"\n##\n##    Format   3\n##\n' "'" > "${fg}/oldpin/config.shcl"
 	cp "${fg}/oldpin/config.shcl" "${fg}/newpin/config.shcl"
-	touch -d '2026-11-01 12:00:00' "${fg}/oldpin/config.shcl"
+	touch -t 202611011200.00 "${fg}/oldpin/config.shcl"
 	fAssertOut "[df08w] a Format 3 accounts file last written before the move to v3.0.0-beta1 has its escapes re-spelled"  'Converted the accounts file from the earlier SHCL 3 spelling.* 1 line\(s\) were re-spelled' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/oldpin/config.shcl' identity 2>&1"
 	fAssertOut "[df08x] so the value reads as that module read it, and the old file sits beside it"  "^	name: \"O'Brien \\\\ x\"\$" \
@@ -8965,7 +8965,7 @@ GLEOF
 	## so, and an edit refuses before its plan, since the module would refuse the save after it.
 	mkdir -p "${fg}/newer"
 	printf 'account: work\n\tname: Ada\n##\n##    Format   4\n##\n' > "${fg}/newer/config.shcl"
-	touch -d '2026-11-01 12:00:00' "${fg}/newer/config.shcl"
+	touch -t 202611011200.00 "${fg}/newer/config.shcl"
 	fAssertOut "[dfg47] a file stamped with a newer SHCL format is read, and the run says so"  '^ok$' \
 		bash -c "cd '${fgRepo}' && out=\$(PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/newer/config.shcl' account list 2>&1); [[ \$out == *'is in SHCL format 4, newer than this build reads'* && \$out == *'commits .: Ada'* ]] && echo ok"
 	fAssertOut "[dfg48] and account set refuses before its plan, exit 1, file as it was"  '^ok$' \
@@ -8974,11 +8974,14 @@ GLEOF
 	## its file, so the escapes read as text and nothing tries to convert it on every run.
 	mkdir -p "${fg}/nixpin"
 	cp "${fg}/newpin/config.shcl" "${fg}/nixpin/config.shcl"
-	touch -d '@1' "${fg}/nixpin/config.shcl"
+	TZ=UTC touch -t 197001010000.01 "${fg}/nixpin/config.shcl"
 	chmod 0555 "${fg}/nixpin"
 	fAssertNotOut "[dfg4c] a Format 3 file older than the earlier module is read as it is, with no notice"  'Converted|converted|O.Brien \\ x' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/nixpin/config.shcl' account list 2>&1 | grep -v '^Config file'; ls '${fg}/nixpin' | grep -vx config.shcl"
 	chmod 0755 "${fg}/nixpin"
+	## BSD touch has no '@epoch' form, which stopped this suite on macOS and FreeBSD. Use -t, with TZ=UTC for an epoch.
+	fAssert "[dfgvd] no touch in this suite takes an '@epoch' date, which BSD touch refuses" \
+		bash -c "! grep -nE 'touch -d .?@' '${root}/cicd/test.bash'"
 	## A hand-typed 2.x value where a quote opened a run, so the '#' after it was text. The module
 	## alone ends the value there; the converted file has to read what 2.x read.
 	mkdir -p "${fg}/old2xrun"
