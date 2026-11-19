@@ -255,12 +255,11 @@ func FuzzSetValue(f *testing.F) { // [ddcc1]
 // takes a '#' after it as text, which the module's migration cuts. The converted
 // file reads what 2.x read, or the conversion is refused and the file left as it was.
 func FuzzOld2xHandTyped(f *testing.F) { // [dfg4d]
-	for _, seed := range []string{`O"Brien#2`, `dev/c"#/proj`, `a'b#c`, `x"y" #z`, `"a"#b`, `a"b"c#d`, `it's#1`, `q"#`, `a#b`, `O"Brien #2`, `"x" y#z`, `C:\it's#x`, `a"b, c#d`, `it's "q"#1`, `O"Brien#2  # me`} {
+	for _, seed := range []string{`O"Brien#2`, `dev/c"#/proj`, `a'b#c`, `x"y" #z`, `"a"#b`, `a"b"c#d`, `it's#1`, `q"#`, `a#b`, `O"Brien #2`, `"x" y#z`, `C:\it's#x`, `a"b, c#d`, `it's "q"#1`, `O"Brien#2  # me`, "\x87", "O\"Br\xe9en#2", "a\xff\xfeb # n\x87te", "\\\x87"} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, value string) {
-		// 2.x read a broken byte as U+FFFD and v3 keeps it, which no quote changes.
-		if strings.ContainsAny(value, "\r\n") || !utf8.ValidString(value) {
+		if strings.ContainsAny(value, "\r\n") {
 			return
 		}
 		text := "account: w\n\tname: " + value + "\n" + shcl2Footer

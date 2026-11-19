@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Converting an SHCL 2.x accounts file changes a value holding a byte that isn't UTF-8
 	- ID: 2026111819043675
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261118-190436
@@ -47,6 +47,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The converted file reads what 2.x read, or the conversion is refused.
 	- Reproduced [Bug]: 2026-11-18 on b23, found by FuzzOld2xHandTyped `[dfg4d]`, which now skips such values.
 	- Possible cause [Bug]: shcl 2.x replaced a broken byte when it read the file, and v3 keeps it as written. Not looked at further.
+	- Closed reason: Done
+	- Actual cause [Bug]: shcl 2.x turned each byte of a line that isn't UTF-8 into U+FFFD as it read the line, one per byte. v3 keeps the byte, so the module's migration wrote it out as it was.
+	- Actual fix [Bug]: `broken2xBytes` in cfgformat.go, called first in `convert2x`. Each such byte in a 2.x value is written as U+FFFD before the module converts the file. The notice counts the line as re-spelled.
+	- Decisions: Converted rather than refused, since U+FFFD is the value 2.x read and the file as it was is kept. One U+FFFD per byte, as 2.x did, not one per run as strings.ToValidUTF8 gives. Only the value is changed. A comment keeps its bytes, since nothing reads it and the after-check compares comments with the file as it was. A quoted key with such a byte isn't changed, since gitsby reads no such key.
+	- Branch: nov18-2026111819043675
+	- Commit: 93bab4e
+	- Test case: Go `[dfg4d]` FuzzOld2xHandTyped no longer skips such values, with 4 new seeds; `[dfg5b]` TestOld2xBrokenByte: 3 values read what the real 2.x module read, a comment keeps its bytes, the kept copy is the file as it was. test.bash `[dfg5c]` the steps' file through the binary.
+	- Verified: `[dfg4d]` (its 4 new seeds) and `[dfg5b]` fail without the `broken2xBytes` call, and `[dfg5c]` fails on a binary built without it. All pass with it. 90 seconds of fuzzing found nothing more. Quick gate, every area: test.bash 2064/0, fuzz 310/0, parity 31/0.
+	- Swept: `convert2x` is the only 2.x conversion. The flat conversion keeps the byte, as v2.1.0's bash build read it, from reading only. Whether its pwsh build read U+FFFD wasn't checked. The earlier SHCL 3 module's reader has no such replacement, also from reading, and its re-spelling touches double-quoted escapes only.
+	- Acceptance signoff: Self-closed: reproduced, and its tests fail before the fix and pass after.
+	- Closed: 20261118-193251
 
 - Spawn count [dbftm] for br switch measures 28 against its expected 26
 	- ID: 2026111818374045

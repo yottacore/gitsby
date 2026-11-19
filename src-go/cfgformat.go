@@ -104,11 +104,12 @@ func migrateText(text string) (string, shcl.Migration) {
 	return strings.Join(out, eol), m
 }
 
-// convert2x is migrateText for a 2.x file, checked against how 2.x read it. A value
-// the module would cut or split is put in quotes first. bad is the first line that
-// still reads differently, which keeps the file as it is; 0 when none does.
+// convert2x is migrateText for a 2.x file, checked against how 2.x read it. A byte
+// that isn't UTF-8 is spelled the way 2.x read it, and a value the module would cut
+// or split is put in quotes first. bad is the first line that still reads
+// differently, which keeps the file as it is; 0 when none does.
 func convert2x(text string) (converted string, m shcl.Migration, bad int) {
-	quoted, bad := quote2xRuns(text)
+	quoted, bad := quote2xRuns(broken2xBytes(text))
 	converted, m = migrateText(quoted)
 	if bad == 0 {
 		bad = readings2xDiffer(text, m.Text)
@@ -157,6 +158,32 @@ func line2x(body string, tok *shcl.Tokens) (value string, region [2]int, hash in
 		region[1] = hash
 	}
 	return strings.Trim(body[region[0]:region[1]], " \t"), region, hash, true
+}
+
+// broken2xBytes spells each byte of a value that isn't UTF-8 as U+FFFD. 2.x did that
+// to the rest of a line when it read it, one U+FFFD per byte (strings.ToValidUTF8
+// makes one per run), and v3 keeps the byte. A comment keeps its bytes, since
+// nothing reads it and readings2xDiffer compares it with the file as it was.
+func broken2xBytes(text string) string {
+	if utf8.ValidString(text) {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	var tok shcl.Tokens
+	for i, line := range lines {
+		body := strings.TrimLeft(line, " \t")
+		_, region, _, ok := line2x(body, &tok)
+		at := len(line) - len(body)
+		if !ok || utf8.ValidString(body[region[0]:region[1]]) {
+			continue
+		}
+		var b strings.Builder
+		for _, r := range body[region[0]:region[1]] {
+			b.WriteRune(r)
+		}
+		lines[i] = line[:at+region[0]] + b.String() + line[at+region[1]:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // quote2xRuns puts in quotes each value the module would end at a '#', or split at

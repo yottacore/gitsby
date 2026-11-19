@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	shcl2 "github.com/jim-collier/shcl/source/go/v2"
 	shcl "github.com/yottacore/shcl/source/go/v3"
@@ -759,5 +760,45 @@ func TestOld2xUnquotableRefuses(t *testing.T) { // [dfg4f]
 	}
 	if readBack(t, file) != body {
 		t.Error("set wrote the file")
+	}
+}
+
+// 2.x read a byte that isn't UTF-8 as U+FFFD, one per byte, and v3 keeps the byte.
+// The converted file holds U+FFFD where 2.x read it, counted as a line re-spelled,
+// and the comments keep their bytes. The kept copy is the file as it was.
+func TestOld2xBrokenByte(t *testing.T) { // [dfg5b]
+	body := "# n\x87te\naccount: w\n\tname: \x87\n\temail: a\xff\xfe@x # b\x87\n\tsshkey: O\"Br\xe9en#2\n" + shcl2Footer
+	dir := t.TempDir()
+	file := filepath.Join(dir, "config.shcl")
+	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config{values: map[string]string{}}
+	opt := defaultOptions()
+	opt.configFile, opt.configGiven = file, true
+	if err := cfg.load(opt); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.migration == nil || !cfg.migration.done || cfg.migration.changed != 3 {
+		t.Fatalf("%+v", cfg.migration)
+	}
+	old, now := shcl2.Parse(body), shcl.Parse(readBack(t, file))
+	for _, k := range []string{"name", "email", "sshkey"} {
+		was, _ := old.GetString("account[#0]." + k)
+		if got, _ := now.GetString("account(0)." + k); got != was || !utf8.ValidString(got) {
+			t.Errorf("%s: 2.x read %q, now %q", k, was, got)
+		}
+	}
+	if got := cfg.value("w", "name"); got != "�" {
+		t.Errorf("name reads %q", got)
+	}
+	got := readBack(t, file)
+	for _, want := range []string{"# n\x87te\n", "\tname: �\n", "\temail: a��@x # b\x87\n", "\tsshkey: 'O\"Br�en#2'\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("want %q in\n%s", want, got)
+		}
+	}
+	if readBack(t, backupIn(t, dir, "v2")) != body {
+		t.Error("the kept copy isn't the file as it was")
 	}
 }
