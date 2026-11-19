@@ -617,9 +617,14 @@ func (a *app) cmdAccountApply() error {
 	for _, name := range names {
 		keys[name] = a.fragmentKeys(name)
 	}
+	var noEmail []string
 	for _, name := range names {
-		if err := a.writeAccountFragment(dir, files[name], a.withOuterKeys(dir, name, names, keys)); err != nil {
+		fragment := a.withOuterKeys(dir, name, names, keys)
+		if err := a.writeAccountFragment(dir, files[name], fragment); err != nil {
 			return err
+		}
+		if slices.Contains(fragment, fragmentKey{"user.email", "", true}) {
+			noEmail = append(noEmail, name)
 		}
 	}
 	// A fragment left from an account since renamed or dropped, or from before
@@ -660,6 +665,12 @@ func (a *app) cmdAccountApply() error {
 		if removed > 0 {
 			a.out.statusNotes("Removed the old folder rules from another global git config file.", noteLines("File", nativePath(file)))
 		}
+	}
+	// git takes an empty email as given, unlike an empty name, so it commits as '<>'
+	// there rather than refusing. Nothing a fragment can write makes it refuse.
+	for _, name := range noEmail {
+		a.out.status("WARNING: account '" + name + "' has no email, and another account's folder rule also covers its folders, so plain git there commits with an empty address. " +
+			"Give it an email, or set user.email in your global git config, then run '" + meName + " account apply' again.")
 	}
 	return nil
 }

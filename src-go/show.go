@@ -142,7 +142,12 @@ func (a *app) showIdentity(remoteURL string) {
 		a.out.clean("Ignored keys .: " + strings.Join(a.cfg.unknown, ", "))
 	}
 	a.showSSHLine(remoteURL)
-	a.out.clean("Author .......: " + commitIdentity())
+	author := commitIdentity()
+	// git refuses an empty name but takes an empty email, so this is the one sign of it.
+	if strings.HasSuffix(author, " <>") {
+		author += "  (no email - commits get an empty address)"
+	}
+	a.out.clean("Author .......: " + author)
 	a.showGhLine()
 	a.showHostLine()
 }

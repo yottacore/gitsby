@@ -258,7 +258,7 @@ func (a *app) enterRepo() error {
 	if len(answers) == 4+len(opFiles) && answers[0] == "true" {
 		top, a.opPaths, answers = answers[3], answers[4:], answers[:3]
 	}
-	a.git.contextDir.set(topOrWorkingDir(top))
+	a.git.contextDir.set(contextOf(top))
 	if len(answers) == 3 {
 		if answers[2] == "true" {
 			return usagef("This is a bare repository: no working tree, so there is nothing here to commit, switch or push. Work in a clone of it instead.")

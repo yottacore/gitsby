@@ -263,7 +263,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 8: An account with no email commits as an empty address after account apply
 	- ID: 2026111910223190
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261119-102231
@@ -274,6 +274,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, against d5e76f2 too. Confirmed.
 	- Possible cause [Bug]: The fragment now writes email with an empty value. git treats an empty email as given and an empty name as missing.
 	- Origin: 6770e4f, round-20261111 (Code Review 20261110b item 2). Regression of that fix.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. The inner fragment writes user.email empty in place of the outer account's, per 2026111016332429. git takes an empty email as given, unlike an empty name, and no value a fragment can write makes git refuse.
+	- Actual fix [Bug]: account apply warns for each account whose fragment gets an empty email in place of an outer one's. The Author line, in whoami, status and each command's state before its plan, flags an empty address.
+	- Decisions: The empty email stays, since anything else gives the outer account's address. The warning is a status line in the run rather than above the prompt, and -q gets it too, since not applying leaves the outer email in force. Against: 2026111016332429's empty put-back, kept as it is.
+	- Test case: test.bash [dfh7n] to [dfh7r].
+	- Verified: [dfh7n] and [dfh7q] fail on the unfixed build and pass after. [dfh7p] passes both ways, and pins that the outer email still stays out. [dfh7r] fails with the warning taken for any put-back email. Quick gate passed, all areas: test.bash 2145/0, fuzz 310/0, parity 31/0.
+	- Swept: every key put back empty. user.name makes git refuse. gitsby.ghAccount and gitsby.ghTokenFile read as none, and core.sshCommand gets ssh. An empty credential username stops git asking for one, and the fill then fails with no token, so no other account is used (by reading). The Author line is printed only in showIdentity.
+	- Branch: nov19b-2026111910223190
+	- Commit: 410fc24
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261119-135255
 
 - Code Review 20261119 item 9: br create, br hotfix and release push back a branch deleted on origin
 	- ID: 2026111910223176
@@ -307,7 +318,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 10: With GIT_DIR set, every command except raw picks the account from the current folder
 	- ID: 2026111910223162
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261119-102231
@@ -318,6 +329,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
 	- Possible cause [Bug]: enterRepo sets contextDir itself, so the GIT_DIR branch in config.go never runs for those commands.
 	- Origin: 12f1bc2, nov18. Missed sibling of that fix.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. enterRepo filled the contextDir cache from its own rev-parse, whose top with GIT_DIR set is the working directory. Only raw, which skips enterRepo, reached the GIT_DIR rule.
+	- Actual fix [Bug]: contextOf in config.go holds the GIT_DIR rule, and enterRepo and contextDir both go through it.
+	- Decisions: Follows 2026111016332367's rule for every command. It costs one more git call, only when GIT_DIR is set.
+	- Test case: test.bash [dfh7j] to [dfh7m].
+	- Verified: [dfh7j], [dfh7k] and [dfh7m] fail on the unfixed build and pass after. Quick gate passed, all areas: test.bash 2145/0, fuzz 310/0, parity 31/0.
+	- Swept: enterRepo is the only other setter of the contextDir cache. settleAccount, resolveAccount and account list's marker all read contextDir. The other os.Getwd calls show the Current dir line, resolve a relative path, or probe untracked files, and none picks an account.
+	- Branch: nov19b-2026111910223190
+	- Commit: 410fc24
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261119-135255
 
 - Code Review 20261119 item 11: A stalled https remote hangs every command
 	- ID: 2026111910223148

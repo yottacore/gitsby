@@ -5809,6 +5809,24 @@ GHEOF
 		bash -c "cd '${acNested}' && env ${acNestEnv} git config core.sshCommand"
 	fAssertOut "[df4wx] and the outer folder still gets its own token"  '^password=tok_outer_file$' \
 		bash -c "cd '${ac}/trees/outer/proj' && ${acFillNest} git credential fill"
+	## A nested account with no email gets an empty one there, which git commits with rather than
+	## refusing, as it does an empty name.
+	mkdir -p "${ac}/nemhome" "${ac}/trees/eouter/enested"
+	git init --quiet "${ac}/trees/eouter/enested/proj"
+	: > "${ac}/nemhome/.gitconfig"
+	printf 'account: eo\n\tpath: %s/trees/eouter\n\temail: eo@example.com\n\naccount: en\n\tpath: %s/trees/eouter/enested\n\tname: Inner Name\n' \
+		"${acCanon}" "${acCanon}" > "${ac}/nem.shcl"
+	local acNemEnv="${acNoDiscovery} HOME='${ac}/nemhome' GIT_CONFIG_GLOBAL='${ac}/nemhome/.gitconfig' PATH='${ac}/bin:${PATH}' GIT_TERMINAL_PROMPT=0"
+	local acNemRun="cd '${ac}/trees/eouter/enested/proj' && env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL ${acNemEnv} '${gitsby}' -q -NoFetch --config '${ac}/nem.shcl'"
+	fAssertOut "[dfh7n] account apply warns that a nested account with no email gets an empty one"  "WARNING: account 'en' has no email" \
+		bash -c "${acNemRun} account apply"
+	fAssertNotOut "[dfh7p] and plain git there doesn't take the outer account's email"  'eo@example' \
+		bash -c "cd '${ac}/trees/eouter/enested/proj' && env ${acNemEnv} git config user.email"
+	fAssertOut "[dfh7q] whoami flags the empty address"  '^Author \.+: Inner Name <>  \(no email' \
+		bash -c "${acNemRun} whoami"
+	printf '[user]\n\temail = base@example.com\n' > "${ac}/nemhome/.gitconfig"
+	fAssertNotOut "[dfh7r] no warning where the global config gives an email"  'has no email' \
+		bash -c "${acNemRun} account apply"
 	## raw acts as the account of the repo the tool works in, which -C, --git-dir or GIT_DIR can put
 	## outside the folder raw started in.
 	mkdir -p "${ac}/dirhome" "${ac}/dirbin" "${ac}/dtrees/work/proj/sub" "${ac}/dtrees/home"
@@ -5852,6 +5870,14 @@ LGEOF
 		bash -c "cd '${acDirWork}' && ${acDirRaw} tig -C '${acDirHome}'"
 	fAssertOut "[dffz7] and raw lazygit -p"  '^dh@example\.com$' \
 		bash -c "cd '${acDirWork}' && ${acDirRaw} lazygit -p '${acDirHome}'"
+	## Every command, not only raw, takes the account from where GIT_DIR points.
+	local acDirRun="env ${acDirEnv} GIT_DIR='${acDirHome}/.git' '${gitsby}' -q -NoFetch --config '${ac}/dir.shcl'"
+	fAssertOut "[dfh7j] with GIT_DIR set, whoami names the account of that repo"  "^Account \.+: 'dh'" \
+		bash -c "cd '${acDirWork}' && ${acDirRun} whoami"
+	fAssertOut "[dfh7k] and so does status"  "^Account \.+: 'dh'" \
+		bash -c "cd '${acDirWork}' && ${acDirRun} status"
+	fAssertOut "[dfh7m] and account list marks it"  '^-> dh$' \
+		bash -c "cd '${acDirWork}' && ${acDirRun} account list"
 	## A rule for the root covers every folder. It looked for the rule plus a slash, '//', and
 	## covered none, and the includeIf git got had the same extra slash.
 	mkdir -p "${ac}/roothome"
@@ -9821,3 +9847,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261118 JC: A Format 3 file older than the earlier module is read as it is, [dfg4c].
 ##		- 20261118 JC: A hand-typed 2.x value with a quote before a "#" reads whole after the conversion, [dfg4g].
 ##		- 20261118 JC: A 2.x value with a byte that isn't UTF-8 reads as 2.x read it after the conversion, [dfg5c].
+##		- 20261119 JC: account apply warns about a nested account with no email, and whoami flags an empty address, [dfh7n] to [dfh7r]. With GIT_DIR set, every command takes the account from that repo, [dfh7j] to [dfh7m].
