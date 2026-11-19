@@ -123,7 +123,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 4: In a nested folder, plain git sends the inner account's token to the outer account's host
 	- ID: 2026111910223247
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261119-102232
@@ -135,11 +135,28 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. Same at d5e76f2. Confirmed.
 	- Possible cause [Bug]: The outer helper stays in git's list and reads the token file key the inner fragment sets.
 	- Origin: 08e7452, 2026-11-08. Round-20261111 (2026111016332429) kept the helper on purpose but didn't try differing hosts. Same class as Code Review 20261110b item 1.
+	- Actual cause [Bug]: Every matching fragment's helper stays in git's list, and each reads the token file key the innermost fragment sets, which said nothing about its host. The same key let gitsby's own runs hand a Gitea token to github.com through the gitsby.ghTokenFile fallback, when a run named a bare GitHub login in a Gitea account's folder.
+	- Actual fix [Bug]: Each fragment writes gitsby.host, its account's host, and the helper answers only when git asks about that host. The gitsby.ghTokenFile fallback checks it too. Both go through one host check, sameService in githost.go, which every token hand-over now uses.
+	- Decisions:
+		- A host key beside the token file, rather than a token key per host, so gitsby.ghTokenFile keeps its name and meaning, and every account sets it, so the innermost one's wins with nothing put back.
+		- The helper reads gitsby.host from the global scope with includes, where it reads the token file, so a repo's own config can't claim a host.
+		- No gitsby.host means the helper answers nothing, since every apply writes it. The fallback reads an unset key as GitHub's, its meaning before fragments, so a hand-set gitsby.ghTokenFile keeps working.
+		- A fragment from an older apply keeps the old helper until account apply runs again. The changelog says so.
+		- The host is compared in lower case, with the port if git gives one. A remote spelled with another port gets nothing, never the wrong token.
+	- Branch: nov19b-2026111910223247
+	- Commit: 22554f6
+	- Test case: test.bash [dfh5s] and [dfh5t], which walk every path that hands out a token, pointed at another host and then at its own. Go [dfh5x] for the helper's host check.
+	- Verified: on the unfixed build, [dfh5s] fails for 9 of its 10 paths (test.bash 2120/9) and passes after (2129/0). Its glab path passes both ways, and [dfh5t] passes both ways. With the helper's host line taken out, [dfh5x] fails and plain git in the nested folder gives the inner token again. With the fallback's check taken out, raw git with GITSBY_ACCOUNT naming a login gives the Gitea token again. Quick gate passed, all areas: test.bash 2129/0, fuzz 310/0, parity 31/0. Not run on Windows, where the helper's tr and character class run under Git for Windows' sh.
+	- Swept: every path that hands out a token. Plain git's fragment helper, gitsby's own helper (scoped by its key), raw git, tig and lazygit through it, raw gh and gitsby's own gh calls (item 5), raw glab and pr's glab through tokenElsewhere, raw tea (keeps its token on GITEA_INSTANCE_URL), and the gitsby.ghTokenFile fallback. accountServesHost uses sameService too.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed reason: Done
+	- Closed: 20261119-125743
+	- Note: design.md has the class's table, under the credentials decision, with one row per path that hands out a token. A later item in the class names its row.
 
 - Code Review 20261119 item 5: raw gh hands the Enterprise token to any other host
 	- ID: 2026111910223233
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261119-102232
@@ -151,6 +168,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, real gh 2.96 and a fake token. Confirmed.
 	- Possible cause [Bug]: tokenEnvVar exports the variable without checking the host gh is pointed at.
 	- Origin: d5d8cfa, nov19 (2026111016332206). Regression: it moved the leak from github.com to other hosts. Same class as Code Review 20261110b item 1.
+	- Actual cause [Bug]: selectAccount put the token in gh's own variable on every run. gh sends GH_ENTERPRISE_TOKEN to every Enterprise host, and GH_TOKEN to github.com, github.localhost and every *.ghe.com host, whatever host a command names. So a github.com token went to a ghe.com tenant the same way.
+	- Actual fix [Bug]: selectAccount puts the token in gh's variable only when tokenElsewhere finds no other host among raw gh's --hostname, -h, -R, URL and repo arguments (ghNamedHosts) and the caller's GH_HOST and GH_REPO. git's helper reads GITSBY_HOST_TOKEN on every host, so git still gets the token. raw gh says when it isn't acting as the account, as raw glab does.
+	- Decisions:
+		- Refuse, with no pin. gh takes remotes only from the host GH_HOST names (checked with gh 2.96), and an Enterprise account's host is always that one. Left alone: a github.com account in a repo with a second remote on a *.ghe.com host gh is logged in to, which gh might pick with no host named.
+		- A caller's GH_HOST on another host counts as pointing gh there, for gitsby's own gh calls too. gh then finds no remote on the account's host anyway, so nothing that worked stops.
+		- The first of 3 parts in a -R is a host, as gh reads it. A bare argument counts only with a dot in it, as for glab, since repo clone takes a folder there.
+		- Too many hosts means no token, never a token sent astray: -h counts as a host everywhere, though only gh's auth commands take it as one.
+	- Against: 2026111016332206's fix, where the helper read gh's variable so git and gh agree. They still get the same token whenever gh gets one. design.md says so.
+	- Branch: nov19b-2026111910223247
+	- Commit: 22554f6
+	- Test case: test.bash [dfh5s] and [dfh5t] (shared with item 4), Go [dfh5v] for the hosts a gh command line names, [dfh5w] for which runs keep the token from gh.
+	- Verified: real gh 2.96 through the built gitsby, with a fake token. With GH_HOST on the Enterprise host, raw gh auth token --hostname evil.example printed the token before, and after prints 'no oauth token found' under the 'not acting as the account' line, while the same with no --hostname still prints it. From a github.com account, --hostname acme.ghe.com and github.localhost printed the token before and don't after. [dfh5s]'s 6 gh paths fail on the unfixed build and pass after. Quick gate passed, all areas: test.bash 2129/0, fuzz 310/0, parity 31/0.
+	- Swept: gh's own variables, set only in selectAccount. raw gh, and gitsby's own gh calls (pr, repo create, repo view, the token check), all after it. glab through the same tokenElsewhere. tea and git are scoped to the host already, per item 4's Swept.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed reason: Done
+	- Closed: 20261119-125820
+	- Progress log:
+		- 2026-11-19: gosec on src-go went from 34 findings to 37, all false positives. G101 on the GITSBY_HOST_TOKEN name, and G703 in readTokenFile and worldReadable, whose taint now comes through the account struct holding raw gh's arguments.
 
 - Code Review 20261119 item 6: On Windows, a folder rule through a junction never matches
 	- ID: 2026111910223218

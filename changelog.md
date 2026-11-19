@@ -53,6 +53,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - On a GitHub Enterprise host, `gh` acts as the folder's account. Its token went into `GH_TOKEN`, which `gh` reads only for github.com, so `pr`, `repo create` and `raw gh` acted as `gh`'s own login there while git pushed as the account. The token now goes into `GH_ENTERPRISE_TOKEN` for a host `GH_HOST` names.
 
+- After `account apply`, a folder inside another account's folder no longer hands its token to the outer account's host. With a gitea.com account's folder inside a github.com one's, plain git and `raw git` there answered github.com with the gitea.com token. Each fragment now names its account's host, and the helper answers only for that host. Run `account apply` again to rewrite the fragments.
+
+- `raw gh` and `pr` no longer hand the account's token to some other host. gh reads `GH_ENTERPRISE_TOKEN` for every Enterprise host and `GH_TOKEN` for github.com and every `*.ghe.com` host, so `raw gh auth token --hostname evil.example` printed the Enterprise token. A run that names another host, with `--hostname`, `-R`, a URL, `GH_HOST` or `GH_REPO`, now gets no token in gh's variables, and `raw gh` says so. git still gets the token for the account's own host.
+
 - `raw git -C <folder>` acts as the account of the repo git works in. It acted as the account of the folder it was started in, so a commit or push into another account's repo went out with the wrong name, email and token. The same goes for `--git-dir` and `GIT_DIR`, `raw tig -C`, and `raw lazygit -p`, `-w` and `-g`.
 
 - After `account apply`, a folder inside another account's folder no longer takes the outer account's settings that its own account leaves unset. Plain git and `raw git` there answered with the inner account's username and the outer one's token, commits took the outer one's name, and ssh its key. Each such key now gets the value your global git config gives it.

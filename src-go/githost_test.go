@@ -12,6 +12,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -496,6 +497,99 @@ func TestGlabTokenEnvStaysHome(t *testing.T) { // [df4w5]
 		}
 		if !gave && (tok != "before" || gl != "before" || api != c.callerAPI) {
 			t.Errorf("%q: env changed with no token given: %q %q %q", c.args, tok, gl, api)
+		}
+	}
+}
+
+// gh takes a host the ways glab does, but reads any 3-part -R as one, and a bare
+// argument only where it's a repo. Checked against gh 2.96.
+func TestGhNamedHosts(t *testing.T) { // [dfh5v]
+	for _, c := range []struct{ in, want string }{
+		{"auth token --hostname evil.example", "evil.example"},
+		{"auth token -h evil.example", "evil.example"},
+		{"api --hostname=evil.example user", "evil.example"},
+		{"pr list -R evil.example/a/b", "evil.example"},
+		{"pr list -R ghe/a/b", "ghe"},
+		{"pr list --repo https://evil.example/a/b", "evil.example"},
+		{"pr view https://evil.example/a/b/pull/1", "evil.example"},
+		{"repo clone evil.example/a/b", "evil.example"},
+		{"repo clone git@evil.example:a/b.git", "evil.example"},
+		{"issue transfer 1 evil.example/a/b", "evil.example"},
+		{"repo clone a/b ./x/y", ""},
+		{"repo clone a/b some/deep/dir", ""},
+		{"pr list -R a/b", ""},
+		{"pr list", ""},
+		{"release upload v1 out.d/x/y.tgz", ""},
+		{"api repos/a/b/hooks -f url=https://ci.other.test/hook", ""},
+	} {
+		if got := strings.Join(ghNamedHosts(strings.Fields(c.in)), " "); got != c.want {
+			t.Errorf("%q -> %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// gh hands GH_TOKEN or GH_ENTERPRISE_TOKEN to any host its rule covers, so gh gets the
+// token only while every host it's pointed at is the one the token is for.
+func TestGhTokenStaysHome(t *testing.T) { // [dfh5w]
+	for _, c := range []struct{ cred, args, ghHost, ghRepo, elsewhere string }{
+		{"ghe.example.test", "auth token", "ghe.example.test", "", ""},
+		{"ghe.example.test", "auth token --hostname evil.example", "ghe.example.test", "", "evil.example"},
+		{"ghe.example.test", "pr list -R evil.example/a/b", "ghe.example.test", "", "evil.example"},
+		{"ghe.example.test", "pr list -R GHE.example.test/a/b", "ghe.example.test", "", ""},
+		{"ghe.example.test", "pr list", "ghe.example.test", "evil.example/a/b", "evil.example"},
+		{"ghe.example.test", "pr list", "ghe.example.test", "a/b", ""},
+		{"github.com", "api user", "", "", ""},
+		{"github.com", "auth token --hostname acme.ghe.com", "", "", "acme.ghe.com"},
+		{"github.com", "auth token --hostname github.localhost", "", "", "github.localhost"},
+		{"github.com", "api user", "acme.ghe.com", "", "acme.ghe.com"},
+	} {
+		t.Setenv("GH_HOST", c.ghHost)
+		t.Setenv("GH_REPO", c.ghRepo)
+		a := newApp(newPrinter())
+		a.acct.credHost, a.acct.toolHosts = c.cred, ghNamedHosts(strings.Fields(c.args))
+		if got := a.tokenElsewhere(a.ghPointedAt()); got != c.elsewhere {
+			t.Errorf("%s: %q GH_HOST=%q GH_REPO=%q -> %q, want %q", c.cred, c.args, c.ghHost, c.ghRepo, got, c.elsewhere)
+		}
+	}
+}
+
+// The helper account apply writes checks the host in sh, since git runs it without
+// us. It has to agree with sameService on every host as git hands it over.
+func TestFragmentHelperHostCheck(t *testing.T) { // [dfh5x]
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh")
+	}
+	fakeTool(t, "git", `case "$*" in
+"config --global --includes --get gitsby.host") echo "$FAKE_TOKEN_HOST" ;;
+"config --global --includes --get gitsby.ghTokenFile") echo "$FAKE_TOKEN_FILE" ;;
+esac`)
+	file := filepath.ToSlash(filepath.Join(t.TempDir(), "tok"))
+	if err := os.WriteFile(file, []byte("tok_helper\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_TOKEN_FILE", file)
+	helper := strings.TrimPrefix(fragmentHelper(false), "!")
+	for _, c := range []struct{ asked, tokenHost string }{
+		{"gitea.example.test", "gitea.example.test"},
+		{"Gitea.Example.TEST", "gitea.example.test"},
+		{"github.com", "gitea.example.test"},
+		{"gitea.example.test", "github.com"},
+		{"git.example.test:3000", "git.example.test:3000"},
+		{"git.example.test:3000", "git.example.test"},
+		{"git.example.test", ""},
+		{"", "git.example.test"},
+	} {
+		t.Setenv("FAKE_TOKEN_HOST", c.tokenHost)
+		cmd := exec.Command(sh, "-c", helper+` "$@"`, "helper", "get")
+		cmd.Stdin = strings.NewReader("protocol=https\nhost=" + c.asked + "\n\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("%q: %v", c.asked, err)
+		}
+		gave, want := strings.Contains(string(out), "password=tok_helper"), sameService(c.asked, c.tokenHost)
+		if gave != want {
+			t.Errorf("asked for %q with gitsby.host %q: gave a token %v, sameService says %v", c.asked, c.tokenHost, gave, want)
 		}
 	}
 }

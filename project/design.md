@@ -160,9 +160,21 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 - An account's credentials are only credentials where that account banks.
 	- Accounts gained `host` (defaulting to `github.com`, which is what every config written before the key existed meant) and `user`. If an account's host is not the host `origin` is on, nothing is applied and the identity block names both hosts.
 	- A non-GitHub token is exported under its own variable, never as `GH_TOKEN`: `gh` reads that one, and every child process would otherwise inherit a credential for a host `gh` would try to use it on.
-	- A GitHub token goes where `gh` reads it for that host: `GH_TOKEN` for github.com and a `*.ghe.com` tenant, `GH_ENTERPRISE_TOKEN` for an Enterprise Server host that `GH_HOST` names, since `gh` never reads `GH_TOKEN` there. The credential helper reads the same variable.
+	- A GitHub token goes where `gh` reads it for that host: `GH_TOKEN` for github.com and a `*.ghe.com` tenant, `GH_ENTERPRISE_TOKEN` for an Enterprise Server host that `GH_HOST` names, since `gh` never reads `GH_TOKEN` there. The credential helper reads gitsby's own variable on every host, so git gets the token even when `gh` doesn't.
+	- `gh` and `glab` send their token to any host they're pointed at, so neither gets one while its command line or environment names another host. Every hand-over asks one host check, and the helper `account apply` writes makes the same check in sh, against the host its fragment names. The suite walks every path that hands out a token, pointed at another host.
 	- The credential helper is written for the host actually being authenticated to. `user` exists because Gitea checks the username an HTTPS push presents where GitHub ignores it.
 	- Neither the token nor the username is interpolated into the helper - both are read from the environment when it runs. The helper is a string Git hands to a shell, and the login reaching it can come from `GITSBY_ACCOUNT`, from a git config key, or from the config file, none of which is a place to accept shell. Interpolating the login put whatever those said inside the command Git runs; the environment removes the class rather than filtering it.
+
+The rule for every path that hands out a token. The token goes only to the host in the last column. A new path gets a row here and a case in the suite's walk.
+
+| Path | Who sends it | Where it may go
+| :-- | :-- | :--
+| Plain git after `account apply` | the fragment's helper | the host the innermost fragment's `gitsby.host` names, read from your global config
+| gitsby's own runs, `raw git`, `raw tig`, `raw lazygit` | git, through the helper gitsby sets | the host the run works with, `origin`'s or a clone's, and only when the account's `host` is that one
+| `raw gh`, and gitsby's own `gh` calls | gh, from `GH_TOKEN` or `GH_ENTERPRISE_TOKEN` | that same host, and only while no `--hostname`, `-R`, URL, `GH_HOST` or `GH_REPO` names another
+| `raw glab`, and `pr` on GitLab | glab, from `GITLAB_TOKEN` | that same host, with `GITLAB_API_HOST` pinned to it, and only while nothing names another
+| `raw tea` | tea, from `GITEA_TOKEN` | the host `GITEA_INSTANCE_URL` names, which is that same host
+| `gitsby.ghTokenFile` set by hand or by `account apply` | gitsby's own runs | the host `gitsby.host` names, or a GitHub host where it's unset
 
 - There is no bare `commit`, and no bare `pull` that skips the commit. Both were escape hatches around the workflow the tool exists to enforce.
 	- `commit` alone produces exactly the state gitsby was written to prevent: work committed locally that never reaches the remote, diverging quietly until the merge is painful.

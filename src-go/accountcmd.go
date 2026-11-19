@@ -681,6 +681,10 @@ func (a *app) fragmentKeys(name string) []fragmentKey {
 	return []fragmentKey{
 		{key: "user.name", value: a.cfg.value(name, "name")},
 		{key: "user.email", value: a.cfg.value(name, "email")},
+		// The host the token file and ghAccount are for. Every account sets it, so the
+		// innermost account's wins, and a helper for any other host reads it as not
+		// its own. Lower case, since the helper compares it to the host git asks about.
+		{key: "gitsby.host", value: strings.ToLower(a.cfg.hostOf(name))},
 		{key: "gitsby.ghAccount", value: a.cfg.value(name, "ghAccount")},
 		// Which account plain git asks for over https, so a credential manager looks up
 		// that account's entry and not any for the host.
@@ -839,11 +843,18 @@ func (a *app) fragmentHelperFor(name string) string {
 // fragmentHelper is the credential helper a fragment gives plain git. It reads the login
 // and token file from git config when it runs, so nothing from the accounts file goes
 // into a shell line. Detail: backlog 2026110810100400.
+//
+// In a nested folder every matching fragment's helper is listed, and each reads the
+// keys the innermost account set. So it answers only for the host gitsby.host names,
+// read from the scope the token file is: sameService's rule, in sh. Backlog
+// 2026111910223247.
 func fragmentHelper(onGitHub bool) string {
 	steps := []string{
 		`test "$1" = get || return 0`,
-		`n= t=`,
-		`while IFS= read -r l && test -n "$l"; do case $l in username=*) n=1 ;; esac; done`,
+		`n= t= h=`,
+		`while IFS= read -r l && test -n "$l"; do case $l in username=*) n=1 ;; host=*) h=${l#host=} ;; esac; done`,
+		`case $h in *[[:upper:]]*) h=$(printf %s "$h" | tr '[:upper:]' '[:lower:]') ;; esac`,
+		`test -n "$h" && test "$h" = "$(git config --global --includes --get gitsby.host)" || return 0`,
 	}
 	if onGitHub {
 		steps = append(steps,

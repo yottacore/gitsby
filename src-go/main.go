@@ -871,12 +871,20 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	if err := a.resolveAccount(a.contextDir(), a.originURL()); err != nil {
 		return err
 	}
+	if name == "gh" {
+		a.acct.toolHosts = ghNamedHosts(args)
+	}
 	if err := a.selectAccount(true); err != nil {
 		return err
 	}
 	warned := false
 	if !a.acct.bypassed {
 		switch tool {
+		case "gh":
+			if a.acct.ghElsewhere != "" && !a.opt.quiet {
+				a.out.errorf("not acting as the account: gh is pointed at %s, and the account's token is for %s", printable(a.acct.ghElsewhere), a.acct.credHost)
+				warned = true
+			}
 		case "tea", "tea-cli":
 			var err error
 			if warned, err = a.teaAsAccount(path); err != nil {

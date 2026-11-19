@@ -9075,6 +9075,94 @@ GHEOF
 		bash -c "cd '${fgRepo}' && PATH='${fg}/ghebin:${fgPath}' GH_HOST=git.example.test '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw gh auth token"
 	fAssertOut "[dfgvp] and git's helper answers with it there"  '^password=tok_ghonly$' \
 		bash -c "cd '${fgRepo}' && printf 'protocol=https\nhost=git.example.test\n\n' | PATH='${fg}/ghebin:${fgPath}' GH_HOST=git.example.test '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw git credential fill"
+	## Every path that hands out a token, pointed first at a host the token isn't for, then at the
+	## one it is. This class was fixed one site at a time 4 times (2026111016332442, 2026111016332429,
+	## 2026111016332206, then 2026111910223247 and 2026111910223233), so a new path goes in these
+	## lists. A Gitea account nested in a github.com one's folder, an Enterprise one and a GitLab one,
+	## each with its own token file. raw tea keeps its token on GITEA_INSTANCE_URL, and tig and
+	## lazygit go through git's helper.
+	local tw="${fg}/tokwalk"
+	mkdir -p "${tw}/home" "${tw}/bin" "${tw}/ghcfg"
+	fStub "${tw}/bin/gh" <<'GHEOF'
+#!/usr/bin/env bash
+line="$* gh=${GH_TOKEN:-} ghe=${GH_ENTERPRISE_TOKEN:-}"
+[[ -n "${TW_LOG:-}" ]] && echo "${line}" >> "${TW_LOG}"
+echo "${line}"
+GHEOF
+	fStub "${tw}/bin/glab" <<'GLEOF'
+#!/usr/bin/env bash
+echo "$* gl=${GITLAB_TOKEN:-}"
+GLEOF
+	local twItem
+	for twItem in gh/proj gh/gt/proj ghe/proj gl/proj; do git init --quiet "${tw}/trees/${twItem}"; done
+	git -C "${tw}/trees/gh/proj" remote add origin https://github.com/acme/proj.git
+	git -C "${tw}/trees/gh/gt/proj" remote add origin https://gitea.walk.test/acme/proj.git
+	git -C "${tw}/trees/ghe/proj" remote add origin https://ghe.walk.test/acme/proj.git
+	git -C "${tw}/trees/gl/proj" remote add origin https://gitlab.walk.test/acme/proj.git
+	for twItem in gh gt ghe gl; do printf 'tok_walk_%s\n' "${twItem}" > "${tw}/home/${twItem}.tok"; chmod 600 "${tw}/home/${twItem}.tok"; done
+	: > "${tw}/home/.gitconfig"
+	printf 'account: wgh\n\tpath: %s\n\ttokenfile: %s\n\naccount: wgt\n\tpath: %s\n\thost: gitea.walk.test\n\tuser: gtuser\n\ttokenfile: %s\n\naccount: wghe\n\tpath: %s\n\thost: ghe.walk.test\n\ttokenfile: %s\n\naccount: wgl\n\tpath: %s\n\thost: gitlab.walk.test\n\ttokenfile: %s\n' \
+		"$(fWinPath "${tw}/trees/gh")" "$(fWinPath "${tw}/home/gh.tok")" "$(fWinPath "${tw}/trees/gh/gt")" "$(fWinPath "${tw}/home/gt.tok")" \
+		"$(fWinPath "${tw}/trees/ghe")" "$(fWinPath "${tw}/home/ghe.tok")" "$(fWinPath "${tw}/trees/gl")" "$(fWinPath "${tw}/home/gl.tok")" > "${tw}/walk.shcl"
+	local twEnv="${acNoDiscovery} HOME='${tw}/home' GIT_CONFIG_GLOBAL='${tw}/home/.gitconfig' GH_CONFIG_DIR='${tw}/ghcfg' PATH='${tw}/bin:${fgPath}' GIT_TERMINAL_PROMPT=0 TW_LOG='${tw}/gh.log'"
+	local twG="env ${twEnv} '${gitsby}' -q -NoFetch --config '${tw}/walk.shcl'"
+	local twGhe="GH_HOST=ghe.walk.test"
+	bash -c "cd '${tw}/trees/gh/proj' && ${twG} account apply" >/dev/null 2>&1
+	local -a twWhat=(
+		"plain git asked for github.com in the nested Gitea account's folder"
+		"raw git, the same"
+		"raw git there, with GITSBY_ACCOUNT naming a GitHub login"
+		"raw gh auth token for another host, on Enterprise"
+		"raw gh -R a repo on another host, on Enterprise"
+		"raw gh with GH_REPO on another host, on Enterprise"
+		"pr with GH_REPO on another host, on Enterprise"
+		"raw gh auth token for a ghe.com tenant, on github.com"
+		"raw gh with GH_HOST on a ghe.com tenant, in a github.com repo"
+		"raw glab api for another host"
+	)
+	local -a twWhere=( gh/gt/proj gh/gt/proj gh/gt/proj ghe/proj ghe/proj ghe/proj ghe/proj gh/proj gh/proj gl/proj )
+	local -a twRun=(
+		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
+		"printf 'protocol=https\nhost=github.com\n\n' | ${twG} raw git credential fill"
+		"printf 'protocol=https\nhost=github.com\n\n' | GITSBY_ACCOUNT=walklogin ${twG} raw git credential fill"
+		"${twGhe} ${twG} raw gh auth token --hostname evil.walk.test"
+		"${twGhe} ${twG} raw gh pr list -R evil.walk.test/acme/proj"
+		"${twGhe} GH_REPO=evil.walk.test/acme/proj ${twG} raw gh pr list"
+		": > '${tw}/gh.log'; ${twGhe} GH_REPO=evil.walk.test/acme/proj ${twG} pr; cat '${tw}/gh.log'"
+		"${twG} raw gh auth token --hostname acme.ghe.com"
+		"GH_HOST=acme.ghe.com ${twG} raw gh api user"
+		"${twG} raw glab api --hostname gitlab.com user"
+	)
+	for twItem in "${!twRun[@]}"; do
+		fAssertNotOut "[dfh5s] no token for a host it isn't for: ${twWhat[twItem]}"  'tok_walk_' \
+			bash -c "cd '${tw}/trees/${twWhere[twItem]}' && ${twRun[twItem]}"
+	done
+	twWhat=(
+		"plain git asked for the Gitea host in its folder"
+		"plain git asked for github.com in the outer folder"
+		"raw git asked for the Gitea host in its folder"
+		"raw gh auth token on Enterprise"
+		"raw gh -R a repo on the Enterprise host"
+		"pr on Enterprise"
+		"raw gh auth token for github.com"
+		"raw glab api"
+	)
+	twWhere=( gh/gt/proj gh/proj gh/gt/proj ghe/proj ghe/proj ghe/proj gh/proj gl/proj )
+	local -a twWant=( gt gh gt ghe ghe ghe gh gl )
+	twRun=(
+		"printf 'protocol=https\nhost=gitea.walk.test\n\n' | env ${twEnv} git credential fill"
+		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
+		"printf 'protocol=https\nhost=gitea.walk.test\n\n' | ${twG} raw git credential fill"
+		"${twGhe} ${twG} raw gh auth token"
+		"${twGhe} ${twG} raw gh pr list -R ghe.walk.test/acme/proj"
+		": > '${tw}/gh.log'; ${twGhe} ${twG} pr; cat '${tw}/gh.log'"
+		"${twG} raw gh auth token --hostname github.com"
+		"${twG} raw glab api user"
+	)
+	for twItem in "${!twRun[@]}"; do
+		fAssertOut "[dfh5t] and the token still goes to its own host: ${twWhat[twItem]}"  "tok_walk_${twWant[twItem]}" \
+			bash -c "cd '${tw}/trees/${twWhere[twItem]}' && ${twRun[twItem]}"
+	done
 	## A Gitea account has no GitHub login, and the line used to read only that one.
 	fAssertOut "[ddk69] raw names the Gitea account it acts as"  'acting as giteauser' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_VERSION=0.11.0 '${gitsby}' -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"

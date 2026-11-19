@@ -190,6 +190,11 @@ type account struct {
 	credHost  string
 	tokenEnv  string
 	otherHost bool
+	// Hosts a raw tool's command line names, whether gh got the token in its own
+	// variable, and the host it's pointed at instead when it didn't.
+	toolHosts   []string
+	ghToken     bool
+	ghElsewhere string
 }
 
 // app is one run. The command functions take it rather than reach for package
