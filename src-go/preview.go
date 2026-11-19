@@ -39,7 +39,12 @@ func (a *app) preview(what string) {
 		a.preview("commit")
 	case "sync":
 		a.preview("pullcom")
-		a.out.clean(planPad + "git push (branch '" + a.currentBranch() + "') *")
+		// A branch made from origin/main can push there, under push.default=upstream.
+		if target, ok := a.pushTarget(); ok && target != a.currentBranch() {
+			a.out.clean(planPad + "git push (branch '" + a.currentBranch() + "', to '" + target + "') *")
+		} else {
+			a.out.clean(planPad + "git push (branch '" + a.currentBranch() + "') *")
+		}
 	case "br-create":
 		// From main/dev the dirty tree rides along to the new branch, so there's no
 		// commit here.

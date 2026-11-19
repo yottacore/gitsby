@@ -414,6 +414,9 @@ func (a *app) preflight() error {
 	if err := a.preflightBranch(); err != nil {
 		return err
 	}
+	if err := a.refuseParkPush(); err != nil {
+		return err
+	}
 	return a.stagedPreflight()
 }
 
@@ -686,7 +689,7 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 		if push, committed := a.directPush(); push {
 			a.out.clean("")
 			a.out.warn("WARNING: " + a.directPushText())
-			a.out.warn("  To keep it off '" + a.currentBranch() + "', answer n and run " + a.keepOffText(committed) + ". (The '--direct' flag silences this warning.)")
+			a.out.warn("  To keep it off '" + a.directTarget() + "', answer n and run " + a.keepOffText(committed) + ". (The '--direct' flag silences this warning.)")
 		}
 		if gone := a.pushesGoneBranch(); gone != "" {
 			a.out.clean("")

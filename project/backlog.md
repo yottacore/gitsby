@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 1: sync, br switch and br create push to origin's main when the branch tracks origin/main
 	- ID: 2026111910223293
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261119-102232
@@ -48,6 +48,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. d5e76f2 refused. Confirmed.
 	- Possible cause [Bug]: pushDest falls back to the upstream's ref. directPush judges the current branch's name, not the push's target.
 	- Origin: 6e3ab95, round-20261111 (Code Review 20261110b item 5), and bb905b6, nov18. Regression of item 5.
+	- Closed reason: Done
+	- Actual cause [Bug]: pushDest sent a branch whose upstream has another name to the upstream's ref whatever push.default said, so it did what push.default=upstream does where git's default refuses. directPush judged the current branch's name, so a push from feat to main never asked for --direct.
+	- Actual fix [Bug]: pushDest follows push.default where the upstream on the push's remote has another name: simple refuses, upstream and nothing go to the upstream, current and matching to the branch's own name. sync, br switch, br create, br hotfix, br merge and pr create refuse before the plan where git would refuse the push, naming 'git branch --unset-upstream'. directPush judges where the push lands, so sync and br switch ask for --direct for a push to main from feat. The other 4 refuse it, naming 'sync --direct'. The sync plan line names the target when it differs. Any other push of the current branch refuses at the step. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223293
+	- Commit: ca1f916
+	- Test case: test.bash [dfh3s] to [dfh40]; Go TestPushArgs [df52f] with 8 new cases.
+	- Verified: [dfh3s] to [dfh40] fail on the build before the fix, all but [dfh3z], which passes on both since --direct pushed to main before too. All 8 pass with the fix. The quick gate passed with every area: test.bash 2096/0, fuzz 310/0, parity 31/0, spawn counts [df37w] 38 and [df052] 43, as before. gosec reports the same 32 hits, none in the changed files.
+	- Swept: every push of the current branch goes through pushArgs: the park push of sync, br switch, br create, br hotfix, br merge, pr create and release, br merge's push of the target, release's 2 pushes, repo connect's push. The park pushes refuse before the plan, the rest at the step. Every other isProtectedBranch("") caller is about committing on or deleting a protected branch, not where a push lands, and was left alone. publishBranch and every first publish push to the branch's own name. release stays out of --direct, per 2026111016332380.
+	- Against: 2026111016332392's Decisions. Its Go case for an upstream of another name expected a push there under the default push.default, and now expects a refusal, as this item asks. Its call for push.default=nothing, the upstream, stands.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-115700
+	- Decisions:
+		- simple refuses before the plan, under -q or not, since git would refuse the push only after the commit. That covers push.default unset, and a value git doesn't know, which git refuses too. The way off is 'git branch --unset-upstream', as for a gone branch, so the next push publishes it under its own name.
+		- A push remote other than the upstream's still gets the branch under its own name, as before.
+		- br create, br hotfix, br merge and pr create refuse a park push that lands on a protected branch, naming 'sync --direct', rather than take --direct. That keeps 2026111016332380's line that they never push a protected branch, and leaves --direct's command list as it is. Check: entry filed.
+		- The refusals are asked only when something would go, since a branch made from origin/main and never touched has nothing to push.
+		- Spawn counts are unchanged: branchRefs's one for-each-ref also reads the push fields and the current branch, and pushDest reads it in place of its own call. push.default is read only for a branch whose upstream has another name.
+		- 20261119: TestPushArgs [df52f]'s 'upstream by another name' case now expects a refusal, where it expected HEAD:refs/heads/up. The rest of the test is as it was.
 
 - Code Review 20261119 item 2: With status.showUntrackedFiles=no, untracked files are committed and pushed past every guard
 	- ID: 2026111910223277

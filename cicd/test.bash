@@ -2298,6 +2298,36 @@ fRunSuite(){
 	( cd "${pdA}" && echo f3 > h3.txt && "${gitsby}" -q sync 'feat 3' ) >/dev/null 2>&1 || true
 	fAssert "[df52e] and a mirror remote keeps a branch only origin has"  bash -c "git -C '${pdO}' show-ref --verify --quiet refs/heads/keep && [[ \"\$(git -C '${pdO}' rev-parse main)\" != \"\$(git -C '${pdA}' rev-parse main)\" ]]"
 	git -C "${pdA}" config --unset remote.origin.mirror
+	## A branch made from origin/main tracks it. Under push.default=simple git refuses to push
+	## it there, so the park push is refused before the plan rather than sent to main. Under
+	## upstream it does go to main, which takes --direct, judged by where it lands.
+	local tmO="${work}/$1-tmo.git" tmA="${work}/$1-tma"
+	git init --quiet --bare -b main "${tmO}"
+	git clone --quiet "${tmO}" "${tmA}" 2>/dev/null
+	( cd "${tmA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git switch --quiet -c feat origin/main && echo two > g.txt && git add --all && git commit --quiet -m "on feat" )
+	fTmMainKept(){ [[ "$(git -C "${tmO}" rev-parse main)" != "$(git -C "${tmA}" rev-parse feat)" ]] && ! git -C "${tmO}" show-ref --verify --quiet refs/heads/next ;}
+	fAssert "[dfh3s] sync -q on a branch tracking origin/main refuses, naming --unset-upstream" \
+		bash -c "cd '${tmA}' && out=\"\$('${gitsby}' -q sync 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'git branch --unset-upstream' <<< \"\${out}\""
+	fAssert "[dfh3t] br switch -q and br create -q refuse it too, and stay on the branch" \
+		bash -c "cd '${tmA}' && ! '${gitsby}' -q br switch main >/dev/null 2>&1 && ! '${gitsby}' -q br create next >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == feat ]]"
+	fAssert "[dfh3v] and origin's main never got the branch"  fTmMainKept
+	git -C "${tmA}" config push.default upstream
+	fAssert "[dfh3w] under push.default=upstream, sync -q refuses without --direct, naming main" \
+		bash -c "cd '${tmA}' && out=\"\$('${gitsby}' -q sync 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"straight to 'main'\" <<< \"\${out}\" && grep -qF 'Re-run with --direct' <<< \"\${out}\""
+	fTmCreateRefused(){ local out=""; out="$(cd "${tmA}" && "${gitsby}" -q br create next 2>&1)" && return 1; grep -qF 'sync --direct' <<< "${out}" && fTmMainKept ;}
+	fAssert "[dfh3x] and br create -q refuses, naming sync --direct, with main kept"  fTmCreateRefused
+	if ((hasPty)); then
+		fAssertOut "[dfh3y] asked in person, sync warns that it goes to main" "To keep it off 'main', answer n and run 'git branch --unset-upstream'" \
+			fAnswerPrompt n "cd '${tmA}' && '${gitsby}' sync"
+	else
+		fSkipBlock "the warning above the prompt for a branch tracking main (no pty)"
+	fi
+	fAssert "[dfh3z] --direct sync sends it to main" \
+		bash -c "cd '${tmA}' && '${gitsby}' -q --direct sync && [[ \"\$(git -C '${tmO}' rev-parse main)\" == \"\$(git rev-parse feat)\" ]]"
+	git -C "${tmA}" config --unset push.default
+	( cd "${tmA}" && git branch --quiet --unset-upstream && echo three > h.txt )
+	fAssert "[dfh40] after --unset-upstream, sync publishes it under its own name" \
+		bash -c "cd '${tmA}' && '${gitsby}' -q sync 'three' && [[ \"\$(git -C '${tmO}' rev-parse feat)\" == \"\$(git rev-parse feat)\" && \"\$(git -C '${tmO}' rev-parse main)\" != \"\$(git rev-parse feat)\" ]]"
 	fStagedChecks "$1"
 
 	## A command that still means something locally runs offline and says what it skipped; one

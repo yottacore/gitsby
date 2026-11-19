@@ -249,7 +249,7 @@ func (a *app) cmdRelease() error {
 	// commits as tag payload while its main still points at the old release. Same
 	// trap as merge's.
 	if a.hasOrigin() {
-		if err := a.step("git", a.pushArgs()...); err != nil {
+		if err := a.pushCurrent(); err != nil {
 			return err
 		}
 		// 'tag' names refs/tags only, so a branch with the tag's name can't make the
@@ -272,7 +272,7 @@ func (a *app) cmdRelease() error {
 				return err
 			}
 			if a.hasUpstream() {
-				if err := a.step("git", a.pushArgs()...); err != nil {
+				if err := a.pushCurrent(); err != nil {
 					return err
 				}
 			}

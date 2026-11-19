@@ -154,7 +154,7 @@ func (a *app) cmdMerge() error {
 			remoteGone = a.atomicMergePush(targetBranch, workBranch, mergedTip)
 		}
 		if !remoteGone {
-			if err := a.step("git", a.pushArgs()...); err != nil {
+			if err := a.pushCurrent(); err != nil {
 				return err
 			}
 		}

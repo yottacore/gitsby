@@ -37,7 +37,8 @@ func TestPullArgsFor(t *testing.T) { // [ddf65]
 }
 
 // The push names the branch and where it goes, read the way a bare push would
-// read it, so no push.default or push refspec can add another branch to it.
+// read it, so no push.default or push refspec can add another branch to it. A nil
+// want is a push git would refuse.
 func TestPushArgs(t *testing.T) { // [df52f]
 	origin, clone := gitTestRepo(t)
 	runGit(t, clone, "checkout", "-q", "-b", "feat")
@@ -59,7 +60,17 @@ func TestPushArgs(t *testing.T) { // [df52f]
 		{"refspec for every branch", [][2]string{{"remote.origin.push", "+refs/*:refs/*"}}, "feat", []string{"push", "origin", "HEAD:refs/heads/feat"}},
 		{"refspec that renames", [][2]string{{"remote.origin.push", "refs/heads/feat:refs/heads/other"}}, "feat", []string{"push", "origin", "HEAD:refs/heads/other"}},
 		{"refspec for another branch", [][2]string{{"remote.origin.push", "refs/heads/main:refs/heads/main"}}, "feat", []string{"push", "origin", "HEAD:refs/heads/feat"}},
-		{"upstream by another name", [][2]string{{"branch.feat.merge", "refs/heads/up"}}, "feat", []string{"push", "origin", "HEAD:refs/heads/up"}},
+		// A branch made from origin/main tracks it. simple, git's default, refuses
+		// that push rather than send it to the upstream.
+		{"upstream by another name", [][2]string{{"branch.feat.merge", "refs/heads/up"}}, "feat", nil},
+		{"upstream by another name, simple", [][2]string{{"branch.feat.merge", "refs/heads/up"}, {"push.default", "simple"}}, "feat", nil},
+		{"upstream by another name, upstream", [][2]string{{"branch.feat.merge", "refs/heads/up"}, {"push.default", "upstream"}}, "feat", []string{"push", "origin", "HEAD:refs/heads/up"}},
+		{"upstream by another name, tracking", [][2]string{{"branch.feat.merge", "refs/heads/up"}, {"push.default", "tracking"}}, "feat", []string{"push", "origin", "HEAD:refs/heads/up"}},
+		{"upstream by another name, nothing", [][2]string{{"branch.feat.merge", "refs/heads/up"}, {"push.default", "nothing"}}, "feat", []string{"push", "origin", "HEAD:refs/heads/up"}},
+		{"upstream by another name, current", [][2]string{{"branch.feat.merge", "refs/heads/up"}, {"push.default", "current"}}, "feat", []string{"push", "origin", "HEAD:refs/heads/feat"}},
+		{"upstream by another name, matching", [][2]string{{"branch.feat.merge", "refs/heads/up"}, {"push.default", "matching"}}, "feat", []string{"push", "origin", "HEAD:refs/heads/feat"}},
+		{"upstream by another name, push remote", [][2]string{{"branch.feat.merge", "refs/heads/up"}, {"branch.feat.pushRemote", "fork"}}, "feat", []string{"push", "fork", "HEAD:refs/heads/feat"}},
+		{"upstream by another name, refspec", [][2]string{{"branch.feat.merge", "refs/heads/up"}, {"remote.origin.push", "refs/heads/feat:refs/heads/other"}}, "feat", []string{"push", "origin", "HEAD:refs/heads/other"}},
 		{"push remote", [][2]string{{"branch.feat.pushRemote", "fork"}}, "feat", []string{"push", "fork", "HEAD:refs/heads/feat"}},
 		{"push remote that reads as an option", [][2]string{{"remote.pushDefault", "--all"}}, "feat", []string{"push", "--", "--all", "HEAD:refs/heads/feat"}},
 		{"no upstream", nil, "lone", []string{"push", "-u", "origin", "HEAD"}},
@@ -71,13 +82,13 @@ func TestPushArgs(t *testing.T) { // [df52f]
 				runGit(t, clone, "config", kv[0], kv[1])
 			}
 			a := newApp(newPrinter())
-			got := a.pushArgs()
+			got, err := a.pushArgs()
 			for _, kv := range tc.config {
 				runGit(t, clone, "config", "--unset", kv[0])
 			}
 			runGit(t, clone, "config", "branch.feat.merge", "refs/heads/feat")
-			if !slices.Equal(got, tc.want) {
-				t.Errorf("pushArgs() = %q, want %q", got, tc.want)
+			if !slices.Equal(got, tc.want) || (err != nil) != (tc.want == nil) {
+				t.Errorf("pushArgs() = %q, %v, want %q", got, err, tc.want)
 			}
 		})
 	}
