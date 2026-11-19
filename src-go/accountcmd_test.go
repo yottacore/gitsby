@@ -1232,6 +1232,32 @@ func TestUnlockLeavesALockInItsInode(t *testing.T) { // [ddgnj]
 	}
 }
 
+// git writes ~/.gitconfig when it's there, else ~/.config/git/config when that is, else
+// ~/.gitconfig. git var lists them in that reading order.
+func TestGlobalWriteFile(t *testing.T) { // [dffzy]
+	files := []string{"/h/.config/git/config", "/h/.gitconfig"}
+	tests := []struct {
+		have []string
+		want string
+	}{
+		{nil, "/h/.gitconfig"},
+		{[]string{"/h/.config/git/config"}, "/h/.config/git/config"},
+		{[]string{"/h/.gitconfig"}, "/h/.gitconfig"},
+		{files, "/h/.gitconfig"},
+	}
+	for _, tc := range tests {
+		if got := globalWriteFile(files, func(f string) bool { return slices.Contains(tc.have, f) }); got != tc.want {
+			t.Errorf("with %q there, globalWriteFile = %q, want %q", tc.have, got, tc.want)
+		}
+	}
+	if got := globalWriteFile([]string{"/g"}, func(string) bool { return false }); got != "/g" {
+		t.Errorf("GIT_CONFIG_GLOBAL alone gives %q, want /g", got)
+	}
+	if got := globalWriteFile(nil, func(string) bool { return true }); got != "" {
+		t.Errorf("no file gives %q, want none", got)
+	}
+}
+
 func TestLockFix(t *testing.T) { // [dcnkc]
 	tests := []struct {
 		goos, lock string

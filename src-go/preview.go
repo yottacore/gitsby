@@ -125,11 +125,22 @@ func (a *app) preview(what string) {
 		for _, name := range a.cfg.accountNames() {
 			a.out.clean(planPad + "write " + applyDir + "/" + files[name])
 		}
-		for _, key := range a.cfg.accountManagedIncludes() {
-			a.out.clean(planPad + "git config --global --unset-all " + key)
+		// In the order apply makes them: the file git writes, then the other global
+		// file git reads, named since --global would mean the first.
+		writeTo := globalWriteFile(globalGitConfigs(), pathExists)
+		managed := a.cfg.accountManagedIncludes()
+		for _, m := range managed {
+			if sameFile(m.file, writeTo) {
+				a.out.clean(planPad + "git config --global --unset-all " + printable(m.key))
+			}
 		}
 		for _, rule := range a.cfg.accountApplyPlan() {
-			a.out.clean(planPad + "git config --global --add " + rule.cond + " " + rule.target)
+			a.out.clean(planPad + "git config --global --add " + printable(rule.cond) + " " + rule.target)
+		}
+		for _, m := range managed {
+			if !sameFile(m.file, writeTo) {
+				a.out.clean(planPad + "git config --file " + shellQuote(nativePath(m.file)) + " --unset-all " + printable(m.key))
+			}
 		}
 	case "repo-create", "repo-connect":
 		if !a.inRepo {

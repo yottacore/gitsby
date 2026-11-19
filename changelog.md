@@ -55,6 +55,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A failed `account apply` no longer empties an account's fragment that your global git config already includes. Each fragment is written to a new file beside it, which replaces it only once every key is in. A full disk or a permissions error leaves the old one as it was, and a lock file git left beside it no longer stops the run.
 
+- A failed `account apply` no longer leaves your global git config with only some of its folder rules, and 2 run at once no longer leave a rule in twice. The rules go into a copy of the file that replaces it once all of them are in, and each apply waits its turn on git's lock. The error says the file was left as it was. `account apply` also replaces its rules in `~/.config/git/config` once `~/.gitconfig` exists, since git reads both, and `account list` warns about an old rule in either.
+
 - A Fix line that names a path with an apostrophe in it gives a command that pastes. The `chmod 600` for a loose token file gave one the shell couldn't read, and the others gave none. When `br merge` or `release` stops on a conflict, each command to settle it is on a line of its own, with the branch names quoted where a shell needs it.
 
 - `release` refuses a version git can't tag, such as `1.2.3.lock` or `1.2.3-a..b`, before it changes anything. It used to make the release merge on the default branch, then stop when `git tag` failed.

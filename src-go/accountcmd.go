@@ -206,19 +206,98 @@ func globLiteral(s string) string {
 	return b.String()
 }
 
-// accountManagedIncludes: every includeIf already in the global config that
-// points into the directory we own. Those are ours to replace; anything else in
-// there was written by hand and is left alone.
-func (c *config) accountManagedIncludes() []string {
+// globalGitConfigs: every file git reads as the global config, in the order it reads
+// them, so a rule in the last one wins. 'git config --global' reads only the one it
+// writes, which hid our rules in the other from every apply after ~/.gitconfig came
+// along. git var lists them since 2.42; an older git gets git's rule for it.
+func globalGitConfigs() []string {
+	if out, ok := runOutOK("git", "var", "GIT_CONFIG_GLOBAL"); ok {
+		var files []string
+		for _, line := range splitLines(out) {
+			if line != "" {
+				files = append(files, filepath.ToSlash(line))
+			}
+		}
+		if len(files) > 0 {
+			return files
+		}
+	}
+	if file := os.Getenv("GIT_CONFIG_GLOBAL"); file != "" {
+		return []string{filepath.ToSlash(file)}
+	}
+	var files []string
+	home := homeDir()
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		files = append(files, filepath.ToSlash(xdg)+"/git/config")
+	} else if home != "" {
+		files = append(files, filepath.ToSlash(home)+"/.config/git/config")
+	}
+	if home != "" {
+		files = append(files, filepath.ToSlash(home)+"/.gitconfig")
+	}
+	return files
+}
+
+// globalWriteFile is the one 'git config --global' writes: the last file git reads
+// that is there, else the last one, which is ~/.gitconfig. Takes the test, so both
+// cases are testable.
+func globalWriteFile(files []string, exists func(string) bool) string {
+	for i := len(files) - 1; i >= 0; i-- {
+		if exists(files[i]) {
+			return files[i]
+		}
+	}
+	if len(files) == 0 {
+		return ""
+	}
+	return files[len(files)-1]
+}
+
+// sameFile: whether 2 names reach one file, such as ~/.config/git/config linked to
+// ~/.gitconfig. git reads that file twice, and taking our rules out of it the second
+// time took out the ones just written.
+func sameFile(a, b string) bool {
+	fa, errA := os.Stat(a)
+	fb, errB := os.Stat(b)
+	if errA == nil && errB == nil {
+		return os.SameFile(fa, fb)
+	}
+	return canonPath(a) == canonPath(b)
+}
+
+// managedInclude is one of our includeIf keys, and the global file it is in.
+type managedInclude struct{ file, key string }
+
+// accountManagedIncludes: every includeIf already in a global git config file that
+// points into the directory we own, in git's reading order. Those are ours to replace;
+// anything else in there was written by hand and is left alone.
+func (c *config) accountManagedIncludes() []managedInclude {
+	var out []managedInclude
+	var seen []string
+	for _, file := range globalGitConfigs() {
+		// One file under 2 names is listed once.
+		if slices.ContainsFunc(seen, func(s string) bool { return sameFile(s, file) }) {
+			continue
+		}
+		seen = append(seen, file)
+		for _, key := range c.managedIncludesIn(file) {
+			out = append(out, managedInclude{file, key})
+		}
+	}
+	return out
+}
+
+// managedIncludesIn is accountManagedIncludes for one file.
+func (c *config) managedIncludesIn(file string) []string {
 	dir := c.includeDir()
-	if dir == "" {
+	if dir == "" || !pathExists(file) {
 		return nil
 	}
 	canonDir := canonPath(dir)
 	var keys []string
 	// --null, since the key holds a folder path that can have a space, where the plain
 	// form splits key from value.
-	for _, record := range strings.Split(runOut("git", "config", "--global", "--get-regexp", "--null", `^includeIf\..*\.path$`), "\x00") {
+	for _, record := range strings.Split(runOut("git", "config", "--file", file, "--get-regexp", "--null", `^includeIf\..*\.path$`), "\x00") {
 		key, value, found := strings.Cut(record, "\n")
 		if !found {
 			continue
@@ -245,6 +324,90 @@ func (c *config) accountManagedIncludes() []string {
 		}
 	}
 	return keys
+}
+
+// globalConfigLock: git's own lock on a global git config file, so a git config
+// write and another apply both wait their turn.
+func globalConfigLock(kept string) lockWords {
+	return lockWords{
+		what: "your global git config",
+		busy: "Something else is writing your global git config.",
+		why:  "git takes one write at a time, and the lock beside the file was still there after waiting for it.",
+		kept: kept,
+		who:  "git or " + meName,
+	}
+}
+
+// replaceGlobalRules takes our includeIf rules out of one global git config file and
+// adds plan's, all at once: the edits go into a copy that replaces the file only
+// once every one of them is in. Removing each rule in place and then adding left the
+// file with too few once one step failed, and 2 runs at once interleaved theirs.
+// removed is how many of ours it took out.
+func (a *app) replaceGlobalRules(file string, plan []includeRule, kept string) (removed int, err error) {
+	if len(plan) == 0 && len(a.cfg.managedIncludesIn(file)) == 0 {
+		return 0, nil
+	}
+	unlock, target, err := lockBeside(file, accountLockWait, globalConfigLock(kept))
+	if err != nil {
+		return 0, err
+	}
+	defer unlock()
+	// Listed again under the lock, since another run may have just replaced them.
+	keys := a.cfg.managedIncludesIn(target)
+	if len(plan) == 0 && len(keys) == 0 {
+		return 0, nil
+	}
+	refuse := func(doing string, err error) error {
+		return writeRefusal("Couldn't write the folder rules into your global git config.", doing, err,
+			kept, "Check permissions on it and on the folder it is in, then run this again.",
+			noteLines("File", nativePath(file)))
+	}
+	old, err := os.ReadFile(target)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return 0, refuse("Reading it", err)
+	}
+	// A new file gets git's mode for one, 0666 less the umask. An old one keeps its
+	// own, which the umask would cut.
+	mode, keepMode := fs.FileMode(0o666), false
+	if fi, err := os.Stat(target); err == nil {
+		mode, keepMode = fi.Mode().Perm(), true
+	}
+	newFile := target + "." + fmt.Sprintf("%016x", rand.Uint64()) + ".tmp"
+	if _, err := createNew(newFile, string(old), mode); err != nil {
+		_ = os.Remove(newFile) // the create's error is the one to report
+		return 0, refuse("Creating its replacement", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = os.Remove(newFile) // the refusal is the error to report; a leftover is never read
+		}
+	}()
+	if keepMode {
+		if err := os.Chmod(newFile, mode); err != nil {
+			return 0, refuse("Setting its replacement's mode", err)
+		}
+	}
+	for _, key := range keys {
+		// git exits 5 for "there was nothing to remove", which is the end state asked for.
+		if rc := a.inheritRC("git", "config", "--file", newFile, "--unset-all", key); rc != 0 && rc != gitConfigNothingToUnset {
+			return 0, refusalBlock("Couldn't remove the old rule '"+printable(key)+"' from your global git config.", [][]string{
+				noteLines("File", nativePath(file)),
+				noteLines("Kept", kept),
+			}, nil)
+		}
+	}
+	for _, rule := range plan {
+		if !a.inheritOK("git", "config", "--file", newFile, "--add", rule.cond, rule.target) {
+			return 0, refusalBlock("Couldn't add '"+printable(rule.cond)+"' to your global git config.", [][]string{
+				noteLines("File", nativePath(file)),
+				noteLines("Kept", kept),
+			}, nil)
+		}
+	}
+	if err := os.Rename(newFile, target); err != nil {
+		return 0, refuse("Replacing it", err)
+	}
+	return len(keys), nil
 }
 
 func (a *app) cmdAccountList() {
@@ -447,23 +610,33 @@ func (a *app) cmdAccountApply() error {
 			}
 		}
 	}
-	// Drop ours before adding, so a folder rule that was removed from the config
-	// file stops applying. Each key was just listed out of the config, so a failure
-	// to remove one is real - and leaving it means the old rule keeps applying
-	// beside the new one.
-	for _, key := range a.cfg.accountManagedIncludes() {
-		// git exits 5 for "there was nothing to remove", which is the end state this
-		// loop is asking for. Only a real failure is one - reading 5 as one left the
-		// config with no rules at all and the command reporting an error.
-		if rc := a.inheritRC("git", "config", "--global", "--unset-all", key); rc != 0 && rc != gitConfigNothingToUnset {
-			return usagef("Couldn't remove the old rule '%s' from your global git config; nothing further was applied.", key)
-		}
+	// Ours come out of the file git writes and the plan goes in, in one replace, so a
+	// folder rule dropped from the config file stops applying. Then ours come out of
+	// any other global file git reads, which the new rules already outrank where they
+	// overlap, since git reads the file it writes last.
+	globals := globalGitConfigs()
+	writeTo := globalWriteFile(globals, pathExists)
+	plan := a.cfg.accountApplyPlan()
+	if writeTo == "" && len(plan) > 0 {
+		return usagef("git names no global git config file, such as when HOME isn't set, so there is nowhere to write the folder rules.")
 	}
-	for _, rule := range a.cfg.accountApplyPlan() {
-		if !a.inheritOK("git", "config", "--global", "--add", rule.cond, rule.target) {
-			return usagef("Couldn't add '%s' to your global git config.", rule.cond)
+	if _, err := a.replaceGlobalRules(writeTo, plan, "Your global git config is as it was. The account fragments were written."); err != nil {
+		return err
+	}
+	for _, rule := range plan {
+		a.out.status("git config --global --add " + printable(rule.cond))
+	}
+	for _, file := range globals {
+		if sameFile(file, writeTo) {
+			continue
 		}
-		a.out.status("git config --global --add " + rule.cond)
+		removed, err := a.replaceGlobalRules(file, nil, "The new folder rules are in. This file was left as it was, so its old ones still apply beside them.")
+		if err != nil {
+			return err
+		}
+		if removed > 0 {
+			a.out.statusNotes("Removed the old folder rules from another global git config file.", noteLines("File", nativePath(file)))
+		}
 	}
 	return nil
 }
@@ -791,8 +964,8 @@ func managedIncludePattern(key string) (string, bool) {
 // relative folder, left by an older apply. A '**/' one is a pathcontains rule.
 func (c *config) relativeManagedIncludes() []string {
 	var out []string
-	for _, key := range c.accountManagedIncludes() {
-		pattern, ok := managedIncludePattern(key)
+	for _, managed := range c.accountManagedIncludes() {
+		pattern, ok := managedIncludePattern(managed.key)
 		if !ok || strings.HasPrefix(pattern, "**/") || slices.Contains(out, pattern) {
 			continue
 		}
@@ -1023,12 +1196,37 @@ func createNew(file, text string, mode fs.FileMode) (opened bool, err error) {
 // A run holds the lock only from its re-read to its save, which is milliseconds.
 const accountLockWait = 3 * time.Second
 
+// lockWords is what a lock refusal says about the file it guards.
+type lockWords struct {
+	what string // the file, in a sentence: "the accounts file"
+	busy string // the head when the lock stays put
+	why  string // why there is a lock at all
+	kept string
+	who  string // what else may be running, for the Fix
+}
+
+var accountsLock = lockWords{
+	what: "the accounts file",
+	busy: "Another run is editing the accounts file.",
+	why:  "Edits go in one at a time, and the lock beside the file was still there after waiting for it.",
+	kept: "Nothing was written.",
+	who:  "other " + meName,
+}
+
 // lockAccountsFile keeps 2 runs from saving over each other, by an exclusive create
 // beside the file, since the save renames over the name. The unlock checks a random
 // token in it, not the inode, which UFS hands straight to the next file.
 func lockAccountsFile(file string, wait time.Duration) (func(), error) {
+	unlock, _, err := lockBeside(file, wait, accountsLock)
+	return unlock, err
+}
+
+// lockBeside takes '<file>.lock', which is git's own lock name too, so git and gitsby
+// keep out of each other's way on a git config file. target is the file the lock
+// guards, past any link.
+func lockBeside(file string, wait time.Duration, words lockWords) (unlock func(), target string, err error) {
 	// The save writes through a link, so two names for one file take one lock.
-	target := file
+	target = file
 	if resolved, err := filepath.EvalSymlinks(file); err == nil {
 		target = resolved
 	}
@@ -1042,15 +1240,15 @@ func lockAccountsFile(file string, wait time.Duration) (func(), error) {
 		if opened {
 			if err != nil {
 				_ = os.Remove(lock) // the write's error is the one to report; a leftover reads as held next run
-				return nil, writeRefusal("Couldn't make the lock beside the accounts file.", "Writing it", err,
-					"Nothing was written.", "Make the folder it is in writable, then run this again.",
+				return nil, target, writeRefusal("Couldn't make the lock beside "+words.what+".", "Writing it", err,
+					words.kept, "Make the folder it is in writable, then run this again.",
 					noteLines("File", nativePath(file)), noteLines("Lock", nativePath(lock)))
 			}
 			return func() {
 				if now, err := os.ReadFile(lock); err == nil && string(now) == token {
 					_ = os.Remove(lock) // the edit is saved; a lock that stays times out as held next run
 				}
-			}, nil
+			}, target, nil
 		}
 		// Windows refuses a create over a file whose delete is still pending, which is
 		// what another run's lock is for a moment after it lets go.
@@ -1058,16 +1256,16 @@ func lockAccountsFile(file string, wait time.Duration) (func(), error) {
 		pending := isWindows() && errors.Is(err, fs.ErrPermission)
 		switch {
 		case !held && (!pending || time.Now().After(deadline)):
-			return nil, writeRefusal("Couldn't make the lock beside the accounts file.", "Creating it", err,
-				"Nothing was written.", "Make the folder it is in writable, then run this again.",
+			return nil, target, writeRefusal("Couldn't make the lock beside "+words.what+".", "Creating it", err,
+				words.kept, "Make the folder it is in writable, then run this again.",
 				noteLines("File", nativePath(file)), noteLines("Lock", nativePath(lock)))
 		case time.Now().After(deadline):
-			return nil, refusalBlock("Another run is editing the accounts file.", [][]string{
+			return nil, target, refusalBlock(words.busy, [][]string{
 				noteLines("File", nativePath(file)),
 				noteLines("Lock", nativePath(lock)),
-				noteLines("Why", "Edits go in one at a time, and the lock beside the file was still there after waiting for it."),
-				noteLines("Kept", "Nothing was written."),
-				noteLines("Fix", lockFix(runtime.GOOS, lock)...),
+				noteLines("Why", words.why),
+				noteLines("Kept", words.kept),
+				noteLines("Fix", lockFixFor(runtime.GOOS, lock, words.who)...),
 			}, nil)
 		}
 		time.Sleep(25 * time.Millisecond)
@@ -1076,8 +1274,10 @@ func lockAccountsFile(file string, wait time.Duration) (func(), error) {
 
 // lockFix is the Fix for a lock that stayed put. Takes the platform, so both are
 // testable from either.
-func lockFix(goos, lock string) []string {
-	const stale = "If no other " + meName + " is running, a run that was stopped left it behind. Remove it, then run this again"
+func lockFix(goos, lock string) []string { return lockFixFor(goos, lock, accountsLock.who) }
+
+func lockFixFor(goos, lock, who string) []string {
+	stale := "If no " + who + " is running, a run that was stopped left it behind. Remove it, then run this again"
 	if goos == "windows" {
 		return []string{stale + "."}
 	}

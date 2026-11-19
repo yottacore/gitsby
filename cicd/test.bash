@@ -5507,7 +5507,8 @@ LGEOF
 	local acAddEnv="${acNoDiscovery} HOME='${ac}/fraghome' GIT_CONFIG_GLOBAL='${ac}/notadir/.gitconfig' PATH='${ac}/bin:${PATH}'"
 	fAssertFail   "[dd5ef] account apply fails when the global config can't take a rule" \
 		bash -c "cd '${acWork}' && env ${acAddEnv} '${gitsby}' -q -NoFetch --config '${ac}/addfail/config.shcl' account apply"
-	fAssertOut    "[dd5eg] and says which rule it couldn't add"  "Couldn't add 'includeIf\.gitdir" \
+	## Its lock fails now, ahead of any rule. A rule git refuses is checked further down (2026-11-18).
+	fAssertOut    "[dd5eg] and says it couldn't lock the global config"  "Couldn't make the lock beside your global git config\." \
 		bash -c "cd '${acWork}' && env ${acAddEnv} '${gitsby}' -q -NoFetch --config '${ac}/addfail/config.shcl' account apply 2>&1"
 	fAssertNotOut "[dd5eh] and never says it is done"  'Done\.' \
 		bash -c "cd '${acWork}' && env ${acAddEnv} '${gitsby}' -q -NoFetch --config '${ac}/addfail/config.shcl' account apply 2>&1"
@@ -5520,6 +5521,67 @@ LGEOF
 			bash -c "chmod 644 '${ac}/home/${confRel}/accounts/github.com_workacct.gitconfig' && cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(fMode '${ac}/home/${confRel}/accounts/github.com_workacct.gitconfig')\" == 600 ]]"
 	else
 		fSkipBlock "a fragment left readable (not on Windows)"
+	fi
+
+	## apply took its old rules out of the global config one 'git config' at a time, then added
+	## the new ones, so a step that failed left too few, and 2 runs at once interleaved theirs. A
+	## pathcontains rule goes in first, so one git won't take as a key failed the first add, after
+	## every old rule was gone.
+	local gl="${ac}/gl"
+	local glCanon="${gl}"; mkdir -p "${gl}/home" "${gl}/xhome/.config/git"
+	((isWindows)) && glCanon="$( cd "${gl}" && pwd -W )"
+	: > "${gl}/home/.gitconfig"
+	printf 'account: ga\n\tpath: %s/trees/work\n\temail: ga@example.com\n\naccount: gb\n\tpath: %s/trees/home\n\temail: gb@example.com\n' "${acCanon}" "${acCanon}" > "${gl}/good.shcl"
+	cp "${gl}/good.shcl" "${gl}/config.shcl"
+	local glEnv="${acNoDiscovery} HOME='${gl}/home' GIT_CONFIG_GLOBAL='${gl}/home/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	local glRun="cd '${acWork}' && env ${glEnv} '${gitsby}' -q -NoFetch --config '${gl}/config.shcl' account apply"
+	bash -c "${glRun}" >/dev/null 2>&1; cp "${gl}/home/.gitconfig" "${gl}/before"
+	printf '\naccount: gn\n\tpathcontains: "x◉NEWLINE◉y"\n\temail: gn@example.com\n' >> "${gl}/config.shcl"
+	fAssertFail "[dffzh] account apply fails on a folder rule git won't take as a key"  bash -c "${glRun}"
+	fAssert     "[dffzj] and leaves the global git config as it was"  cmp -s "${gl}/before" "${gl}/home/.gitconfig"
+	fAssertOut  "[dffzk] and names the rule"  "Couldn't add 'includeIf\.gitdir/i:\*\*/x◉NEWLINE◉y/\*\*\.path'"  bash -c "${glRun}"
+	fAssertOut  "[dffzm] and says the global config was kept"  'Kept: Your global git config is as it was\.'  bash -c "${glRun}"
+	## git's own lock: apply waits it out, the way 2 applies take turns, then gives up.
+	cp "${gl}/good.shcl" "${gl}/config.shcl"; : > "${gl}/home/.gitconfig.lock"
+	fAssertFail "[dffzn] account apply refuses while the global git config is locked"  bash -c "${glRun} > '${gl}/locked.out' 2>&1"
+	fAssert     "[dffzp] and leaves it as it was"  cmp -s "${gl}/before" "${gl}/home/.gitconfig"
+	fAssert     "[dffzq] and names the lock"  grep -qE '^ +Lock: .*/gl/home/\.gitconfig\.lock$' "${gl}/locked.out"
+	( cd "${gl}/home" && rm -f .gitconfig.lock )
+	fAssert "[dffzr] 2 account applies at once both work, and leave each rule once"  bash -c "
+		bad=0
+		for i in 1 2 3 4 5 6 7 8 9 10; do
+			( ${glRun} ) >/dev/null 2>&1 & p=\$!
+			( ${glRun} ) >/dev/null 2>&1 || bad=1
+			wait \$p || bad=1
+			[[ \$(grep -c 'accounts/' '${gl}/home/.gitconfig') == 2 ]] || bad=1
+		done
+		((! bad))"
+	## 'git config --global' reads only ~/.gitconfig once it's there, while git reads
+	## ~/.config/git/config too, so a rule an earlier apply wrote there was never replaced.
+	local glXEnv="-u GIT_CONFIG_GLOBAL ${acNoDiscovery} HOME='${gl}/xhome' XDG_CONFIG_HOME='${gl}/xhome/.config' PATH='${ac}/bin:${PATH}'"
+	local glXRun="cd '${acWork}' && env ${glXEnv} '${gitsby}' -q -NoFetch --config '${gl}/x.shcl'"
+	: > "${gl}/xhome/.config/git/config"
+	printf 'account: xa\n\tpath: %s/trees/work\n\tname: Xa Person\n\temail: xa@example.com\n' "${acCanon}" > "${gl}/x.shcl"
+	bash -c "${glXRun} account apply" >/dev/null 2>&1
+	: > "${gl}/xhome/.gitconfig"
+	printf 'account: xb\n\tpath: %s/trees/work\n\temail: xb@example.com\n' "${acCanon}" > "${gl}/x.shcl"
+	fAssertPlan "[dffzs] account apply plans to take its old rule out of ~/.config/git/config"  'git config --file .*xhome/\.config/git/config.* --unset-all include[iI]f\.gitdir'  bash -c "${glXRun} account apply"
+	fAssert     "[dffzt] and does"  bash -c "grep -q 'accounts/' '${gl}/xhome/.gitconfig' && ! grep -q 'accounts/' '${gl}/xhome/.config/git/config'"
+	fAssert     "[dffzv] so the old account's name no longer reaches the folder"  bash -c "[[ -z \"\$(env ${glXEnv} git -C '${acWork}' config user.name || true)\" ]]"
+	printf '[includeIf "gitdir/i:./"]\n\tpath = %s/accounts/xa.gitconfig\n' "${glCanon}" >> "${gl}/xhome/.config/git/config"
+	fAssertOut  "[dffzw] account list warns about a relative rule left in ~/.config/git/config"  "WARNING: your global git config still has the rule 'gitdir/i:\./'"  bash -c "${glXRun} account list"
+	## The new file is renamed over the old, so a link has to be followed, as git does.
+	if ((! isWindows)); then
+		mv "${gl}/xhome/.gitconfig" "${gl}/real.gitconfig"; ln -s "${gl}/real.gitconfig" "${gl}/xhome/.gitconfig"; chmod 666 "${gl}/real.gitconfig"
+		fAssert "[dffzx] account apply writes through a linked ~/.gitconfig, keeping the link and its mode" \
+			bash -c "${glXRun} account apply >/dev/null && [[ -L '${gl}/xhome/.gitconfig' ]] && grep -q 'accounts/' '${gl}/real.gitconfig' && [[ \"\$(fMode '${gl}/real.gitconfig')\" == 666 ]]"
+		## git reads a file twice when ~/.config/git/config links to it too, and the second pass
+		## took out the rules the first had just written.
+		ln -s "${gl}/real.gitconfig" "${gl}/xhome/.config/git/config.link"; mv "${gl}/xhome/.config/git/config.link" "${gl}/xhome/.config/git/config"
+		fAssert "[dffzz] and keeps its rules when ~/.config/git/config is the same file" \
+			bash -c "${glXRun} account apply >/dev/null && grep -q 'accounts/' '${gl}/real.gitconfig'"
+	else
+		fSkipBlock "a linked global git config (not on Windows)"
 	fi
 
 	## The sshKey value is concatenated into GIT_SSH_COMMAND and into core.sshCommand, and git hands
@@ -9133,3 +9195,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261110 JC: release.bash cuts only from the branch 'gitsby release' cuts from, level with origin's, and stops when the pipeline changed the tree, or what is branched, merged or tagged isn't what was tested, [df4xt] to [df4y2].
 ##		- 20261110 JC: release.bash, gen-winres.bash and 'gitsby release' take one version shape, and the two scripts refuse what git can't tag. A stop after 'br create' says the branch is pushed. [df4yk] to [df4yq].
 ##		- 20261111 JC: markdownlint-cli from its lock, by sha512, with no scripts, [df50y], and the image tag follows the lock, [df50z].
+##		- 20261118 JC: account apply replaces its rules in each global git config file in one go, waits on git's lock, and finds them in ~/.config/git/config, [dffzh] to [dffzz]. [dd5eg] now reads the lock refusal.

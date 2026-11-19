@@ -107,7 +107,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 8: account apply removes every rule before adding any, so a failure partway leaves too few, and the error says nothing changed
 	- ID: 2026111016332355
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
@@ -118,11 +118,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23, with a git wrapper that fails a chosen call.
 	- Possible cause [Bug]: accountcmd.go:449-462 unsets each old rule, then adds the new ones. `account set` also takes a path with a newline, which git refuses as a key, so nothing is added back.
 	- Origin: 4918b5b and 353f5c9, 2026-08-19, messages from 47bcda3. Same end state as Code Review 20260819a item 1, which was fixed for one cause only. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. Each old rule came out of the global config in its own git call, then each new one went in. One failed call left only some rules. 2 applies at once collided on git's lock and mixed their edits. A newline in a folder rule is a key git refuses, so that add always failed.
+	- Actual fix [Bug]: The global config is copied beside itself, every removal and add goes into the copy through git, and the copy is renamed over the file, all under git's own lock beside it, which apply waits on for up to 3 seconds. A failure leaves the file as it was, and the error says so and names the rule or the file. The rename follows a link, as git does, and keeps the file's mode.
+	- Decisions: A rule git won't take still fails the whole apply, with nothing changed and the rule named. Skipping it would bind the other folders and leave that one quietly unbound. account set still takes a path with a newline. The lock code is the accounts file's, shared, with its messages unchanged. Reapplying still rewrites the file and puts the rules at its end, as before.
+		- 2026-11-18: [dd5eg] read "Couldn't add 'includeIf.gitdir". It now reads "Couldn't make the lock beside your global git config.", since a global config under a plain file fails at its lock now, ahead of any rule. The rule-named refusal is [dffzk].
+	- Test case: test.bash [dffzh] to [dffzr], [dffzx], [dffzz].
+	- Verified: [dffzj], [dffzm], [dffzp], [dffzq] and [dffzr] fail on the unfixed build and pass after. [dffzx] fails with the mode restore taken out, and with the rename over the link rather than its target. [dffzz] fails with the same-file test taken out. Quick gate, all areas: test.bash 2008/0, fuzz 310/0, parity 31/0.
+	- Swept: accountManagedIncludes and cmdAccountApply held the only git config --global calls in src-go. Fragments already go through a new file and a rename (b59aab1). The accounts file save takes the same lock code.
+	- Branch: nov18-2026111016332355
+	- Commit: 9f1bf48
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261118-164347
 
 - Code Review 20261110b item 9: account apply misses its rules in ~/.config/git/config once ~/.gitconfig exists
 	- ID: 2026111016332342
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
@@ -133,6 +145,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23, git 2.51.
 	- Possible cause [Bug]: `git config --global --get-regexp` reads only `~/.gitconfig` when it exists, while git reads both.
 	- Origin: dfa5d05 and 4918b5b, 2026-08-19. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Note: On git 2.51 the repo took b's email, since git reads ~/.gitconfig last. The keys b leaves unset, such as name, still came from a's fragment through the old rule.
+	- Actual cause [Bug]: As guessed. git config --global reads only ~/.gitconfig once it exists, while git reads ~/.config/git/config first and then ~/.gitconfig.
+	- Actual fix [Bug]: apply asks git var GIT_CONFIG_GLOBAL for every global file, or follows git's rule for a git before 2.42. The new rules go into the file git config --global writes, in one replace, and then ours come out of the other. The plan names that file, and account list's warning reads both. A file under 2 names, such as ~/.config/git/config linked to ~/.gitconfig, is handled once.
+	- Decisions: The other file gets only removals, after the write, so a failure there leaves the new rules in force, and they outrank it where they overlap. The error says that file was left as it was. The fallback for a git before 2.42 ran on no box here (unverified).
+	- Test case: test.bash [dffzs] to [dffzw], [dffzz], Go [dffzy].
+	- Verified: [dffzs], [dffzt], [dffzv] and [dffzw] fail on the unfixed build and pass after. [dffzz] fails with the same-file test taken out. Quick gate, all areas: test.bash 2008/0, fuzz 310/0, parity 31/0.
+	- Swept: every read of our rules goes through accountManagedIncludes: apply, its plan, and account list's warning.
+	- Branch: nov18-2026111016332355
+	- Commit: 9f1bf48
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261118-164347
 
 - Code Review 20261110b item 10: account unset deletes lines its plan doesn't show
 	- ID: 2026111016332330
