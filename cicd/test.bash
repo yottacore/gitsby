@@ -277,6 +277,15 @@ fAssertNotPlan(){ local desc="$1"; local pat="$2"; shift 2; local out=""; out="$
 fPlanRan(){ local pat="$1"; shift; local out="" line=""; out="$("$@" 2>&1 || true)"
 	line="$(grep -m1 -E -- "${pat}" <<< "$(fPlanOf <<< "${out}")" || true)"; line="${line#"${line%%[! ]*}"}"; line="${line% \*}"
 	[[ -n "${line}" ]] && grep -qxF -- "[ ${line} ... ]" <<< "${out}" ;}
+## Succeeds when the command passes in <dir> and the last checkout its plan shows names the
+## branch the run ended on.
+fPlanEnds(){ local dir="$1"; shift; local out="" line="" want="" w=""; local -a words=()
+	out="$("$@" 2>&1)" || return 1
+	line="$(fPlanOf <<< "${out}" | awk '/^ +git checkout /{l=$0} END{print l}')"; line="${line% \*}"
+	read -ra words <<< "${line}"; [[ ${#words[@]} -gt 2 ]] || return 1
+	want="${words[-1]}"
+	for w in "${!words[@]}"; do [[ "${words[w]}" != -b ]] || want="${words[w+1]}"; done
+	[[ "$(git -C "${dir}" branch --show-current)" == "${want}" ]] ;}
 
 ## Fixture: bare origin with an initial commit on main, plus two clones.
 fMakeFixture(){
@@ -1992,6 +2001,21 @@ fRunSuite(){
 	fAssert     "[df51g] a bare release then pushes the candidate, and promotes nothing"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && git ls-remote --exit-code --tags origin refs/tags/v1.6.0-rc1 >/dev/null && ! git rev-parse -q --verify refs/tags/v1.6.0 >/dev/null"
 	( cd "${cloneA}" && git checkout --quiet dev )
 
+	## The plan ends where the run does. Started on main it ends on dev, and the plan's last line
+	## used to promise a checkout of main.
+	( cd "${cloneA}" || exit 1; echo end1 > end1.txt && git add end1.txt && git commit --quiet -m end1 && git push --quiet && git checkout --quiet main )
+	fAssert     "[dfgwy] a release from main: the plan's last checkout is where it ends"  fPlanEnds "${cloneA}"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.7.0"
+	fAssert     "[dfgwz] and that is dev"  bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == dev ]]"
+	( cd "${cloneA}" || exit 1; echo end2 > end2.txt && git add end2.txt && git commit --quiet -m end2 && git push --quiet && git checkout --quiet main && mv "${origin}/hooks/pre-receive.off" "${origin}/hooks/pre-receive" )
+	fAssertFail "[dfgx0] a release from main whose push is refused fails"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.7.1"
+	mv "${origin}/hooks/pre-receive" "${origin}/hooks/pre-receive.off"
+	fAssert     "[dfgx1] finishing it from main: the plan's last checkout is where it ends"  fPlanEnds "${cloneA}"  bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == main ]] && '${gitsby}' -q release v1.7.1"
+	( cd "${cloneA}" || exit 1; echo end3 > end3.txt && git add end3.txt && git commit --quiet -m end3 && git push --quiet )
+	fAssert     "[dfgx2] the same from dev"  fPlanEnds "${cloneA}"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.7.2"
+	( cd "${cloneA}" || exit 1; git checkout --quiet -b relend && echo end4 > end4.txt )
+	fAssert     "[dfgx3] the same from a feature branch"  fPlanEnds "${cloneA}"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.7.3 && [[ \"\$(git branch --show-current)\" == relend ]]"
+	( cd "${cloneA}" || exit 1; git checkout --quiet dev && git branch --quiet -D relend && git push --quiet origin --delete relend )
+
 	## Tags with no 'v' were invisible to the scan, so release started over at 0.1.0 and pushed it.
 	local bt="${work}/$1-baretag"
 	git init --quiet --bare -b main "${bt}/origin.git"
@@ -2007,6 +2031,8 @@ fRunSuite(){
 	fAssertFail "[dcnq8] a typed version already tagged with no v is refused"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release 1.4.2"
 	fAssertOut  "[dcnq9] and names that tag"  "Tag '1\.4\.2' already exists"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release 1.4.2 2>&1"
 	fAssert     "[dcnqn] a typed version is tagged as typed"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release 2.0.0 && git rev-parse -q --verify refs/tags/2.0.0 >/dev/null && ! git rev-parse -q --verify refs/tags/v2.0.0 >/dev/null"
+	( cd "${bt}/c" && echo e > e.txt )
+	fAssert     "[dfgx4] with no dev, a release from main: the plan's last checkout is where it ends"  fPlanEnds "${bt}/c"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release 2.0.1 && [[ \"\$(git branch --show-current)\" == main ]]"
 	## git merge reads a tag ahead of a branch with the same name, so a tag called 'dev' on an
 	## older commit would be released in dev's place.
 	local rtag="${work}/$1-reltag"

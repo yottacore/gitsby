@@ -268,5 +268,9 @@ func (a *app) previewRelease() {
 		a.out.clean(planPad + "git merge --ff-only " + a.defaultBranch() + " *")
 		a.out.clean(planPad + "git push *")
 	}
-	a.out.clean(planPad + a.checkoutDisp(a.currentBranch()) + " *")
+	// cmdRelease goes back only to a branch that isn't main or dev, so a run started
+	// on either ends on the last branch shown above.
+	if start := a.currentBranch(); start != a.defaultBranch() && (!hasDev || start != "dev") {
+		a.out.clean(planPad + a.checkoutDisp(start) + " *")
+	}
 }

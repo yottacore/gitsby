@@ -65,6 +65,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - After a `release` whose push of the default branch was refused, as by a hook or branch protection, running `release` again finishes it: it pushes the branch and that release's tag, then fast-forwards `dev`. It used to tag the same commit with the next version and push only that, so the first tag never left the machine. Typing the same version again finishes it too.
 
+- The plan for `release` started on `main` no longer ends with `git checkout main`. The run ends on `dev`, as it always has, and the plan's last step now says so.
+
 - `sync`, and every command that pushes the branch it's on, pushes only that branch. Under `push.default=matching`, or a push refspec for every branch, they pushed other branches with it, so a commit on `main` reached origin without `--direct`. On a mirror remote they deleted origin's branches that aren't here. git now refuses that push, and nothing moves.
 
 - `br switch` from `main` or `dev` with commits origin doesn't have yet warns before it pushes them, the way `sync` does, and with `-q` it refuses unless given `--direct`. It used to push them straight to origin's `main` or `dev` and exit 0.

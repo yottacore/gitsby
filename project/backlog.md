@@ -132,7 +132,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 30: release run from main ends on dev, and the plan's last line says it goes back to main
 	- ID: 2026111016332082
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
@@ -143,6 +143,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23.
 	- Possible cause [Bug]: preview.go:250 always prints the checkout. release.go:260 ends on dev on purpose, pinned by [da8t9].
 	- Origin: No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: previewRelease always ended on a checkout of the branch the run started on. cmdRelease goes back only to a branch other than the default branch and dev, so a run from main ends on dev.
+	- Actual fix [Bug]: The plan shows that last checkout only when the run makes it. From main or dev the plan now ends on dev's push, or on the default branch's where there is no dev. changelog.md has a line under vNEXT.
+	- Decisions:
+		- Ending on dev from main stays, as [da8t9] pins and release.go says. The plan follows the run, not the other way round.
+		- If dev gains commits mid-release, the run warns and stays on main, while the plan's last checkout is dev's. That path can't be read ahead, and the warning names it.
+	- Swept: release is the only command whose run goes back to where it started, and previewRelease is its only plan. stagedReleaseCheck reads no final checkout. design.md's 'the last checkout' line still holds.
+	- Branch: nov19-2026111016332082
+	- Commit: 26e2604
+	- Test case: test.bash [dfgwy] [dfgwz] [dfgx0] [dfgx1] [dfgx2] [dfgx3] [dfgx4], through the fPlanEnds helper.
+	- Verified: [dfgwy] and [dfgx1], from main for a new and a finished release, fail on the old preview.go and pass after. The other 5 pass on both. Quick gate passed, every area: test.bash 2078/0, fuzz 310/0, parity 31/0. gosec reports 32, as before, none in the changed lines.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
+	- Closed: 20261119-080935
 
 - Code Review 20261110b item 31: A message typed as a word is dropped when -m is also given
 	- ID: 2026111016332070
