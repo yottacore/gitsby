@@ -33,262 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- test.bash stops on macOS and FreeBSD at a GNU-only touch -d '@1'
-	- ID: 2026111907080865
-	- Type: Bug
-	- Status: Waiting on automated testing
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261119-070808
-	- Opened by:
-	- Progress log:
-		- Both hosted Macs died at test.bash:8977 with 'touch: out of range or illegal time specification', right after [dfg48]. The line came in with ca74ed4 (round nov18). Last green run: ea9011ab. BSD touch has no '@epoch' form, so stage 7 on b26 and vmFreeBSD stops there too.
-	- Origin: hosted macOS run 44453179447 on dev at c7e3251, 2026-11-19
-	- Test case: test.bash [dfgvd], a source check that no touch takes an '@epoch' date
-	- Needs external testing: The hosted macOS workflow (macos.yml, both runners) on nov19, with test.bash reaching past [dfg4c] and [dfgvd] passing there.
-	- Actual cause: touch -d '@1' at the nixpin fixture is GNU only. BSD touch has no @epoch form.
-	- Actual fix: the three touch -d fixture lines in the shcl block and the one in the run-latest block now use touch -t, with TZ=UTC for the epoch of 1.
-	- Swept: test.bash, fuzz.bash, parity.bash, spawn-count.bash, remote-tests.bash and the cicd scripts for touch -d, date -d, stat -c, sed -i, readlink -f. The 3-days-ago touches, the +N seconds date and sed -i without a suffix sit inside the Linux-only release and pre-push gate blocks. The strace block holds the -1 hour date. test-id --at is probed by date -u -d @0. cicd.bash and gen-winres stat -c run in the Linux pipeline. gfs-rotate.bash has a GNU stat -c %Y fallback that BSD reaches only for a file name with no date (left as is).
-	- Verified: test.bash passed in the image under --backlog-run-quick lint suite, with [dfgvd] passing. The old form is caught by its pattern. BSD run not done.
-	- Verified: [dfgvd] watched to fail. With the old touch -d '@1' line put back in a copy of test.bash, its grep found the line (red). With the fixed file restored by copy, it found nothing (green). test.bash passed in the image under --backlog-run-quick lint suite, with [dfgvd] passing. BSD run not done.
-	- Verified: stage 7 on nov19 at ee2e268, on b26 and vmFreeBSD through stage7-one-box.bash. The Go tests passed on both. test.bash ran to the end on both, past [dfg48] and [dfg4c], with [dfgvd] passing: b26 1742 passed, 0 failed, 336 skipped, and vmFreeBSD 1633 passed, 0 failed, 444 skipped.
-	- Target version: v3.0.0-rc.1
-
-- Code Review 20261110b item 20: On GitHub Enterprise, gh never sees the account's token
-	- ID: 2026111016332206
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163322
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: `GH_HOST=ghe.example.com`, an account on that host with a token file. Run `gitsby raw gh auth token`.
-	- Incorrect behavior [Bug]: gitsby says it acts as the account, then gh says it has no token for that host. git gets the token, so pr, repo create and the token check act as gh's stored login while git pushes as the account.
-	- Expected behavior [Bug]: gh gets the account's token on any host. design.md:143 keeps Enterprise on the gh path.
-	- Reproduced [Bug]: 2026-11-10 on b23, gh 2.96.0.
-	- Possible cause [Bug]: tokenEnvVar in account.go always picks `GH_TOKEN`. gh reads only `GH_ENTERPRISE_TOKEN` for a host other than github.com.
-	- Origin: 9333159, 2026-08-19. No round saw it. Confirmed.
-	- Closed reason: Done
-	- Actual cause [Bug]: gh reads only GH_ENTERPRISE_TOKEN for a host other than github.com, github.localhost or a *.ghe.com tenant, and tokenEnvVar put every GitHub token in GH_TOKEN. Checked with gh 2.96: GH_HOST=ghe.example.com reads GH_ENTERPRISE_TOKEN only, acme.ghe.com reads GH_TOKEN only.
-	- Actual fix [Bug]: tokenEnvVar in account.go picks GH_ENTERPRISE_TOKEN for an Enterprise Server host GH_HOST names, through ghEnterpriseHost, which follows gh's own rule. The credential helper reads the same variable, so git and gh agree. No GH_TOKEN is exported there, so the token never reaches a gh call to github.com. accounts.md, design.md and the changelog say so.
-	- Branch: nov19-2026111016332206
-	- Commit: 0e44fc7
-	- Test case: Go [dfgvm], test.bash [dfgvn] [dfgvp].
-	- Verified: [dfgvm] and [dfgvn] fail with the Enterprise branch taken out of tokenEnvVar (test.bash 2066/1) and pass after. [dfgvp] fails with the helper reading GH_TOKEN, and passes on the fix. Real gh 2.96 through the built gitsby, GH_HOST=git.example.test: raw gh auth token prints the account's token, where the build before the fix gets 'no oauth token found'. Quick gate passed, all areas: test.bash 2067/0, fuzz 310/0, parity 31/0.
-	- Swept: every read of GH_TOKEN in src-go. ghActiveLogin already checks all 4 gh variables. hostTokenEnv and glabTokenEnv skip any host gh serves, Enterprise included. fragmentHelper asks gh auth token --user, gh's store rather than the environment, so GH_HOST already picks the host. The frozen bash and pwsh builds were not touched.
-	- Decisions: Follow gh's own rule for which hosts read GH_TOKEN, *.ghe.com and github.localhost included, rather than treating every non-github.com host as Enterprise, so a GHE.com tenant keeps working. Left alone, by reading only: with GH_HOST set and a github.com origin, the token check's gh api user goes to GH_HOST, as it did before this fix.
-	- Acceptance signoff: Self-closed: its tests fail before the fix and pass after.
-	- Closed: 20261119-072424
-
-- Code Review 20261110b item 21: repo clone ends on a tag when origin has a tag and a branch both named dev
-	- ID: 2026111016332194
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163321
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Origin with a branch dev and a tag dev. Run `gitsby repo clone <url>`.
-	- Incorrect behavior [Bug]: The clone is left at HEAD detached at dev, and it says Cloned and Done, exit 0. The next mutating command refuses as detached.
-	- Expected behavior [Bug]: The clone ends on the dev branch, tracking origin's.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: repo.go:373 runs a plain `git checkout dev`.
-	- Origin: 4918b5b, 2026-08-19. The 2026-10-04 tag collision fixes, 2026100411344972 and its siblings, didn't reach the clone. Confirmed.
-	- Actual cause [Bug]: The clone ran a plain `git checkout dev`. With no local dev yet, git takes the tag dev ahead of origin's branch, so HEAD was left detached at the tag.
-	- Actual fix [Bug]: The clone checks out dev with `checkout -b dev --track refs/remotes/origin/dev`, naming origin's branch in full, as br switch already does. The plan line shows the same command. When dev is the default branch the step is skipped, since the clone already has it.
-		- Swept: every checkout gitsby runs. br switch, pr ok and br create's base go through checkoutArgs, which names origin's branch in full when there's no local one, and a local branch wins over a tag in a plain checkout (checked by hand with a tag dev beside a local dev). br create's own `checkout -b` names a new branch.
-	- Decisions:
-		- The step is skipped when the clone's default branch is dev, since `checkout -b` would fail there and there is nothing to do.
-		- A changelog entry under vNEXT Fixed, since v3.0.0-beta.1 has the bug.
-	- Branch: nov19-2026111016332194
-	- Test case: test.bash [dfgw1]. It failed with the build before the fix, which left HEAD detached at the tag, and passes after.
-	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the quick gate passed with every area.
-	- Closed reason: Done
-	- Closed: 20261119-073645
-
-- Code Review 20261110b item 23: 2 accounts can get the same fragment file, and the later one wins
-	- ID: 2026111016332169
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163321
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Accounts personal and work both with GitHub login jim, and a third account named jim_work with no login. Run `account apply`.
-	- Incorrect behavior [Bug]: The plan writes `github.com_jim_work.gitconfig` twice. A repo under work's folder gets the other account's email.
-	- Expected behavior [Bug]: Every account gets its own fragment.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: fragmentNames in accountcmd.go adds the suffix without checking the result is unique.
-	- Origin: a421343, 2026-09-30, from enhancement 2026093013031520. Confirmed.
-	- Closed reason: Done
-	- Actual cause [Bug]: As guessed. A name with the account added was never checked against the other accounts' plain names, so work's github.com_jim_work matched jim_work's own.
-	- Actual fix [Bug]: An account whose login nobody else shares keeps its plain name. A name with the account added that is already taken gets `_2`, `_3` and so on, the first one no other account has. Names are compared in lower case, for file systems that don't tell case apart. Changelog vNEXT says so.
-	- Decisions: The plain name wins, so an account with its own login always keeps the same file, and only the rare clash gets a number. A number rather than a new separator, so every other fragment keeps its name.
-	- Test case: Go TestFragmentNamesNeverShare [dfgwd], which also tries over 1000 mixes of clashing names and logins, and test.bash [dfgwf].
-	- Verified: [dfgwd] and [dfgwf] fail on the unfixed build and pass after. Quick gate, all areas: test.bash 2071/0, fuzz 310/0, parity 31/0.
-	- Swept: fragmentNames is the only place a fragment name is built. apply, its plan and the unused-fragment check all read it. accounts.md's naming sentence still holds for the usual case.
-	- Branch: nov19-2026111016332169
-	- Commit: dca424d
-	- Acceptance signoff: Self-closed: its tests fail before the fix and pass after.
-	- Closed: 20261119-075422
-
-- Code Review 20261110b item 30: release run from main ends on dev, and the plan's last line says it goes back to main
-	- ID: 2026111016332082
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163320
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: On main, `gitsby release`.
-	- Incorrect behavior [Bug]: The plan ends with `git checkout main`. The run ends on dev.
-	- Expected behavior [Bug]: The plan says where the run ends.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: preview.go:250 always prints the checkout. release.go:260 ends on dev on purpose, pinned by [da8t9].
-	- Origin: No round saw it. Confirmed.
-	- Closed reason: Done
-	- Actual cause [Bug]: previewRelease always ended on a checkout of the branch the run started on. cmdRelease goes back only to a branch other than the default branch and dev, so a run from main ends on dev.
-	- Actual fix [Bug]: The plan shows that last checkout only when the run makes it. From main or dev the plan now ends on dev's push, or on the default branch's where there is no dev. changelog.md has a line under vNEXT.
-	- Decisions:
-		- Ending on dev from main stays, as [da8t9] pins and release.go says. The plan follows the run, not the other way round.
-		- If dev gains commits mid-release, the run warns and stays on main, while the plan's last checkout is dev's. That path can't be read ahead, and the warning names it.
-	- Swept: release is the only command whose run goes back to where it started, and previewRelease is its only plan. stagedReleaseCheck reads no final checkout. design.md's 'the last checkout' line still holds.
-	- Branch: nov19-2026111016332082
-	- Commit: 26e2604
-	- Test case: test.bash [dfgwy] [dfgwz] [dfgx0] [dfgx1] [dfgx2] [dfgx3] [dfgx4], through the fPlanEnds helper.
-	- Verified: [dfgwy] and [dfgx1], from main for a new and a finished release, fail on the old preview.go and pass after. The other 5 pass on both. Quick gate passed, every area: test.bash 2078/0, fuzz 310/0, parity 31/0. gosec reports 32, as before, none in the changed lines.
-	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
-	- Closed: 20261119-080935
-
-- Code Review 20261110b item 31: A message typed as a word is dropped when -m is also given
-	- ID: 2026111016332070
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163320
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: `gitsby pullcom 'first message' -m second`.
-	- Incorrect behavior [Bug]: It commits with second and says nothing about the first. Exit 0.
-	- Expected behavior [Bug]: It refuses 2 messages, the way it refuses other arguments it would ignore.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: args.go:335 keeps `-m` and drops the word.
-	- Origin: No round saw it. Code Review 20261110 item 1 covered options a command doesn't read, not this. Confirmed.
-	- Actual cause [Bug]: sortCommand took the typed word as the message only when -m was empty, and otherwise dropped it. sortPr did the same with a pr create title typed beside -m.
-	- Actual fix [Bug]: pullcom, sync and br merge refuse a typed message beside -m, and pr create a typed title beside -m, before anything runs, at exit 1: "Two commit messages given: 'first message', and -m 'second'. Give one."
-		- Swept: every command that takes -m. pullcom, sync, br merge and pr create also take a typed message or title, and all 4 refuse the pair. repo create, repo connect, br create, br hotfix, br switch and release take a name, URL or version as their word, never a message.
-	- Decisions:
-		- pr create's title gets the same refusal, as the same class.
-		- -m won in the Go code (a comment in pr.go, and [dbfqw]). No recorded decision was behind it, and the item asks for the refusal.
-		- 20261119: Go [dbfqw] asserted -m won over a typed message (message "flag"). It now asserts the pair is refused. Its first half, a typed message alone, is unchanged.
-		- A changelog entry under vNEXT Fixed, since v3.0.0-beta.1 has the bug.
-	- Branch: nov19-2026111016332194
-	- Test case: Go [dfgvz] and [dbfqw], test.bash [dfgw0]. [dfgvz] and [dbfqw] fail with the fix taken out. [dfgw0] failed with the build before the fix, which committed with second at exit 0.
-	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the quick gate passed with every area.
-	- Closed reason: Done
-	- Closed: 20261119-073653
-
-- Code Review 20261110b item 35: account set's plan shows a different line than it writes
-	- ID: 2026111016332021
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163320
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: With `Email: "a@b.c"   # work mail` in the file, run `account set work email c@d.e`. With `name: 'Bob'`, set the name to `Bob Smith`.
-	- Incorrect behavior [Bug]: The plan says `becomes: email: c@d.e` and the file gets `Email: "c@d.e"   # work mail`. The plan says `name: "Bob Smith"` and the file gets `name: 'Bob Smith'`. was: also lowercases the key.
-	- Expected behavior [Bug]: Both lines show the file's own text. backlog line 4017 and shclValue's comment say the plan and the file can't disagree.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: preview.go:112 builds the line from the field and value. The module keeps the old line's quotes and key.
-	- Origin: c4fa47c, 2026-11-07. Confirmed.
-	- Closed reason: Done
-	- Actual cause [Bug]: As guessed. The plan built both lines from the lower-case key and the value, while the module keeps the line's own key, quotes and comment.
-	- Actual fix [Bug]: was: is the key's line in the file as read, and becomes: its line in the text the save writes, both trimmed. A value on lines of its own, such as a dash list or a fenced block, and a flat file being converted, keep the old key: value form for was:, since there is no one line to show. Changelog vNEXT says so.
-	- Decisions: add: stays as it was, naming the block and the key, since a new line takes the module's own quotes, which shclValue asks for.
-		- 2026-11-19: test assert given a new value for this change. test.bash [dbsrm]: was: ghaccount: hieracct is now was: ghAccount: hieracct, the file's own key.
-	- Test case: Go TestAccountSetPlanShowsTheFileLines [dfgwe], which also checks each line is one of the file before or after, and test.bash [dfgwg].
-	- Verified: [dfgwe] and [dfgwg] fail on the unfixed build and pass after. The dash list and fenced cases fail with the one-line check taken out. Quick gate, all areas: test.bash 2071/0, fuzz 310/0, parity 31/0.
-	- Swept: the account set and unset plans. unset already reads its remove: lines off the save's text (2026111016332330). add: is the only line left built from parts, as above. shclValue's comment now says it is for a new line.
-	- Branch: nov19-2026111016332169
-	- Commit: dca424d
-	- Acceptance signoff: Self-closed: its tests fail before the fix and pass after.
-	- Closed: 20261119-075422
-
-- Code Review 20261110b item 36: install.ps1 changes PATH without telling Windows, so a new shell from the Start menu doesn't find gitsby
-	- ID: 2026111016332008
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163320
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Install with install.ps1, then open PowerShell from the Start menu or taskbar.
-	- Incorrect behavior [Bug]: gitsby isn't found until sign-out, though the installer says to open a new shell. Windows Terminal tabs reload the environment and work.
-	- Expected behavior [Bug]: A new shell finds gitsby.
-	- Reproduced [Bug]: No. ssh to the Windows boxes lands in a session with no Explorer.
-	- Possible cause [Bug]: install.ps1:407 writes the registry with `Set-ItemProperty` and doesn't broadcast `WM_SETTINGCHANGE`. `SetEnvironmentVariable`, which it replaced, did.
-	- Origin: 37b7445, 2026-08-19, which kept `%VAR%` entries unexpanded. Regression. Plausible.
-	- Actual cause [Bug]: install.ps1 writes PATH with Set-ItemProperty, which doesn't broadcast WM_SETTINGCHANGE, so Explorer keeps its old environment and hands it to every shell it starts. SetEnvironmentVariable did broadcast, but it was dropped because it rewrites an expandable PATH as plain text.
-	- Actual fix [Bug]: after the PATH write, install.ps1 calls Send-EnvironmentChange, which sends WM_SETTINGCHANGE with 'Environment' through SendMessageTimeout (Add-Type, SMTO_ABORTIFHUNG, 5 s). It's sent even when the registry already had the folder, for installs by the older script. If it can't be sent, the closing line says to sign out instead of opening a new shell. changelog.md has a line under vNEXT Fixed.
-	- Decisions: Add-Type P/Invoke rather than setting and clearing a throwaway variable with SetEnvironmentVariable to get its broadcast, since that writes the registry twice for a side effect. A failed broadcast doesn't fail the install, since PATH is already written.
-	- Branch: nov19-2026111016332008
-	- Commit: c5ebe1b
-	- Test case: test.bash [dfgxc] defines Send-EnvironmentChange from install.ps1 and calls it: off Windows it gets into the compiled P/Invoke stub, which proves the Add-Type text compiles and binds. [dfgxd] checks in the parsed script that the call comes after the PATH write and outside that write's try.
-	- Verified: [dfgxc] and [dfgxd] fail on the old install.ps1 (no function, no call). [dfgxc] fails with a broken C# signature, and [dfgxd] fails with the call moved inside the write's try. Quick gate, every area, passed on c5ebe1b's tree: test.bash 2080/0, fuzz 310/0, parity 31/0. PSScriptAnalyzer clean on install.ps1. The Windows branch itself didn't run here.
-	- Swept: every PATH or environment write in the tree. install.ps1 has the one registry write. legacy/install.ps1 still uses SetEnvironmentVariable, which broadcasts, and is frozen. No cicd or Go code writes the Windows environment.
-	- Closed reason: Done
-	- Closed: 20261119-084520
-	- Verified: on vm925w at nov19 ee2e268, as wintest in its desktop session, with only the two GitHub fetches stood in (SHA256SUMS and the binary). A whole install in Windows PowerShell 5.1 and again in pwsh 7.6.6, each from a PATH without gitsby's folder, printed 'Open a new shell to pick it up' and kept the user PATH's ExpandString kind. After each, Explorer's environment held the new folder with no sign-out. Control: a PATH registry write with no broadcast left Explorer's environment unchanged. test.bash [dfgxc]'s check printed 'REACHED (sent)' in pwsh 7, in the desktop session and over ssh. wintest's PATH and folders were put back after.
-	- Note: wintest's machine PATH on vm925w has an old v2.1.0 gitsby.exe ahead of the user PATH, so 'gitsby --version' from a new shell there runs that one. The new folder is still on the shell's PATH.
-	- Acceptance signoff: Self-closed: whole install passed on vm925w in 5.1 and 7, and Explorer's environment took the new PATH with no sign-out.
-	- Stand-in: In place of opening PowerShell from the Start menu, the environment of wintest's running Explorer was read after each install. Explorer is what hands PATH to a shell started from the Start menu or taskbar (20261119).
-
-- Code Review 20261110b enhancement 1: sync re-creates a branch on origin that was deleted after its PR merged
-	- ID: 2026111016331930
-	- Type: Enhancement
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163319
-	- Opened by: jim-collier
-	- Requirements [Feature]: When the upstream is gone, gitsby says so, and asks before pushing the branch up again.
-	- Origin: mutate.go:69 and :149 read a gone upstream as no upstream. No round raised it. Confirmed: after a PR merged on the web with the branch deleted, sync said no upstream and pushed the branch back.
-	- Closed reason: Done
-	- Done: sync, and br switch's park push, warn last before the prompt when the branch's upstream is gone, and -q refuses. The warning names 'git switch <target>' to leave it gone, and 'git branch --unset-upstream' to publish it again as new. The state line shows '(origin/<branch> gone)', and the pull step says it's gone.
-	- Decisions: The single prompt is the ask, with the warning above it, and -q refuses, as for --direct and per the UI rule for a warning nobody reads. No new flag, since flags are permanent and 'git branch --unset-upstream' already says the push is meant. br merge and pr create don't ask: br merge deletes origin's copy again in the same run, checked with a gone branch, and pr create needs it on origin. Only an upstream on a remote counts, so a deleted local upstream isn't called gone. Reasoning in design.md.
-	- Test case: Go TestGoneUpstream [dfgxm], test.bash [dfgxn] to [dfgxt]. [dfgxn] to [dfgxs] fail on the build before the fix and pass after, and [dfgxm] fails with goneUpstream answering nothing. [dfgxt] pins the way to publish again, which worked before too.
-	- Swept: every hasUpstream and upstream reader in src-go. pushIfOnline runs through cmdPush for sync, br switch, br merge and pr create, and in the hotfix back-merge on dev. pr ok's post-merge check wants a gone upstream read as none. repo connect's push mode and release's default-branch push are left alone, since publishing is their job. cicd.bash's own stage 0 sync only pulls.
-	- Verified: the quick gate with every area at d1b24a4's tree (test.bash 2086/0, fuzz and spawn counts 310/0, parity 31/0).
-	- Branch: nov19-2026111016331930
-	- Commit: d1b24a4
-	- Actual effort: Low
-	- Acceptance signoff: Self-closed: its tests fail before the fix and pass after, and the quick gate passed with every area.
-	- Closed: 20261119-082618
-
-- Code Review 20261110b enhancement 2: install.bash runs whatever part of itself arrived through curl | bash
-	- ID: 2026111016331918
-	- Type: Enhancement
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163319
-	- Opened by: jim-collier
-	- Requirements [Feature]: The body goes in a function called on the last line, so a cut download runs nothing.
-	- Origin: No round raised it. Confirmed: every line-boundary cut of install.bash, fed to `bash -s -- -y` with a fake curl, either refused or exited 0. One cut prints Checksum verified and exits 0 without installing. None installed an unverified file.
-	- Closed reason: Done
-	- Fixed: install.bash defines its helpers and one fMain function, and its last line calls it. A download cut anywhere before that line defines functions and runs nothing.
-	- Decisions:
-		- The call is bare, not 'fMain || exit', since 'set -e' is off inside a function called behind '||'. A comment at the site says so.
-		- The History block sits above the call, so the call is the last line as asked. A cut inside History already holds the whole function, so it would run as before even with the call above History.
-		- A cut that ends exactly at 'fMain', with the arguments cut off, still runs the installer with no options. Without -y it asks first, or refuses with no terminal, and the download is still verified. Left as is.
-		- The run's variables stay global rather than local, since the EXIT trap reads tmpFile and staged after fMain has returned.
-	- Swept: install.ps1 is fetched whole by irm before iex runs it, so a cut never runs part of it. legacy/install.bash and legacy/install-dev.bash are frozen at v2.1.0, per the standing decision. test.bash's fBashHelpNamesAll read the option loop at column 0 and now takes it indented.
-	- Verified: [dfgxx] fails on the old install.bash (first cut that ran: after line 213) and passes on the new one. Quick run of every area passed (test.bash 2088/0/1 skipped, fuzz 310/0, parity 31/0).
-	- Branch: nov19-2026111016331918
-	- Test case: [dfgxx] pipes every line-boundary cut of install.bash short of its last line to 'bash -s -- -y' with the stub curl, and fails if any cut fetches or installs. [dfgxy] pipes the whole file the same way and checks it installs.
-	- Acceptance signoff: Self-closed: the change does what the requirement says, and its test failed before and passes after.
-	- Closed: 20261119-083346
-
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
@@ -343,6 +87,30 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 	- Acceptance signoff: Hand test on b28l, run in the 2026-10-23 round as asked.
 	- Closed: 20261023-195424
+
+- test.bash stops on macOS and FreeBSD at a GNU-only touch -d '@1'
+	- ID: 2026111907080865
+	- Type: Bug
+	- Status: Closed
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-070808
+	- Opened by:
+	- Progress log:
+		- Both hosted Macs died at test.bash:8977 with 'touch: out of range or illegal time specification', right after [dfg48]. The line came in with ca74ed4 (round nov18). Last green run: ea9011ab. BSD touch has no '@epoch' form, so stage 7 on b26 and vmFreeBSD stops there too.
+	- Origin: hosted macOS run 44453179447 on dev at c7e3251, 2026-11-19
+	- Test case: test.bash [dfgvd], a source check that no touch takes an '@epoch' date
+	- Needs external testing: No
+	- Actual cause: touch -d '@1' at the nixpin fixture is GNU only. BSD touch has no @epoch form.
+	- Actual fix: the three touch -d fixture lines in the shcl block and the one in the run-latest block now use touch -t, with TZ=UTC for the epoch of 1.
+	- Swept: test.bash, fuzz.bash, parity.bash, spawn-count.bash, remote-tests.bash and the cicd scripts for touch -d, date -d, stat -c, sed -i, readlink -f. The 3-days-ago touches, the +N seconds date and sed -i without a suffix sit inside the Linux-only release and pre-push gate blocks. The strace block holds the -1 hour date. test-id --at is probed by date -u -d @0. cicd.bash and gen-winres stat -c run in the Linux pipeline. gfs-rotate.bash has a GNU stat -c %Y fallback that BSD reaches only for a file name with no date (left as is).
+	- Verified: test.bash passed in the image under --backlog-run-quick lint suite, with [dfgvd] passing. The old form is caught by its pattern. BSD run not done.
+	- Verified: [dfgvd] watched to fail. With the old touch -d '@1' line put back in a copy of test.bash, its grep found the line (red). With the fixed file restored by copy, it found nothing (green). test.bash passed in the image under --backlog-run-quick lint suite, with [dfgvd] passing. BSD run not done.
+	- Verified: stage 7 on nov19 at ee2e268, on b26 and vmFreeBSD through stage7-one-box.bash. The Go tests passed on both. test.bash ran to the end on both, past [dfg48] and [dfg4c], with [dfgvd] passing: b26 1742 passed, 0 failed, 336 skipped, and vmFreeBSD 1633 passed, 0 failed, 444 skipped.
+	- Verified: hosted macOS run 44570973828 on nov19 at 0337aa1, both runners green: [dfgvd] passed and test.bash finished 1719 passed, 0 failed, 359 skipped on each.
+	- Target version: v3.0.0-rc.1
+	- Closed reason: Done
+	- Closed: 20261119-090639
+	- Acceptance signoff: Self-closed: passed on b26, vmFreeBSD and both hosted Macs.
 
 - Code Review 20261110b item 1: raw glab sends the folder account's token to any GitLab host glab is pointed at
 	- ID: 2026111016332442
@@ -3728,6 +3496,196 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
 
+- Code Review 20261110b item 20: On GitHub Enterprise, gh never sees the account's token
+	- ID: 2026111016332206
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163322
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: `GH_HOST=ghe.example.com`, an account on that host with a token file. Run `gitsby raw gh auth token`.
+	- Incorrect behavior [Bug]: gitsby says it acts as the account, then gh says it has no token for that host. git gets the token, so pr, repo create and the token check act as gh's stored login while git pushes as the account.
+	- Expected behavior [Bug]: gh gets the account's token on any host. design.md:143 keeps Enterprise on the gh path.
+	- Reproduced [Bug]: 2026-11-10 on b23, gh 2.96.0.
+	- Possible cause [Bug]: tokenEnvVar in account.go always picks `GH_TOKEN`. gh reads only `GH_ENTERPRISE_TOKEN` for a host other than github.com.
+	- Origin: 9333159, 2026-08-19. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: gh reads only GH_ENTERPRISE_TOKEN for a host other than github.com, github.localhost or a *.ghe.com tenant, and tokenEnvVar put every GitHub token in GH_TOKEN. Checked with gh 2.96: GH_HOST=ghe.example.com reads GH_ENTERPRISE_TOKEN only, acme.ghe.com reads GH_TOKEN only.
+	- Actual fix [Bug]: tokenEnvVar in account.go picks GH_ENTERPRISE_TOKEN for an Enterprise Server host GH_HOST names, through ghEnterpriseHost, which follows gh's own rule. The credential helper reads the same variable, so git and gh agree. No GH_TOKEN is exported there, so the token never reaches a gh call to github.com. accounts.md, design.md and the changelog say so.
+	- Branch: nov19-2026111016332206
+	- Commit: 0e44fc7
+	- Test case: Go [dfgvm], test.bash [dfgvn] [dfgvp].
+	- Verified: [dfgvm] and [dfgvn] fail with the Enterprise branch taken out of tokenEnvVar (test.bash 2066/1) and pass after. [dfgvp] fails with the helper reading GH_TOKEN, and passes on the fix. Real gh 2.96 through the built gitsby, GH_HOST=git.example.test: raw gh auth token prints the account's token, where the build before the fix gets 'no oauth token found'. Quick gate passed, all areas: test.bash 2067/0, fuzz 310/0, parity 31/0.
+	- Swept: every read of GH_TOKEN in src-go. ghActiveLogin already checks all 4 gh variables. hostTokenEnv and glabTokenEnv skip any host gh serves, Enterprise included. fragmentHelper asks gh auth token --user, gh's store rather than the environment, so GH_HOST already picks the host. The frozen bash and pwsh builds were not touched.
+	- Decisions: Follow gh's own rule for which hosts read GH_TOKEN, *.ghe.com and github.localhost included, rather than treating every non-github.com host as Enterprise, so a GHE.com tenant keeps working. Left alone, by reading only: with GH_HOST set and a github.com origin, the token check's gh api user goes to GH_HOST, as it did before this fix.
+	- Acceptance signoff: Self-closed: its tests fail before the fix and pass after.
+	- Closed: 20261119-072424
+
+- Code Review 20261110b item 21: repo clone ends on a tag when origin has a tag and a branch both named dev
+	- ID: 2026111016332194
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163321
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Origin with a branch dev and a tag dev. Run `gitsby repo clone <url>`.
+	- Incorrect behavior [Bug]: The clone is left at HEAD detached at dev, and it says Cloned and Done, exit 0. The next mutating command refuses as detached.
+	- Expected behavior [Bug]: The clone ends on the dev branch, tracking origin's.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: repo.go:373 runs a plain `git checkout dev`.
+	- Origin: 4918b5b, 2026-08-19. The 2026-10-04 tag collision fixes, 2026100411344972 and its siblings, didn't reach the clone. Confirmed.
+	- Actual cause [Bug]: The clone ran a plain `git checkout dev`. With no local dev yet, git takes the tag dev ahead of origin's branch, so HEAD was left detached at the tag.
+	- Actual fix [Bug]: The clone checks out dev with `checkout -b dev --track refs/remotes/origin/dev`, naming origin's branch in full, as br switch already does. The plan line shows the same command. When dev is the default branch the step is skipped, since the clone already has it.
+		- Swept: every checkout gitsby runs. br switch, pr ok and br create's base go through checkoutArgs, which names origin's branch in full when there's no local one, and a local branch wins over a tag in a plain checkout (checked by hand with a tag dev beside a local dev). br create's own `checkout -b` names a new branch.
+	- Decisions:
+		- The step is skipped when the clone's default branch is dev, since `checkout -b` would fail there and there is nothing to do.
+		- A changelog entry under vNEXT Fixed, since v3.0.0-beta.1 has the bug.
+	- Branch: nov19-2026111016332194
+	- Test case: test.bash [dfgw1]. It failed with the build before the fix, which left HEAD detached at the tag, and passes after.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the quick gate passed with every area.
+	- Closed reason: Done
+	- Closed: 20261119-073645
+
+- Code Review 20261110b item 23: 2 accounts can get the same fragment file, and the later one wins
+	- ID: 2026111016332169
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163321
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Accounts personal and work both with GitHub login jim, and a third account named jim_work with no login. Run `account apply`.
+	- Incorrect behavior [Bug]: The plan writes `github.com_jim_work.gitconfig` twice. A repo under work's folder gets the other account's email.
+	- Expected behavior [Bug]: Every account gets its own fragment.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: fragmentNames in accountcmd.go adds the suffix without checking the result is unique.
+	- Origin: a421343, 2026-09-30, from enhancement 2026093013031520. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. A name with the account added was never checked against the other accounts' plain names, so work's github.com_jim_work matched jim_work's own.
+	- Actual fix [Bug]: An account whose login nobody else shares keeps its plain name. A name with the account added that is already taken gets `_2`, `_3` and so on, the first one no other account has. Names are compared in lower case, for file systems that don't tell case apart. Changelog vNEXT says so.
+	- Decisions: The plain name wins, so an account with its own login always keeps the same file, and only the rare clash gets a number. A number rather than a new separator, so every other fragment keeps its name.
+	- Test case: Go TestFragmentNamesNeverShare [dfgwd], which also tries over 1000 mixes of clashing names and logins, and test.bash [dfgwf].
+	- Verified: [dfgwd] and [dfgwf] fail on the unfixed build and pass after. Quick gate, all areas: test.bash 2071/0, fuzz 310/0, parity 31/0.
+	- Swept: fragmentNames is the only place a fragment name is built. apply, its plan and the unused-fragment check all read it. accounts.md's naming sentence still holds for the usual case.
+	- Branch: nov19-2026111016332169
+	- Commit: dca424d
+	- Acceptance signoff: Self-closed: its tests fail before the fix and pass after.
+	- Closed: 20261119-075422
+
+- Code Review 20261110b item 30: release run from main ends on dev, and the plan's last line says it goes back to main
+	- ID: 2026111016332082
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163320
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: On main, `gitsby release`.
+	- Incorrect behavior [Bug]: The plan ends with `git checkout main`. The run ends on dev.
+	- Expected behavior [Bug]: The plan says where the run ends.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: preview.go:250 always prints the checkout. release.go:260 ends on dev on purpose, pinned by [da8t9].
+	- Origin: No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: previewRelease always ended on a checkout of the branch the run started on. cmdRelease goes back only to a branch other than the default branch and dev, so a run from main ends on dev.
+	- Actual fix [Bug]: The plan shows that last checkout only when the run makes it. From main or dev the plan now ends on dev's push, or on the default branch's where there is no dev. changelog.md has a line under vNEXT.
+	- Decisions:
+		- Ending on dev from main stays, as [da8t9] pins and release.go says. The plan follows the run, not the other way round.
+		- If dev gains commits mid-release, the run warns and stays on main, while the plan's last checkout is dev's. That path can't be read ahead, and the warning names it.
+	- Swept: release is the only command whose run goes back to where it started, and previewRelease is its only plan. stagedReleaseCheck reads no final checkout. design.md's 'the last checkout' line still holds.
+	- Branch: nov19-2026111016332082
+	- Commit: 26e2604
+	- Test case: test.bash [dfgwy] [dfgwz] [dfgx0] [dfgx1] [dfgx2] [dfgx3] [dfgx4], through the fPlanEnds helper.
+	- Verified: [dfgwy] and [dfgx1], from main for a new and a finished release, fail on the old preview.go and pass after. The other 5 pass on both. Quick gate passed, every area: test.bash 2078/0, fuzz 310/0, parity 31/0. gosec reports 32, as before, none in the changed lines.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
+	- Closed: 20261119-080935
+
+- Code Review 20261110b item 31: A message typed as a word is dropped when -m is also given
+	- ID: 2026111016332070
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163320
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: `gitsby pullcom 'first message' -m second`.
+	- Incorrect behavior [Bug]: It commits with second and says nothing about the first. Exit 0.
+	- Expected behavior [Bug]: It refuses 2 messages, the way it refuses other arguments it would ignore.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: args.go:335 keeps `-m` and drops the word.
+	- Origin: No round saw it. Code Review 20261110 item 1 covered options a command doesn't read, not this. Confirmed.
+	- Actual cause [Bug]: sortCommand took the typed word as the message only when -m was empty, and otherwise dropped it. sortPr did the same with a pr create title typed beside -m.
+	- Actual fix [Bug]: pullcom, sync and br merge refuse a typed message beside -m, and pr create a typed title beside -m, before anything runs, at exit 1: "Two commit messages given: 'first message', and -m 'second'. Give one."
+		- Swept: every command that takes -m. pullcom, sync, br merge and pr create also take a typed message or title, and all 4 refuse the pair. repo create, repo connect, br create, br hotfix, br switch and release take a name, URL or version as their word, never a message.
+	- Decisions:
+		- pr create's title gets the same refusal, as the same class.
+		- -m won in the Go code (a comment in pr.go, and [dbfqw]). No recorded decision was behind it, and the item asks for the refusal.
+		- 20261119: Go [dbfqw] asserted -m won over a typed message (message "flag"). It now asserts the pair is refused. Its first half, a typed message alone, is unchanged.
+		- A changelog entry under vNEXT Fixed, since v3.0.0-beta.1 has the bug.
+	- Branch: nov19-2026111016332194
+	- Test case: Go [dfgvz] and [dbfqw], test.bash [dfgw0]. [dfgvz] and [dbfqw] fail with the fix taken out. [dfgw0] failed with the build before the fix, which committed with second at exit 0.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the quick gate passed with every area.
+	- Closed reason: Done
+	- Closed: 20261119-073653
+
+- Code Review 20261110b item 35: account set's plan shows a different line than it writes
+	- ID: 2026111016332021
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163320
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: With `Email: "a@b.c"   # work mail` in the file, run `account set work email c@d.e`. With `name: 'Bob'`, set the name to `Bob Smith`.
+	- Incorrect behavior [Bug]: The plan says `becomes: email: c@d.e` and the file gets `Email: "c@d.e"   # work mail`. The plan says `name: "Bob Smith"` and the file gets `name: 'Bob Smith'`. was: also lowercases the key.
+	- Expected behavior [Bug]: Both lines show the file's own text. backlog line 4017 and shclValue's comment say the plan and the file can't disagree.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: preview.go:112 builds the line from the field and value. The module keeps the old line's quotes and key.
+	- Origin: c4fa47c, 2026-11-07. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. The plan built both lines from the lower-case key and the value, while the module keeps the line's own key, quotes and comment.
+	- Actual fix [Bug]: was: is the key's line in the file as read, and becomes: its line in the text the save writes, both trimmed. A value on lines of its own, such as a dash list or a fenced block, and a flat file being converted, keep the old key: value form for was:, since there is no one line to show. Changelog vNEXT says so.
+	- Decisions: add: stays as it was, naming the block and the key, since a new line takes the module's own quotes, which shclValue asks for.
+		- 2026-11-19: test assert given a new value for this change. test.bash [dbsrm]: was: ghaccount: hieracct is now was: ghAccount: hieracct, the file's own key.
+	- Test case: Go TestAccountSetPlanShowsTheFileLines [dfgwe], which also checks each line is one of the file before or after, and test.bash [dfgwg].
+	- Verified: [dfgwe] and [dfgwg] fail on the unfixed build and pass after. The dash list and fenced cases fail with the one-line check taken out. Quick gate, all areas: test.bash 2071/0, fuzz 310/0, parity 31/0.
+	- Swept: the account set and unset plans. unset already reads its remove: lines off the save's text (2026111016332330). add: is the only line left built from parts, as above. shclValue's comment now says it is for a new line.
+	- Branch: nov19-2026111016332169
+	- Commit: dca424d
+	- Acceptance signoff: Self-closed: its tests fail before the fix and pass after.
+	- Closed: 20261119-075422
+
+- Code Review 20261110b item 36: install.ps1 changes PATH without telling Windows, so a new shell from the Start menu doesn't find gitsby
+	- ID: 2026111016332008
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163320
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Install with install.ps1, then open PowerShell from the Start menu or taskbar.
+	- Incorrect behavior [Bug]: gitsby isn't found until sign-out, though the installer says to open a new shell. Windows Terminal tabs reload the environment and work.
+	- Expected behavior [Bug]: A new shell finds gitsby.
+	- Reproduced [Bug]: No. ssh to the Windows boxes lands in a session with no Explorer.
+	- Possible cause [Bug]: install.ps1:407 writes the registry with `Set-ItemProperty` and doesn't broadcast `WM_SETTINGCHANGE`. `SetEnvironmentVariable`, which it replaced, did.
+	- Origin: 37b7445, 2026-08-19, which kept `%VAR%` entries unexpanded. Regression. Plausible.
+	- Actual cause [Bug]: install.ps1 writes PATH with Set-ItemProperty, which doesn't broadcast WM_SETTINGCHANGE, so Explorer keeps its old environment and hands it to every shell it starts. SetEnvironmentVariable did broadcast, but it was dropped because it rewrites an expandable PATH as plain text.
+	- Actual fix [Bug]: after the PATH write, install.ps1 calls Send-EnvironmentChange, which sends WM_SETTINGCHANGE with 'Environment' through SendMessageTimeout (Add-Type, SMTO_ABORTIFHUNG, 5 s). It's sent even when the registry already had the folder, for installs by the older script. If it can't be sent, the closing line says to sign out instead of opening a new shell. changelog.md has a line under vNEXT Fixed.
+	- Decisions: Add-Type P/Invoke rather than setting and clearing a throwaway variable with SetEnvironmentVariable to get its broadcast, since that writes the registry twice for a side effect. A failed broadcast doesn't fail the install, since PATH is already written.
+	- Branch: nov19-2026111016332008
+	- Commit: c5ebe1b
+	- Test case: test.bash [dfgxc] defines Send-EnvironmentChange from install.ps1 and calls it: off Windows it gets into the compiled P/Invoke stub, which proves the Add-Type text compiles and binds. [dfgxd] checks in the parsed script that the call comes after the PATH write and outside that write's try.
+	- Verified: [dfgxc] and [dfgxd] fail on the old install.ps1 (no function, no call). [dfgxc] fails with a broken C# signature, and [dfgxd] fails with the call moved inside the write's try. Quick gate, every area, passed on c5ebe1b's tree: test.bash 2080/0, fuzz 310/0, parity 31/0. PSScriptAnalyzer clean on install.ps1. The Windows branch itself didn't run here.
+	- Swept: every PATH or environment write in the tree. install.ps1 has the one registry write. legacy/install.ps1 still uses SetEnvironmentVariable, which broadcasts, and is frozen. No cicd or Go code writes the Windows environment.
+	- Closed reason: Done
+	- Closed: 20261119-084520
+	- Verified: on vm925w at nov19 ee2e268, as wintest in its desktop session, with only the two GitHub fetches stood in (SHA256SUMS and the binary). A whole install in Windows PowerShell 5.1 and again in pwsh 7.6.6, each from a PATH without gitsby's folder, printed 'Open a new shell to pick it up' and kept the user PATH's ExpandString kind. After each, Explorer's environment held the new folder with no sign-out. Control: a PATH registry write with no broadcast left Explorer's environment unchanged. test.bash [dfgxc]'s check printed 'REACHED (sent)' in pwsh 7, in the desktop session and over ssh. wintest's PATH and folders were put back after.
+	- Note: wintest's machine PATH on vm925w has an old v2.1.0 gitsby.exe ahead of the user PATH, so 'gitsby --version' from a new shell there runs that one. The new folder is still on the shell's PATH.
+	- Acceptance signoff: Self-closed: whole install passed on vm925w in 5.1 and 7, and Explorer's environment took the new PATH with no sign-out.
+	- Stand-in: In place of opening PowerShell from the Start menu, the environment of wintest's running Explorer was read after each install. Explorer is what hands PATH to a shell started from the Start menu or taskbar (20261119).
+
 - Converting an SHCL 2.x accounts file changes a value holding a byte that isn't UTF-8
 	- ID: 2026111819043675
 	- Type: Bug
@@ -5802,6 +5760,52 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddf4q] and [ddf4r] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- Code Review 20261110b enhancement 1: sync re-creates a branch on origin that was deleted after its PR merged
+	- ID: 2026111016331930
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163319
+	- Opened by: jim-collier
+	- Requirements [Feature]: When the upstream is gone, gitsby says so, and asks before pushing the branch up again.
+	- Origin: mutate.go:69 and :149 read a gone upstream as no upstream. No round raised it. Confirmed: after a PR merged on the web with the branch deleted, sync said no upstream and pushed the branch back.
+	- Closed reason: Done
+	- Done: sync, and br switch's park push, warn last before the prompt when the branch's upstream is gone, and -q refuses. The warning names 'git switch <target>' to leave it gone, and 'git branch --unset-upstream' to publish it again as new. The state line shows '(origin/<branch> gone)', and the pull step says it's gone.
+	- Decisions: The single prompt is the ask, with the warning above it, and -q refuses, as for --direct and per the UI rule for a warning nobody reads. No new flag, since flags are permanent and 'git branch --unset-upstream' already says the push is meant. br merge and pr create don't ask: br merge deletes origin's copy again in the same run, checked with a gone branch, and pr create needs it on origin. Only an upstream on a remote counts, so a deleted local upstream isn't called gone. Reasoning in design.md.
+	- Test case: Go TestGoneUpstream [dfgxm], test.bash [dfgxn] to [dfgxt]. [dfgxn] to [dfgxs] fail on the build before the fix and pass after, and [dfgxm] fails with goneUpstream answering nothing. [dfgxt] pins the way to publish again, which worked before too.
+	- Swept: every hasUpstream and upstream reader in src-go. pushIfOnline runs through cmdPush for sync, br switch, br merge and pr create, and in the hotfix back-merge on dev. pr ok's post-merge check wants a gone upstream read as none. repo connect's push mode and release's default-branch push are left alone, since publishing is their job. cicd.bash's own stage 0 sync only pulls.
+	- Verified: the quick gate with every area at d1b24a4's tree (test.bash 2086/0, fuzz and spawn counts 310/0, parity 31/0).
+	- Branch: nov19-2026111016331930
+	- Commit: d1b24a4
+	- Actual effort: Low
+	- Acceptance signoff: Self-closed: its tests fail before the fix and pass after, and the quick gate passed with every area.
+	- Closed: 20261119-082618
+
+- Code Review 20261110b enhancement 2: install.bash runs whatever part of itself arrived through curl | bash
+	- ID: 2026111016331918
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163319
+	- Opened by: jim-collier
+	- Requirements [Feature]: The body goes in a function called on the last line, so a cut download runs nothing.
+	- Origin: No round raised it. Confirmed: every line-boundary cut of install.bash, fed to `bash -s -- -y` with a fake curl, either refused or exited 0. One cut prints Checksum verified and exits 0 without installing. None installed an unverified file.
+	- Closed reason: Done
+	- Fixed: install.bash defines its helpers and one fMain function, and its last line calls it. A download cut anywhere before that line defines functions and runs nothing.
+	- Decisions:
+		- The call is bare, not 'fMain || exit', since 'set -e' is off inside a function called behind '||'. A comment at the site says so.
+		- The History block sits above the call, so the call is the last line as asked. A cut inside History already holds the whole function, so it would run as before even with the call above History.
+		- A cut that ends exactly at 'fMain', with the arguments cut off, still runs the installer with no options. Without -y it asks first, or refuses with no terminal, and the download is still verified. Left as is.
+		- The run's variables stay global rather than local, since the EXIT trap reads tmpFile and staged after fMain has returned.
+	- Swept: install.ps1 is fetched whole by irm before iex runs it, so a cut never runs part of it. legacy/install.bash and legacy/install-dev.bash are frozen at v2.1.0, per the standing decision. test.bash's fBashHelpNamesAll read the option loop at column 0 and now takes it indented.
+	- Verified: [dfgxx] fails on the old install.bash (first cut that ran: after line 213) and passes on the new one. Quick run of every area passed (test.bash 2088/0/1 skipped, fuzz 310/0, parity 31/0).
+	- Branch: nov19-2026111016331918
+	- Test case: [dfgxx] pipes every line-boundary cut of install.bash short of its last line to 'bash -s -- -y' with the stub curl, and fails if any cut fetches or installs. [dfgxy] pipes the whole file the same way and checks it installs.
+	- Acceptance signoff: Self-closed: the change does what the requirement says, and its test failed before and passes after.
+	- Closed: 20261119-083346
 
 - Code Review 20261110b enhancement 3: safe-rm.ps1 passes its path to cmd unquoted
 	- ID: 2026111016331906
