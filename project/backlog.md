@@ -33,6 +33,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- test.bash stops on macOS and FreeBSD at a GNU-only touch -d '@1'
+	- ID: 2026111907080865
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-070808
+	- Opened by:
+	- Progress log:
+		- Both hosted Macs died at test.bash:8977 with 'touch: out of range or illegal time specification', right after [dfg48]. The line came in with ca74ed4 (round nov18). Last green run: ea9011ab. BSD touch has no '@epoch' form, so stage 7 on b26 and vmFreeBSD stops there too.
+	- Origin: hosted macOS run 44453179447 on dev at c7e3251, 2026-11-19
+
 - Code Review 20261110b item 20: On GitHub Enterprise, gh never sees the account's token
 	- ID: 2026111016332206
 	- Type: Bug
