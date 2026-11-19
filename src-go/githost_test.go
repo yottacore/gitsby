@@ -174,6 +174,27 @@ func TestTokenEnvVar(t *testing.T) { // [dbg63]
 	}
 }
 
+// gh reads only GH_ENTERPRISE_TOKEN for an Enterprise Server host, and only GH_TOKEN
+// for github.com and a *.ghe.com tenant, so the token has to go where gh looks for
+// the host it's pointed at. Reproduced against gh 2.96 with GH_HOST set to each.
+func TestTokenEnvVarFollowsGhHost(t *testing.T) { // [dfgvm]
+	for _, tc := range []struct{ ghHost, host, want string }{
+		{"", "github.com", "GH_TOKEN"},
+		{"ghe.example.test", "github.com", "GH_TOKEN"},
+		{"ghe.example.test", "ghe.example.test", "GH_ENTERPRISE_TOKEN"},
+		{"GHE.Example.Test", "ghe.example.test", "GH_ENTERPRISE_TOKEN"},
+		{"acme.ghe.com", "acme.ghe.com", "GH_TOKEN"},
+		{"github.localhost", "github.localhost", "GH_TOKEN"},
+		{"ghe.example.test", "git.example.test", "GITSBY_HOST_TOKEN"},
+		{"", "ghe.example.test", "GITSBY_HOST_TOKEN"},
+	} {
+		t.Setenv("GH_HOST", tc.ghHost)
+		if got := tokenEnvVar(tc.host); got != tc.want {
+			t.Errorf("GH_HOST=%q: tokenEnvVar(%q) = %q, want %q", tc.ghHost, tc.host, got, tc.want)
+		}
+	}
+}
+
 // The pull-request vocabulary per tool. These are what both the preview and the
 // command read, so a disagreement here is a plan promising something else.
 func TestPrArgsPerTool(t *testing.T) { // [dbg64]

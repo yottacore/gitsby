@@ -181,7 +181,7 @@ func (a *app) teaCommand() string {
 // other than gh, in the variables that CLI reads, with the host beside it. tea keeps
 // the token on that host; glab doesn't, so it goes through glabTokenEnv. A GitHub
 // token is never handed over:
-// that one is gh's, already in GH_TOKEN. Says whether there was a token to give.
+// that one is gh's, already in the variable gh reads. Says whether there was a token to give.
 func (a *app) hostTokenEnv(tokenVar, hostVar string) (bool, error) {
 	if a.acct.tokenEnv == "" || isGitHubHost(a.acct.credHost) {
 		return false, nil

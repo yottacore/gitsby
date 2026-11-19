@@ -8837,6 +8837,21 @@ GLEOF
 		bash -c "cd '${fgRepo}' && PATH='${fgDeb}' FAKE_TEA_LOG='${fg}/rawdeb.log' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami && grep -qx whoami '${fg}/rawdeb.log'"
 	fAssertOut "[ddk68] raw tig gets the account through git"  'password=\$\{GITSBY_HOST_TOKEN\}' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw tig"
+	## gh reads GH_ENTERPRISE_TOKEN for an Enterprise host and never GH_TOKEN, so on a host GH_HOST
+	## names the token goes there, and git's helper reads it from the same place.
+	mkdir -p "${fg}/ghebin"
+	fStub "${fg}/ghebin/gh" <<'GHEOF'
+#!/usr/bin/env bash
+case "$1 $2" in
+"auth token") echo "gh=${GH_TOKEN:-} ghe=${GH_ENTERPRISE_TOKEN:-}" ;;
+"api user")   echo giteauser ;;
+esac
+exit 0
+GHEOF
+	fAssertOut "[dfgvn] raw gh on an Enterprise host gets the token where gh reads it"  '^gh= ghe=tok_ghonly$' \
+		bash -c "cd '${fgRepo}' && PATH='${fg}/ghebin:${fgPath}' GH_HOST=git.example.test '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw gh auth token"
+	fAssertOut "[dfgvp] and git's helper answers with it there"  '^password=tok_ghonly$' \
+		bash -c "cd '${fgRepo}' && printf 'protocol=https\nhost=git.example.test\n\n' | PATH='${fg}/ghebin:${fgPath}' GH_HOST=git.example.test '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' raw git credential fill"
 	## A Gitea account has no GitHub login, and the line used to read only that one.
 	fAssertOut "[ddk69] raw names the Gitea account it acts as"  'acting as giteauser' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_VERSION=0.11.0 '${gitsby}' -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"

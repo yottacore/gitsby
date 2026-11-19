@@ -49,6 +49,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `raw glab` and `pr` no longer send the account's GitLab token to some other host. glab sends its token to whatever host it's pointed at, so `raw glab api --hostname gitlab.com user` in a gitlab.gnome.org folder sent the GNOME token to gitlab.com. A run that names another host, with `--hostname`, `-R` or a URL, now gets no token and runs as plain glab would, and says so.
 
+- On a GitHub Enterprise host, `gh` acts as the folder's account. Its token went into `GH_TOKEN`, which `gh` reads only for github.com, so `pr`, `repo create` and `raw gh` acted as `gh`'s own login there while git pushed as the account. The token now goes into `GH_ENTERPRISE_TOKEN` for a host `GH_HOST` names.
+
 - `raw git -C <folder>` acts as the account of the repo git works in. It acted as the account of the folder it was started in, so a commit or push into another account's repo went out with the wrong name, email and token. The same goes for `--git-dir` and `GIT_DIR`, `raw tig -C`, and `raw lazygit -p`, `-w` and `-g`.
 
 - After `account apply`, a folder inside another account's folder no longer takes the outer account's settings that its own account leaves unset. Plain git and `raw git` there answered with the inner account's username and the outer one's token, commits took the outer one's name, and ssh its key. Each such key now gets the value your global git config gives it.

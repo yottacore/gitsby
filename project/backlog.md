@@ -54,7 +54,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 20: On GitHub Enterprise, gh never sees the account's token
 	- ID: 2026111016332206
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163322
@@ -65,6 +65,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23, gh 2.96.0.
 	- Possible cause [Bug]: tokenEnvVar in account.go always picks `GH_TOKEN`. gh reads only `GH_ENTERPRISE_TOKEN` for a host other than github.com.
 	- Origin: 9333159, 2026-08-19. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: gh reads only GH_ENTERPRISE_TOKEN for a host other than github.com, github.localhost or a *.ghe.com tenant, and tokenEnvVar put every GitHub token in GH_TOKEN. Checked with gh 2.96: GH_HOST=ghe.example.com reads GH_ENTERPRISE_TOKEN only, acme.ghe.com reads GH_TOKEN only.
+	- Actual fix [Bug]: tokenEnvVar in account.go picks GH_ENTERPRISE_TOKEN for an Enterprise Server host GH_HOST names, through ghEnterpriseHost, which follows gh's own rule. The credential helper reads the same variable, so git and gh agree. No GH_TOKEN is exported there, so the token never reaches a gh call to github.com. accounts.md, design.md and the changelog say so.
+	- Branch: nov19-2026111016332206
+	- Commit: 0e44fc7
+	- Test case: Go [dfgvm], test.bash [dfgvn] [dfgvp].
+	- Verified: [dfgvm] and [dfgvn] fail with the Enterprise branch taken out of tokenEnvVar (test.bash 2066/1) and pass after. [dfgvp] fails with the helper reading GH_TOKEN, and passes on the fix. Real gh 2.96 through the built gitsby, GH_HOST=git.example.test: raw gh auth token prints the account's token, where the build before the fix gets 'no oauth token found'. Quick gate passed, all areas: test.bash 2067/0, fuzz 310/0, parity 31/0.
+	- Swept: every read of GH_TOKEN in src-go. ghActiveLogin already checks all 4 gh variables. hostTokenEnv and glabTokenEnv skip any host gh serves, Enterprise included. fragmentHelper asks gh auth token --user, gh's store rather than the environment, so GH_HOST already picks the host. The frozen bash and pwsh builds were not touched.
+	- Decisions: Follow gh's own rule for which hosts read GH_TOKEN, *.ghe.com and github.localhost included, rather than treating every non-github.com host as Enterprise, so a GHE.com tenant keeps working. Left alone, by reading only: with GH_HOST set and a github.com origin, the token check's gh api user goes to GH_HOST, as it did before this fix.
+	- Acceptance signoff: Self-closed: its tests fail before the fix and pass after.
+	- Closed: 20261119-072424
 
 - Code Review 20261110b item 21: repo clone ends on a tag when origin has a tag and a branch both named dev
 	- ID: 2026111016332194
