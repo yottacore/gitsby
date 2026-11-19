@@ -8898,6 +8898,13 @@ GLEOF
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work path /a 2>&1"
 	fAssertOut "[dd83v] and with no key it prints the syntax"  'Syntax: gitsby account unset <account> <key>' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work 2>&1"
+	## A key's comments and the lines under it go with it, so the plan names each of those too.
+	printf 'account: work\n\temail: a@x\n\t# about path\n\tpath: /srv/w\n\t\t# note\n\t\tsub: x\n' > "${fg}/unsetc.shcl"
+	fAssertPlan "[dfg0j] 'account unset' names the comment above the key"  'remove: +line 3, # about path' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unsetc.shcl' account unset work path 2>&1"
+	printf 'account: work\n\temail: a@x\n\t# about path\n\tpath: /srv/w\n\t\t# note\n\t\tsub: x\n' > "${fg}/unsetc.shcl"
+	fAssertPlan "[dfg0k] and the lines under it"  'remove: +line 6, sub: x' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unsetc.shcl' account unset work path 2>&1"
 	## The identity block's own vocabulary. "Forge" is a word for people who already knew the answer.
 	fAssertOut "[dbhg5] the identity block says 'Git host', not 'Forge'"  '^Git host \.+: git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' identity 2>&1"

@@ -1327,6 +1327,96 @@ func TestAccountUnsetRemovesEveryLine(t *testing.T) { // [dd83g]
 	}
 }
 
+// The plan names every line the unset takes out: a comment above the key, the
+// lines under it and the comments among them, each by its number. The module
+// takes those with the key, and the plan named only the key's own line. Checked
+// against what left the file, worked out apart from the plan's own code.
+func TestAccountUnsetPlanNamesEveryLineThatGoes(t *testing.T) { // [dfg0h]
+	issue := "account: work\n\temail: a@x\n\t# about path\n\tpath: /srv/w\n\t\t# note\n\t\tsub: x\n\t\tmore: y\n\t# about host\n\thost: gitea.com\naccount: home\n\tpath: /srv/h\n"
+	cases := []struct {
+		body, key string
+		want      []goneLine
+	}{
+		{issue, "path", []goneLine{{3, "# about path"}, {4, "path: /srv/w"}, {5, "# note"}, {6, "sub: x"}, {7, "more: y"}}},
+		{issue, "host", []goneLine{{8, "# about host"}, {9, "host: gitea.com"}}},
+		{"account: work\n\tpath:\n\t\t- /a\n\t\t# mid\n\t\t- /b\n\temail: e@x\n", "path", []goneLine{{2, "path:"}, {3, "- /a"}, {4, "# mid"}, {5, "- /b"}}},
+		{"account: work\n\temail: e@x # tr\n\n\n\t# c1\n\n\t# c2\n\tname: N\n\temail: f\n", "name", []goneLine{{5, "# c1"}, {7, "# c2"}, {8, "name: N"}}},
+		// The same comment over the same key in another block: the one that goes is
+		// the one named.
+		{"account: work\n\t# p\n\tpath: /a\naccount: home\n\t# p\n\tpath: /a\n", "path", []goneLine{{2, "# p"}, {3, "path: /a"}}},
+		// Of 2 like comments in the block, the one above the key.
+		{"account: work\n\t# x\n\tpath: /a\n\t# x\n\temail: e\n", "path", []goneLine{{2, "# x"}, {3, "path: /a"}}},
+	}
+	for _, c := range cases {
+		a, file := unsetApp(t, c.body, "work", c.key)
+		plan, done, err := a.accountUnsetPlan()
+		if err != nil || done || plan.reshapes {
+			t.Fatalf("%q: done = %v, reshapes = %v, err = %v", c.body, done, plan.reshapes, err)
+		}
+		if !slices.Equal(plan.gone, c.want) {
+			t.Errorf("%q unset %s: plan names\n%v\nwant\n%v", c.body, c.key, plan.gone, c.want)
+		}
+		a.set = &plan
+		if err := a.cmdAccountSet(); err != nil {
+			t.Fatalf("unset: %v", err)
+		}
+		// By text: of 2 like lines, either one going leaves the same file.
+		if left := linesLeft(c.body, readBack(t, file)); !slices.Equal(texts(plan.gone), texts(left)) {
+			t.Errorf("%q unset %s: plan names\n%v\nbut the file lost\n%v", c.body, c.key, plan.gone, left)
+		}
+	}
+	// A save that rewrites the file has no line numbers to give, and still names
+	// the comment that goes with the key.
+	a, _ := unsetApp(t, "account: work\n\tpath: /a\naccount: home\n\tpath: /h\naccount: work\n\t# again\n\tpath: /a\n", "work", "path")
+	plan, _, err := a.accountUnsetPlan()
+	if err != nil || !plan.reshapes || !slices.Contains(plan.gone, goneLine{0, "# again"}) {
+		t.Errorf("rewrite: reshapes = %v, gone = %v, err = %v; want the comment, unnumbered", plan.reshapes, plan.gone, err)
+	}
+}
+
+func texts(lines []goneLine) []string {
+	var out []string
+	for _, l := range lines {
+		out = append(out, l.text)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// linesLeft is the non-blank lines of before that after lacks, by a longest
+// common subsequence, so it shares nothing with removedLines.
+func linesLeft(before, after string) []goneLine {
+	b, f := strings.Split(before, "\n"), strings.Split(after, "\n")
+	lcs := make([][]int, len(b)+1)
+	for i := range lcs {
+		lcs[i] = make([]int, len(f)+1)
+	}
+	for i := len(b) - 1; i >= 0; i-- {
+		for j := len(f) - 1; j >= 0; j-- {
+			if b[i] == f[j] {
+				lcs[i][j] = lcs[i+1][j+1] + 1
+			} else {
+				lcs[i][j] = max(lcs[i+1][j], lcs[i][j+1])
+			}
+		}
+	}
+	var gone []goneLine
+	for i, j := 0, 0; i < len(b); {
+		switch {
+		case j < len(f) && b[i] == f[j]:
+			i, j = i+1, j+1
+		case j < len(f) && lcs[i][j+1] > lcs[i+1][j]:
+			j++
+		default:
+			if strings.TrimSpace(b[i]) != "" {
+				gone = append(gone, goneLine{i + 1, strings.TrimSpace(b[i])})
+			}
+			i++
+		}
+	}
+	return gone
+}
+
 // A key nothing reads can go where the block has one, which is how the listing's
 // ignored line gets cleared. One the block lacks is refused, so a typo on the
 // command line isn't answered with "nothing to do".

@@ -161,7 +161,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 10: account unset deletes lines its plan doesn't show
 	- ID: 2026111016332330
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
@@ -172,6 +172,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23, hermetic fixture.
 	- Possible cause [Bug]: The plan in preview.go lists only the key's own line, and the module removes its comments and children with it.
 	- Origin: 1ed0f3a, 2026-09-28. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. The module's remove takes the comment lines above a key and the lines under it along with the key, and the plan named only the key lines.
+	- Actual fix [Bug]: The plan is read off the text the save writes: every non-blank line the file loses is named, with its number. A save that rewrites the whole file compares the layout before and after, and names the lines without numbers. accounts.md says the comments above a key and the lines under it go too.
+	- Decisions: The removal stays as the module does it, and the plan shows it, since a comment left behind would describe a key that's gone. Blank lines that go aren't named. Each line shows as the file spells it, trailing comment included. Of 2 like lines, the one above a key that goes is named.
+	- Test case: Go TestAccountUnsetPlanNamesEveryLineThatGoes [dfg0h], test.bash [dfg0j] and [dfg0k].
+	- Verified: all 3 fail on the unfixed build and pass after. Quick gate, all areas: test.bash 2010/0, fuzz 310/0, parity 31/0.
+	- Swept: src-go has one remove of a config key, in accountUnsetPlan. account set keeps the lines under a key. Setting a key that holds a dash list moves the list's comment above the new line, and the plan shows the old and new value, so it was left alone.
+	- Branch: nov18-2026111016332330
+	- Commit: dfe5742
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261118-165532
 
 - Code Review 20261110b item 11: repo connect and repo create in an existing repo don't list the files they publish
 	- ID: 2026111016332317

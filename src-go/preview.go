@@ -159,11 +159,12 @@ func (a *app) preview(what string) {
 	}
 }
 
-// previewUnset lists every line 'account unset' takes out. One line puts its
-// number in the header, the way a set does; several number each their own.
+// previewUnset lists every line 'account unset' takes out, its comments and the
+// lines under it included. One line puts its number in the header, the way a set
+// does; several number each their own. A rewrite has no numbers to give.
 func (a *app) previewUnset() {
 	t := a.set
-	numbered := !t.converts && len(t.gone) > 1
+	numbered := !t.converts && len(t.gone) > 1 && t.gone[0].num > 0
 	switch {
 	case t.converts:
 		a.out.clean(planPad + "rewrite " + nativePath(t.file) + " in the current layout - it is in the old flat one")

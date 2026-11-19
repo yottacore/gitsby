@@ -1493,7 +1493,8 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 	if err := a.loadForEdit(&t); err != nil {
 		return t, false, err
 	}
-	tidy := t.doc.ToCanonical() == t.read
+	before := t.doc.ToCanonical()
+	tidy := before == t.read
 	var paths, names []string
 	blocks, _ := acctBlocks(t.doc)
 	for _, b := range blocks {
@@ -1526,6 +1527,7 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 	if t.field == "" {
 		return t, false, usagef("'%s' isn't an account key %s reads, and %s has no such line. One of: %s.", a.cmd.arg2, meName, t.disp, strings.Join(accountSetFields, ", "))
 	}
+	var keys []goneLine
 	for i, p := range paths {
 		paths[i] = p + "." + shcl.QuoteSegment(t.field)
 		for j := range t.doc.Count(paths[i]) {
@@ -1534,10 +1536,10 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 			if read.Raw != nil && *read.Raw != "" {
 				line.text += " " + *read.Raw
 			}
-			t.gone = append(t.gone, line)
+			keys = append(keys, line)
 		}
 	}
-	if len(t.gone) == 0 {
+	if len(keys) == 0 {
 		a.out.statusNotes(t.disp+" has no '"+t.field+"' in the accounts file; nothing to do.", noteLines("File", nativePath(t.file)))
 		a.out.clean("")
 		return t, true, nil
@@ -1545,14 +1547,63 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 	for _, p := range paths {
 		t.doc.Remove(p)
 	}
-	_, kept := t.doc.ToTextKeepLines()
+	after, kept := t.doc.ToTextKeepLines()
 	if err := lostRefusal(t, kept); err != nil {
 		return t, false, err
+	}
+	// The module takes a key's comments and the lines under it along with it, so
+	// the plan is read off the text the save writes rather than the key lines.
+	// A rewrite has no file line numbers to give, so it compares layouts.
+	ok := false
+	if kept {
+		var sure []int
+		for _, k := range keys {
+			sure = append(sure, k.num)
+		}
+		t.gone, ok = removedLines(t.read, after, sure)
+	} else if t.gone, ok = removedLines(before, after, nil); ok {
+		for i := range t.gone {
+			t.gone[i].num = 0
+		}
+	}
+	if !ok || len(t.gone) == 0 {
+		t.gone = keys
 	}
 	if !kept && !tidy && !t.converts {
 		t.reshapes = true
 	}
 	return t, false, nil
+}
+
+// removedLines lists the lines of before that after doesn't have, when after is
+// before with lines taken out; ok is false when it isn't. Blank lines are left
+// out, since one going with a key says nothing. sure are line numbers known to
+// go. Matched from the end, so of 2 like lines the one above a key that goes is
+// the one named, since a key's comments sit above it.
+func removedLines(before, after string, sure []int) (gone []goneLine, ok bool) {
+	bl := strings.Split(strings.TrimPrefix(before, utf8BOM), "\n")
+	al := strings.Split(strings.TrimPrefix(after, utf8BOM), "\n")
+	j := len(al) - 1
+	skipBlank := func() {
+		for j >= 0 && strings.TrimSpace(al[j]) == "" {
+			j--
+		}
+	}
+	for i := len(bl) - 1; i >= 0; i-- {
+		text := strings.TrimSpace(bl[i])
+		if text == "" {
+			continue
+		}
+		skipBlank()
+		if j >= 0 && al[j] == bl[i] && !slices.Contains(sure, i+1) {
+			j--
+			continue
+		}
+		gone = append(gone, goneLine{num: i + 1, text: text})
+	}
+	skipBlank()
+	slices.Reverse(gone)
+	return gone, j < 0
 }
 
 // unsetUnreadable: nothing was loaded, but something is where an accounts file can
