@@ -33,6 +33,627 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Code Review 20261119 item 1: sync, br switch and br create push to origin's main when the branch tracks origin/main
+	- ID: 2026111910223293
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-102232
+	- Opened by:
+	- Related IDs: 2026111016332392
+	- Steps to reproduce [Bug]: git switch -c feat origin/main, commit, then gitsby -q sync.
+	- Incorrect behavior [Bug]: It pushes HEAD to origin's main and exits 0. The plan says it pushes feat, and --direct never asks. br switch and br create park the same way.
+	- Expected behavior [Bug]: A push goes where a bare push would send it, which under push.default=simple is a refusal, per item 2026111016332392's decision. A push that would reach a protected branch asks for --direct.
+	- Reproduced [Bug]: 2026-11-19 on b23. d5e76f2 refused. Confirmed.
+	- Possible cause [Bug]: pushDest falls back to the upstream's ref. directPush judges the current branch's name, not the push's target.
+	- Origin: 6e3ab95, round-20261111 (Code Review 20261110b item 5), and bb905b6, nov18. Regression of item 5.
+
+- Code Review 20261119 item 2: With status.showUntrackedFiles=no, untracked files are committed and pushed past every guard
+	- ID: 2026111910223277
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-102232
+	- Opened by:
+	- Steps to reproduce [Bug]: On dev, set status.showUntrackedFiles=no, add an untracked file, and run gitsby -q sync.
+	- Incorrect behavior [Bug]: The plan says working tree clean, then the file is committed and pushed to origin's dev, exit 0. Without the setting sync refuses.
+	- Expected behavior [Bug]: Untracked files count as work in every check and in the plan.
+	- Reproduced [Bug]: 2026-11-19 on b23, sync and br switch. Confirmed.
+	- Possible cause [Bug]: treeDirty and the plan's git status follow the setting. git add --all doesn't.
+	- Origin: Go port. 8dfe5ff (nov18) moved the check into treeDirty without it. No round saw it.
+
+- Code Review 20261119 item 3: A pending am, range pick or resolved merge is finished or left behind by gitsby
+	- ID: 2026111910223262
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-102232
+	- Opened by:
+	- Steps to reproduce [Bug]: Stop a range cherry-pick or a git am partway, then run gitsby -q br switch dev, sync or pullcom.
+	- Incorrect behavior [Bug]: gitsby commits the half-done work under its own message, switches, exits 0, and leaves the sequencer. A later --continue applies the rest onto dev. br merge finishes a resolved merge of the user's.
+	- Expected behavior [Bug]: Refuse before the plan, naming the operation and its --continue or --abort.
+	- Reproduced [Bug]: 2026-11-19 on b23, 5 cases. Confirmed.
+	- Possible cause [Bug]: Nothing checks MERGE_HEAD, CHERRY_PICK_HEAD, REVERT_HEAD, sequencer or rebase-apply. git's own refusal runs only when a pull does.
+	- Origin: 4918b5b, Go port. The bash build had no guard either. No round reached it.
+
+- Code Review 20261119 item 4: In a nested folder, plain git sends the inner account's token to the outer account's host
+	- ID: 2026111910223247
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-102232
+	- Opened by:
+	- Related IDs: 2026111016332429
+	- Steps to reproduce [Bug]: Nest a gitea.com account's folder inside a github.com account's folder, each with a token file, run account apply, then ask git credential fill for github.com in the inner folder.
+	- Incorrect behavior [Bug]: git answers with the inner account's gitea token.
+	- Expected behavior [Bug]: Each host gets only its own account's token.
+	- Reproduced [Bug]: 2026-11-19 on b23. Same at d5e76f2. Confirmed.
+	- Possible cause [Bug]: The outer helper stays in git's list and reads the token file key the inner fragment sets.
+	- Origin: 08e7452, 2026-11-08. Round-20261111 (2026111016332429) kept the helper on purpose but didn't try differing hosts. Same class as Code Review 20261110b item 1.
+
+- Code Review 20261119 item 5: raw gh hands the Enterprise token to any other host
+	- ID: 2026111910223233
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-102232
+	- Opened by:
+	- Related IDs: 2026111016332206
+	- Steps to reproduce [Bug]: With GH_HOST on an Enterprise host whose account has a token, run gitsby raw gh auth token --hostname evil.example.
+	- Incorrect behavior [Bug]: gh prints the account's token. gh applies GH_ENTERPRISE_TOKEN to every host but github.com.
+	- Expected behavior [Bug]: No token for a raw gh that names another host, as glabTokenEnv does for glab.
+	- Reproduced [Bug]: 2026-11-19 on b23, real gh 2.96 and a fake token. Confirmed.
+	- Possible cause [Bug]: tokenEnvVar exports the variable without checking the host gh is pointed at.
+	- Origin: d5d8cfa, nov19 (2026111016332206). Regression: it moved the leak from github.com to other hosts. Same class as Code Review 20261110b item 1.
+
+- Code Review 20261119 item 6: On Windows, a folder rule through a junction never matches
+	- ID: 2026111910223218
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Needs external testing: vm925w
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-102232
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Make a junction to a folder holding a repo, write a path rule that names the junction, and run gitsby account from the repo either way.
+	- Incorrect behavior [Bug]: No account matches. account apply writes the junction path, so plain git gets no identity either. A symlink works.
+	- Expected behavior [Bug]: A junction resolves like a symlink, as the comment in canonPath says and v2.1.0 did.
+	- Reproduced [Bug]: 2026-11-19 on vm925w. GODEBUG=winsymlink=0 makes it match. Confirmed.
+	- Possible cause [Bug]: Go 1.23 and later no longer resolve mount points in EvalSymlinks.
+	- Origin: d476da9, 2026-08-17. No round reached it. No Go test makes a junction.
+
+- Code Review 20261119 item 7: pr create pushes to one branch and opens the PR on another
+	- ID: 2026111910223203
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102232
+	- Opened by:
+	- Related IDs: 2026111016332392
+	- Steps to reproduce [Bug]: Have feat track origin/feature-x while origin also has an older feat, add a commit, and run gitsby -q pr create T.
+	- Incorrect behavior [Bug]: It pushes to feature-x, then asks gh for a PR from feat, the stale branch, exit 0. An upstream on a second remote does the same.
+	- Expected behavior [Bug]: The PR names the branch the push went to, or pr create refuses.
+	- Reproduced [Bug]: 2026-11-19 on b23, with a fake gh. d5e76f2 refused before gh ran. Confirmed.
+	- Possible cause [Bug]: prCreateArgs passes the current branch name, while pushDest pushes to the upstream.
+	- Origin: 6e3ab95, round-20261111 (Code Review 20261110b item 5). Regression of that fix.
+
+- Code Review 20261119 item 8: An account with no email commits as an empty address after account apply
+	- ID: 2026111910223190
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Steps to reproduce [Bug]: With one account that uses a folder-name rule and another path account with no email, run account apply, then git var GIT_AUTHOR_IDENT in the second's folder.
+	- Incorrect behavior [Bug]: git prints the name with <> and exits 0. Before, git refused for want of an email. whoami doesn't flag it.
+	- Expected behavior [Bug]: An account with no email leaves git to refuse, or apply warns.
+	- Reproduced [Bug]: 2026-11-19 on b23, against d5e76f2 too. Confirmed.
+	- Possible cause [Bug]: The fragment now writes email with an empty value. git treats an empty email as given and an empty name as missing.
+	- Origin: 6770e4f, round-20261111 (Code Review 20261110b item 2). Regression of that fix.
+
+- Code Review 20261119 item 9: br create, br hotfix and release push back a branch deleted on origin
+	- ID: 2026111910223176
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Steps to reproduce [Bug]: Push feat, merge it into dev on origin and delete it there, as a merged PR does, then run gitsby br create next.
+	- Incorrect behavior [Bug]: The plan shows origin/feat gone but no warning, and the park push puts feat back on origin, -q too. sync refuses the same case.
+	- Expected behavior [Bug]: The gone-branch warning and -q refusal cover every park push but br merge and pr create.
+	- Reproduced [Bug]: 2026-11-19 on b23 for br create. br hotfix and release by reading. Confirmed.
+	- Possible cause [Bug]: pushesGoneBranch covers only sync and br switch.
+	- Origin: eaaa64c, nov19 (2026111016331930). Missed twin of that fix.
+
+- Code Review 20261119 item 10: With GIT_DIR set, every command except raw picks the account from the current folder
+	- ID: 2026111910223162
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Steps to reproduce [Bug]: With a repo in an account's folder and the shell in another account's folder, set GIT_DIR to the repo's .git and run gitsby whoami.
+	- Incorrect behavior [Bug]: whoami, status and account list show the other account. raw git shows the repo's.
+	- Expected behavior [Bug]: Every command takes the account from the repo, as item 2026111016332367's decision says.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: enterRepo sets contextDir itself, so the GIT_DIR branch in config.go never runs for those commands.
+	- Origin: 12f1bc2, nov18. Missed sibling of that fix.
+
+- Code Review 20261119 item 11: A stalled https remote hangs every command
+	- ID: 2026111910223148
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Steps to reproduce [Bug]: Point origin at a local http listener that accepts and never answers, then run gitsby status.
+	- Incorrect behavior [Bug]: It sits at git fetch until stopped. pullcom, sync and the push of sync --no-fetch do the same. Nothing is left half done after Ctrl-C.
+	- Expected behavior [Bug]: The fetch and probes give up after a while, as the comment at remote.go line 274 says.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: remoteEnv sets no http speed limit, only the ssh connect timeout.
+	- Origin: 88ff4ab, 2026-08-19. The comment came in 8c7a856. No round reached it.
+
+- Code Review 20261119 item 12: In a single-branch clone, br merge merges into main and passes over origin's dev
+	- ID: 2026111910223133
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Steps to reproduce [Bug]: Clone with --depth 1 from an origin with main and dev, then gitsby -q br create feat, commit, and gitsby -q br merge.
+	- Incorrect behavior [Bug]: feat is branched from main and merged into main, pushed, exit 0. br switch dev says there is no dev on origin.
+	- Expected behavior [Bug]: gitsby finds origin's dev, or refuses and says the fetch is narrowed.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: mergeTarget and branchExistsRemote read only refs/remotes/origin, which a narrowed fetch never fills.
+	- Origin: f9716e4, 2026-10-04. No round saw it.
+
+- Code Review 20261119 item 13: From a linked worktree, br merge, br switch, br create and release push, then fail at a checkout
+	- ID: 2026111910223119
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Steps to reproduce [Bug]: Keep dev checked out in the main worktree, work on w in a linked one with a dirty file, and run gitsby -q br merge.
+	- Incorrect behavior [Bug]: It commits and pushes w, then dies on dev is already used by worktree, exit 1. release ends on dev with nothing tagged.
+	- Expected behavior [Bug]: Refuse before the plan when a branch the run checks out is held by another worktree, as design.md says.
+	- Reproduced [Bug]: 2026-11-19 on b23, all 4 commands. Confirmed.
+	- Possible cause [Bug]: Preflight doesn't read git worktree list. Only br prune knows the case.
+	- Origin: Go port. No round reached it.
+
+- Code Review 20261119 item 14: On Windows, curly single quotes in a branch name break out of a paste line
+	- ID: 2026111910223104
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Needs external testing: vm925w
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Push a branch named x, a right single quote, then ;hostname;# to origin. Merge it, make origin unreachable, and run gitsby -q br prune.
+	- Incorrect behavior [Bug]: The printed delete line, pasted into PowerShell 7 or 5.1, runs hostname.
+	- Expected behavior [Bug]: A pasted line passes the name as one argument.
+	- Reproduced [Bug]: 2026-11-19 on vm925w. Confirmed.
+	- Possible cause [Bug]: PowerShell reads the 4 curly single quotes as a quote, and typedArg doubles only the ASCII one.
+	- Origin: df38db0, 2026-09-15. No round saw it.
+
+- Code Review 20261119 item 15: pr ok from another branch pulls that branch while its plan says the target
+	- ID: 2026111910223089
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: Stand on a branch whose upstream moved ahead, then run gitsby pr ok <n> and answer y.
+	- Incorrect behavior [Bug]: The plan says it checks out and pulls dev. The run fast-forwards the current branch instead and leaves dev stale.
+	- Expected behavior [Bug]: The run matches the plan.
+	- Reproduced [Bug]: 2026-11-19 on b23, with a fake gh. Confirmed.
+	- Possible cause [Bug]: cmdPrAccept in pr.go checks out the target only in some cases. The plan line in preview.go always names it.
+	- Origin: 4918b5b and 353f5c9, 2026-08-19. Plan line from c4fa47c. No round saw it.
+
+- Code Review 20261119 item 16: After an autostash conflict, sync, br switch and pr create say to run pullcom again
+	- ID: 2026111910223074
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: Edit a file that origin's branch also changed, then run gitsby -q sync.
+	- Incorrect behavior [Bug]: It says to run gitsby pullcom again. That commits, but doesn't push, switch or open the PR.
+	- Expected behavior [Bug]: It names the command that was run.
+	- Reproduced [Bug]: 2026-11-19 on b23, all 3 commands. Confirmed.
+	- Possible cause [Bug]: cmdCommit passes pullcom by name to refuseConflicts. pullIfOnline already uses typedName.
+	- Origin: 8dfe5ff, nov18. Missed twin of that fix.
+
+- Code Review 20261119 item 17: br merge pushes your own commits on dev with no --direct warning
+	- ID: 2026111910223060
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: On dev, commit with gitsby -q pullcom, then switch to a feature branch and run gitsby -q br merge.
+	- Incorrect behavior [Bug]: The direct commit goes to origin's dev with the merge, exit 0. sync on dev refuses the same push.
+	- Expected behavior [Bug]: br merge warns, and refuses under -q, when the target has commits of its own to push.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: directPush exempts br merge, since it refuses to run from a protected branch. That doesn't cover commits already on the target.
+	- Origin: Sibling of 2026111016332380, nov18.
+
+- Code Review 20261119 item 18: The Incoming list shows a tab as the escape marker
+	- ID: 2026111910223045
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: Have a branch behind its upstream and run gitsby status.
+	- Incorrect behavior [Bug]: Incoming lines read M, the tab escape marker, then the file name. A rename shows two.
+	- Expected behavior [Bug]: Readable columns.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: git diff --name-status output goes through printable, which escapes the tab. [da9v4] checks only the word Incoming.
+	- Origin: 2be7d35, 2026-10-06, then 320e15d. No round saw it.
+
+- Code Review 20261119 item 19: -m given twice keeps only the last message
+	- ID: 2026111910223031
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: Run gitsby -q pullcom -m first -m second.
+	- Incorrect behavior [Bug]: It commits with subject second and exits 0.
+	- Expected behavior [Bug]: Refuse 2 messages, as a typed word beside -m is refused.
+	- Reproduced [Bug]: 2026-11-19 on b23, also pr create. Confirmed.
+	- Possible cause [Bug]: The -m setter in args.go overwrites.
+	- Origin: Missed sibling of 2026111016332070, round-20261111.
+
+- Code Review 20261119 item 20: account unset on a dotted key line changes lines the plan doesn't name
+	- ID: 2026111910223016
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: With account.work.email and account.work.name on their own lines, run gitsby account unset work email.
+	- Incorrect behavior [Bug]: The plan names only the email line. The save also writes account: and work: lines.
+	- Expected behavior [Bug]: The plan says the save reshapes more than the key.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: When removedLines can't match, the plan falls back to the old key-only list without saying so.
+	- Origin: 75ec0ec, round-20261111 (Code Review 20261110b item 10). Missed case of that fix.
+
+- Code Review 20261119 item 21: When a 2.x file can't be converted, its notice says two opposite things
+	- ID: 2026111910223002
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: Write a 2.x accounts file with a value holding a lone double quote before a #, then run gitsby account list.
+	- Incorrect behavior [Bug]: The head says this run read it the old way, and the Why line says it read it the new way.
+	- Expected behavior [Bug]: One account of how the file was read.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: The head and the Why line are written apart in config.go and cfgformat.go.
+	- Origin: ca74ed4, nov18. Regression of item 2026111016332218's notice.
+
+- Code Review 20261119 item 22: On an unborn branch with an origin, br create renames the branch, then fails
+	- ID: 2026111910222988
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Steps to reproduce [Bug]: git init, add files, add an empty bare origin, then run gitsby -q br create nb.
+	- Incorrect behavior [Bug]: HEAD moves to the unborn nb, then the push fails with src refspec HEAD does not match any, exit 1.
+	- Expected behavior [Bug]: Refuse up front, saying there are no commits yet.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: Preflight doesn't check that HEAD has a commit.
+	- Origin: Go port. No round reached it.
+
+- Code Review 20261119 item 23: In a sparse checkout, a failed git add leaves the index half staged
+	- ID: 2026111910222973
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Steps to reproduce [Bug]: Set a sparse cone, add a file inside and outside it, edit one outside, then run gitsby -q sync.
+	- Incorrect behavior [Bug]: git add --all fails after the plan, with one file staged and one not, exit 1 with only git's advice.
+	- Expected behavior [Bug]: Refuse before the plan, or say the index was left partly staged.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: cmdCommit doesn't know about sparse checkout.
+	- Origin: Go port. No round reached it.
+
+- Code Review 20261119 item 24: [daf7x] passes with the code it checks taken out
+	- ID: 2026111910222957
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Steps to reproduce [Bug]: Replace the showLines call in refuseConflicts with nothing, rebuild, and run test.bash's [daf7w] block.
+	- Incorrect behavior [Bug]: [daf7w] to [daf7z] stay green. The file name they grep for comes from the status header, not the refusal.
+	- Expected behavior [Bug]: The check fails when refuseConflicts stops listing the file.
+	- Reproduced [Bug]: 2026-11-19 on b23, by mutation in a copy. Confirmed.
+	- Possible cause [Bug]: It greps all output rather than the refusal's own line, as [dfg1f] does.
+	- Origin: 9630f8f, 2026-07-27. No round saw it.
+
+- Code Review 20261119 item 25: safe-rm.ps1 doesn't refuse cmd's other separators
+	- ID: 2026111910222942
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Needs external testing: vm925w
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Set TEMP to a folder whose name holds a comma, semicolon or equals sign, then let the guard remove a test folder under it.
+	- Incorrect behavior [Bug]: The guard passes it, and cmd's rmdir splits the path into two.
+	- Expected behavior [Bug]: The guard refuses those characters too, or anything outside a short safe set.
+	- Reproduced [Bug]: No. Read on 2026-11-19. Plausible.
+	- Possible cause [Bug]: The refused set at safe-rm.ps1 line 28 stops at &|<>^%"().
+	- Origin: f7e1c0b, round-20261111. Missed twin of that class fix.
+
+- Code Review 20261119 item 26: release.bash publishes a dot-suffixed version as a full release
+	- ID: 2026111910222928
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Steps to reproduce [Bug]: Cut v3.0.0.rc1 with release.bash.
+	- Incorrect behavior [Bug]: The version passes the check, but the pre-release test only looks for a dash, so no --prerelease, and installers take it as the newest full release.
+	- Expected behavior [Bug]: Any suffix the version check admits, dot or dash, makes a pre-release, as gitsby's nextVersion reads it.
+	- Reproduced [Bug]: 2026-11-19 on b23, fIsReleaseVersion v3.0.0.rc1. Confirmed.
+	- Possible cause [Bug]: release.bash lines 325 and 349 test only for a dash.
+	- Origin: ed296a4, 2026-09-16. No round saw it.
+
+- Code Review 20261119 item 27: release.bash finds the default branch with symbolic-ref --short
+	- ID: 2026111910222914
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Steps to reproduce [Bug]: In a clone, make a tag named origin/main, then run the default branch lookup.
+	- Incorrect behavior [Bug]: It reads remotes/origin/main, the show-ref fails, and the check for untested commits on main is skipped.
+	- Expected behavior [Bug]: Read the full ref and strip refs/remotes/origin/, as branch.go's originHead does.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: fpDefaultBranch at release.bash line 203.
+	- Origin: dc94879, round-20261111. Sibling of originHead's rule, Never --short.
+
+- Code Review 20261119 item 28: The image's markdownlint version check passes when markdownlint prints nothing
+	- ID: 2026111910222900
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Steps to reproduce [Bug]: Run the Dockerfile's check with markdownlint missing.
+	- Incorrect behavior [Bug]: awk with no input exits 0, and sh has no pipefail, so the step passes.
+	- Expected behavior [Bug]: The step fails unless the version matches.
+	- Reproduced [Bug]: 2026-11-19 on b23, with dash. Confirmed.
+	- Possible cause [Bug]: A pipe into awk at Dockerfile line 132.
+	- Origin: 1c16940, round-20261111. Regression, a check that passes on nothing.
+
+- Code Review 20261119 item 29: On Windows, a paste line leaves a branch name starting with @ unquoted
+	- ID: 2026111910222886
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Needs external testing: vm925w
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Make a branch @foo and get a line that names it, such as from br prune.
+	- Incorrect behavior [Bug]: The line has git switch @foo, which PowerShell reads as splatting, so git gets no branch.
+	- Expected behavior [Bug]: typedArg quotes a word that starts with @ on Windows.
+	- Reproduced [Bug]: 2026-11-19 on vm925w, in pwsh 7 and 5.1. Confirmed.
+	- Possible cause [Bug]: typedArg in prune.go quotes only on its listed characters.
+	- Origin: df38db0, 2026-09-15. No round saw it.
+
+- Code Review 20261119 item 30: On Windows, a git.bat or git.cmd on PATH re-reads gitsby's arguments through cmd
+	- ID: 2026111910222873
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Needs external testing: vm925w
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Put a git.bat that calls git.exe ahead of git.exe on PATH, with a branch named x&ver, then run gitsby -q br switch x&ver --no-fetch.
+	- Incorrect behavior [Bug]: cmd runs ver, and gitsby exits 0 still on main. raw git exits 0 where git would exit 128.
+	- Expected behavior [Bug]: gitsby skips or refuses a batch file match, and names it.
+	- Reproduced [Bug]: 2026-11-19 on vm925w, also with git.cmd and a name holding %PATH%. Confirmed.
+	- Possible cause [Bug]: walkTool in exec.go accepts .bat and .cmd, and Go doesn't quote for cmd.
+	- Origin: c14672e, 2026-10-21. exec.LookPath did the same before it. No round saw it.
+
+- Code Review 20261119 item 31: On Windows, a held accounts file gives the wrong Fix and mixed slashes
+	- ID: 2026111910222859
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Needs external testing: vm925w
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Open config.shcl from another program without share-delete, then run gitsby -q account set <account> email x@y.
+	- Incorrect behavior [Bug]: It refuses with the file intact, but the Why line shows AppData\Roaming/gitsby/config.shcl and the Fix says to make the folder writable.
+	- Expected behavior [Bug]: Backslashes, and a Fix that says another program may have the file open.
+	- Reproduced [Bug]: 2026-11-19 on vm925w. Confirmed.
+	- Possible cause [Bug]: The candidate path is built with a slash, and the Fix reasons from POSIX only.
+	- Origin: b64bc2e, 2026-10-03. No round saw it.
+
+- Code Review 20261119 item 32: design.md says the suites run on Windows under Git Bash
+	- ID: 2026111910222845
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Steps to reproduce [Bug]: Read design.md near line 619 and remote-tests.bash fRunWindows.
+	- Incorrect behavior [Bug]: Only the Go tests run on the Windows box. test.bash never runs there.
+	- Expected behavior [Bug]: design.md says what stage 7 runs.
+	- Reproduced [Bug]: 2026-11-19, by reading. Confirmed.
+	- Possible cause [Bug]: The line dates from the bash era.
+	- Origin: 4f9ef7b, 2026-08-08. No round saw it.
+
+- Code Review 20261119 item 33: install.ps1 can leave no gitsby.exe when its last move fails
+	- ID: 2026111910222830
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Needs external testing: vm925w
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Upgrade over an existing install and make the final Move-Item fail, such as with the folder made read-only after the old copy moves aside.
+	- Incorrect behavior [Bug]: The catch removes only the staged file, leaving gitsby.exe.replaced-* and no gitsby.exe.
+	- Expected behavior [Bug]: A failed install leaves the old copy in place.
+	- Reproduced [Bug]: No. Read on 2026-11-19. Plausible.
+	- Possible cause [Bug]: install.ps1 lines 367 to 377 don't move the old copy back.
+	- Origin: The move-aside code. No round saw it.
+
+- Code Review 20261119 item 34: install.ps1 can add PATH twice and says Added when it was already there
+	- ID: 2026111910222815
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Needs external testing: vm925w
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Have the user PATH hold the install folder as %LOCALAPPDATA%\Programs\gitsby or with a trailing backslash, then run install.ps1.
+	- Incorrect behavior [Bug]: The check compares the stored PATH entries against the expanded folder, so it adds a second entry and says Added. The plan says account where the result says User.
+	- Expected behavior [Bug]: Compare expanded, trimmed entries, and say already on PATH when it is. Use one word for the scope.
+	- Reproduced [Bug]: No. Read on 2026-11-19. Plausible.
+	- Possible cause [Bug]: The PATH test at install.ps1 line 416 uses the raw stored list.
+	- Origin: The PATH code predates the round. The scope wording predates it too. No round saw it.
+
+- Code Review 20261119 item 35: lockFix is production code that only tests call
+	- ID: 2026111910222801
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Steps to reproduce [Bug]: staticcheck -tests=false -checks U1000 on src-go.
+	- Incorrect behavior [Bug]: It reports lockFix in accountcmd.go as unused.
+	- Expected behavior [Bug]: No test-only code in the build.
+	- Reproduced [Bug]: 2026-11-19 on b23. d5e76f2 reports nothing. Confirmed.
+	- Possible cause [Bug]: Item 8's lockBeside rework left it for the tests only.
+	- Origin: a4fa440, round-20261111 (Code Review 20261110b item 8). Regression in dead code.
+
+- Code Review 20261119 item 36: parity.bash defines 2 helpers nothing calls
+	- ID: 2026111910222787
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102227
+	- Opened by:
+	- Steps to reproduce [Bug]: grep cicd/parity.bash for fSameStripped and fSameField.
+	- Incorrect behavior [Bug]: Both are defined and never called.
+	- Expected behavior [Bug]: No dead code in the gates.
+	- Reproduced [Bug]: 2026-11-19 on b23, by grep. Confirmed.
+	- Possible cause [Bug]: Left from an older parity layout.
+	- Origin: Already there at d5e76f2. No round saw it.
+
+- Code Review 20261119 item 37: 4 closed items have no Closed row, and backlog-check doesn't notice
+	- ID: 2026111910222773
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102227
+	- Opened by:
+	- Steps to reproduce [Bug]: Look at 2026111016331881, 2026102416313106, 2026110611063063 and 2026100507345200.
+	- Incorrect behavior [Bug]: Each is Status: Closed with no Closed: date. 2026111016331881 has no Acceptance signoff either.
+	- Expected behavior [Bug]: Every closed item has a Closed: row, and backlog-check fails one without it.
+	- Reproduced [Bug]: 2026-11-19 on b23, by a script over the backlog. Confirmed.
+	- Possible cause [Bug]: backlog-check has no rule for it.
+	- Origin: The 4 items, closed by hand over several rounds. No round saw it.
+
+- Code Review 20261119 enhancement 1: Comments are wrapped at a fixed column
+	- ID: 2026111910222759
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102227
+	- Opened by:
+	- Requirements [Feature]: Directive 2026-11-18, Line length: a long comment may be wrapped where it reads best, never at a fixed column. Go comments wrap near 80 and bash near 95. Rewrap a comment by sense when it is next edited, rather than in one sweep. ruff.toml may set line-length = 320.
+	- Origin: New directive, not a regression. About 800 comment runs match.
+
+- Code Review 20261119 enhancement 2: account apply and account list spawn git var more than they need
+	- ID: 2026111910222745
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102227
+	- Opened by:
+	- Requirements [Feature]: Cache the global config list for the run, and skip it when there is no fragment folder. apply went from 18 to 25 git calls, account list from 6 to 7.
+	- Origin: a4fa440 and later round-20261111 and nov18 apply fixes. Measured against d5e76f2.
+
+- Code Review 20261119 enhancement 3: br switch from a protected branch checks the tree twice
+	- ID: 2026111910222732
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102227
+	- Opened by:
+	- Requirements [Feature]: directPush returns early for br switch once ownCommitsAhead is read, since preflight already refused a dirty protected tree.
+	- Origin: bb905b6 and 8dfe5ff (nov18). Two identical git status calls in a row, by strace.
+
+- Code Review 20261119 enhancement 4: gitsby.exe can't start in a folder past 260 characters
+	- ID: 2026111910222718
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Needs external testing: vm925w
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102227
+	- Opened by:
+	- Target OS: Windows
+	- Requirements [Feature]: Add a manifest with longPathAware to the Windows resource that gen-winres.bash makes. git.exe needs core.longpaths there too, so the gain is small.
+	- Origin: Found on vm925w. No earlier round saw it.
+
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
 	- Type: Bug
