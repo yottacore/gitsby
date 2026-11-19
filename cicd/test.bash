@@ -3684,6 +3684,23 @@ GHEOF
 	fAssertFail "[dadt0] pr ok refuses unpushed commits"  bash -c "cd '${pgc}' && rm -f dirt.txt && echo u > u.txt && git add --all && git commit --quiet -m unpushed && PATH='${ghp}' '${gitsby}' -q pr ok 7"
 	fAssert     "[dadt1] pr ok kept the unpushed commit"  bash -c "cd '${pgc}' && git log -1 --pretty=%s | grep -qx unpushed"
 	fAssert     "[dadt2] pr ok proceeds once synced"  bash -c "cd '${pgc}' && git push --quiet && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7"
+	## A submodule's own untracked files aren't work this repo could push, so they don't stop it.
+	mkdir -p "${gh}/prsub"
+	git init --quiet -b main "${gh}/prsub/child"
+	( cd "${gh}/prsub/child" && echo c > c.txt && git add --all && git commit --quiet -m child )
+	git init --quiet --bare -b main "${gh}/prsub/origin.git"
+	local psc="${gh}/prsub/c"
+	git clone --quiet "${gh}/prsub/origin.git" "${psc}" 2>/dev/null
+	(
+		cd "${psc}" || exit 1
+		echo base > base.txt && git add --all
+		git -c protocol.file.allow=always submodule --quiet add "${gh}/prsub/child" child
+		git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b psfeat && echo w > w.txt && git add --all && git commit --quiet -m work && git push --quiet -u origin psfeat
+		echo u > child/untracked.txt
+	)
+	fAssert     "[dfg1v] pr ok isn't stopped by a submodule's own untracked files"  bash -c "cd '${psc}' && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7 && git ls-tree --name-only dev | grep -qx w.txt"
 
 	## Which branch a PR merges into, and whether it's a hotfix, belong to the PR - not to wherever
 	## you happen to be standing. 'pr ok <n>' is routinely run from dev, on someone else's branch.
@@ -4555,6 +4572,51 @@ GHEOF
 	fAssertOut  "[daf7x] and names the conflicted file"  'shared\.txt'  bash -c "cd '${cf}/mine' && '${gitsby}' -q update 'mine' 2>&1"
 	fAssert     "[daf7y] and commits no conflict markers"  bash -c "cd '${cf}/mine' && ! git log -p | grep -q '<<<<<<<'"
 	fAssert     "[daf7z] and leaves the merge unresolved for the user"  bash -c "cd '${cf}/mine' && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]]"
+
+	## br create and br hotfix pull with --autostash off a protected branch and commit nothing
+	## after it, so the commit's conflict check never ran: they branched and pushed over the markers.
+	local cfb
+	for cfb in create hotfix; do
+		git clone --quiet "${cf}/origin.git" "${cf}/br-${cfb}" 2>/dev/null
+		(
+			cd "${cf}/br-${cfb}" || exit 1
+			git reset --quiet --keep HEAD~1 && printf 'line1\nMINE\nline3\n' > shared.txt
+			rc=0; "${gitsby}" -q br "${cfb}" "cf${cfb}" > "${cf}/br-${cfb}.out" 2>&1 || rc=$?
+			echo "${rc}" > "${cf}/br-${cfb}.rc"
+		)
+	done
+	fAssert     "[dfg1e] br create refuses a conflicted autostash reapply"  bash -c "[[ \"\$(cat '${cf}/br-create.rc')\" == 1 ]]"
+	fAssert     "[dfg1f] and names the conflicted file and the stash"  bash -c "grep -qx '    shared\.txt' '${cf}/br-create.out' && grep -qF \"run 'gitsby br create cfcreate' again. Git also kept your pre-pull tree - see 'git stash list'\" '${cf}/br-create.out'"
+	fAssert     "[dfg1g] and makes no branch, here or on origin"  bash -c "cd '${cf}/br-create' && [[ \"\$(git branch --show-current)\" == main ]] && ! git show-ref --quiet refs/heads/cfcreate && [[ -z \"\$(git ls-remote --heads origin cfcreate)\" ]]"
+	fAssert     "[dfg1h] br hotfix refuses it too"  bash -c "[[ \"\$(cat '${cf}/br-hotfix.rc')\" == 1 ]]"
+	fAssert     "[dfg1j] and makes no hotfix branch, leaving the conflict and the stash"  bash -c "cd '${cf}/br-hotfix' && ! git show-ref --quiet refs/heads/hotfix/cfhotfix && [[ -z \"\$(git ls-remote --heads origin hotfix/cfhotfix)\" ]] && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]] && [[ -n \"\$(git stash list)\" ]]"
+
+	## A submodule with its own edits or untracked files shows in status, but 'git add --all'
+	## stages nothing for it. Deciding from status, the commit ran with nothing staged and failed,
+	## and the protected-branch checks refused work that isn't this repo's to commit.
+	local smd="${work}/$1-submodule"
+	mkdir -p "${smd}"
+	git init --quiet -b main "${smd}/child"
+	( cd "${smd}/child" && echo c > c.txt && git add --all && git commit --quiet -m child )
+	git init --quiet --bare -b main "${smd}/origin.git"
+	git clone --quiet "${smd}/origin.git" "${smd}/top" 2>/dev/null
+	(
+		cd "${smd}/top" || exit 1
+		echo a > a.txt && git add --all
+		git -c protocol.file.allow=always submodule --quiet add "${smd}/child" child
+		git commit --quiet -m init && git tag -a v0.1.0 -m v0.1.0 && git push --quiet -u origin main v0.1.0
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b smfeat && git push --quiet -u origin smfeat
+		echo u > child/untracked.txt && echo m >> child/c.txt
+	)
+	fAssert    "[dfg1k] pullcom with only a dirty submodule succeeds"  bash -c "cd '${smd}/top' && '${gitsby}' -q pullcom 'sub'"
+	fAssert    "[dfg1m] and commits nothing"  bash -c "cd '${smd}/top' && [[ \"\$(git rev-list --count HEAD)\" == 1 ]]"
+	fAssert    "[dfg1n] sync with only a dirty submodule succeeds"  bash -c "cd '${smd}/top' && '${gitsby}' -q sync 'sub'"
+	fAssert    "[dfg1p] br switch off main with only a dirty submodule moves"  bash -c "cd '${smd}/top' && git checkout --quiet main && '${gitsby}' -q br switch smfeat && [[ \"\$(git branch --show-current)\" == smfeat ]]"
+	fAssert    "[dfg1q] -q sync on main with only a dirty submodule isn't a direct push"  bash -c "cd '${smd}/top' && git checkout --quiet main && '${gitsby}' -q sync 'sub'; rc=\$?; git checkout --quiet dev; exit \${rc}"
+	fAssertOut "[dfg1r] release with only a dirty submodule has nothing new"  'Nothing new to release since v0\.1\.0'  bash -c "cd '${smd}/top' && '${gitsby}' -q release 2>&1"
+	fAssert    "[dfg1s] and cuts no tag"  bash -c "cd '${smd}/top' && ! git rev-parse -q --verify refs/tags/v0.1.1 >/dev/null"
+	fAssert    "[dfg1t] a submodule moved to another commit is still committed"  bash -c "cd '${smd}/top' && git checkout --quiet smfeat && ( cd child && git add --all && git commit --quiet -m moved ) && '${gitsby}' -q pullcom 'bump' && [[ -z \"\$(git status --porcelain)\" ]] && git log -1 --pretty=%s | grep -qx bump"
 
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"

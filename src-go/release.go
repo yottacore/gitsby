@@ -157,7 +157,7 @@ func (a *app) releasePreflight() error {
 	// An invented version on a target that gains nothing cuts a tag for no release, and
 	// a re-run cuts another. Fails open. A parked tree is something to release, or under
 	// --staged the index.
-	parks := runOut("git", "status", "--porcelain") != ""
+	parks := treeDirty()
 	if a.opt.staged {
 		parks = !runOK("git", "diff", "--cached", "--quiet")
 	}

@@ -215,7 +215,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 12: br create and br hotfix say Done after the autostash conflicts
 	- ID: 2026111016332305
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
@@ -227,11 +227,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: branchcmd.go:47 doesn't check for conflicts after the pull.
 	- Origin: 86ca0b1 and 9f53a91. A missed twin of Code Review 20260727b item 1, which guarded the commit site only. Confirmed.
 	- Sweep: Every pull with autostash: pullIfOnline and its callers.
+	- Closed reason: Done
+	- Actual cause [Bug]: The pull's autostash restore can conflict and git still exits 0. pullcom and sync catch that in the commit, but br create and br hotfix off a protected branch commit nothing after the pull, so nothing checked.
+	- Actual fix [Bug]: Every pull with --autostash inside a multi-step command checks for conflicted files after it. If there are any, the command lists them and stops, with the same advice and stash pointer as pullcom, naming the command to run again. pullcom's own check is the same shared code.
+	- Branch: nov18-2026111016332305
+	- Commit: 451bac1
+	- Test case: test.bash [dfg1e] to [dfg1j]; [daf7w] to [daf7z] still cover pullcom.
+	- Verified: [dfg1e] to [dfg1j] fail on the build before the fix, where br create and br hotfix exited 0 and pushed the new branch, and pass with it. The quick gate passed with every area: test.bash 2033/0, fuzz 310/0, parity 31/0. gosec reports nothing in the changed files.
+	- Swept: every --autostash pull, by grep for autostash(). cmdPull (pullcom, sync, and every park through cmdCommitPull) is followed by cmdCommit's check. cmdNewBranch's protected path now checks. The other pullIfOnline callers (br switch, br merge and its back-merge, release, pr ok) pull without --autostash after the park commit, so git refuses rather than leaving a conflict. --staged pulls never use --autostash.
+	- Decisions: The check sits in pullIfOnline, keyed on --autostash, so a new caller that passes it is covered. The rerun advice uses the command as typed with its branch argument, which is right for br create and br hotfix, the only callers that pass it.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261118-173202
 
 - Code Review 20261110b item 13: A dirty submodule makes every command that parks work fail
 	- ID: 2026111016332293
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163322
@@ -243,6 +254,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: mutate.go:42 decides there's something to commit from `git status --porcelain`, not from the index after `add`.
 	- Origin: cfb6d90, 2026-08-18, the same as v2.1.0. No round saw it. Confirmed.
 	- Sweep: The other porcelain checks: directPush, releasePreflight, and br switch's dirty-branch refusal.
+	- Closed reason: Done
+	- Actual cause [Bug]: Status lists a submodule with its own edits or untracked files as modified, but git add --all stages nothing for it. The commit decided from status, so it ran with nothing staged and failed. The protected-branch and release checks read status the same way.
+	- Actual fix [Bug]: The commit decides from the index after the add. The checks that run before anything is staged read status with --ignore-submodules=dirty, through one helper, treeDirty. A submodule moved to another commit still counts.
+	- Branch: nov18-2026111016332305
+	- Commit: e3a2644
+	- Test case: test.bash [dfg1k] to [dfg1t], and [dfg1v] for pr ok.
+	- Verified: [dfg1k], [dfg1n], [dfg1p], [dfg1q], [dfg1r] and [dfg1v] fail on the build before the fix. With the commit fixed and the other sites put back, [dfg1p], [dfg1q], [dfg1r], [dfg1s] and [dfg1v] fail, one per site. [dfg1m] and [dfg1t] pass on both, as guards. The quick gate passed with every area: test.bash 2033/0, fuzz 310/0, parity 31/0. gosec reports nothing in the changed files.
+	- Swept: every git status --porcelain check in src-go. directPush, releasePreflight, br switch's dirty-branch refusal (preflightBranch) and pr ok's refusal (prAcceptPreflight) now use treeDirty. settleRepoConnect's hasWork is left as is, since a repo with a submodule also has commits.
+	- Decisions: pr ok's refusal is in the fix too, though not named in the Sweep, since it refused the same submodule-only tree for having work that isn't on origin. The status header and the --staged plan still list the submodule, since it is there. They are only shown.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261118-173202
 
 - Code Review 20261110b item 14: repo url ssh rewrites an ssh host alias to the bare host, which changes the key
 	- ID: 2026111016332280
