@@ -44,12 +44,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Both hosted Macs died at test.bash:8977 with 'touch: out of range or illegal time specification', right after [dfg48]. The line came in with ca74ed4 (round nov18). Last green run: ea9011ab. BSD touch has no '@epoch' form, so stage 7 on b26 and vmFreeBSD stops there too.
 	- Origin: hosted macOS run 44453179447 on dev at c7e3251, 2026-11-19
 	- Test case: test.bash [dfgvd], a source check that no touch takes an '@epoch' date
-	- Needs external testing: The hosted macOS workflow (macos.yml, both runners) and stage 7 on b26 and vmFreeBSD, with test.bash reaching past [dfg4c] and [dfgvd] passing there.
+	- Needs external testing: The hosted macOS workflow (macos.yml, both runners) on nov19, with test.bash reaching past [dfg4c] and [dfgvd] passing there.
 	- Actual cause: touch -d '@1' at the nixpin fixture is GNU only. BSD touch has no @epoch form.
 	- Actual fix: the three touch -d fixture lines in the shcl block and the one in the run-latest block now use touch -t, with TZ=UTC for the epoch of 1.
 	- Swept: test.bash, fuzz.bash, parity.bash, spawn-count.bash, remote-tests.bash and the cicd scripts for touch -d, date -d, stat -c, sed -i, readlink -f. The 3-days-ago touches, the +N seconds date and sed -i without a suffix sit inside the Linux-only release and pre-push gate blocks. The strace block holds the -1 hour date. test-id --at is probed by date -u -d @0. cicd.bash and gen-winres stat -c run in the Linux pipeline. gfs-rotate.bash has a GNU stat -c %Y fallback that BSD reaches only for a file name with no date (left as is).
 	- Verified: test.bash passed in the image under --backlog-run-quick lint suite, with [dfgvd] passing. The old form is caught by its pattern. BSD run not done.
 	- Verified: [dfgvd] watched to fail. With the old touch -d '@1' line put back in a copy of test.bash, its grep found the line (red). With the fixed file restored by copy, it found nothing (green). test.bash passed in the image under --backlog-run-quick lint suite, with [dfgvd] passing. BSD run not done.
+	- Verified: stage 7 on nov19 at ee2e268, on b26 and vmFreeBSD through stage7-one-box.bash. The Go tests passed on both. test.bash ran to the end on both, past [dfg48] and [dfg4c], with [dfgvd] passing: b26 1742 passed, 0 failed, 336 skipped, and vmFreeBSD 1633 passed, 0 failed, 444 skipped.
+	- Target version: v3.0.0-rc.1
 
 - Code Review 20261110b item 20: On GitHub Enterprise, gh never sees the account's token
 	- ID: 2026111016332206
@@ -215,7 +217,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 36: install.ps1 changes PATH without telling Windows, so a new shell from the Start menu doesn't find gitsby
 	- ID: 2026111016332008
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
@@ -226,8 +228,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: No. ssh to the Windows boxes lands in a session with no Explorer.
 	- Possible cause [Bug]: install.ps1:407 writes the registry with `Set-ItemProperty` and doesn't broadcast `WM_SETTINGCHANGE`. `SetEnvironmentVariable`, which it replaced, did.
 	- Origin: 37b7445, 2026-08-19, which kept `%VAR%` entries unexpanded. Regression. Plausible.
-	- Needs external testing: on vm925w or b29w, through the host lock, a whole install from c5ebe1b's install.ps1 with only the download stood in, in Windows PowerShell 5.1 and in pwsh 7, from a user with gitsby's folder not yet on PATH. It should print 'Open a new shell to pick it up', not 'Sign out and back in', and keep PATH's registry kind. test.bash [dfgxc] there takes its sent branch and should say 'REACHED (sent)'.
-	- Needs hand testing: after that install, at the desktop, open PowerShell from the Start menu and run 'gitsby --version' without signing out.
 	- Actual cause [Bug]: install.ps1 writes PATH with Set-ItemProperty, which doesn't broadcast WM_SETTINGCHANGE, so Explorer keeps its old environment and hands it to every shell it starts. SetEnvironmentVariable did broadcast, but it was dropped because it rewrites an expandable PATH as plain text.
 	- Actual fix [Bug]: after the PATH write, install.ps1 calls Send-EnvironmentChange, which sends WM_SETTINGCHANGE with 'Environment' through SendMessageTimeout (Add-Type, SMTO_ABORTIFHUNG, 5 s). It's sent even when the registry already had the folder, for installs by the older script. If it can't be sent, the closing line says to sign out instead of opening a new shell. changelog.md has a line under vNEXT Fixed.
 	- Decisions: Add-Type P/Invoke rather than setting and clearing a throwaway variable with SetEnvironmentVariable to get its broadcast, since that writes the registry twice for a side effect. A failed broadcast doesn't fail the install, since PATH is already written.
@@ -236,6 +236,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [dfgxc] defines Send-EnvironmentChange from install.ps1 and calls it: off Windows it gets into the compiled P/Invoke stub, which proves the Add-Type text compiles and binds. [dfgxd] checks in the parsed script that the call comes after the PATH write and outside that write's try.
 	- Verified: [dfgxc] and [dfgxd] fail on the old install.ps1 (no function, no call). [dfgxc] fails with a broken C# signature, and [dfgxd] fails with the call moved inside the write's try. Quick gate, every area, passed on c5ebe1b's tree: test.bash 2080/0, fuzz 310/0, parity 31/0. PSScriptAnalyzer clean on install.ps1. The Windows branch itself didn't run here.
 	- Swept: every PATH or environment write in the tree. install.ps1 has the one registry write. legacy/install.ps1 still uses SetEnvironmentVariable, which broadcasts, and is frozen. No cicd or Go code writes the Windows environment.
+	- Closed reason: Done
+	- Closed: 20261119-084520
+	- Verified: on vm925w at nov19 ee2e268, as wintest in its desktop session, with only the two GitHub fetches stood in (SHA256SUMS and the binary). A whole install in Windows PowerShell 5.1 and again in pwsh 7.6.6, each from a PATH without gitsby's folder, printed 'Open a new shell to pick it up' and kept the user PATH's ExpandString kind. After each, Explorer's environment held the new folder with no sign-out. Control: a PATH registry write with no broadcast left Explorer's environment unchanged. test.bash [dfgxc]'s check printed 'REACHED (sent)' in pwsh 7, in the desktop session and over ssh. wintest's PATH and folders were put back after.
+	- Note: wintest's machine PATH on vm925w has an old v2.1.0 gitsby.exe ahead of the user PATH, so 'gitsby --version' from a new shell there runs that one. The new folder is still on the shell's PATH.
+	- Acceptance signoff: Self-closed: whole install passed on vm925w in 5.1 and 7, and Explorer's environment took the new PATH with no sign-out.
+	- Stand-in: In place of opening PowerShell from the Start menu, the environment of wintest's running Explorer was read after each install. Explorer is what hands PATH to a shell started from the Start menu or taskbar (20261119).
 
 - Code Review 20261110b enhancement 1: sync re-creates a branch on origin that was deleted after its PR merged
 	- ID: 2026111016331930
