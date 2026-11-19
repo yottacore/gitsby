@@ -70,7 +70,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 2: With status.showUntrackedFiles=no, untracked files are committed and pushed past every guard
 	- ID: 2026111910223277
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261119-102232
@@ -81,6 +81,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, sync and br switch. Confirmed.
 	- Possible cause [Bug]: treeDirty and the plan's git status follow the setting. git add --all doesn't.
 	- Origin: Go port. 8dfe5ff (nov18) moved the check into treeDirty without it. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: git status follows status.showUntrackedFiles, but git add --all doesn't. treeDirty, the plan's status block and repo connect's has-work check read status as configured, so with the setting at no they saw a clean tree and the commit still took the files.
+	- Actual fix [Bug]: treeDirty, the plan's status block and repo connect's has-work check ask status for untracked files by name, with --untracked-files=normal. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223277
+	- Commit: 8d02ef6
+	- Test case: test.bash [dfh4j] to [dfh4p]. Go tests [dfh4g] TestTreeDirtyUntrackedHidden and [dfh4h] TestStatusNamesUntracked.
+	- Verified: [dfh4j], [dfh4k], [dfh4m], [dfh4n] and [dfh4p] fail on the build before the fix and pass with it. [dfh4g] fails before for no and false, and [dfh4h] names all 3 sites. The quick gate passed with every area: test.bash 2101/0, fuzz 310/0, parity 31/0. gosec reports nothing in the changed files.
+	- Swept: every git status call in src-go. treeDirty covers directPush, releasePreflight, commitPending, br switch's dirty refusal and pr ok's refusal. repo.go's hasWork and show.go's status block got the flag. readTreeSplit and connect's push-mode block already pass --untracked-files=all. [dfh4h] fails on any new git status call without the flag.
+	- Decisions: The plan's status block passes normal, not the user's setting, so a user with status.showUntrackedFiles=all sees an untracked folder as one line there. Honoring all would cost a git config spawn on every command. Submodule handling from 2026111016332293 is unchanged: --ignore-submodules=dirty still applies.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261119-121255
 
 - Code Review 20261119 item 3: A pending am, range pick or resolved merge is finished or left behind by gitsby
 	- ID: 2026111910223262

@@ -274,7 +274,7 @@ func (a *app) settleRepoConnect() error {
 	wantCreate := a.cmd.name == "repo-create"
 	hasWork := false
 	if a.inRepo {
-		hasWork = runOK("git", "rev-parse", "-q", "--verify", "HEAD") || runOut("git", "status", "--porcelain") != ""
+		hasWork = runOK("git", "rev-parse", "-q", "--verify", "HEAD") || runOut("git", "status", "--porcelain", "--untracked-files=normal") != ""
 	} else {
 		hasWork = !dirEmpty(".")
 	}

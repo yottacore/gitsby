@@ -193,9 +193,11 @@ func (a *app) ownCommitsAhead() bool {
 
 // treeDirty: whether 'git add --all' has anything to take. A submodule's own edits
 // and untracked files show in status but aren't this repo's to commit, so they
-// don't count. A submodule moved to another commit still does.
+// don't count. A submodule moved to another commit still does. Untracked files are
+// asked for by name, since status.showUntrackedFiles=no hides them from status but
+// not from add.
 func treeDirty() bool {
-	return runOut("git", "status", "--porcelain", "--ignore-submodules=dirty") != ""
+	return runOut("git", "status", "--porcelain", "--ignore-submodules=dirty", "--untracked-files=normal") != ""
 }
 
 // refuseDirectPush: nobody is there to read the warning, so -q refuses instead.

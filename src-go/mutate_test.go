@@ -10,7 +10,11 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -137,5 +141,54 @@ func TestGoneUpstream(t *testing.T) { // [dfgxm]
 		{"local upstream deleted", "local", "sync", "", ""},
 	} {
 		check(tc)
+	}
+}
+
+// status.showUntrackedFiles=no hides untracked files from status, but not from
+// 'git add --all', so a check that read status let them be committed and pushed.
+func TestTreeDirtyUntrackedHidden(t *testing.T) { // [dfh4g]
+	_, clone := gitTestRepo(t)
+	t.Chdir(clone)
+	if err := os.WriteFile(filepath.Join(clone, "new.txt"), []byte("n\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"no", "false", "normal", "all"} {
+		runGit(t, clone, "config", "status.showUntrackedFiles", value)
+		a := newApp(newPrinter())
+		if !treeDirty() || !a.commitPending() {
+			t.Errorf("status.showUntrackedFiles=%s: treeDirty() = %v, commitPending() = %v, want both true", value, treeDirty(), a.commitPending())
+		}
+	}
+}
+
+// Every git status a check or the plan reads says which untracked files it wants,
+// so the user's status.showUntrackedFiles can't hide one that add will take.
+func TestStatusNamesUntracked(t *testing.T) { // [dfh4h]
+	files, err := filepath.Glob("*.go")
+	if err != nil || len(files) < 10 {
+		t.Fatalf("found %d sources: %v", len(files), err)
+	}
+	call := regexp.MustCompile(`"git",\s*"status"`)
+	found := 0
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if !call.MatchString(line) {
+				continue
+			}
+			found++
+			if !strings.Contains(line, `"--untracked-files=`) {
+				t.Errorf("%s:%d runs git status without --untracked-files: %s", file, i+1, strings.TrimSpace(line))
+			}
+		}
+	}
+	if found < 4 {
+		t.Errorf("found %d git status calls, want at least 4; the pattern no longer matches the source", found)
 	}
 }

@@ -4871,6 +4871,32 @@ GHEOF
 	fAssert    "[dfg1s] and cuts no tag"  bash -c "cd '${smd}/top' && ! git rev-parse -q --verify refs/tags/v0.1.1 >/dev/null"
 	fAssert    "[dfg1t] a submodule moved to another commit is still committed"  bash -c "cd '${smd}/top' && git checkout --quiet smfeat && ( cd child && git add --all && git commit --quiet -m moved ) && '${gitsby}' -q pullcom 'bump' && [[ -z \"\$(git status --porcelain)\" ]] && git log -1 --pretty=%s | grep -qx bump"
 
+	## status.showUntrackedFiles=no hides untracked files from status, but 'git add --all' still
+	## takes them. Read from status, the plan said clean and the guards let them through.
+	local hu="${work}/$1-hideuntracked"
+	mkdir -p "${hu}"
+	git init --quiet --bare -b main "${hu}/origin.git"
+	git clone --quiet "${hu}/origin.git" "${hu}/work" 2>/dev/null
+	git init --quiet -b main "${hu}/fresh"
+	git init --quiet --bare -b main "${hu}/fresh.git"
+	(
+		cd "${hu}/work" || exit 1
+		echo a > a.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b hufeat && git push --quiet -u origin hufeat
+		git checkout --quiet dev
+		git config status.showUntrackedFiles no
+		echo u > untracked.txt
+		cd "${hu}/fresh" || exit 1
+		git config status.showUntrackedFiles no
+		echo f > f.txt
+	)
+	fAssertOut  "[dfh4j] -q sync on dev with untracked files hidden refuses the direct push"  'Nothing was done'  bash -c "cd '${hu}/work' && '${gitsby}' -q sync 'hu' 2>&1"
+	fAssert     "[dfh4k] and commits and pushes nothing"  bash -c "cd '${hu}/work' && [[ \"\$(git rev-list --count HEAD)\" == 1 && \"\$(git rev-list --count origin/dev)\" == 1 ]]"
+	fAssertOut  "[dfh4m] the plan lists the hidden untracked file"  '^    \?\? untracked\.txt$'  bash -c "cd '${hu}/work' && '${gitsby}' -q status 2>&1"
+	fAssertOut  "[dfh4n] br switch off dev with only a hidden untracked file refuses"  "Working tree has changes on 'dev'"  bash -c "cd '${hu}/work' && '${gitsby}' -q br switch hufeat 2>&1"
+	fAssert     "[dfh4p] repo connect with no commits and only hidden untracked files publishes them"  bash -c "cd '${hu}/fresh' && '${gitsby}' -q repo connect '${hu}/fresh.git' >/dev/null 2>&1 && git -C '${hu}/fresh.git' ls-tree -r --name-only main | grep -qx f\.txt"
+
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"
 	git init --quiet -b main "${nr}"

@@ -79,6 +79,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A submodule with its own edits or untracked files no longer stops `pullcom`, `sync`, `br switch`, `br merge`, `br create`, `pr ok` or `release`. They tried to commit it, found nothing to commit, and failed. `br switch` off `main` no longer refuses over it, `sync` on `main` no longer calls it a direct push, and `release` no longer counts it as something new.
 
+- With `status.showUntrackedFiles=no` set, untracked files count as work. The plan said the tree was clean, then `sync` on `dev` committed them and pushed them straight to origin at exit 0, past the direct-push refusal. `br switch` off `main` or `dev`, `pr ok`, `release` and `repo connect` read them the same way now.
+
 - A syntax error from `release` or `raw` that quotes what was typed shows a control character by name, as every other error does, so an escape typed by mistake no longer changes the terminal's colors.
 
 - With commits on `main` or `dev` that origin doesn't have, `sync` and `br switch` name a way to move them to a new branch that works: `git checkout -b <branch-name>`, then `git branch -f main origin/main`. They named `br create`, which takes a dirty tree along but leaves commits on `main`, so the next `sync` refused again. A dirty tree alone still gets `br create`. `pr create` from `main` or `dev` with commits on it names the same way off.
