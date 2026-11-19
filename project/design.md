@@ -207,6 +207,16 @@ The rule for every path that hands out a token. The token goes only to the host 
 	- `--direct` is judged by where the push lands, not the branch's name. `sync` and `br switch` warn, and with `-q` refuse without it, as they do on `main` itself. `br create`, `br hotfix` and `br merge` never push a protected branch, so they refuse, naming `sync --direct`. `pr create` refuses too, since its pull request would propose that branch itself.
 	- `pr create` opens the pull request from the branch on origin its push goes to, which for a branch tracking another name isn't its own (2026-11-19). It named the current branch, so the PR came from an older branch of that name on origin, or one that wasn't there. Where the push goes to another remote, or to a ref that isn't a branch, it refuses before the plan, since the pull request opens on origin. That is asked whether or not anything is left to push.
 
+- A clone that fetches only some of origin's branches can't show whether origin has a `dev` (2026-11-19). `git clone --depth 1` and `--single-branch` make one, and there `br merge` went into `main`, passing over origin's `dev`.
+	- `br create`, `br hotfix`, `br switch`, `br merge`, `br prune`, `pr create`, `pr ok` and `release` refuse before the plan when there's no `dev` here and the fetch refspecs don't bring origin's in. The fix they name is `git remote set-branches origin '*'`, then a fetch. `pullcom` and `sync` push only the branch they're on, and run as before.
+	- A clone of `dev` alone has no `origin/HEAD`, so `dev` read as the default branch as well. Without `origin/HEAD`, a default branch not named `main`, `master` or `trunk` refuses the same way.
+	- `br create`, `br hotfix` and `br switch` refuse a branch the fetch doesn't cover. Its first push makes a branch the fetch never updates, so it reads as gone from then on.
+	- Fetching every branch anyway was the other choice. It overrides a narrowing that was likely meant, and the next plain `git fetch` leaves those refs stale.
+
+- A branch checked out in another worktree is refused before the plan by every command that checks it out (2026-11-19). git refuses that checkout, and it comes after the commit and the park push, so the run stopped half done. `release` ended on `dev` with nothing tagged.
+	- `br create`, `br hotfix`, `br switch`, `br merge`, `pr ok` and `release` ask, each for the branches it checks out. `br prune` already skipped a branch it couldn't delete.
+	- A worktree whose folder was deleted by hand still holds its branch, so the refusal names `git worktree prune` there.
+
 - `--staged` commits the index only, and its pulls go without `--autostash` (2026-10-05).
 	- It is a flag on `pullcom`, `sync`, `pr create`, `release`, and the branch commands that commit before they move. Any other command refuses it, since ignoring it would sweep in the edits it was typed to keep out. It is opt-in: a file staged long ago would otherwise make a commit quietly smaller.
 	- Git reapplies its autostash without `--index`. Staged work comes back unstaged, and a file staged and then edited again loses its staged copy, so the commit after the pull would take nothing. Checked on git 2.51, and git's current source still applies it that way.

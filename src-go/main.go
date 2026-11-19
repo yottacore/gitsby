@@ -393,6 +393,10 @@ func (a *app) preflight() error {
 			}
 		}
 	}
+	// Ahead of release's and pr's own checks, which read origin's branches.
+	if err := a.refuseNarrowFetch(); err != nil {
+		return err
+	}
 	// The release version resolves up front so the preview and the command agree,
 	// and so bad input dies early.
 	if a.cmd.name == "release" {
@@ -418,6 +422,9 @@ func (a *app) preflight() error {
 		a.set = &t
 	}
 	if err := a.preflightBranch(); err != nil {
+		return err
+	}
+	if err := a.refuseHeldBranch(); err != nil {
 		return err
 	}
 	if err := a.refuseParkPush(); err != nil {
@@ -455,6 +462,9 @@ func (a *app) preflightBranch() error {
 		}
 	case "br-switch":
 		if a.cmd.arg != "" && !a.branchExistsLocal(a.cmd.arg) && !a.branchExistsRemote(a.cmd.arg) {
+			if a.hasOrigin() && !a.fetchSees(a.cmd.arg) {
+				return narrowFetchRefusal("whether origin has a '" + a.cmd.arg + "'")
+			}
 			if strings.HasPrefix(a.cmd.arg, "-") {
 				return usagef("No branch '%s' locally or on origin, and a branch name can't start with a dash.", a.cmd.arg)
 			}

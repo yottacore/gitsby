@@ -107,6 +107,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Converting an SHCL 2.x accounts file keeps a value holding a byte that isn't UTF-8 the way 2.x read it, as the replacement character U+FFFD. It used to keep the byte, so the value read differently after the conversion, with no word about it.
 
+- In a clone that fetches only some of origin's branches, as `git clone --depth 1` and `--single-branch` make, `br create`, `br hotfix`, `br switch`, `br merge`, `br prune`, `pr create`, `pr ok` and `release` refuse while origin's `dev` can't be seen, and name `git remote set-branches origin '*'`. `br merge` used to go into `main` there and push it, passing over origin's `dev`. `br create`, `br hotfix` and `br switch` also refuse a branch the fetch doesn't bring in. `pullcom` and `sync` work as before.
+
+- `br create`, `br hotfix`, `br switch`, `br merge`, `pr ok` and `release` refuse before anything runs when a branch they check out is checked out in another worktree, and name it. They used to commit and push first, then stop at the checkout. A worktree folder deleted by hand still holds its branch, and the refusal names `git worktree prune` for it.
+
 - An accounts file last written before the first SHCL 3 module Gitsby used, or with no real time, as a Nix store gives, is read as it is rather than re-spelled as that module's. The copy a conversion keeps has the file's own time, so moving it back reads as the file did. Where the folder can't be written, the notice says so rather than blaming a lock.
 
 - `repo clone` ends on the `dev` branch, tracking origin's, when origin also has a tag named `dev`. It used to leave the clone detached at the tag and say Done, and the next command refused.

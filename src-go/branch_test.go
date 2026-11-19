@@ -171,3 +171,170 @@ func TestSwitchTargetWithLeadingDash(t *testing.T) { // [df520]
 		}
 	}
 }
+
+// A single-branch or shallow clone fetches only one branch, so a missing origin/dev
+// says nothing about origin. fetchSees reads the fetch refspecs git itself uses.
+func TestFetchSees(t *testing.T) { // [dfh89]
+	_, clone := gitTestRepo(t)
+	t.Chdir(clone)
+	tests := []struct {
+		name    string
+		specs   []string
+		sees    map[string]bool
+		seesAll bool
+	}{
+		{"clone default", []string{"+refs/heads/*:refs/remotes/origin/*"}, map[string]bool{"dev": true, "a/b": true}, true},
+		{"single branch", []string{"+refs/heads/main:refs/remotes/origin/main"}, map[string]bool{"main": true, "dev": false}, false},
+		{"set-branches main dev", []string{"+refs/heads/main:refs/remotes/origin/main", "+refs/heads/dev:refs/remotes/origin/dev"}, map[string]bool{"dev": true, "feat": false}, false},
+		{"a negative refspec", []string{"+refs/heads/*:refs/remotes/origin/*", "^refs/heads/dev"}, map[string]bool{"dev": false, "feat": true}, true},
+		{"a negative pattern", []string{"+refs/heads/*:refs/remotes/origin/*", "^refs/heads/tmp/*"}, map[string]bool{"tmp/x": false, "tmpx": true}, true},
+		{"a pattern with a prefix", []string{"+refs/heads/feat/*:refs/remotes/origin/feat/*"}, map[string]bool{"feat/x": true, "feat": false, "dev": false}, false},
+		{"mapped elsewhere", []string{"+refs/heads/*:refs/remotes/other/*"}, map[string]bool{"dev": false}, false},
+		{"a mirror", []string{"+refs/*:refs/*"}, map[string]bool{"dev": false}, false},
+		{"a short source", []string{"dev:refs/remotes/origin/dev"}, map[string]bool{"dev": true}, false},
+		{"no refspec", nil, map[string]bool{"main": false}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// --unset-all exits 5 with nothing to unset.
+			_ = exec.Command("git", "-C", clone, "config", "--unset-all", "remote.origin.fetch").Run()
+			for _, spec := range tc.specs {
+				runGit(t, clone, "config", "--add", "remote.origin.fetch", spec)
+			}
+			a := newApp(newPrinter())
+			for branch, want := range tc.sees {
+				if got := a.fetchSees(branch); got != want {
+					t.Errorf("fetchSees(%q) = %v, want %v", branch, got, want)
+				}
+			}
+			if got := a.fetchSeesAll(); got != tc.seesAll {
+				t.Errorf("fetchSeesAll() = %v, want %v", got, tc.seesAll)
+			}
+		})
+	}
+}
+
+// The branch commands refuse in a narrowed clone where origin's dev, or its
+// default branch, can't be seen, and run where it can.
+func TestRefuseNarrowFetch(t *testing.T) { // [dfh8a]
+	origin, clone := gitTestRepo(t)
+	runGit(t, clone, "push", "-q", "origin", "HEAD:refs/heads/dev")
+	root := filepath.Dir(clone)
+	single := filepath.Join(root, "single")
+	runGit(t, root, "clone", "-q", "--single-branch", "-b", "main", origin, single)
+	devOnly := filepath.Join(root, "devonly")
+	runGit(t, root, "clone", "-q", "--single-branch", "-b", "dev", origin, devOnly)
+	tests := []struct{ name, dir, cmd, sub, want string }{
+		{"full clone", clone, "br-merge", "", ""},
+		{"single-branch br merge", single, "br-merge", "", "whether origin has a 'dev'"},
+		{"single-branch br create", single, "br-create", "", "whether origin has a 'dev'"},
+		{"single-branch br hotfix", single, "br-hotfix", "", "whether origin has a 'dev'"},
+		{"single-branch br switch", single, "br-switch", "", "whether origin has a 'dev'"},
+		{"single-branch br prune", single, "br-prune", "", "whether origin has a 'dev'"},
+		{"single-branch release", single, "release", "", "whether origin has a 'dev'"},
+		{"single-branch pr create", single, "pr", "create", "whether origin has a 'dev'"},
+		{"single-branch pr ok", single, "pr", "ok", "whether origin has a 'dev'"},
+		{"single-branch pr view only reads", single, "pr", "", ""},
+		{"single-branch sync pushes only its branch", single, "sync", "", ""},
+		{"single-branch pullcom", single, "pullcom", "", ""},
+		{"dev only, no default branch to read", devOnly, "br-merge", "", "which branch is origin's default"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(tc.dir)
+			a := newApp(newPrinter())
+			a.cmd.name, a.pr.sub = tc.cmd, tc.sub
+			err := a.refuseNarrowFetch()
+			switch {
+			case tc.want == "" && err != nil:
+				t.Errorf("refused: %v", err)
+			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "git remote set-branches origin")):
+				t.Errorf("got %v, want %q and the set-branches fix", err, tc.want)
+			}
+		})
+	}
+	// Once dev is fetched too, only a new branch outside the fetch is refused.
+	runGit(t, single, "remote", "set-branches", "--add", "origin", "dev")
+	runGit(t, single, "fetch", "-q", "origin")
+	t.Chdir(single)
+	a := newApp(newPrinter())
+	a.cmd.name = "br-create"
+	if err := a.refuseNarrowFetch(); err != nil {
+		t.Errorf("with dev fetched: refused: %v", err)
+	}
+	if err := a.checkNewBranchName("feat"); err == nil || !strings.Contains(err.Error(), "whether origin has a 'feat'") {
+		t.Errorf("checkNewBranchName(feat) = %v, want the narrowed-fetch refusal", err)
+	}
+	a.cmd.name, a.cmd.arg = "br-switch", "feat"
+	if err := a.preflightBranch(); err == nil || !strings.Contains(err.Error(), "whether origin has a 'feat'") {
+		t.Errorf("br switch feat = %v, want the narrowed-fetch refusal", err)
+	}
+}
+
+// git won't check out a branch another worktree has. Every command that checks
+// one out asks before the plan, and the branch checked out here doesn't count.
+func TestRefuseHeldBranch(t *testing.T) { // [dfh8b]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "branch", "-q", "dev")
+	runGit(t, clone, "push", "-q", "-u", "origin", "dev")
+	runGit(t, clone, "checkout", "-q", "dev")
+	linked := filepath.Join(filepath.Dir(clone), "linked")
+	runGit(t, clone, "worktree", "add", "-q", "-b", "w", linked, "dev")
+	runGit(t, linked, "branch", "-q", "hotfix/h", "main")
+	t.Chdir(linked)
+	tests := []struct{ name, branch, cmd, sub, arg, head, want string }{
+		{"br merge", "w", "br-merge", "", "", "", "dev"},
+		{"br switch", "w", "br-switch", "", "", "", "dev"},
+		{"br switch to main", "w", "br-switch", "", "main", "", ""},
+		{"br create", "w", "br-create", "", "next", "", "dev"},
+		{"br hotfix", "w", "br-hotfix", "", "hotfix/x", "", ""},
+		{"release", "w", "release", "", "", "", "dev"},
+		{"pr ok of this branch", "w", "pr", "ok", "", "w", "dev"},
+		{"pr ok of another branch", "w", "pr", "ok", "", "other", ""},
+		{"pr create checks nothing out", "w", "pr", "create", "", "", ""},
+		{"sync checks nothing out", "w", "sync", "", "", "", ""},
+		{"a hotfix's back-merge", "hotfix/h", "br-merge", "", "", "", "dev"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runGit(t, linked, "checkout", "-q", tc.branch)
+			a := newApp(newPrinter())
+			a.cmd.name, a.cmd.arg, a.pr.sub, a.pr.headBranch = tc.cmd, tc.arg, tc.sub, tc.head
+			err := a.refuseHeldBranch()
+			switch {
+			case tc.want == "" && err != nil:
+				t.Errorf("refused: %v", err)
+			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), "'"+tc.want+"' is checked out in another worktree")):
+				t.Errorf("got %v, want %q named", err, tc.want)
+			}
+		})
+	}
+	// From the main worktree, dev is its own, and w is the one held.
+	runGit(t, linked, "checkout", "-q", "w")
+	t.Chdir(clone)
+	a := newApp(newPrinter())
+	a.cmd.name, a.cmd.arg = "br-switch", "w"
+	if err := a.refuseHeldBranch(); err == nil || !strings.Contains(err.Error(), "'w' is checked out") {
+		t.Errorf("br switch w from the main worktree = %v, want w named", err)
+	}
+	a = newApp(newPrinter())
+	a.cmd.name = "release"
+	if err := a.refuseHeldBranch(); err != nil {
+		t.Errorf("release on dev in the main worktree: refused: %v", err)
+	}
+	// A worktree folder deleted by hand still holds its branch, and prune frees it.
+	if err := os.Rename(linked, linked+"-moved"); err != nil {
+		t.Fatal(err)
+	}
+	a = newApp(newPrinter())
+	a.cmd.name, a.cmd.arg = "br-switch", "w"
+	if err := a.refuseHeldBranch(); err == nil || !strings.Contains(err.Error(), "git worktree prune") {
+		t.Errorf("br switch w with its worktree folder gone = %v, want 'git worktree prune'", err)
+	}
+	runGit(t, clone, "worktree", "prune")
+	a = newApp(newPrinter())
+	a.cmd.name, a.cmd.arg = "br-switch", "w"
+	if err := a.refuseHeldBranch(); err != nil {
+		t.Errorf("br switch w after the prune: refused: %v", err)
+	}
+}

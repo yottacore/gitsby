@@ -359,7 +359,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 12: In a single-branch clone, br merge merges into main and passes over origin's dev
 	- ID: 2026111910223133
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261119-102231
@@ -370,11 +370,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
 	- Possible cause [Bug]: mergeTarget and branchExistsRemote read only refs/remotes/origin, which a narrowed fetch never fills.
 	- Origin: f9716e4, 2026-10-04. No round saw it.
+	- Actual cause [Bug]: gitsby read origin's branches only from refs/remotes/origin, which a clone that fetches only some of them never fills. With no dev in sight the merge target was main. A clone of dev alone has no origin/HEAD, so dev read as the default branch too.
+	- Actual fix [Bug]: br create, br hotfix, br switch, br merge, br prune, pr create, pr ok and release refuse before the plan when there's no dev here and origin's fetch refspecs don't bring one in, naming 'git remote set-branches origin *' and a fetch. Without origin/HEAD, a default branch not named main, master or trunk refuses the same way. br create, br hotfix and br switch refuse a branch the fetch doesn't cover. pullcom and sync run as before. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223133
+	- Test case: test.bash [dfh8c] to [dfh8h]; Go [dfh89] TestFetchSees, [dfh8a] TestRefuseNarrowFetch.
+	- Swept: every branchExistsRemote caller: mergeTarget, isProtectedBranch, checkoutArgs, settleBranchNames, br switch's and br create's name checks, release's 3, backMergeRef, br prune, and pr ok's head check. All sit behind the refusal on the commands that read them. sync and pullcom ask only about the current branch's push. pr ok's 'here but not on origin' refusal for a head the fetch doesn't cover was left alone, since it refuses.
+	- Decisions:
+		- Refuse, not fetch every branch anyway. That overrides a narrowing that was likely meant, and the next plain git fetch leaves those refs stale. Check: entry filed.
+		- One rule for the listed commands: each refuses while dev can't be seen, br switch to a branch that can be seen included, since isProtectedBranch and the merge target both read dev.
+		- pullcom and sync aren't refused. They push only the branch they're on and read no merge target.
+		- The default-branch check runs only without origin/HEAD and with a default not named main, master or trunk, so a clone of an empty repo pays no extra spawn. Spawn counts are unchanged.
+		- br create and br hotfix read the fetch refspecs on every run, 1 local git config call, since a new name is never on origin yet. No spawn-count measure runs br create.
+	- Closed reason: Done
+	- Commit: d757dc3
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-143654
+	- Verified: [dfh8c] to [dfh8h] fail on the build before the fix and pass with it, run as a block against each build. [dfh89] and [dfh8a] fail with fetchSees always true. The quick gate passed with every area: test.bash 2155/0, fuzz 310/0, parity 31/0, spawn counts unchanged. gosec reports nothing in the changed files.
 
 - Code Review 20261119 item 13: From a linked worktree, br merge, br switch, br create and release push, then fail at a checkout
 	- ID: 2026111910223119
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261119-102231
@@ -385,6 +401,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, all 4 commands. Confirmed.
 	- Possible cause [Bug]: Preflight doesn't read git worktree list. Only br prune knows the case.
 	- Origin: Go port. No round reached it.
+	- Actual cause [Bug]: Nothing before the plan asked whether a branch the run checks out is checked out in another worktree. git refuses that checkout, and it comes after the commit and the park push.
+	- Actual fix [Bug]: br create, br hotfix, br switch, br merge, pr ok and release refuse before the plan when a branch they check out is checked out in another worktree, naming it and its folder. One whose folder was deleted by hand names 'git worktree prune'. The worktree comes from the for-each-ref every run already makes, so no spawn was added. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223133
+	- Test case: test.bash [dfh8j] to [dfh8n]; Go [dfh8b] TestRefuseHeldBranch.
+	- Swept: every checkout: cmdNewBranch for br create and br hotfix, cmdGoBranch, cmdMerge, backMergeToDev for br merge and pr ok of a hotfix, cmdPrAccept, cmdRelease and cutRelease. backOutMerge's and release's checkouts back to the starting branch go to the one this worktree has. repo clone checks dev out in a new clone. br prune already warns per branch.
+	- Decisions:
+		- release asks for main and dev, resumed or not, since it checks out both either way.
+		- pr ok asks for the target only when run from the PR's own branch, which the merge leaves with no upstream. Under --no-fetch it doesn't move, but is refused all the same, since its plan shows the checkout.
+		- Read from for-each-ref's worktreepath, git 2.23 and later, in the call branchRefs already makes, rather than a git worktree list.
+	- Closed reason: Done
+	- Commit: d757dc3
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-143654
+	- Verified: [dfh8j] and [dfh8m] fail on the build before the fix and pass with it, run as a block against each build. [dfh8k] and [dfh8n] pass on both: the old build failed those commands too, only later, and [dfh8m] catches what it left. [dfh8b] fails with the held list emptied. The quick gate passed with every area: test.bash 2155/0, fuzz 310/0, parity 31/0, spawn counts unchanged.
 
 - Code Review 20261119 item 14: On Windows, curly single quotes in a branch name break out of a paste line
 	- ID: 2026111910223104

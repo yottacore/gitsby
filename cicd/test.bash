@@ -2336,6 +2336,47 @@ fRunSuite(){
 	( cd "${tmA}" && git branch --quiet --unset-upstream && echo three > h.txt )
 	fAssert "[dfh40] after --unset-upstream, sync publishes it under its own name" \
 		bash -c "cd '${tmA}' && '${gitsby}' -q sync 'three' && [[ \"\$(git -C '${tmO}' rev-parse feat)\" == \"\$(git rev-parse feat)\" && \"\$(git -C '${tmO}' rev-parse main)\" != \"\$(git rev-parse feat)\" ]]"
+
+	## A shallow clone fetches only main, so origin's dev never shows, and br merge went into
+	## main. The branch commands refuse until the fetch is widened. A single-branch clone of dev
+	## has no origin/HEAD, and dev, its only branch, read as the default.
+	local nfO="${work}/$1-nrwo.git" nfS="${work}/$1-nrws" nfA="${work}/$1-nrwa" nfD="${work}/$1-nrwd"
+	git init --quiet --bare -b main "${nfO}"
+	git clone --quiet "${nfO}" "${nfS}" 2>/dev/null
+	( cd "${nfS}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git checkout --quiet -b dev && echo two > g.txt && git add --all && git commit --quiet -m "on dev" && git push --quiet -u origin dev )
+	git clone --quiet --depth 1 "file://${nfO}" "${nfA}" 2>/dev/null
+	git clone --quiet --single-branch -b dev "${nfO}" "${nfD}" 2>/dev/null
+	fNfMainKept(){ [[ "$(git -C "${nfO}" rev-list --count main)" == 1 ]] && ! git -C "${nfO}" show-ref --verify --quiet refs/heads/feat ;}
+	fAssert "[dfh8c] in a shallow clone, br create -q refuses, naming set-branches, and stays on main" \
+		bash -c "cd '${nfA}' && out=\"\$('${gitsby}' -q br create feat 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"can't tell whether origin has a 'dev'\" <<< \"\${out}\" && grep -qF 'git remote set-branches origin' <<< \"\${out}\" && [[ \"\$(git branch --show-current)\" == main ]]"
+	## -B, so a build that made feat above still gets to the checks below.
+	( cd "${nfA}" && git checkout --quiet -B feat && echo three > h.txt )
+	fAssert "[dfh8d] and br merge -q refuses, with the work left uncommitted and origin's main kept" \
+		bash -c "cd '${nfA}' && ! '${gitsby}' -q br merge >/dev/null 2>&1 && grep -qF 'h.txt' <<< \"\$(git status --porcelain)\""
+	fAssert "[dfh8e] and release -q refuses, with no tag cut"  bash -c "cd '${nfA}' && ! '${gitsby}' -q release v9.9.8 >/dev/null 2>&1 && ! git rev-parse -q --verify refs/tags/v9.9.8 >/dev/null"
+	fAssert "[dfh8f] and origin's main never got anything"  fNfMainKept
+	fAssertOut "[dfh8g] a single-branch clone of dev refuses, naming the default branch"  "can't tell which branch is origin's default" \
+		bash -c "cd '${nfD}' && '${gitsby}' -q br create feat2 2>&1"
+	( cd "${nfA}" && git remote set-branches origin '*' && git fetch --quiet origin )
+	fAssert "[dfh8h] once widened, br merge goes into dev" \
+		bash -c "cd '${nfA}' && '${gitsby}' -q br merge && [[ \"\$(git branch --show-current)\" == dev ]] && [[ \"\$(git -C '${nfO}' log -1 --format=%s dev)\" == 'Merge feat' && \"\$(git -C '${nfO}' rev-list --count main)\" == 1 ]]"
+
+	## git won't check out a branch another worktree has, and found that only after the park
+	## push. Every command that checks one out refuses before the plan instead.
+	local wtO="${work}/$1-wtro.git" wtM="${work}/$1-wtrm" wtW="${work}/$1-wtrw"
+	git init --quiet --bare -b main "${wtO}"
+	git clone --quiet "${wtO}" "${wtM}" 2>/dev/null
+	( cd "${wtM}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git checkout --quiet -b dev && git push --quiet -u origin dev && git worktree add --quiet -b w "${wtW}" dev )
+	( cd "${wtW}" && git push --quiet -u origin w && echo dirty > d.txt )
+	fWtKept(){ [[ "$(git -C "${wtO}" rev-parse w)" == "$(git -C "${wtO}" rev-parse dev)" ]] && grep -qF 'd.txt' <<< "$(git -C "${wtW}" status --porcelain)" && [[ "$(git -C "${wtW}" branch --show-current)" == w ]] ;}
+	fAssert "[dfh8j] from a linked worktree, br merge -q refuses while dev is checked out elsewhere, naming it" \
+		bash -c "cd '${wtW}' && out=\"\$('${gitsby}' -q br merge 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'dev' is checked out in another worktree\" <<< \"\${out}\""
+	fAssert "[dfh8k] and br switch -q, br create -q and release -q refuse too" \
+		bash -c "cd '${wtW}' && ! '${gitsby}' -q br switch >/dev/null 2>&1 && ! '${gitsby}' -q br create next >/dev/null 2>&1 && ! '${gitsby}' -q release v9.9.7 >/dev/null 2>&1 && ! git rev-parse -q --verify refs/tags/v9.9.7 >/dev/null"
+	fAssert "[dfh8m] with nothing committed or pushed, and still on w"  fWtKept
+	git -C "${wtM}" checkout --quiet main
+	fAssert "[dfh8n] once the other worktree moves off dev, br merge goes through" \
+		bash -c "cd '${wtW}' && '${gitsby}' -q br merge && [[ \"\$(git branch --show-current)\" == dev ]] && git -C '${wtO}' show-ref --verify --quiet refs/heads/dev && ! git -C '${wtO}' show-ref --verify --quiet refs/heads/w"
 	fStagedChecks "$1"
 
 	## A command that still means something locally runs offline and says what it skipped; one

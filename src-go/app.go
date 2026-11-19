@@ -107,6 +107,7 @@ type repoState struct {
 	contextDir     cached[string]
 	defaultBranch  cached[string]
 	mergeTarget    cached[string]
+	originFetch    cached[[]string]
 }
 
 // forget drops every answer a step could have invalidated. The two branch names
@@ -123,6 +124,7 @@ func (r *repoState) forget() {
 	r.ownTokenFile.forget()
 	r.aheadBehind.forget()
 	r.contextDir.forget()
+	r.originFetch.forget()
 }
 
 // hostState is what this run knows about the host side of things, as opposed to
