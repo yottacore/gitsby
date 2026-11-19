@@ -62,13 +62,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Spawn count [dbftm] for br switch measures 28 against its expected 26
 	- ID: 2026111818374045
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261118-183740
 	- Opened by:
 	- Estimated effort: Low
 	- Progress log:
 		- Seen in round nov18 after 878b05b (2026111016332380) added the direct-push check to br switch. The row still passes, so it's at its limit. Raise the expected count in cicd/utility/spawn-count.bash if the 2 extra calls are the check's, or cut them.
+	- Actual cause [Bug]: br switch from a protected branch runs the direct-push check, which asks git twice: rev-list for commits ahead of the upstream, and status for a dirty tree. Both run on a clean main, so the count rose by 2.
+	- Actual fix [Bug]: The expected count for [dbftm] is 28, which makes its limit 30. Both calls are needed, so they stay.
+	- Branch: nov18-2026111818374045
+	- Test case: spawn-count.bash [dbftm], run in the quick gate. No separate test, since the row is the gate.
+	- Verified: spawn-count.bash gives [dbftm] 28 and every row passes. shellcheck is clean.
+	- Acceptance signoff: Self-closed: mechanical, the expected count follows the check 878b05b added.
+	- Closed: 20261118-193500
 
 - The --direct refusal and warning advise br create for commits already on main, which br create leaves there
 	- ID: 2026111815522440
