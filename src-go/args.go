@@ -40,7 +40,7 @@ var optSpecs = []optSpec{
 	{shown: "--config", spellings: []string{"config"}, value: true, set: func(o *options, v string) { o.configFile, o.configGiven = v, true }},
 	{shown: "--public", spellings: []string{"public"}, cmds: []string{"repo create"}, set: func(o *options, _ string) { o.visibility, o.sawPublic = "public", true }},
 	{shown: "--private", spellings: []string{"private"}, cmds: []string{"repo create"}, set: func(o *options, _ string) { o.visibility, o.sawPrivate = "private", true }},
-	{shown: "--direct", spellings: []string{"direct"}, cmds: []string{"sync"}, set: func(o *options, _ string) { o.direct = true }},
+	{shown: "--direct", spellings: []string{"direct"}, cmds: []string{"sync", "br switch"}, set: func(o *options, _ string) { o.direct = true }},
 	{shown: "--staged", spellings: []string{"staged"}, cmds: stagedCmds, set: func(o *options, _ string) { o.staged = true }},
 	// The commands that commit, which is the --staged list plus the 2 that publish a
 	// directory.
@@ -348,6 +348,16 @@ func sortCommand(cmd command, opt *options) (command, error) {
 	case "br-create", "br-hotfix", "br-switch", "release", "repo-create", "repo-connect":
 		if cmd.arg2 != "" {
 			return cmd, usagef("Unexpected extra argument '%s'.", cmd.arg2)
+		}
+		// After '--' the target can start with a dash. The account lookup and the probe
+		// both hand it to git or gh, which would take it as an option, so it goes here,
+		// ahead of all of them.
+		switch {
+		case !strings.HasPrefix(cmd.arg, "-"):
+		case cmd.name == "repo-create":
+			return cmd, usagef("'%s' starts with a dash, and a GitHub 'owner/name' can't, so gh would read it as an option.", cmd.arg)
+		case cmd.name == "repo-connect":
+			return cmd, usagef("'%s' starts with a dash, so git would read it as an option rather than a remote. A folder by that name can be given as ./%s.", cmd.arg, cmd.arg)
 		}
 	case "repo-url":
 		// Bare is the read-only "what is it now"; naming a transport is what makes

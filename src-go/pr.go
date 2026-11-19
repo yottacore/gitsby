@@ -423,6 +423,10 @@ func (a *app) prPreflight() error {
 		return a.prAcceptPreflight(prBranch)
 	}
 	if prBranch == a.mergeTarget() || prBranch == a.defaultBranch() {
+		// br create would leave the commits here.
+		if a.ownCommitsAhead() {
+			return usagef("'%s' is what pull requests merge into; there is nothing to propose. Move its commits to a new branch first with %s.", prBranch, a.keepOffText(true))
+		}
 		return usagef("'%s' is what pull requests merge into; there is nothing to propose. Start a branch first: %s br create <name>", prBranch, meName)
 	}
 	// No title given: the last commit subject is what the work is called already.
@@ -524,7 +528,7 @@ func (a *app) prAcceptPreflight(prBranch string) error {
 	// The git host merges what origin already has, then the branch goes local and remote.
 	// Work that never reached origin is outside the PR and outside the merge -
 	// refuse, don't lose it.
-	if runOut("git", "status", "--porcelain") != "" || isAhead() {
+	if treeDirty() || isAhead() {
 		if prBranch == a.pr.headBranch {
 			return usagef("'%s' has changes that aren't on origin, so PR #%s can't include them. Run '%s sync' first.", prBranch, a.pr.num, meName)
 		}

@@ -13,6 +13,7 @@ package main
 import (
 	"cmp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -22,14 +23,8 @@ func (a *app) cmdCommit() error {
 	// resolved, so the markers themselves would be committed, and then pushed by
 	// sync. Ordinary use reaches this: a pull whose autostash reapply conflicts
 	// still exits 0, so nothing upstream of here notices.
-	if conflicted := runLines("git", "diff", "--name-only", "--diff-filter=U"); len(conflicted) > 0 {
-		a.out.clean("")
-		a.out.status("Unresolved conflicts; nothing was committed:")
-		a.showLines(conflicted)
-		if a.opt.staged { // nothing was stashed
-			return usagef("Resolve those, then run '%s pullcom' again.", meName)
-		}
-		return usagef("Resolve those, then run '%s pullcom' again. Git also kept your pre-pull tree - see 'git stash list'.", meName)
+	if err := a.refuseConflicts("nothing was committed", meName+" pullcom"); err != nil {
+		return err
 	}
 	if a.opt.staged {
 		if runOK("git", "diff", "--cached", "--quiet") {
@@ -40,7 +35,9 @@ func (a *app) cmdCommit() error {
 		if err := a.step("git", "add", "--all"); err != nil {
 			return err
 		}
-		if runOut("git", "status", "--porcelain") == "" {
+		// The index, not status: a submodule with its own edits or untracked files
+		// shows in status, but add stages nothing for it, and the commit would fail.
+		if runOK("git", "diff", "--cached", "--quiet") {
 			a.out.status("Nothing to commit.")
 			return nil
 		}
@@ -72,12 +69,42 @@ func (a *app) cmdPull() error {
 	return nil
 }
 
+// refuseConflicts stops on any unmerged path, and names the stash git kept.
+// stopped says what didn't happen, and rerun is the command to run once they're
+// settled.
+func (a *app) refuseConflicts(stopped, rerun string) error {
+	conflicted := runLines("git", "diff", "--name-only", "--diff-filter=U")
+	if len(conflicted) == 0 {
+		return nil
+	}
+	a.out.clean("")
+	a.out.status("Unresolved conflicts; " + stopped + ":")
+	a.showLines(conflicted)
+	if a.opt.staged { // nothing was stashed
+		return usagef("Resolve those, then run '%s' again.", rerun)
+	}
+	return usagef("Resolve those, then run '%s' again. Git also kept your pre-pull tree - see 'git stash list'.", rerun)
+}
+
 // pullIfOnline is the pull inside a multi-step command. Same offline rule as
 // cmdPull, quietly: --no-fetch and an unreachable remote both mean skip. Extra
 // arguments go through to git.
 func (a *app) pullIfOnline(extra ...string) error {
-	if a.opt.fetch && !a.isOffline() && a.hasUpstream() {
-		return a.step("git", a.pullArgs(extra...)...)
+	if !a.opt.fetch || a.isOffline() || !a.hasUpstream() {
+		return nil
+	}
+	if err := a.step("git", a.pullArgs(extra...)...); err != nil {
+		return err
+	}
+	// An autostash reapply that conflicts still exits 0. With no commit after it to
+	// catch that, br create went on to branch and push over the markers. The arg is
+	// the new branch's name for the only callers that pass --autostash.
+	if slices.Contains(extra, "--autostash") {
+		rerun := meName + " " + typedName(a.cmd)
+		if a.cmd.arg != "" {
+			rerun += " " + typedArg(a.cmd.arg, runtime.GOOS)
+		}
+		return a.refuseConflicts("stopped after the pull", rerun)
 	}
 	return nil
 }
@@ -124,19 +151,69 @@ func (a *app) pushIfOnline() error {
 	return nil
 }
 
-// directPush: sync is about to send your own commits straight to main, dev or the
-// default branch. A merge left for sync doesn't count. design.md "--direct".
-func (a *app) directPush() bool {
-	if a.cmd.name != "sync" || a.opt.direct || !a.hasOrigin() || !a.isProtectedBranch("") {
-		return false
+// directPush: sync, or br switch's park push, is about to send your own commits
+// straight to main, dev or the default branch. A merge left for sync doesn't count.
+// design.md "--direct". br create and br hotfix carry the tree off a protected branch
+// instead of pushing it, br merge refuses one, and release exists to push one.
+// committed says commits are part of what goes, which need another way off the
+// branch than a dirty tree does.
+func (a *app) directPush() (push, committed bool) {
+	switch a.cmd.name {
+	case "sync":
+	case "br-switch":
+		// Only a move parks, and offline its push is skipped. A dirty protected tree
+		// was refused before this.
+		if a.currentBranch() == a.switchTarget() || a.isOffline() {
+			return false, false
+		}
+	default:
+		return false, false
 	}
-	if a.hasUpstream() && runOut("git", "rev-list", "--first-parent", "--no-merges", "-n", "1", "@{u}..HEAD") != "" {
-		return true
+	if a.opt.direct || !a.hasOrigin() || !a.isProtectedBranch("") {
+		return false, false
+	}
+	if a.ownCommitsAhead() {
+		return true, true
 	}
 	if a.opt.staged {
-		return !runOK("git", "diff", "--cached", "--quiet")
+		return !runOK("git", "diff", "--cached", "--quiet"), false
 	}
-	return runOut("git", "status", "--porcelain") != ""
+	return treeDirty(), false
+}
+
+// ownCommitsAhead: commits made on this branch that its upstream doesn't have. A
+// merge isn't one.
+func (a *app) ownCommitsAhead() bool {
+	return a.hasUpstream() && runOut("git", "rev-list", "--first-parent", "--no-merges", "-n", "1", "@{u}..HEAD") != ""
+}
+
+// treeDirty: whether 'git add --all' has anything to take. A submodule's own edits
+// and untracked files show in status but aren't this repo's to commit, so they
+// don't count. A submodule moved to another commit still does.
+func treeDirty() bool {
+	return runOut("git", "status", "--porcelain", "--ignore-submodules=dirty") != ""
+}
+
+// refuseDirectPush: nobody is there to read the warning, so -q refuses instead.
+func (a *app) refuseDirectPush() error {
+	if !a.opt.quiet {
+		return nil
+	}
+	if push, committed := a.directPush(); push {
+		return usagef("%s Nothing was done. Re-run with --direct if that is intended, or move the work to a branch with %s.", a.directPushText(), a.keepOffText(committed))
+	}
+	return nil
+}
+
+// keepOffText is the way to move the work off the protected branch instead. br
+// create takes a dirty tree along, but leaves commits behind on the branch, and
+// the next push from there is refused again. So commits go with the tree to a new
+// branch in git's own step, and the branch goes back to its upstream's tip.
+func (a *app) keepOffText(committed bool) string {
+	if !committed {
+		return "'" + meName + " br create <branch-name>'"
+	}
+	return "'git checkout -b <branch-name>', then 'git branch -f " + typedArg(a.currentBranch(), runtime.GOOS) + " " + typedArg(a.upstream().short, runtime.GOOS) + "'"
 }
 
 func (a *app) directPushText() string {

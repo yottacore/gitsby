@@ -12,6 +12,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -46,6 +47,8 @@ type config struct {
 	raw      string         // the file as read, so an edit can tell it changed since
 
 	migration *formatMigration // set when the file was in an older SHCL format
+	newer     int              // the SHCL format the file names, when newer than this build's; 0 otherwise
+	newerSaid bool
 }
 
 func isWindows() bool { return runtime.GOOS == "windows" }
@@ -546,19 +549,28 @@ func (c *config) load(o options) error {
 		c.loadFlat(text)
 		return nil
 	}
-	if from := oldFormat(text); from > 0 {
-		converted, m := migrateText(string(data))
+	if v, ok := shcl.FormatVersion(text); ok && v > shcl.FormatMajor {
+		// Read by this build's rules, which is all it has, and never rewritten: the
+		// module refuses the save, and nothing here may write it some other way.
+		c.newer = v
+	} else if from := oldFormat(text); from > 0 {
+		converted, m, bad := convert2x(string(data))
 		c.migration = &formatMigration{kind: oldMajor, from: from, changed: changedLines(string(data), m.Text), lost: m.Lost}
-		replaceOldFormat(file, string(data), converted, c.migration)
+		if bad > 0 {
+			c.migration.why = fmt.Sprintf("line %d reads one way in the old format and another in the new, and this run read it the new way", bad)
+			c.migration.fix = fmt.Sprintf("Put the value on line %d in quotes, then run this again.", bad)
+		} else {
+			replaceOldFormat(file, string(data), converted, c.migration)
+		}
 		if c.migration.done {
 			c.raw = converted
 		}
 		// Read as converted either way, so the values are the ones the file meant.
 		data = []byte(converted)
-	} else if fi, err := os.Stat(file); err == nil && fi.ModTime().Before(oldPinCutover) {
-		// A Format 3 file last written before the move to v3.0.0-beta1 is from
-		// the earlier module, whose double-quoted escapes v3 reads as text. The
-		// time is read before anything writes the file, since a write moves it.
+	} else if fi, err := os.Stat(file); err == nil && fromOldPin(fi.ModTime()) {
+		// A Format 3 file last written while the earlier module was in use is
+		// from it, and its double-quoted escapes v3 reads as text. The time is
+		// read before anything writes the file, since a write moves it.
 		if converted, n := oldPinRespelled(string(data)); n > 0 {
 			c.migration = &formatMigration{kind: oldPinned, changed: n}
 			replaceOldFormat(file, string(data), converted, c.migration)
@@ -906,7 +918,22 @@ func (c *config) loginOf(name string) string {
 // directory when not - which is what a fresh 'repo clone' has to go on.
 func (a *app) contextDir() string {
 	return a.git.contextDir.get(func() string {
-		return topOrWorkingDir(runOut("git", "rev-parse", "--show-toplevel"))
+		top := runOut("git", "rev-parse", "--show-toplevel")
+		// With GIT_DIR set, git takes the working directory for the top unless told
+		// a work tree. The repo is where the git dir is, which is also what the
+		// includeIf rules 'account apply' writes go by. A git dir not named .git, as
+		// in a linked worktree, keeps the top.
+		if os.Getenv("GIT_DIR") != "" {
+			if gitDir := runOut("git", "rev-parse", "--absolute-git-dir"); gitDir != "" {
+				if filepath.Base(gitDir) == ".git" {
+					return filepath.Dir(gitDir)
+				}
+				if top == "" { // bare
+					return gitDir
+				}
+			}
+		}
+		return topOrWorkingDir(top)
 	})
 }
 

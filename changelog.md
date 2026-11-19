@@ -35,7 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The SSH line in `status` and `whoami` names the key file on a `File:` line under it, not inside its parentheses, where a long path wrapped the line. `repo clone` ends with `[ Cloned. ]`, with the folder on a `File:` line. `account apply` and `account set` do the same for each file they write, and for a fragment `account apply` no longer uses.
 
-- An option a command doesn't read is refused, with the commands it works with: `gitsby status --direct` says `--direct works with sync.` It used to be ignored. `-q`, `--no-fetch`, `--any-identity` and `--config` still work with every command. Options typed before `raw` follow the same rule. An option left without its value is named as it was typed: `-m needs a value.`
+- An option a command doesn't read is refused, with the commands it works with: `gitsby status --direct` says `--direct works with sync and br switch.` It used to be ignored. `-q`, `--no-fetch`, `--any-identity` and `--config` still work with every command. Options typed before `raw` follow the same rule. An option left without its value is named as it was typed: `-m needs a value.`
 
 - Each placeholder has one name in the help screen, every syntax error, and the README: `[message]`, `[version]`, `[directory]`, `<owner/name>`. A `pr` word Gitsby doesn't know is named in the error, with the ones it takes.
 
@@ -49,9 +49,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `raw glab` and `pr` no longer send the account's GitLab token to some other host. glab sends its token to whatever host it's pointed at, so `raw glab api --hostname gitlab.com user` in a gitlab.gnome.org folder sent the GNOME token to gitlab.com. A run that names another host, with `--hostname`, `-R` or a URL, now gets no token and runs as plain glab would, and says so.
 
+- `raw git -C <folder>` acts as the account of the repo git works in. It acted as the account of the folder it was started in, so a commit or push into another account's repo went out with the wrong name, email and token. The same goes for `--git-dir` and `GIT_DIR`, `raw tig -C`, and `raw lazygit -p`, `-w` and `-g`.
+
 - After `account apply`, a folder inside another account's folder no longer takes the outer account's settings that its own account leaves unset. Plain git and `raw git` there answered with the inner account's username and the outer one's token, commits took the outer one's name, and ssh its key. Each such key now gets the value your global git config gives it.
 
 - A failed `account apply` no longer empties an account's fragment that your global git config already includes. Each fragment is written to a new file beside it, which replaces it only once every key is in. A full disk or a permissions error leaves the old one as it was, and a lock file git left beside it no longer stops the run.
+
+- A failed `account apply` no longer leaves your global git config with only some of its folder rules, and 2 run at once no longer leave a rule in twice. The rules go into a copy of the file that replaces it once all of them are in, and each apply waits its turn on git's lock. The error says the file was left as it was. `account apply` also replaces its rules in `~/.config/git/config` once `~/.gitconfig` exists, since git reads both, and `account list` warns about an old rule in either.
 
 - A Fix line that names a path with an apostrophe in it gives a command that pastes. The `chmod 600` for a loose token file gave one the shell couldn't read, and the others gave none. When `br merge` or `release` stops on a conflict, each command to settle it is on a line of its own, with the branch names quoted where a shell needs it.
 
@@ -61,7 +65,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `sync`, and every command that pushes the branch it's on, pushes only that branch. Under `push.default=matching`, or a push refspec for every branch, they pushed other branches with it, so a commit on `main` reached origin without `--direct`. On a mirror remote they deleted origin's branches that aren't here. git now refuses that push, and nothing moves.
 
+- `br switch` from `main` or `dev` with commits origin doesn't have yet warns before it pushes them, the way `sync` does, and with `-q` it refuses unless given `--direct`. It used to push them straight to origin's `main` or `dev` and exit 0.
+
+- `br create` and `br hotfix` off `main` or `dev` stop when the pull's restore of your edits conflicts, list the files, and point at the stash git kept, as `pullcom` does. They used to make the branch and push it over the conflict markers, and say Done.
+
+- A submodule with its own edits or untracked files no longer stops `pullcom`, `sync`, `br switch`, `br merge`, `br create`, `pr ok` or `release`. They tried to commit it, found nothing to commit, and failed. `br switch` off `main` no longer refuses over it, `sync` on `main` no longer calls it a direct push, and `release` no longer counts it as something new.
+
 - A syntax error from `release` or `raw` that quotes what was typed shows a control character by name, as every other error does, so an escape typed by mistake no longer changes the terminal's colors.
+
+- With commits on `main` or `dev` that origin doesn't have, `sync` and `br switch` name a way to move them to a new branch that works: `git checkout -b <branch-name>`, then `git branch -f main origin/main`. They named `br create`, which takes a dirty tree along but leaves commits on `main`, so the next `sync` refused again. A dirty tree alone still gets `br create`. `pr create` from `main` or `dev` with commits on it names the same way off.
+
+- A token typed in a URL no longer shows in an error. `gitsby repo create https://user:TOKEN@example.com/o/n.git` printed it twice, and so did any refusal that quotes back what was typed, such as `br switch` and an unknown `repo` word. An origin URL with a newline in it, or a password with an `@` in it, also showed its token in `status` and `repo url`. Each shows `***` in its place now.
+
+- `br create` refuses `@{-1}` and other names git reads as another branch, before anything runs. It used to commit, push and check out `dev` first, then fail.
+
+- The plan for `br merge` in a clone with no local `dev` yet shows the 1 atomic push the run makes. It listed a push and a separate delete.
+
+- An accounts file stamped with a newer SHCL format than this build reads says so, and `account set` and `account unset` refuse before their plan. It used to be read with no word, and `account set` showed its plan, then failed to save.
+
+- Converting an SHCL 2.x accounts file keeps a value where a quote comes before a `#` or a `,`, such as `name: O"Brien#2`. It used to cut the value at the `#` and say the lines were re-spelled to keep their values. A line that can't be kept that way leaves the file as it is, and the notice names the line.
+
+- Converting an SHCL 2.x accounts file keeps a value holding a byte that isn't UTF-8 the way 2.x read it, as the replacement character U+FFFD. It used to keep the byte, so the value read differently after the conversion, with no word about it.
+
+- An accounts file last written before the first SHCL 3 module Gitsby used, or with no real time, as a Nix store gives, is read as it is rather than re-spelled as that module's. The copy a conversion keeps has the file's own time, so moving it back reads as the file did. Where the folder can't be written, the notice says so rather than blaming a lock.
 
 ## v3.0.0-beta.1 - 2026-11-08
 

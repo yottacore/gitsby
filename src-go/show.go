@@ -79,7 +79,13 @@ func (a *app) showLinesAt(indent string, outLines []string) {
 // list under paragraphs of hints.
 func (a *app) showChanges() {
 	a.out.clean("Local changes:")
-	a.showList("git", "status", "--short")
+	// connect with origin set commits everything and pushes it, so each file a
+	// folder holds gets its own line. With no origin the plan lists them after.
+	if a.tgt.connectMode == "push" {
+		a.showList("git", "status", "--short", "--untracked-files=all")
+	} else {
+		a.showList("git", "status", "--short")
+	}
 	if a.lastListCount == 0 {
 		a.out.clean("    (working tree clean)")
 	}
@@ -604,7 +610,7 @@ func (a *app) showSSHLine(remoteURL string) {
 	ssh := readSSHConfig(sshConnectTarget(remoteURL))
 	// An '-i' in git's own ssh command outranks ssh -G's pick, since with IdentitiesOnly
 	// ssh_config's candidates never get a look in.
-	fields := strings.Fields(a.gitSSHCommand())
+	fields := a.sshArgv()
 	for i, arg := range fields {
 		if arg == "-i" && i+1 < len(fields) {
 			ssh.keyFile = fields[i+1]

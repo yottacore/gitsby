@@ -118,13 +118,13 @@ func sshConnectTarget(url string) string {
 }
 
 // gitSSHCommand is the ssh command git would run, so probes ask as the key git pushes
-// with. GIT_SSH_COMMAND beats core.sshCommand. Split, never shelled, so a quoted path
-// gives plain 'ssh'.
+// with. GIT_SSH_COMMAND beats core.sshCommand. Split, never shelled, so one only a
+// shell could read gives plain 'ssh'.
 func (a *app) gitSSHCommand() string {
 	cmd := a.rawSSHCommand()
 	// Blank is as good as unset. A lone space split into nothing, and reading the
 	// command's first word killed every push compared against an account.
-	if strings.TrimSpace(cmd) == "" || strings.ContainsAny(cmd, `"'`) {
+	if _, ok := sshWords(cmd); !ok {
 		return "ssh"
 	}
 	return cmd
@@ -137,15 +137,71 @@ func (a *app) rawSSHCommand() string {
 	return a.coreSSHCommand()
 }
 
+// sshArgv is the program and leading arguments a probe runs. With neither command
+// set, git runs GIT_SSH, one program named by its path, spaces and all.
+func (a *app) sshArgv() []string {
+	if strings.TrimSpace(a.rawSSHCommand()) == "" {
+		if program := os.Getenv("GIT_SSH"); program != "" {
+			return []string{program}
+		}
+	}
+	words, _ := sshWords(a.gitSSHCommand())
+	return words
+}
+
+// sshWords is an ssh command split the way git's shell would split it, or false
+// when that shell would do more than split it on blanks: a quote, a variable, a
+// backtick, '~user'. A leading '~/' stays, since ssh expands that in a key path
+// itself, and gitsby's own sshkey command is spelled that way.
+func sshWords(cmd string) ([]string, bool) {
+	if strings.ContainsAny(cmd, "\"'\\$`;&|<>()\n") {
+		return nil, false
+	}
+	words := strings.Fields(cmd)
+	for _, word := range words {
+		if strings.HasPrefix(word, "#") || (strings.HasPrefix(word, "~") && word != "~" && !strings.HasPrefix(word, "~/")) {
+			return nil, false
+		}
+	}
+	return words, len(words) > 0
+}
+
+// sshTakesOptions: the program takes OpenSSH's '-o' options, by git's own reading of
+// it. GIT_SSH_VARIANT says outright; otherwise PuTTY's programs are known by name.
+// plink takes no '-o', and won't connect at all when handed one.
+func sshTakesOptions(program string) bool {
+	switch strings.ToLower(os.Getenv("GIT_SSH_VARIANT")) {
+	case "ssh":
+		return true
+	case "plink", "putty", "tortoiseplink", "simple":
+		return false
+	}
+	base := strings.ToLower(program[strings.LastIndexAny(program, `/\`)+1:])
+	base = strings.TrimSuffix(base, ".exe")
+	return base != "plink" && base != "tortoiseplink"
+}
+
 // remoteEnv is the environment every command that reaches origin runs under: no auth
-// prompts, and an ssh connect timeout added to whatever ssh command git would use. A
-// GIT_SSH_COMMAND the caller chose is left alone, and so is a quoted one.
+// prompts, and an ssh connect timeout added to whatever ssh command git would use.
+// Whatever can't take the timeout is left for git to run as it stands: a
+// GIT_SSH_COMMAND the caller chose, one only a shell can read, PuTTY's, and GIT_SSH,
+// which any GIT_SSH_COMMAND would outrank.
 func (a *app) remoteEnv() []string {
 	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	if !a.userSSHCommand && !strings.ContainsAny(a.rawSSHCommand(), `"'`) {
-		env = append(env, "GIT_SSH_COMMAND="+a.gitSSHCommand()+" -o ConnectTimeout=3")
+	if a.userSSHCommand {
+		return env
 	}
-	return env
+	cmd := a.rawSSHCommand()
+	if strings.TrimSpace(cmd) == "" {
+		if os.Getenv("GIT_SSH") != "" {
+			return env
+		}
+		cmd = "ssh"
+	}
+	if words, ok := sshWords(cmd); !ok || !sshTakesOptions(words[0]) {
+		return env
+	}
+	return append(env, "GIT_SSH_COMMAND="+cmd+" -o ConnectTimeout=3")
 }
 
 // The greeting each git host answers an ssh -T with. GitHub says 'Hi <user>!';
@@ -168,7 +224,7 @@ func (a *app) sshLogin(url string) string {
 		delete(a.remote.sshAhead, url)
 		who = pending.wait()
 	} else {
-		who = probeSSHLogin(context.Background(), os.Environ(), url, a.gitSSHCommand())
+		who = probeSSHLogin(context.Background(), os.Environ(), url, a.sshArgv())
 	}
 	if a.remote.sshLogins == nil {
 		a.remote.sshLogins = map[string]string{}
@@ -183,21 +239,19 @@ func (a *app) askSSHLoginAhead(url string) {
 	if _, asked := a.remote.sshLogins[url]; asked || a.remote.sshAhead[url] != nil {
 		return
 	}
-	ctx, env, sshCommand := a.probeContext(), os.Environ(), a.gitSSHCommand()
+	ctx, env, sshCmd := a.probeContext(), os.Environ(), a.sshArgv()
 	if a.remote.sshAhead == nil {
 		a.remote.sshAhead = map[string]*ahead[string]{}
 	}
-	a.remote.sshAhead[url] = startAhead(func() string { return probeSSHLogin(ctx, env, url, sshCommand) })
+	a.remote.sshAhead[url] = startAhead(func() string { return probeSSHLogin(ctx, env, url, sshCmd) })
 }
 
-func probeSSHLogin(ctx context.Context, env []string, url, sshCommand string) string {
+func probeSSHLogin(ctx context.Context, env []string, url string, sshCmd []string) string {
 	target := sshConnectTarget(url)
-	if target == "" || !inPath("ssh") {
+	// PuTTY's programs take none of the options below, so the answer stays unknown.
+	// Asking plain ssh instead could name an account git never pushes as.
+	if target == "" || !inPath("ssh") || len(sshCmd) == 0 || !sshTakesOptions(sshCmd[0]) {
 		return "?"
-	}
-	sshCmd := strings.Fields(sshCommand)
-	if len(sshCmd) == 0 {
-		sshCmd = []string{"ssh"}
 	}
 	args := append(sshCmd[1:], "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "--", target)
 	// Both streams: ssh writes host-key and missing-identity warnings ahead of the

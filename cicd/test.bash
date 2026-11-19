@@ -86,6 +86,8 @@ unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST 
 ## git asks an askpass before it checks GIT_TERMINAL_PROMPT. Git for Windows' login shell sets
 ## SSH_ASKPASS, and over ssh its dialog waits forever for a password nobody can type.
 unset GIT_ASKPASS SSH_ASKPASS
+## An inherited ssh command or program decides what every fetch and identity probe runs.
+unset GIT_SSH GIT_SSH_COMMAND GIT_SSH_VARIANT
 
 ## Output helpers, the same family as cicd.bash's: fEcho_Clean prints a line as given and
 ## collapses repeated blanks, and fUsage refuses the command line.
@@ -1788,11 +1790,69 @@ fRunSuite(){
 	else
 		fSkipBlock "the warning above the prompt (no pty)"
 	fi
-	fAssertOut  "[ddj6t] help lists --direct"  '^  --direct \.+: Let sync push straight to' "${gitsby}" --help
+	fAssertOut  "[ddj6t] help lists --direct"  '^  --direct \.+: Let sync or br switch push straight to' "${gitsby}" --help
 	## sync: publishes; remote matches local
 	fAssert "[da8m8] sync runs"            bash -c "cd '${cloneA}' && '${gitsby}' -q --direct sync 'push file2'"
 	fAssert "[da8m9] remote main matches"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
 	fAssert "[ddj6v] with nothing left to send, sync on main runs without --direct" bash -c "cd '${cloneA}' && '${gitsby}' -q sync 'noop'"
+	## br switch parks before it moves, and from main that park push is the same push sync
+	## makes, so it gets the same warning and the same -q refusal. A merge doesn't count.
+	local directO="${work}/$1-directo.git" directA="${work}/$1-directa"
+	git init --quiet --bare -b main "${directO}"
+	git clone --quiet "${directO}" "${directA}" 2>/dev/null
+	( cd "${directA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git branch --quiet side && echo two > g.txt && git add --all && git commit --quiet -m "on main" )
+	fAssert "[dffyd] br switch -q from main with a commit to send refuses, naming --direct" \
+		bash -c "cd '${directA}' && out=\"\$('${gitsby}' -q br switch side 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'Re-run with --direct' <<< \"\${out}\""
+	fAssert "[dffye] and pushed nothing, and stayed on main" \
+		bash -c "cd '${directA}' && [[ \"\$(git -C '${directO}' rev-parse main)\" != \"\$(git rev-parse main)\" ]] && [[ \"\$(git branch --show-current)\" == main ]]"
+	if ((hasPty)); then
+		fAssertOut "[dffyf] asked in person, br switch warns above the prompt" "WARNING: This pushes your work straight to 'main'\\." \
+			fAnswerPrompt n "cd '${directA}' && '${gitsby}' br switch side"
+	else
+		fSkipBlock "the br switch warning above the prompt (no pty)"
+	fi
+	fAssert "[dffyg] --direct br switch sends it and moves" \
+		bash -c "cd '${directA}' && '${gitsby}' -q --direct br switch side && [[ \"\$(git -C '${directO}' rev-parse main)\" == \"\$(git rev-parse main)\" ]] && [[ \"\$(git branch --show-current)\" == side ]]"
+	( cd "${directA}" && echo three > h.txt && git add --all && git commit --quiet -m "on side" && git checkout --quiet main && git merge --quiet --no-ff side -m "merge side" )
+	fAssert "[dffyh] a merge on main needs no --direct for br switch to send it" \
+		bash -c "cd '${directA}' && '${gitsby}' -q br switch side && [[ \"\$(git -C '${directO}' rev-parse main)\" == \"\$(git rev-parse main)\" ]]"
+	## The way off main that the refusal names has to work for what is there. br create takes a
+	## dirty tree along but leaves commits on main, where the next sync refuses again.
+	local offO="${work}/$1-wayoffo.git" offA="${work}/$1-wayoffa" offFix=""
+	git init --quiet --bare -b main "${offO}"
+	git clone --quiet "${offO}" "${offA}" 2>/dev/null
+	( cd "${offA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git push --quiet origin main:dev && echo two > g.txt && git add --all && git commit --quiet -m "on main" )
+	( cd "${offA}" && "${gitsby}" -q sync ) > "${work}/$1-wayoff1.out" 2>&1 || true
+	fAssert "[dfg2y] sync -q on main with a commit names a way off that takes commits" \
+		bash -c "grep -qF \"'git checkout -b <branch-name>', then 'git branch -f main origin/main'\" '${work}/$1-wayoff1.out' && ! grep -qF 'br create' '${work}/$1-wayoff1.out'"
+	fAssert "[dfg2z] and so does br switch -q" \
+		bash -c "cd '${offA}' && out=\"\$('${gitsby}' -q br switch dev 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"then 'git branch -f main origin/main'\" <<< \"\${out}\""
+	## Run as the refusal gives it, with a name put in, and main is level with origin after.
+	offFix="$(grep -oE "'git checkout -b <branch-name>', then 'git branch -f [^']+'" "${work}/$1-wayoff1.out" | sed -e "s/<branch-name>/moved/" -e "s/', then '/ \&\& /" -e "s/^'//" -e "s/'\$//")" || true
+	fAssert "[dfg30] following it moves the commit off main, and sync from main then runs" \
+		bash -c "cd '${offA}' && [[ -n \"${offFix}\" ]] && eval \"${offFix}\" && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]] && git log -1 --format=%s moved | grep -qx 'on main' && '${gitsby}' -q br switch main && '${gitsby}' -q sync && [[ \"\$(git -C '${offO}' rev-parse main)\" != \"\$(git rev-parse moved)\" ]] && [[ \"\$(git -C '${offO}' rev-parse moved)\" == \"\$(git rev-parse moved)\" ]]"
+	( cd "${offA}" && echo three > h.txt )
+	fAssert "[dfg31] a dirty tree alone on main still gets br create, which takes it along" \
+		bash -c "cd '${offA}' && out=\"\$('${gitsby}' -q sync 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"move the work to a branch with '${APP_NAME} br create <branch-name>'.\" <<< \"\${out}\" && '${gitsby}' -q br create carried && [[ -f h.txt ]] && [[ \"\$(git branch --show-current)\" == carried ]] && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
+	if ((hasPty)); then
+		( cd "${offA}" && git checkout --quiet main && echo four > i.txt && git add --all && git commit --quiet -m "on main again" )
+		fAssertOut "[dfg32] asked in person, the warning names the same way off for a commit" "answer n and run 'git checkout -b <branch-name>', then 'git branch -f main origin/main'\\." \
+			fAnswerPrompt n "cd '${offA}' && '${gitsby}' sync"
+	else
+		fSkipBlock "the way off in the warning above the prompt (no pty)"
+	fi
+	## br create's name is vetted before anything runs. check-ref-format --branch takes @{-1} as
+	## the previous branch and answers with its name, which is taken.
+	local prevO="${work}/$1-prevo.git" prevA="${work}/$1-preva"
+	git init --quiet --bare -b main "${prevO}"
+	git clone --quiet "${prevO}" "${prevA}" 2>/dev/null
+	( cd "${prevA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git push --quiet origin main:dev && git checkout --quiet -b one && git checkout --quiet -b two && echo wip > w.txt )
+	fAssert "[dfg35] br create '@{-1}' is refused as a branch name" \
+		bash -c "cd '${prevA}' && out=\"\$('${gitsby}' -q br create '@{-1}' 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'@{-1}' is not a valid branch name.\" <<< \"\${out}\""
+	fAssert "[dfg36] before anything ran" \
+		bash -c "cd '${prevA}' && [[ \"\$(git branch --show-current)\" == two ]] && [[ \"\$(git status --porcelain)\" == '?? w.txt' ]] && ! git -C '${prevO}' show-ref --verify --quiet refs/heads/two"
+	fAssert "[dfg37] and so is a name that only starts with it" \
+		bash -c "cd '${prevA}' && out=\"\$('${gitsby}' -q br create '@{-1}/x' 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'is not a valid branch name.' <<< \"\${out}\" && [[ \"\$(git branch --show-current)\" == two ]] && ! git -C '${prevO}' show-ref --verify --quiet refs/heads/two"
 
 	## remote moved ahead + local dirty -> update commits the local work, then fast-forwards
 	(
@@ -1831,7 +1891,9 @@ fRunSuite(){
 	## gobr: switch back and forth; bogus target rejected
 	fAssert "[da8mn] br switch (default: main)"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch"
 	fAssert "[da8mp] now on main"           bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == main ]]"
-	fAssert "[da8mq] br switch feat"             bash -c "cd '${cloneA}' && '${gitsby}' -q br switch feat"
+	## main still holds update's 'local edit', which the switch's park push sends, so it says
+	## that's meant.
+	fAssert "[da8mq] br switch feat"             bash -c "cd '${cloneA}' && '${gitsby}' -q --direct br switch feat"
 	fAssert "[da8mr] back on feat"          bash -c "cd '${cloneA}' && [[ \"\$(git branch --show-current)\" == feat ]]"
 	fAssertFail "[da8ms] br switch nonexistent rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q br switch nosuch"
 
@@ -2478,6 +2540,16 @@ fRunSuite(){
 		bash -c "! git -C '${pnOrigin}' show-ref --verify --quiet refs/heads/atom && git -C '${pnOrigin}' log -1 --format=%s refs/heads/dev | grep -qx 'merge atom' && [[ \$(grep -c 'built-in: git push' '${work}/$1-pn11.trace') == 1 ]] && grep -qF -- \"push --atomic --force-with-lease=refs/heads/atom:\$(cat '${work}/$1-pn11tip')\" '${work}/$1-pn11.trace'"
 	fAssert    "[df06n] and doesn't ask origin about the branch first"  bash -c "[[ -s '${work}/$1-pn11.trace' ]] && ! grep -qF 'ls-remote' '${work}/$1-pn11.trace'"
 	fAssertOut "[df06p] and its plan names the 1 push"  "^ +git push --atomic \\(the merge, and the leased delete of origin's 'atom'\\) \\*\$"  cat "${work}/$1-pn11.out"
+	## A clone with no local dev yet: the checkout makes it, tracking origin's, so the plan says
+	## the same 1 push the run makes.
+	local pnC="${work}/$1-pnc"
+	git clone --quiet "${pnOrigin}" "${pnC}" 2>/dev/null
+	( cd "${pnC}" && git checkout --quiet --no-track -b atom2 origin/dev && echo atom2 > atom2.txt && git add --all && git commit --quiet -m atom2 && git push --quiet -u origin atom2 )
+	( cd "${pnC}" && ! git show-ref --verify --quiet refs/heads/dev && GIT_TRACE="${work}/$1-pn12.trace" "${gitsby}" -q br merge "merge atom2" ) > "${work}/$1-pn12.out" 2>&1 || true
+	fAssertOut "[dfg33] br merge with no local target yet plans the 1 atomic push"  "^ +git push --atomic \\(the merge, and the leased delete of origin's 'atom2'\\) \\*\$"  cat "${work}/$1-pn12.out"
+	fAssert    "[dfg34] and makes just that push, with no second delete in the plan" \
+		bash -c "[[ \$(grep -c 'built-in: git push' '${work}/$1-pn12.trace') == 1 ]] && ! grep -qF -- '--force-with-lease origin --delete atom2' '${work}/$1-pn12.out' && ! git -C '${pnOrigin}' show-ref --verify --quiet refs/heads/atom2"
+	git -C "${pnA}" pull --quiet --ff-only
 	## Someone else pushes to the branch, and br merge --no-fetch never pulls it in. Origin's copy
 	## is then the only ref to that commit.
 	(
@@ -2679,6 +2751,46 @@ fRunSuite(){
 	mkdir -p "${pub3}"; cp -r "${pubDir}/." "${pub3}/"; fSafeRm "${pub3:?}/.git" >/dev/null
 	git init --quiet --bare -b main "${cn}/remote5.git"
 	fAssertNotOut "[daggv] the listing honors .gitignore"  'skipme\.log|skipdir'  bash -c "cd '${pub3}' && '${gitsby}' -q repo connect '${cn}/remote5.git' 2>&1"
+	## From a repo with no origin the first push sends the whole tree, and status shows an
+	## untracked folder as one line. Run from a subfolder, since 'git add --all' takes the whole
+	## tree from there too.
+	local pubRepo="${cn}/publish-repo"
+	git init --quiet --bare -b main "${cn}/remote6.git"
+	git init --quiet -b main "${pubRepo}"
+	(
+		cd "${pubRepo}" || exit 1
+		echo a > a.txt; git add a.txt; git commit --quiet -m a
+		mkdir -p secret sub; echo TOKEN=x > secret/.env; echo key > secret/id_rsa; echo n > sub/n.txt
+		echo '*.log' > .gitignore; echo noise > noise.log
+	)
+	( cd "${pubRepo}/sub" && "${gitsby}" -q repo connect "${cn}/remote6.git" ) > "${work}/$1-pubrepo.out" 2>&1 || true
+	fAssertOut    "[dfg0x] repo connect in a repo names each file of an untracked folder"  '^    \.\./secret/id_rsa$'  cat "${work}/$1-pubrepo.out"
+	fAssertOut    "[dfg0y] and the files committed before"                                  '^    \.\./a\.txt$'          cat "${work}/$1-pubrepo.out"
+	fAssertNotOut "[dfg0z] and not an ignored one"                                          'noise\.log'               cat "${work}/$1-pubrepo.out"
+	fAssert       "[dfg10] and the folder's files went up, as listed"  bash -c "git -C '${cn}/remote6.git' ls-tree -r --name-only main | grep -qx 'secret/\.env'"
+	## With origin set it commits and pushes a new folder too, so each of its files is named.
+	mkdir -p "${pubRepo}/more"; echo m > "${pubRepo}/more/m1.txt"; echo m > "${pubRepo}/more/m2.txt"
+	fAssertOut    "[dfg11] repo connect with origin set names each file of a new folder"  '^    \?\? more/m2\.txt$' \
+		bash -c "cd '${pubRepo}' && '${gitsby}' -q repo connect 2>&1"
+
+	## A target after '--' can start with a dash. git read it as an option in the probe, and
+	## ran the command it named. The branch tracks another remote, so the probe has one to ask.
+	local cnDash="${cn}/dash"
+	git init --quiet --bare -b main "${cnDash}-other.git"
+	git init --quiet -b main "${cnDash}"
+	( cd "${cnDash}" && echo d > d.txt && git add --all && git commit --quiet -m d && git remote add other "${cnDash}-other.git" && git push --quiet -u other main ) >/dev/null 2>&1
+	local cnDashRun="cd '${cnDash}' && '${gitsby}' -q repo connect -- '--upload-pack=touch PWNED;git-upload-pack' 2>&1"
+	fAssertFail   "[dfg12] repo connect refuses a target that starts with a dash"  bash -c "${cnDashRun}"
+	fAssert       "[dfg13] and git never ran what it named"                         bash -c "${cnDashRun}; [[ ! -e '${cnDash}/PWNED' ]] && [[ -z \"\$(git -C '${cnDash}' remote get-url origin 2>/dev/null)\" ]]"
+	mkdir -p "${cnDash}-bin"
+	fStub "${cnDash}-bin/gh" <<-EOF
+		#!/usr/bin/env bash
+		touch '${cnDash}-gh-ran'
+		exit 1
+	EOF
+	fAssertOut    "[dfg14] repo create refuses one too"  'starts with a dash' \
+		bash -c "cd '${cnDash}' && PATH='${cnDash}-bin':\"\${PATH}\" '${gitsby}' -q repo create -- --x/y 2>&1"
+	fAssert       "[dfg15] before asking gh"             bash -c "[[ ! -e '${cnDash}-gh-ran' ]]"
 
 	## connect refuses remotes with history, unreachable remotes, and empty dirs
 	git init --quiet -b main "${cn}/proj2"
@@ -2778,11 +2890,61 @@ fRunSuite(){
 	# 	bash -c "${sidRun} FAKE_SSH_LOG='${sid}/dd.log' '${gitsby}' -q -NoFetch status >/dev/null 2>&1; grep -qx -- '-G -- gh-acme' '${sid}/dd.log'"
 	fAssert "[df054] and an aliased remote asks ssh -G once, options ended before the target" \
 		bash -c "${sidRun} FAKE_SSH_LOG='${sid}/dd.log' '${gitsby}' -q -NoFetch status >/dev/null 2>&1; [[ \"\$(grep -c -- '^-G ' '${sid}/dd.log')\" == 1 ]] && grep -qx -- '-G -- git@gh-acme' '${sid}/dd.log'"
+	## repo url goes by transport. Compared with the URL rebuilt from the real host, the alias read
+	## as another spelling and became the bare host, which swaps the alias's key for ssh's default.
+	fAssertOut "[dfg29] repo url ssh says an aliased origin already uses ssh"  'already uses ssh'  bash -c "${sidRun} '${gitsby}' -q -NoFetch repo url ssh 2>&1"
+	fAssert    "[dfg2a] and leaves the alias in place"  bash -c "[[ \"\$(git -C '${sid}/proj' remote get-url origin)\" == 'git@gh-acme:acme/api.git' ]]"
+	fAssertOut "[dfg2b] repo url shows the alias as its ssh spelling"  'as ssh \.+: git@gh-acme:acme/api\.git$'  bash -c "${sidRun} '${gitsby}' -q -NoFetch repo url 2>&1"
+	fAssertPlan "[dfg2c] and its https spelling still names the real host"  'git remote set-url origin https://github\.com/acme/api\.git' \
+		bash -c "${sidRun} '${gitsby}' -q -NoFetch repo url https 2>&1"
 	git -C "${sid}/proj" remote set-url origin git@github.com:acme/api.git
 	## Offline (the fetch failed): say we don't know rather than guess, and don't spend the
 	## round trip finding out. Asserting the log is what proves the probe was actually skipped.
 	fAssertOut "[dakpb] an unreachable remote leaves the account unknown"  "SSH \.+: \(unknown - offline, so .* wasn't asked\) \(git@github\.com"  bash -c "${sidRun} '${gitsby}' -q status"
 	fAssert    "[dakpc] and no identity round trip was attempted"  bash -c "${sidRun} FAKE_SSH_LOG='${sid}/log' '${gitsby}' -q status >/dev/null 2>&1; ! grep -q -- '-T' '${sid}/log'"
+	## Split without a shell, '$HOME/...' reached ssh as typed and ssh offered its default keys. A
+	## command only a shell can read is probed as plain ssh, as a quoted one already was.
+	: > "${sid}/hm.log"
+	local hmRun="${sidRun} GIT_SSH_COMMAND='ssh -i \$HOME/.ssh/work_key' FAKE_SSH_LOG='${sid}/hm.log'"
+	fAssert "[dfg2f] an ssh command that needs a shell for \$HOME is probed as plain ssh" \
+		bash -c "${hmRun} '${gitsby}' -q -NoFetch status >/dev/null 2>&1; grep -qE -- '^-T .* -- git@github\.com$' '${sid}/hm.log' && ! grep -qF -- '\$HOME' '${sid}/hm.log'"
+	fAssertNotOut "[dfg2g] and the key line doesn't name the path as typed"  'work_key'  bash -c "${hmRun} '${gitsby}' -q -NoFetch status"
+	## GIT_SSH is the user's own ssh program, as PuTTY and TortoiseGit users set it. git runs it only
+	## when no ssh command is set, so the GIT_SSH_COMMAND exported for the connect timeout ran PATH's
+	## ssh in its place, and the fetch read as offline. The stub serves the fetch from a bare copy.
+	if ! ((isWindows)); then
+		git clone --quiet --bare "${sid}/proj" "${sid}/remote/acme/api.git"
+		fStub "${sid}/gitssh" <<-'EOF'
+			#!/usr/bin/env bash
+			[[ -n "${FAKE_SSH_LOG:-}" ]] && echo "gitssh $*" >> "${FAKE_SSH_LOG}"
+			case "$1" in
+				-G) exit 1 ;;
+				-T) echo "Hi gitsshdev! You've successfully authenticated, but GitHub does not provide shell access." >&2; exit 1 ;;
+			esac
+			cd "${FAKE_REMOTE_ROOT:?}" || exit 1
+			last="${*: -1}"
+			eval "git ${last#git-}"
+		EOF
+		: > "${sid}/gs.log"
+		local gsRun="${sidRun} GIT_SSH='${sid}/gitssh' FAKE_REMOTE_ROOT='${sid}/remote' FAKE_SSH_LOG='${sid}/gs.log'"
+		fAssertNotOut "[dfg2d] with GIT_SSH set, the fetch isn't read as offline"  'git fetch failed'  bash -c "${gsRun} '${gitsby}' -q status"
+		fAssert       "[dfg2e] it fetched through that program"  bash -c "grep -q '^gitssh .*upload-pack' '${sid}/gs.log'"
+		fAssertOut    "[dfg2j] and the identity probe asks that program too"  "SSH \.+: gitsshdev \("  bash -c "${gsRun} '${gitsby}' -q -NoFetch status"
+		## plink takes none of the probe's OpenSSH options, so it isn't asked at all, and the
+		## account stays unknown rather than plain ssh's answer.
+		mkdir -p "${sid}/putty"
+		fStub "${sid}/putty/plink" <<-'EOF'
+			#!/usr/bin/env bash
+			echo "plink $*" >> "${FAKE_SSH_LOG:?}"
+			exit 1
+		EOF
+		: > "${sid}/pl.log"
+		fAssert "[dfg2k] a PuTTY GIT_SSH is never handed the probe's OpenSSH options" \
+			bash -c "${sidRun} GIT_SSH='${sid}/putty/plink' FAKE_SSH_LOG='${sid}/pl.log' '${gitsby}' -q -NoFetch status >/dev/null 2>&1; ! grep -q -- '^plink .*-T' '${sid}/pl.log'"
+		fAssertNotOut "[dfg2m] and the account isn't plain ssh's answer"  "SSH \.+: acmedev "  bash -c "${sidRun} GIT_SSH='${sid}/putty/plink' '${gitsby}' -q -NoFetch status"
+	else
+		fSkipBlock "a bash script can't be GIT_SSH for the native build"
+	fi
 
 	## The pre-command fetch must never sit and ask for credentials: it runs before any of our
 	## own checks, so an https remote you can't authenticate to would block every command.
@@ -2984,6 +3146,16 @@ GHEOF
 	fAssertNotOut "[dbfgf] and does not point at repo create"  'repo create me/proj' \
 		bash -c "cd '${gh}/offl' && PATH='${ghp}' FAKE_GH_VIEW=offline '${gitsby}' -q repo connect me/proj 2>&1"
 	fAssertFail "[dadvr] repo create refuses a plain url"                       bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create '${gh}/backing-https.git'"
+	## A token typed in a URL, or kept in an origin that holds a newline, prints masked.
+	fAssertOut    "[dfg4y] repo create's refusal masks a token typed in the URL"  "'https://\*\*\*@example\.com/o/n\.git' isn't a GitHub" \
+		bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create https://user:SECRET@example.com/o/n.git 2>&1"
+	fAssertNotOut "[dfg4z] and doesn't print the token"  'SECRET' \
+		bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create https://user:SECRET@example.com/o/n.git 2>&1"
+	mkdir -p "${gh}/nl-origin"; ( cd "${gh}/nl-origin" && git init --quiet -b main && git commit --quiet --allow-empty -m init && git config remote.origin.url "$(printf 'https://user:SECRET@example.invalid/o/n.git\nx')" )
+	fAssertOut    "[dfg50] status masks the token in an origin with a newline in it"  'https://\*\*\*@example\.invalid/o/n\.git◉NEWLINE◉x' \
+		bash -c "cd '${gh}/nl-origin' && PATH='${ghp}' '${gitsby}' --no-fetch status 2>&1"
+	fAssertNotOut "[dfg51] and doesn't print the token"  'SECRET' \
+		bash -c "cd '${gh}/nl-origin' && PATH='${ghp}' '${gitsby}' --no-fetch status 2>&1"
 	## Keep the insteadOf rewrite: origin is a real github.com URL, and the fetch runs before the
 	## refusal. These 2 have no origin yet, so the account comes from the owner on the command
 	## line.
@@ -3093,6 +3265,10 @@ GHEOF
 		git checkout --quiet -b pnfeat && echo work > work.txt && git add --all && git commit --quiet -m "Teach it to retry"
 	)
 	fAssertFail "[dadsq] pr create refuses from the merge target"  bash -c "cd '${pnc}' && git checkout --quiet dev && PATH='${ghp}' '${gitsby}' -q pr create 'nope'"
+	( cd "${pnc}" && git checkout --quiet dev && echo direct > direct.txt && git add --all && git commit --quiet -m "on dev" )
+	fAssert     "[dfg38] and with a commit on it, names a way off that takes the commit, which then works" \
+		bash -c "cd '${pnc}' && out=\"\$(PATH='${ghp}' '${gitsby}' -q pr create 'nope' 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"with 'git checkout -b <branch-name>', then 'git branch -f dev origin/dev'.\" <<< \"\${out}\" && git checkout --quiet -b prmoved && git branch -f dev origin/dev && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" ]] && git log -1 --format=%s prmoved | grep -qx 'on dev'"
+	( cd "${pnc}" && git checkout --quiet pnfeat && git branch -f dev origin/dev && { git branch --quiet -D prmoved 2>/dev/null || true; } )
 	fAssertFail "[dadsr] pr create refuses an already-open PR"     bash -c "cd '${pnc}' && git checkout --quiet pnfeat && PATH='${ghp}' FAKE_GH_EXISTING=99 '${gitsby}' -q pr create"
 	fAssert     "[dadss] pr create opens the PR"                   bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prnew.log' '${gitsby}' -q pr create"
 	fAssert     "[dadst] pr create pushed the branch first"        bash -c "cd '${pnc}' && git ls-remote --heads origin pnfeat | grep -q pnfeat"
@@ -3621,6 +3797,23 @@ GHEOF
 	fAssertFail "[dadt0] pr ok refuses unpushed commits"  bash -c "cd '${pgc}' && rm -f dirt.txt && echo u > u.txt && git add --all && git commit --quiet -m unpushed && PATH='${ghp}' '${gitsby}' -q pr ok 7"
 	fAssert     "[dadt1] pr ok kept the unpushed commit"  bash -c "cd '${pgc}' && git log -1 --pretty=%s | grep -qx unpushed"
 	fAssert     "[dadt2] pr ok proceeds once synced"  bash -c "cd '${pgc}' && git push --quiet && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7"
+	## A submodule's own untracked files aren't work this repo could push, so they don't stop it.
+	mkdir -p "${gh}/prsub"
+	git init --quiet -b main "${gh}/prsub/child"
+	( cd "${gh}/prsub/child" && echo c > c.txt && git add --all && git commit --quiet -m child )
+	git init --quiet --bare -b main "${gh}/prsub/origin.git"
+	local psc="${gh}/prsub/c"
+	git clone --quiet "${gh}/prsub/origin.git" "${psc}" 2>/dev/null
+	(
+		cd "${psc}" || exit 1
+		echo base > base.txt && git add --all
+		git -c protocol.file.allow=always submodule --quiet add "${gh}/prsub/child" child
+		git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b psfeat && echo w > w.txt && git add --all && git commit --quiet -m work && git push --quiet -u origin psfeat
+		echo u > child/untracked.txt
+	)
+	fAssert     "[dfg1v] pr ok isn't stopped by a submodule's own untracked files"  bash -c "cd '${psc}' && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7 && git ls-tree --name-only dev | grep -qx w.txt"
 
 	## Which branch a PR merges into, and whether it's a hotfix, belong to the PR - not to wherever
 	## you happen to be standing. 'pr ok <n>' is routinely run from dev, on someone else's branch.
@@ -4493,6 +4686,51 @@ GHEOF
 	fAssert     "[daf7y] and commits no conflict markers"  bash -c "cd '${cf}/mine' && ! git log -p | grep -q '<<<<<<<'"
 	fAssert     "[daf7z] and leaves the merge unresolved for the user"  bash -c "cd '${cf}/mine' && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]]"
 
+	## br create and br hotfix pull with --autostash off a protected branch and commit nothing
+	## after it, so the commit's conflict check never ran: they branched and pushed over the markers.
+	local cfb
+	for cfb in create hotfix; do
+		git clone --quiet "${cf}/origin.git" "${cf}/br-${cfb}" 2>/dev/null
+		(
+			cd "${cf}/br-${cfb}" || exit 1
+			git reset --quiet --keep HEAD~1 && printf 'line1\nMINE\nline3\n' > shared.txt
+			rc=0; "${gitsby}" -q br "${cfb}" "cf${cfb}" > "${cf}/br-${cfb}.out" 2>&1 || rc=$?
+			echo "${rc}" > "${cf}/br-${cfb}.rc"
+		)
+	done
+	fAssert     "[dfg1e] br create refuses a conflicted autostash reapply"  bash -c "[[ \"\$(cat '${cf}/br-create.rc')\" == 1 ]]"
+	fAssert     "[dfg1f] and names the conflicted file and the stash"  bash -c "grep -qx '    shared\.txt' '${cf}/br-create.out' && grep -qF \"run 'gitsby br create cfcreate' again. Git also kept your pre-pull tree - see 'git stash list'\" '${cf}/br-create.out'"
+	fAssert     "[dfg1g] and makes no branch, here or on origin"  bash -c "cd '${cf}/br-create' && [[ \"\$(git branch --show-current)\" == main ]] && ! git show-ref --quiet refs/heads/cfcreate && [[ -z \"\$(git ls-remote --heads origin cfcreate)\" ]]"
+	fAssert     "[dfg1h] br hotfix refuses it too"  bash -c "[[ \"\$(cat '${cf}/br-hotfix.rc')\" == 1 ]]"
+	fAssert     "[dfg1j] and makes no hotfix branch, leaving the conflict and the stash"  bash -c "cd '${cf}/br-hotfix' && ! git show-ref --quiet refs/heads/hotfix/cfhotfix && [[ -z \"\$(git ls-remote --heads origin hotfix/cfhotfix)\" ]] && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]] && [[ -n \"\$(git stash list)\" ]]"
+
+	## A submodule with its own edits or untracked files shows in status, but 'git add --all'
+	## stages nothing for it. Deciding from status, the commit ran with nothing staged and failed,
+	## and the protected-branch checks refused work that isn't this repo's to commit.
+	local smd="${work}/$1-submodule"
+	mkdir -p "${smd}"
+	git init --quiet -b main "${smd}/child"
+	( cd "${smd}/child" && echo c > c.txt && git add --all && git commit --quiet -m child )
+	git init --quiet --bare -b main "${smd}/origin.git"
+	git clone --quiet "${smd}/origin.git" "${smd}/top" 2>/dev/null
+	(
+		cd "${smd}/top" || exit 1
+		echo a > a.txt && git add --all
+		git -c protocol.file.allow=always submodule --quiet add "${smd}/child" child
+		git commit --quiet -m init && git tag -a v0.1.0 -m v0.1.0 && git push --quiet -u origin main v0.1.0
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b smfeat && git push --quiet -u origin smfeat
+		echo u > child/untracked.txt && echo m >> child/c.txt
+	)
+	fAssert    "[dfg1k] pullcom with only a dirty submodule succeeds"  bash -c "cd '${smd}/top' && '${gitsby}' -q pullcom 'sub'"
+	fAssert    "[dfg1m] and commits nothing"  bash -c "cd '${smd}/top' && [[ \"\$(git rev-list --count HEAD)\" == 1 ]]"
+	fAssert    "[dfg1n] sync with only a dirty submodule succeeds"  bash -c "cd '${smd}/top' && '${gitsby}' -q sync 'sub'"
+	fAssert    "[dfg1p] br switch off main with only a dirty submodule moves"  bash -c "cd '${smd}/top' && git checkout --quiet main && '${gitsby}' -q br switch smfeat && [[ \"\$(git branch --show-current)\" == smfeat ]]"
+	fAssert    "[dfg1q] -q sync on main with only a dirty submodule isn't a direct push"  bash -c "cd '${smd}/top' && git checkout --quiet main && '${gitsby}' -q sync 'sub'; rc=\$?; git checkout --quiet dev; exit \${rc}"
+	fAssertOut "[dfg1r] release with only a dirty submodule has nothing new"  'Nothing new to release since v0\.1\.0'  bash -c "cd '${smd}/top' && '${gitsby}' -q release 2>&1"
+	fAssert    "[dfg1s] and cuts no tag"  bash -c "cd '${smd}/top' && ! git rev-parse -q --verify refs/tags/v0.1.1 >/dev/null"
+	fAssert    "[dfg1t] a submodule moved to another commit is still committed"  bash -c "cd '${smd}/top' && git checkout --quiet smfeat && ( cd child && git add --all && git commit --quiet -m moved ) && '${gitsby}' -q pullcom 'bump' && [[ -z \"\$(git status --porcelain)\" ]] && git log -1 --pretty=%s | grep -qx bump"
+
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"
 	git init --quiet -b main "${nr}"
@@ -5319,6 +5557,49 @@ GHEOF
 		bash -c "cd '${acNested}' && env ${acNestEnv} git config core.sshCommand"
 	fAssertOut "[df4wx] and the outer folder still gets its own token"  '^password=tok_outer_file$' \
 		bash -c "cd '${ac}/trees/outer/proj' && ${acFillNest} git credential fill"
+	## raw acts as the account of the repo the tool works in, which -C, --git-dir or GIT_DIR can put
+	## outside the folder raw started in.
+	mkdir -p "${ac}/dirhome" "${ac}/dirbin" "${ac}/dtrees/work/proj/sub" "${ac}/dtrees/home"
+	: > "${ac}/dirhome/.gitconfig"
+	git init --quiet "${ac}/dtrees/work/proj"
+	git init --quiet "${ac}/dtrees/home/proj"
+	git init --quiet --bare "${ac}/dtrees/home/bare.git"
+	printf 'tok_dir_work\n' > "${ac}/dirhome/work.tok"
+	printf 'tok_dir_home\n' > "${ac}/dirhome/home.tok"
+	printf 'account: dw\n\tpath: %s/dtrees/work\n\temail: dw@example.com\n\ttokenfile: %s/dirhome/work.tok\n\naccount: dh\n\tpath: %s/dtrees/home\n\temail: dh@example.com\n\ttokenfile: %s/dirhome/home.tok\n' \
+		"${acCanon}" "${acCanon}" "${acCanon}" "${acCanon}" > "${ac}/dir.shcl"
+	fStub "${ac}/dirbin/tig" <<'TIGEOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == -C ]] && { cd "$2" || exit 1; }
+git config --get user.email
+TIGEOF
+	fStub "${ac}/dirbin/lazygit" <<'LGEOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == -p ]] && { cd "$2" || exit 1; }
+git config --get user.email
+LGEOF
+	local acDirEnv="${acNoDiscovery} HOME='${ac}/dirhome' GIT_CONFIG_GLOBAL='${ac}/dirhome/.gitconfig' PATH='${ac}/dirbin:${PATH}' GIT_TERMINAL_PROMPT=0"
+	local acDirRaw="env ${acDirEnv} '${gitsby}' -q -NoFetch --config '${ac}/dir.shcl' raw"
+	local acDirWork="${ac}/dtrees/work/proj"
+	local acDirHome="${ac}/dtrees/home/proj"
+	fAssertOut "[dffyz] raw git -C another account's repo acts as that account"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && ${acDirRaw} git -C '${acDirHome}' config --get user.email"
+	fAssertOut "[dffz0] and hands git that account's token"  '^password=tok_dir_home$' \
+		bash -c "cd '${acDirWork}' && printf 'protocol=https\nhost=github.com\n\n' | ${acDirRaw} git -C '${acDirHome}' credential fill"
+	fAssertOut "[dffz1] each relative -C from where the last one left off"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && ${acDirRaw} git -c x.y=1 -C ../.. -C home/proj config --get user.email"
+	fAssertOut "[dffz2] raw git --git-dir acts as the account of that repo"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && ${acDirRaw} git --git-dir='${acDirHome}/.git' config --get user.email"
+	fAssertOut "[dffz3] and so does GIT_DIR"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && GIT_DIR='${acDirHome}/.git' ${acDirRaw} git config --get user.email"
+	fAssertOut "[dffz4] and -C into a bare repo"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && ${acDirRaw} git -C '${ac}/dtrees/home/bare.git' config --get user.email"
+	fAssertOut "[dffz5] git still reads a relative -C from where raw started"  '/dtrees/work/proj$' \
+		bash -c "cd '${acDirWork}/sub' && ${acDirRaw} git -C .. rev-parse --show-toplevel"
+	fAssertOut "[dffz6] raw tig -C acts as the account of that repo"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && ${acDirRaw} tig -C '${acDirHome}'"
+	fAssertOut "[dffz7] and raw lazygit -p"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && ${acDirRaw} lazygit -p '${acDirHome}'"
 	## A rule for the root covers every folder. It looked for the rule plus a slash, '//', and
 	## covered none, and the includeIf git got had the same extra slash.
 	mkdir -p "${ac}/roothome"
@@ -5441,7 +5722,8 @@ GHEOF
 	local acAddEnv="${acNoDiscovery} HOME='${ac}/fraghome' GIT_CONFIG_GLOBAL='${ac}/notadir/.gitconfig' PATH='${ac}/bin:${PATH}'"
 	fAssertFail   "[dd5ef] account apply fails when the global config can't take a rule" \
 		bash -c "cd '${acWork}' && env ${acAddEnv} '${gitsby}' -q -NoFetch --config '${ac}/addfail/config.shcl' account apply"
-	fAssertOut    "[dd5eg] and says which rule it couldn't add"  "Couldn't add 'includeIf\.gitdir" \
+	## Its lock fails now, ahead of any rule. A rule git refuses is checked further down (2026-11-18).
+	fAssertOut    "[dd5eg] and says it couldn't lock the global config"  "Couldn't make the lock beside your global git config\." \
 		bash -c "cd '${acWork}' && env ${acAddEnv} '${gitsby}' -q -NoFetch --config '${ac}/addfail/config.shcl' account apply 2>&1"
 	fAssertNotOut "[dd5eh] and never says it is done"  'Done\.' \
 		bash -c "cd '${acWork}' && env ${acAddEnv} '${gitsby}' -q -NoFetch --config '${ac}/addfail/config.shcl' account apply 2>&1"
@@ -5454,6 +5736,67 @@ GHEOF
 			bash -c "chmod 644 '${ac}/home/${confRel}/accounts/github.com_workacct.gitconfig' && cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(fMode '${ac}/home/${confRel}/accounts/github.com_workacct.gitconfig')\" == 600 ]]"
 	else
 		fSkipBlock "a fragment left readable (not on Windows)"
+	fi
+
+	## apply took its old rules out of the global config one 'git config' at a time, then added
+	## the new ones, so a step that failed left too few, and 2 runs at once interleaved theirs. A
+	## pathcontains rule goes in first, so one git won't take as a key failed the first add, after
+	## every old rule was gone.
+	local gl="${ac}/gl"
+	local glCanon="${gl}"; mkdir -p "${gl}/home" "${gl}/xhome/.config/git"
+	((isWindows)) && glCanon="$( cd "${gl}" && pwd -W )"
+	: > "${gl}/home/.gitconfig"
+	printf 'account: ga\n\tpath: %s/trees/work\n\temail: ga@example.com\n\naccount: gb\n\tpath: %s/trees/home\n\temail: gb@example.com\n' "${acCanon}" "${acCanon}" > "${gl}/good.shcl"
+	cp "${gl}/good.shcl" "${gl}/config.shcl"
+	local glEnv="${acNoDiscovery} HOME='${gl}/home' GIT_CONFIG_GLOBAL='${gl}/home/.gitconfig' PATH='${ac}/bin:${PATH}'"
+	local glRun="cd '${acWork}' && env ${glEnv} '${gitsby}' -q -NoFetch --config '${gl}/config.shcl' account apply"
+	bash -c "${glRun}" >/dev/null 2>&1; cp "${gl}/home/.gitconfig" "${gl}/before"
+	printf '\naccount: gn\n\tpathcontains: "x◉NEWLINE◉y"\n\temail: gn@example.com\n' >> "${gl}/config.shcl"
+	fAssertFail "[dffzh] account apply fails on a folder rule git won't take as a key"  bash -c "${glRun}"
+	fAssert     "[dffzj] and leaves the global git config as it was"  cmp -s "${gl}/before" "${gl}/home/.gitconfig"
+	fAssertOut  "[dffzk] and names the rule"  "Couldn't add 'includeIf\.gitdir/i:\*\*/x◉NEWLINE◉y/\*\*\.path'"  bash -c "${glRun}"
+	fAssertOut  "[dffzm] and says the global config was kept"  'Kept: Your global git config is as it was\.'  bash -c "${glRun}"
+	## git's own lock: apply waits it out, the way 2 applies take turns, then gives up.
+	cp "${gl}/good.shcl" "${gl}/config.shcl"; : > "${gl}/home/.gitconfig.lock"
+	fAssertFail "[dffzn] account apply refuses while the global git config is locked"  bash -c "${glRun} > '${gl}/locked.out' 2>&1"
+	fAssert     "[dffzp] and leaves it as it was"  cmp -s "${gl}/before" "${gl}/home/.gitconfig"
+	fAssert     "[dffzq] and names the lock"  grep -qE '^ +Lock: .*/gl/home/\.gitconfig\.lock$' "${gl}/locked.out"
+	( cd "${gl}/home" && rm -f .gitconfig.lock )
+	fAssert "[dffzr] 2 account applies at once both work, and leave each rule once"  bash -c "
+		bad=0
+		for i in 1 2 3 4 5 6 7 8 9 10; do
+			( ${glRun} ) >/dev/null 2>&1 & p=\$!
+			( ${glRun} ) >/dev/null 2>&1 || bad=1
+			wait \$p || bad=1
+			[[ \$(grep -c 'accounts/' '${gl}/home/.gitconfig') == 2 ]] || bad=1
+		done
+		((! bad))"
+	## 'git config --global' reads only ~/.gitconfig once it's there, while git reads
+	## ~/.config/git/config too, so a rule an earlier apply wrote there was never replaced.
+	local glXEnv="-u GIT_CONFIG_GLOBAL ${acNoDiscovery} HOME='${gl}/xhome' XDG_CONFIG_HOME='${gl}/xhome/.config' PATH='${ac}/bin:${PATH}'"
+	local glXRun="cd '${acWork}' && env ${glXEnv} '${gitsby}' -q -NoFetch --config '${gl}/x.shcl'"
+	: > "${gl}/xhome/.config/git/config"
+	printf 'account: xa\n\tpath: %s/trees/work\n\tname: Xa Person\n\temail: xa@example.com\n' "${acCanon}" > "${gl}/x.shcl"
+	bash -c "${glXRun} account apply" >/dev/null 2>&1
+	: > "${gl}/xhome/.gitconfig"
+	printf 'account: xb\n\tpath: %s/trees/work\n\temail: xb@example.com\n' "${acCanon}" > "${gl}/x.shcl"
+	fAssertPlan "[dffzs] account apply plans to take its old rule out of ~/.config/git/config"  'git config --file .*xhome/\.config/git/config.* --unset-all include[iI]f\.gitdir'  bash -c "${glXRun} account apply"
+	fAssert     "[dffzt] and does"  bash -c "grep -q 'accounts/' '${gl}/xhome/.gitconfig' && ! grep -q 'accounts/' '${gl}/xhome/.config/git/config'"
+	fAssert     "[dffzv] so the old account's name no longer reaches the folder"  bash -c "[[ -z \"\$(env ${glXEnv} git -C '${acWork}' config user.name || true)\" ]]"
+	printf '[includeIf "gitdir/i:./"]\n\tpath = %s/accounts/xa.gitconfig\n' "${glCanon}" >> "${gl}/xhome/.config/git/config"
+	fAssertOut  "[dffzw] account list warns about a relative rule left in ~/.config/git/config"  "WARNING: your global git config still has the rule 'gitdir/i:\./'"  bash -c "${glXRun} account list"
+	## The new file is renamed over the old, so a link has to be followed, as git does.
+	if ((! isWindows)); then
+		mv "${gl}/xhome/.gitconfig" "${gl}/real.gitconfig"; ln -s "${gl}/real.gitconfig" "${gl}/xhome/.gitconfig"; chmod 666 "${gl}/real.gitconfig"
+		fAssert "[dffzx] account apply writes through a linked ~/.gitconfig, keeping the link and its mode" \
+			bash -c "${glXRun} account apply >/dev/null && [[ -L '${gl}/xhome/.gitconfig' ]] && grep -q 'accounts/' '${gl}/real.gitconfig' && [[ \"\$(fMode '${gl}/real.gitconfig')\" == 666 ]]"
+		## git reads a file twice when ~/.config/git/config links to it too, and the second pass
+		## took out the rules the first had just written.
+		ln -s "${gl}/real.gitconfig" "${gl}/xhome/.config/git/config.link"; mv "${gl}/xhome/.config/git/config.link" "${gl}/xhome/.config/git/config"
+		fAssert "[dffzz] and keeps its rules when ~/.config/git/config is the same file" \
+			bash -c "${glXRun} account apply >/dev/null && grep -q 'accounts/' '${gl}/real.gitconfig'"
+	else
+		fSkipBlock "a linked global git config (not on Windows)"
 	fi
 
 	## The sshKey value is concatenated into GIT_SSH_COMMAND and into core.sshCommand, and git hands
@@ -8618,6 +8961,36 @@ GLEOF
 		bash -c "set -- '${fg}/oldpin'/config_backup_*_format-v3old.shcl; [[ \$# == 1 && -f \"\$1\" ]] && cat '${fg}/oldpin/config.shcl'"
 	fAssertNotOut "[df08y] and the same text written since the move is read as it is"  'Converted' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/newpin/config.shcl' identity 2>&1; ls '${fg}/newpin'"
+	## A file stamped with a newer format than this build's is read by this build's rules and said
+	## so, and an edit refuses before its plan, since the module would refuse the save after it.
+	mkdir -p "${fg}/newer"
+	printf 'account: work\n\tname: Ada\n##\n##    Format   4\n##\n' > "${fg}/newer/config.shcl"
+	touch -d '2026-11-01 12:00:00' "${fg}/newer/config.shcl"
+	fAssertOut "[dfg47] a file stamped with a newer SHCL format is read, and the run says so"  '^ok$' \
+		bash -c "cd '${fgRepo}' && out=\$(PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/newer/config.shcl' account list 2>&1); [[ \$out == *'is in SHCL format 4, newer than this build reads'* && \$out == *'commits .: Ada'* ]] && echo ok"
+	fAssertOut "[dfg48] and account set refuses before its plan, exit 1, file as it was"  '^ok$' \
+		bash -c "cd '${fgRepo}' && out=\$(PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/newer/config.shcl' account set work name B 2>&1); rc=\$?; [[ \$rc == 1 && \$out == *'newer SHCL format than this build writes'* && \$out != *'Going to do'* ]] && grep -qx '	name: Ada' '${fg}/newer/config.shcl' && [[ \$(ls '${fg}/newer') == config.shcl ]] && echo ok"
+	## The earlier module's window has a start too: a file from a read-only store, with time 1, isn't
+	## its file, so the escapes read as text and nothing tries to convert it on every run.
+	mkdir -p "${fg}/nixpin"
+	cp "${fg}/newpin/config.shcl" "${fg}/nixpin/config.shcl"
+	touch -d '@1' "${fg}/nixpin/config.shcl"
+	chmod 0555 "${fg}/nixpin"
+	fAssertNotOut "[dfg4c] a Format 3 file older than the earlier module is read as it is, with no notice"  'Converted|converted|O.Brien \\ x' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/nixpin/config.shcl' account list 2>&1 | grep -v '^Config file'; ls '${fg}/nixpin' | grep -vx config.shcl"
+	chmod 0755 "${fg}/nixpin"
+	## A hand-typed 2.x value where a quote opened a run, so the '#' after it was text. The module
+	## alone ends the value there; the converted file has to read what 2.x read.
+	mkdir -p "${fg}/old2xrun"
+	printf 'account: work\n\tname: O"Brien#2\n\tpathcontains: dev/c"#/proj\n\n#\n# This config file format is SHCL.\n# "Simple Hierarchical Config Language"\n#\n' > "${fg}/old2xrun/config.shcl"
+	fAssertOut "[dfg4g] a 2.x value with a quote before a '#' reads whole after the conversion"  '^ok$' \
+		bash -c "cd '${fgRepo}' && out=\$(PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/old2xrun/config.shcl' account list 2>&1); [[ \$out == *'Converted the accounts file from the SHCL 2.x format'* && \$out == *'O\"Brien#2 <'* ]] && grep -qxF \"	pathcontains: 'dev/c\\\"#/proj'\" '${fg}/old2xrun/config.shcl' && echo ok"
+	## 2.x read a byte that isn't UTF-8 as U+FFFD, and v3 keeps the byte, so the converted file has
+	## to hold U+FFFD where 2.x read it.
+	mkdir -p "${fg}/old2xbyte"
+	printf 'account: work\n\tname: \x87\n\n#\n# This config file format is SHCL.\n# "Simple Hierarchical Config Language"\n#\n' > "${fg}/old2xbyte/config.shcl"
+	fAssertOut "[dfg5c] a 2.x value with a byte that isn't UTF-8 reads as 2.x read it after the conversion"  '^ok$' \
+		bash -c "cd '${fgRepo}' && out=\$(PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/old2xbyte/config.shcl' account list 2>&1); [[ \$out == *'1 line(s) were re-spelled'* && \$out == *\$'\\xef\\xbf\\xbd <'* ]] && grep -qxF \$'\\tname: \\xef\\xbf\\xbd' '${fg}/old2xbyte/config.shcl' && echo ok"
 	## The same on a file the last build on shcl 2.x wrote itself, compiled here from its commit.
 	## Nothing may be downloaded in this suite, so its shcl module has to be in the module cache
 	## already. go.mod lists it for the Go tests, so the lint and unit test stages fetch it.
@@ -8770,6 +9143,13 @@ GLEOF
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work path /a 2>&1"
 	fAssertOut "[dd83v] and with no key it prints the syntax"  'Syntax: gitsby account unset <account> <key>' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unset.shcl' account unset work 2>&1"
+	## A key's comments and the lines under it go with it, so the plan names each of those too.
+	printf 'account: work\n\temail: a@x\n\t# about path\n\tpath: /srv/w\n\t\t# note\n\t\tsub: x\n' > "${fg}/unsetc.shcl"
+	fAssertPlan "[dfg0j] 'account unset' names the comment above the key"  'remove: +line 3, # about path' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unsetc.shcl' account unset work path 2>&1"
+	printf 'account: work\n\temail: a@x\n\t# about path\n\tpath: /srv/w\n\t\t# note\n\t\tsub: x\n' > "${fg}/unsetc.shcl"
+	fAssertPlan "[dfg0k] and the lines under it"  'remove: +line 6, sub: x' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/unsetc.shcl' account unset work path 2>&1"
 	## The identity block's own vocabulary. "Forge" is a word for people who already knew the answer.
 	fAssertOut "[dbhg5] the identity block says 'Git host', not 'Forge'"  '^Git host \.+: git\.example\.test' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/tea-acct.shcl' identity 2>&1"
@@ -9067,3 +9447,11 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261110 JC: release.bash cuts only from the branch 'gitsby release' cuts from, level with origin's, and stops when the pipeline changed the tree, or what is branched, merged or tagged isn't what was tested, [df4xt] to [df4y2].
 ##		- 20261110 JC: release.bash, gen-winres.bash and 'gitsby release' take one version shape, and the two scripts refuse what git can't tag. A stop after 'br create' says the branch is pushed. [df4yk] to [df4yq].
 ##		- 20261111 JC: markdownlint-cli from its lock, by sha512, with no scripts, [df50y], and the image tag follows the lock, [df50z].
+##		- 20261118 JC: account apply replaces its rules in each global git config file in one go, waits on git's lock, and finds them in ~/.config/git/config, [dffzh] to [dffzz]. [dd5eg] now reads the lock refusal.
+##		- 20261118 JC: repo url leaves an origin already on the asked transport alone, so an ssh host alias keeps its key, [dfg29] to [dfg2c].
+##		- 20261118 JC: GIT_SSH runs the fetch and the identity probe, plink gets no OpenSSH options, and an ssh command only a shell can read is probed as plain ssh, [dfg2d] to [dfg2m]. The suite unsets GIT_SSH, GIT_SSH_COMMAND and GIT_SSH_VARIANT.
+##		- 20261118 JC: the way off main that sync and br switch name takes commits along, [dfg2y] to [dfg32]. br create refuses @{-1}, [dfg35] to [dfg37]. br merge plans its 1 atomic push with no local target yet, [dfg33] and [dfg34]. pr create from dev with a commit on it names the same way off, [dfg38].
+##		- 20261118 JC: An accounts file stamped with a newer SHCL format says so, and account set refuses before its plan, [dfg47] and [dfg48].
+##		- 20261118 JC: A Format 3 file older than the earlier module is read as it is, [dfg4c].
+##		- 20261118 JC: A hand-typed 2.x value with a quote before a "#" reads whole after the conversion, [dfg4g].
+##		- 20261118 JC: A 2.x value with a byte that isn't UTF-8 reads as 2.x read it after the conversion, [dfg5c].

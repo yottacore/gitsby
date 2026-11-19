@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -85,7 +86,9 @@ func sameRemote(a, b string) bool {
 // remoteEnv. Missing only when git's words say the host said no; else unknown, with
 // git's reason.
 func (a *app) probeRemote(url string) (repoExistence, string) {
-	probe := toolCmd("git", "ls-remote", url)
+	// '--': a dash-led url is an option to git. The parser refuses one too, which
+	// stopped being enough once '--' ended gitsby's own options.
+	probe := toolCmd("git", "ls-remote", "--", url)
 	probe.Env = a.remoteEnv()
 	var errText bytes.Buffer
 	probe.Stderr = &errText
@@ -185,6 +188,14 @@ func (a *app) settleRepoURL() (bool, error) {
 		return false, usagef("No origin to re-spell. Connect one first: %s repo connect <url>, or <owner/name> for a GitHub repo.", meName)
 	}
 	if a.cmd.arg != "" {
+		// Asked of the text, by transport. Comparing with the URL rebuilt from the
+		// resolved host read an ssh_config alias as some other spelling, and rewrote it
+		// to the bare host, whose key is a different one.
+		if urlTransport(current) == a.cmd.arg {
+			a.out.status("origin already uses " + a.cmd.arg + "; nothing to do.")
+			a.out.clean("")
+			return true, nil
+		}
 		// Any host, not just github.com: re-spelling a remote is text work that the
 		// host never hears about, and refusing it anywhere else was the parser's limit
 		// showing through as a rule. A local path still has nothing to re-spell.
@@ -194,11 +205,6 @@ func (a *app) settleRepoURL() (bool, error) {
 				where = noteLines("File", nativePath(current))
 			}
 			return false, refusalBlock("origin has no host and 'owner/name' to re-spell, so there is no other spelling of it to switch to.", [][]string{where}, nil)
-		}
-		if hostURL(a.originHost(), remoteTarget(current), a.cmd.arg) == current {
-			a.out.status("origin already uses " + a.cmd.arg + "; nothing to do.")
-			a.out.clean("")
-			return true, nil
 		}
 	}
 	return false, nil
@@ -390,7 +396,7 @@ func (a *app) cmdConnect() error {
 	case "create":
 		return a.step("gh", "repo", "create", a.tgt.ghTarget, "--"+a.opt.visibility, "--source", ".", "--push", "--remote", "origin")
 	case "add":
-		if err := a.step("git", "remote", "add", "origin", a.tgt.connectURL); err != nil {
+		if err := a.step("git", "remote", "add", "--", "origin", a.tgt.connectURL); err != nil {
 			return err
 		}
 		return a.step("git", "push", "-u", "origin", "HEAD")
@@ -410,8 +416,30 @@ func (a *app) cmdConnect() error {
 // repo changes: same remote, same history, same name - only how git
 // authenticates to it.
 func (a *app) cmdRepoURL() error {
+	return a.step("git", "remote", "set-url", "origin", a.respelledURL(a.cmd.arg))
+}
+
+// urlTransport is which of the two transports a remote URL speaks, or nothing for
+// any other. Read off the text, so an ssh_config alias stays the alias.
+func urlTransport(url string) string {
+	switch {
+	case sshTarget(url) != "":
+		return "ssh"
+	case len(url) > len("https://") && strings.EqualFold(url[:len("https://")], "https://"):
+		return "https"
+	}
+	return ""
+}
+
+// respelledURL is origin in one of the two transports: as it stands when it
+// already uses that one, since an alias may name its own key, and otherwise
+// rebuilt from the resolved host and 'owner/name'.
+func (a *app) respelledURL(proto string) string {
 	url := a.originURL()
-	return a.step("git", "remote", "set-url", "origin", hostURL(a.originHost(), remoteTarget(url), a.cmd.arg))
+	if urlTransport(url) == proto {
+		return url
+	}
+	return hostURL(a.originHost(), remoteTarget(url), proto)
 }
 
 // cmdRepoURLShow is the bare, read-only form: what origin is now, and its other
@@ -426,8 +454,9 @@ func (a *app) cmdRepoURLShow() {
 		a.out.clean("No host and 'owner/name' to re-spell, so there is no other spelling of it.")
 		return
 	}
-	a.out.clean("as https .....: " + hostURL(host, urlTarget, "https"))
-	a.out.clean("as ssh .......: " + hostURL(host, urlTarget, "ssh"))
+	// Masked, since the spelling origin already has is shown as it stands.
+	a.out.clean("as https .....: " + maskURL(a.respelledURL("https")))
+	a.out.clean("as ssh .......: " + maskURL(a.respelledURL("ssh")))
 	a.out.clean("Switch with '" + meName + " repo url <https|ssh>'.")
 }
 
@@ -448,15 +477,41 @@ func (a *app) showFilesToPublish() {
 	initCmd := toolCmd("git", "init", "--quiet")
 	initCmd.Env = env
 	_ = initCmd.Run()
-	a.out.clean("")
-	a.out.clean("Files to publish:")
 	ls := toolCmd("git", "ls-files", "--others", "--exclude-standard")
 	ls.Env = env
 	var outLines []string
 	if out, _ := ls.Output(); len(out) > 0 {
 		outLines = strings.Split(strings.TrimRight(string(out), "\n"), "\n")
 	}
-	a.showLines(outLines)
+	a.listFilesToPublish(outLines)
+}
+
+// showTreeToPublish is the same list for a repo that has no origin yet. Its first
+// push sends the whole tree, what was committed before included, and the status
+// block shows an untracked folder as one line, so every file the pushed tree will
+// hold is named: tracked, less what 'git add --all' will delete, plus what it will
+// add. Read only, so 'n' still changes nothing.
+func (a *app) showTreeToPublish() {
+	// ':/' is the whole tree, from a subfolder too, the way 'git add --all' takes it.
+	gone := map[string]bool{}
+	for _, f := range runLines("git", "ls-files", "--deleted", "--", ":/") {
+		gone[f] = true
+	}
+	var files []string
+	for _, f := range runLines("git", "ls-files", "--cached", "--others", "--exclude-standard", "--", ":/") {
+		if !gone[f] {
+			gone[f] = true // an unmerged path is listed once per stage
+			files = append(files, f)
+		}
+	}
+	slices.Sort(files)
+	a.listFilesToPublish(files)
+}
+
+func (a *app) listFilesToPublish(files []string) {
+	a.out.clean("")
+	a.out.clean("Files to publish:")
+	a.showLines(files)
 	if a.lastListCount == 0 {
 		a.out.clean("    (nothing - the directory is empty, or everything in it is ignored)")
 	}

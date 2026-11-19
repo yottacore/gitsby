@@ -216,6 +216,24 @@ func TestNoteKeepsAPathWhole(t *testing.T) { // [ddc2v]
 	}
 }
 
+// A refusal quotes back what was typed, and a URL typed with a token in it
+// printed the token. Each writer that takes Sprintf args goes through escArgs.
+func TestTypedURLsAreMasked(t *testing.T) { // [dfg4x]
+	typed := "https://user:SECRET@example.com/o/n.git\nx"
+	p, _, errOut := testPrinter()
+	p.errorf("'%s'", typed)
+	for name, got := range map[string]string{
+		"usagef":     usagef("'%s'", typed).Error(),
+		"usageSubf":  usageSubf("'%s'", typed).Error(),
+		"usageWrapf": usageWrapf(errors.New("cause"), "'%s'", typed).Error(),
+		"errorf":     errOut.String(),
+	} {
+		if strings.Contains(got, "SECRET") || !strings.Contains(got, "'https://***@example.com/o/n.git◉NEWLINE◉x'") {
+			t.Errorf("%s printed %q", name, got)
+		}
+	}
+}
+
 // A value prints on one line, with nothing in it that drives the terminal, and a
 // printable character comes out as written - a path is never re-spelled.
 func TestPrintableEscapesControlsOnly(t *testing.T) { // [ddjz7]

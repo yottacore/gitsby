@@ -84,7 +84,7 @@ func (a *app) preview(what string) {
 		a.out.clean(planPad + "git clone -- " + maskURL(a.tgt.cloneURL) + " " + a.tgt.cloneDir)
 		a.out.clean(planPad + "git -C " + a.tgt.cloneDir + " checkout dev *")
 	case "repo-url":
-		a.out.clean(planPad + "git remote set-url origin " + hostURL(a.originHost(), remoteTarget(a.originURL()), a.cmd.arg))
+		a.out.clean(planPad + "git remote set-url origin " + a.respelledURL(a.cmd.arg))
 	case "account-set", "account-unset":
 		// Names the file and both versions of the line, because this is the one
 		// command that edits the accounts file for you - and a config file you did
@@ -125,11 +125,22 @@ func (a *app) preview(what string) {
 		for _, name := range a.cfg.accountNames() {
 			a.out.clean(planPad + "write " + applyDir + "/" + files[name])
 		}
-		for _, key := range a.cfg.accountManagedIncludes() {
-			a.out.clean(planPad + "git config --global --unset-all " + key)
+		// In the order apply makes them: the file git writes, then the other global
+		// file git reads, named since --global would mean the first.
+		writeTo := globalWriteFile(globalGitConfigs(), pathExists)
+		managed := a.cfg.accountManagedIncludes()
+		for _, m := range managed {
+			if sameFile(m.file, writeTo) {
+				a.out.clean(planPad + "git config --global --unset-all " + printable(m.key))
+			}
 		}
 		for _, rule := range a.cfg.accountApplyPlan() {
-			a.out.clean(planPad + "git config --global --add " + rule.cond + " " + rule.target)
+			a.out.clean(planPad + "git config --global --add " + printable(rule.cond) + " " + rule.target)
+		}
+		for _, m := range managed {
+			if !sameFile(m.file, writeTo) {
+				a.out.clean(planPad + "git config --file " + shellQuote(nativePath(m.file)) + " --unset-all " + printable(m.key))
+			}
 		}
 	case "repo-create", "repo-connect":
 		if !a.inRepo {
@@ -140,7 +151,7 @@ func (a *app) preview(what string) {
 		case "create":
 			a.out.clean(planPad + "gh repo create " + a.tgt.ghTarget + " --" + a.opt.visibility + " --source . --push --remote origin")
 		case "add":
-			a.out.clean(planPad + "git remote add origin " + maskURL(a.tgt.connectURL))
+			a.out.clean(planPad + "git remote add -- origin " + maskURL(a.tgt.connectURL))
 			a.out.clean(planPad + "git push -u origin HEAD")
 		case "push":
 			a.out.clean(planPad + "git push -u origin HEAD *")
@@ -148,11 +159,12 @@ func (a *app) preview(what string) {
 	}
 }
 
-// previewUnset lists every line 'account unset' takes out. One line puts its
-// number in the header, the way a set does; several number each their own.
+// previewUnset lists every line 'account unset' takes out, its comments and the
+// lines under it included. One line puts its number in the header, the way a set
+// does; several number each their own. A rewrite has no numbers to give.
 func (a *app) previewUnset() {
 	t := a.set
-	numbered := !t.converts && len(t.gone) > 1
+	numbered := !t.converts && len(t.gone) > 1 && t.gone[0].num > 0
 	switch {
 	case t.converts:
 		a.out.clean(planPad + "rewrite " + nativePath(t.file) + " in the current layout - it is in the old flat one")

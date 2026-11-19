@@ -9,6 +9,7 @@ package main
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -100,5 +101,20 @@ func TestProbedConnectRefusesUnlessEmpty(t *testing.T) { // [dcmne]
 	}
 	if err := probedConnect("https://me:tok_s3cret@127.0.0.1:1/me/proj.git", repoUnknown, "x"); err == nil || strings.Contains(err.Error(), "tok_s3cret") {
 		t.Errorf("unknown with a credential in the url: %v", err)
+	}
+}
+
+// The probe puts '--' ahead of the url, so a dash-led one is a url to git even if
+// the parser's refusal goes away. Without it, ls-remote asks origin and runs the
+// upload-pack the "url" names.
+func TestProbeRemoteDashLedURL(t *testing.T) { // [dfg17]
+	_, clone := gitTestRepo(t)
+	t.Chdir(clone)
+	a := newApp(newPrinter())
+	if state, _ := a.probeRemote("--upload-pack=touch PWNED;git-upload-pack"); state == repoEmpty || state == repoNonEmpty {
+		t.Errorf("state = %v; the dash-led url was read as an option", state)
+	}
+	if pathExists(filepath.Join(clone, "PWNED")) {
+		t.Error("ls-remote ran the upload-pack the url named")
 	}
 }

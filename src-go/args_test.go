@@ -85,6 +85,32 @@ func TestParseArgsRefusals(t *testing.T) { // [dbfqp]
 	}
 }
 
+// After '--' a repo target can start with a dash, and git or gh would read it as an
+// option. The refusal comes from sortCommand, ahead of the account lookup and the probe.
+func TestSortCommandRefusesDashLedRepoTarget(t *testing.T) { // [dfg16]
+	for _, tc := range []struct {
+		argv []string
+		ok   bool
+	}{
+		{[]string{"repo", "connect", "--", "--upload-pack=x"}, false},
+		{[]string{"repo", "create", "--", "--x/y"}, false},
+		{[]string{"repo", "connect", "--", "./-x"}, true},
+		{[]string{"repo", "create", "me/x"}, true},
+	} {
+		opt, cmd, _, err := parseArgs(tc.argv)
+		if err != nil {
+			t.Fatalf("%v: parse: %v", tc.argv, err)
+		}
+		if cmd, err = collapseCommand(cmd); err != nil {
+			t.Fatalf("%v: collapse: %v", tc.argv, err)
+		}
+		_, err = sortCommand(cmd, &opt)
+		if (err == nil) != tc.ok {
+			t.Errorf("%v: err = %v", tc.argv, err)
+		}
+	}
+}
+
 // The tokenizer takes five positionals for 'account set <name> <key> <value>'
 // alone. Every other command has to keep rejecting the fifth, which is now
 // sortCommand's job rather than the tokenizer's - and the tail that does it was
@@ -404,7 +430,7 @@ func TestOptionsOnlyWhereRead(t *testing.T) { // [df4e9]
 	for _, argv := range [][]string{
 		{"status", "-m", "x"}, {"status", "--public"}, {"pullcom", "--direct"}, {"pullcom", "--private"},
 		{"repo", "connect", "--public"}, {"br", "prune", "-m", "x"}, {"pr", "ok", "7", "-m", "x"}, {"pr", "--message=x"},
-		{"whoami", "--staged"}, {"account", "--direct"},
+		{"whoami", "--staged"}, {"account", "--direct"}, {"br", "create", "x", "--direct"},
 	} {
 		if err := settle(argv...); err == nil {
 			t.Errorf("%v: took an option it doesn't read", argv)
@@ -412,7 +438,7 @@ func TestOptionsOnlyWhereRead(t *testing.T) { // [df4e9]
 	}
 	for _, argv := range [][]string{
 		{"sync", "--direct"}, {"repo", "create", "o/n", "--public"}, {"repo", "connect", "-m", "x"}, {"pr", "create", "-m", "t"},
-		{"release", "-m", "x"}, {"br", "switch", "-m", "x"}, {"-q", "-NoFetch", "--any-identity", "--config", "f", "account"},
+		{"release", "-m", "x"}, {"br", "switch", "-m", "x"}, {"br", "switch", "--direct"}, {"-q", "-NoFetch", "--any-identity", "--config", "f", "account"},
 		{"--no-fetch", "repo", "clone", "u"}, {"status", "-y"},
 	} {
 		if err := settle(argv...); err != nil {

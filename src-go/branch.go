@@ -323,7 +323,10 @@ func commitIdentity() string {
 	return ident
 }
 
-var maskURLRE = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]+@(.*)$`)
+// (?s), since a value read back from .git/config can hold a newline, and a '.'
+// that stops there leaves the whole URL unmatched, token and all. The userinfo
+// runs to the last '@' before the path, since a password can hold one.
+var maskURLRE = regexp.MustCompile(`(?s)^([A-Za-z][A-Za-z0-9+.-]*://)[^/]+@(.*)$`)
 
 // maskURL hides userinfo in displayed URLs (https://user:token@host ->
 // https://***@host); a credentialed origin would otherwise echo the token on

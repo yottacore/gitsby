@@ -365,9 +365,8 @@ func (a *app) preflight() error {
 		if err := a.requireOnline("sync", "Offline, '"+meName+" pullcom' skips the pull and just commits; run '"+meName+" sync' when you are back online."); err != nil {
 			return err
 		}
-		// Nobody is there to read the warning, so -q refuses instead.
-		if a.opt.quiet && a.directPush() {
-			return usagef("%s Nothing was done. Re-run with --direct if that is intended, or move the work to a branch with '%s br create <branch-name>'.", a.directPushText(), meName)
+		if err := a.refuseDirectPush(); err != nil {
+			return err
 		}
 	case "release":
 		// With no remote at all the check below never trips - there is nothing to find
@@ -453,9 +452,11 @@ func (a *app) preflightBranch() error {
 		}
 		// Refusing a dirty protected branch belongs here too, before the plan is shown
 		// and confirmed.
-		if a.currentBranch() != a.switchTarget() && a.isProtectedBranch("") && runOut("git", "status", "--porcelain") != "" {
+		if a.currentBranch() != a.switchTarget() && a.isProtectedBranch("") && treeDirty() {
 			return usagef("Working tree has changes on '%s'; won't auto-commit to a protected branch. Carry them to a new branch (%s br create <name>), or commit them here deliberately (%s pullcom) first.", a.currentBranch(), meName, meName)
 		}
+		// A clean one can still be ahead, and the park push would send that.
+		return a.refuseDirectPush()
 	}
 	return nil
 }
@@ -675,12 +676,12 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 		}
 		a.out.clean("  Continue only if that is what you mean. (--any-identity silences this.)")
 	}
-	if !a.opt.quiet && a.directPush() {
-		a.out.clean("")
-		a.out.warn("WARNING: " + a.directPushText())
-		a.out.warn("  To keep it off '" + a.currentBranch() + "', answer n and run '" + meName + " br create <branch-name>'. (The '--direct' flag silences this warning.)")
-	}
 	if !a.opt.quiet {
+		if push, committed := a.directPush(); push {
+			a.out.clean("")
+			a.out.warn("WARNING: " + a.directPushText())
+			a.out.warn("  To keep it off '" + a.currentBranch() + "', answer n and run " + a.keepOffText(committed) + ". (The '--direct' flag silences this warning.)")
+		}
 		a.out.clean("")
 		if !a.out.confirm("Continue? (y|n): ") {
 			a.out.status("User aborted.")
@@ -710,7 +711,7 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 
 // showBeforeState leads the plan with what the repo looks like now. clone, and
 // create/connect from a plain dir, have no repo state to show; a smaller header
-// stands in.
+// stands in. create/connect list what they publish either way.
 func (a *app) showBeforeState() error {
 	switch {
 	case a.writesAccounts():
@@ -738,6 +739,9 @@ func (a *app) showBeforeState() error {
 			return errDetached()
 		}
 		a.showStatus(true)
+		if a.tgt.connectMode == "create" || a.tgt.connectMode == "add" {
+			a.showTreeToPublish()
+		}
 	}
 	return nil
 }
@@ -832,6 +836,15 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	if err := setEnv(rawActiveVar, chain+" "+rawProbing); err != nil {
 		return err
 	}
+	// Read first, since a --config typed relative means the folder raw started in.
+	if err := a.cfg.load(a.opt); err != nil {
+		return err
+	}
+	// The account is the one of the repo the tool works in, which its -C or
+	// --git-dir can put somewhere else. Every git call the account work makes runs
+	// there. Left again before the handover, which reads those options itself.
+	leave := enterToolRepo(toolRepoOf(name, args))
+	defer leave()
 	if err := a.resolveAccount(a.contextDir(), a.originURL()); err != nil {
 		return err
 	}
@@ -872,6 +885,9 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	if !a.opt.quiet && !a.acct.bypassed && !warned && who != "" && a.accountDecidedSomething() {
 		a.out.errorf("acting as %s (from %s)", who, a.acct.source)
 	}
+	// Back in the folder raw started in, which the chain entry and the tool's own
+	// relative paths are measured from.
+	leave()
 	// For the arguments handed over, which glab's may not be, so a wrapper's raw
 	// finds its run on the chain.
 	if chain, err = rawNest(a.rawActive, name, rawEntry(name, path, args)); err != nil {
@@ -881,6 +897,139 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 		return err
 	}
 	return a.handover(name, path, args)
+}
+
+// toolRepo is where a raw tool's own options say it works: the folder its -C
+// options lead to, and a git dir and work tree given as options. Empty where they
+// say nothing.
+type toolRepo struct{ dir, gitDir, workTree string }
+
+// gitArgOpts are git's options before the command that take the next word as their
+// value when no '=' joins it.
+var gitArgOpts = map[string]bool{"-C": true, "-c": true, "--git-dir": true, "--work-tree": true, "--namespace": true, "--config-env": true, "--super-prefix": true, "--attr-source": true}
+
+// toolRepoOf reads those options the way the tool does. git takes them up to its
+// command, each -C from where the last one left it, and a relative git dir or work
+// tree from the last -C. tig takes -C only first. lazygit takes its own anywhere,
+// relative to where it started.
+func toolRepoOf(tool string, args []string) toolRepo {
+	var r toolRepo
+	switch tool {
+	case "git":
+		for i := 0; i < len(args) && strings.HasPrefix(args[i], "-") && args[i] != "--"; i++ {
+			name, value, joined := args[i], "", false
+			if strings.HasPrefix(name, "--") {
+				name, value, joined = strings.Cut(name, "=")
+			}
+			if gitArgOpts[name] && !joined {
+				if i+1 >= len(args) {
+					break
+				}
+				i++
+				value = args[i]
+			}
+			switch name {
+			case "-C":
+				// git skips an empty one.
+				if value != "" {
+					r.dir = joinDir(r.dir, value)
+				}
+			case "--git-dir":
+				r.gitDir = value
+			case "--work-tree":
+				r.workTree = value
+			case "--bare":
+				// The folder git is in at that point, unless a git dir is already given.
+				if r.gitDir == "" && os.Getenv("GIT_DIR") == "" {
+					r.gitDir, _ = filepath.Abs(joinDir(r.dir, ".")) // empty when no folder can be named, as git would fail too
+				}
+			}
+		}
+	case "tig":
+		for i := 0; i+1 < len(args) && args[i] == "-C"; i += 2 {
+			r.dir = joinDir(r.dir, args[i+1])
+		}
+	case "lazygit":
+		for i := 0; i < len(args) && args[i] != "--"; i++ {
+			name, value, joined := strings.Cut(args[i], "=")
+			switch name {
+			case "-p", "--path", "-w", "--work-tree", "-g", "--git-dir":
+			default:
+				continue
+			}
+			if !joined {
+				if i+1 >= len(args) {
+					break
+				}
+				i++
+				value = args[i]
+			}
+			abs, err := filepath.Abs(value)
+			if err != nil {
+				continue
+			}
+			switch name {
+			case "-p", "--path":
+				r.dir, r.workTree, r.gitDir = abs, abs, filepath.Join(abs, ".git")
+			case "-w", "--work-tree":
+				r.dir, r.workTree = abs, abs
+			default:
+				r.gitDir = abs
+			}
+		}
+	}
+	return r
+}
+
+func joinDir(dir, next string) string {
+	if dir == "" || filepath.IsAbs(next) {
+		return next
+	}
+	return filepath.Join(dir, next)
+}
+
+// enterToolRepo moves this run to r for the account work, and gives back what
+// undoes it, safe to call more than once. A folder it can't enter stays put, and
+// the tool says why when it gets there.
+func enterToolRepo(r toolRepo) (leave func()) {
+	if r == (toolRepo{}) {
+		return func() {}
+	}
+	start, err := os.Getwd()
+	if err != nil {
+		return func() {}
+	}
+	moved := r.dir != "" && os.Chdir(r.dir) == nil
+	var undo []func()
+	for _, kv := range [][2]string{{"GIT_DIR", r.gitDir}, {"GIT_WORK_TREE", r.workTree}} {
+		if kv[1] == "" {
+			continue
+		}
+		old, had := os.LookupEnv(kv[0])
+		if os.Setenv(kv[0], kv[1]) != nil {
+			continue
+		}
+		undo = append(undo, func() {
+			if had {
+				_ = os.Setenv(kv[0], old) // put back what was there a moment ago
+			} else {
+				_ = os.Unsetenv(kv[0])
+			}
+		})
+	}
+	done := false
+	return func() {
+		if done {
+			return
+		}
+		done = true
+		for _, f := range undo {
+			f()
+		}
+		if moved {
+			_ = os.Chdir(start) // the folder raw started in, entered a moment ago
+		}
+	}
 }
 
 func (a *app) cmdBrList() {

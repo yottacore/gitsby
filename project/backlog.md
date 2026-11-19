@@ -33,191 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Code Review 20261110b item 6: br switch from main or dev pushes commits straight to the protected branch without --direct
-	- ID: 2026111016332380
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163323
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: On main, `gitsby pullcom` a change, then `gitsby -q br switch dev`.
-	- Incorrect behavior [Bug]: It pushes main to origin's main and exits 0. `gitsby -q sync` refuses the same push without `--direct`.
-	- Expected behavior [Bug]: br switch refuses a direct push the way sync does.
-	- Reproduced [Bug]: 2026-11-10 on b23, local bare origin.
-	- Possible cause [Bug]: directPush in mutate.go checks only when the command is sync.
-	- Origin: e1cc030, 2026-10-05. A missed twin of 2026100516202544, Code Review 20261005 item 1, which fixed sync only. Confirmed.
-	- Sweep: Every command whose park step pushes: br switch, br create, br merge, br hotfix, release.
-
-- Code Review 20261110b item 7: raw git -C <other repo> acts as the current folder's account
-	- ID: 2026111016332367
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163323
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: From a folder of the work account, run `gitsby raw git -C <a repo of the personal account> config --get user.email`, or `credential fill` the same way.
-	- Incorrect behavior [Bug]: It gives the work email and the work token, so a commit or push in the personal repo goes out as work.
-	- Expected behavior [Bug]: raw acts as the account of the repo git works in. The README says raw runs as the account the folder belongs to, and scripts use `-C` a lot.
-	- Reproduced [Bug]: 2026-11-10 on b23, hermetic fixture.
-	- Possible cause [Bug]: cmdPassthrough resolves the account from the working directory and ignores `-C`, `--git-dir` and `GIT_DIR`.
-	- Origin: 483ebc5. No round saw it. Confirmed.
-
-- Code Review 20261110b item 8: account apply removes every rule before adding any, so a failure partway leaves too few, and the error says nothing changed
-	- ID: 2026111016332355
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163323
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Make the 3rd `git config --global` call of `account apply` fail, as a held `~/.gitconfig.lock` does. Or run 2 applies at once.
-	- Incorrect behavior [Bug]: The global config is left with no includeIf rules, and a repo under the account's folder has no email. The message names only the rule that failed. Failing the 2nd call says nothing further was applied, though the first rule is already gone. 2 applies at once failed 14 of 40 times and left a duplicate `path` entry.
-	- Expected behavior [Bug]: Each step leaves a working set of rules, and the error says which rules changed.
-	- Reproduced [Bug]: 2026-11-10 on b23, with a git wrapper that fails a chosen call.
-	- Possible cause [Bug]: accountcmd.go:449-462 unsets each old rule, then adds the new ones. `account set` also takes a path with a newline, which git refuses as a key, so nothing is added back.
-	- Origin: 4918b5b and 353f5c9, 2026-08-19, messages from 47bcda3. Same end state as Code Review 20260819a item 1, which was fixed for one cause only. Confirmed.
-
-- Code Review 20261110b item 9: account apply misses its rules in ~/.config/git/config once ~/.gitconfig exists
-	- ID: 2026111016332342
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163323
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Run `account apply` with no `~/.gitconfig`, so the rule goes into `~/.config/git/config`. Create `~/.gitconfig`, move the folder from account a to b, and apply again.
-	- Incorrect behavior [Bug]: Apply shows no unset, adds b's rule to `~/.gitconfig`, and exits 0. a's rule stays in the other file, so the repo still gets a's email. `account list`'s stale-rule warning misses it too.
-	- Expected behavior [Bug]: Apply finds and replaces its rules in every global file git reads.
-	- Reproduced [Bug]: 2026-11-10 on b23, git 2.51.
-	- Possible cause [Bug]: `git config --global --get-regexp` reads only `~/.gitconfig` when it exists, while git reads both.
-	- Origin: dfa5d05 and 4918b5b, 2026-08-19. No round saw it. Confirmed.
-
-- Code Review 20261110b item 10: account unset deletes lines its plan doesn't show
-	- ID: 2026111016332330
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163323
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Under an account block, put a comment above `path`, and child keys and a comment under it. Run `gitsby account unset work path`.
-	- Incorrect behavior [Bug]: The plan shows 1 line removed. The run removes 5: the comment above, the key, its children and the comment between them. `account unset w host` also took the comment above host.
-	- Expected behavior [Bug]: The plan lists every line that goes. accounts.md says unset shows each line before asking.
-	- Reproduced [Bug]: 2026-11-10 on b23, hermetic fixture.
-	- Possible cause [Bug]: The plan in preview.go lists only the key's own line, and the module removes its comments and children with it.
-	- Origin: 1ed0f3a, 2026-09-28. No round saw it. Confirmed.
-
-- Code Review 20261110b item 11: repo connect and repo create in an existing repo don't list the files they publish
-	- ID: 2026111016332317
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163323
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: In a repo with no origin and an untracked `secret/` folder holding `.env` and `id_rsa`, run `gitsby repo connect <url>`.
-	- Incorrect behavior [Bug]: The plan shows only `?? secret/`, then both files are committed and pushed. The README says these commands list every file they are about to publish.
-	- Expected behavior [Bug]: The plan lists each file, as it does from a plain folder. Or the README says it's only from a plain folder, as design.md does.
-	- Reproduced [Bug]: 2026-11-10 on b23, local bare origin.
-	- Possible cause [Bug]: showFilesToPublish runs only outside a repo, at main.go:717-732. Inside one the plan uses the normal status block, which folds untracked folders.
-	- Origin: 4918b5b, 2026-08-19. No round saw it. Confirmed.
-
-- Code Review 20261110b item 12: br create and br hotfix say Done after the autostash conflicts
-	- ID: 2026111016332305
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163323
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Edit f.txt on dev while origin's dev has a change to the same lines. Run `gitsby br create newb`.
-	- Incorrect behavior [Bug]: The pull says applying the autostash gave conflicts. It then creates newb, pushes it, and ends with Done, exit 0, with `UU f.txt` and the stash left behind.
-	- Expected behavior [Bug]: It stops after the conflict and names the stash, as pullcom does.
-	- Reproduced [Bug]: 2026-11-10 on b23, local bare origin.
-	- Possible cause [Bug]: branchcmd.go:47 doesn't check for conflicts after the pull.
-	- Origin: 86ca0b1 and 9f53a91. A missed twin of Code Review 20260727b item 1, which guarded the commit site only. Confirmed.
-	- Sweep: Every pull with autostash: pullIfOnline and its callers.
-
-- Code Review 20261110b item 13: A dirty submodule makes every command that parks work fail
-	- ID: 2026111016332293
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163322
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Put an untracked file inside a submodule, then run `gitsby pullcom`, `sync`, `br switch`, `br merge`, `br create` or `release`.
-	- Incorrect behavior [Bug]: Status lists the submodule as modified, so gitsby parks. `git add --all` stages nothing, the commit fails with no changes added, and the command exits 1.
-	- Expected behavior [Bug]: A submodule with only its own changes doesn't stop the command.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: mutate.go:42 decides there's something to commit from `git status --porcelain`, not from the index after `add`.
-	- Origin: cfb6d90, 2026-08-18, the same as v2.1.0. No round saw it. Confirmed.
-	- Sweep: The other porcelain checks: directPush, releasePreflight, and br switch's dirty-branch refusal.
-
-- Code Review 20261110b item 14: repo url ssh rewrites an ssh host alias to the bare host, which changes the key
-	- ID: 2026111016332280
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163322
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Origin `git@gh-work:org/proj.git`, where `gh-work` in `~/.ssh/config` names its own key. Run `gitsby repo url ssh`.
-	- Incorrect behavior [Bug]: It sets origin to `git@github.com:org/proj.git`, which uses the default keys.
-	- Expected behavior [Bug]: It says origin already uses ssh and leaves it alone. The README says nothing else about the repo changes.
-	- Reproduced [Bug]: 2026-11-10 on b23, with a fake ssh that reads `~/.ssh/config` for `-G`.
-	- Possible cause [Bug]: repo.go:198 compares the URL with the one it would build from the resolved host, not by scheme.
-	- Origin: 6ddb349, 2026-09-16. Backlog line 7195 refused rewriting remotes to or from an alias, since a wrong guess points the repo at the wrong key. Confirmed.
-
-- Code Review 20261110b item 15: With GIT_SSH set, the fetch says offline and the pull is skipped
-	- ID: 2026111016332268
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261110-163322
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Set `GIT_SSH` to a working ssh program, as PuTTY and TortoiseGit users do, with an ssh origin. Run `gitsby status`.
-	- Incorrect behavior [Bug]: It warns that git fetch failed, maybe offline. The fetch ran PATH's ssh with gitsby's options, since gitsby sets `GIT_SSH_COMMAND`, which outranks `GIT_SSH`. The push in the same run uses `GIT_SSH` and works.
-	- Expected behavior [Bug]: gitsby uses the user's ssh program for fetches and probes.
-	- Reproduced [Bug]: 2026-11-10 on b23, with a logging stand-in for the ssh program.
-	- Possible cause [Bug]: remoteEnv in remote.go always sets `GIT_SSH_COMMAND`. A `core.sshCommand` of plink also gets `-o ConnectTimeout=3`, which plink doesn't take. That part is Plausible.
-	- Origin: 88ff4ab, 2026-08-19, from v2.1.0. No round saw it. Confirmed.
-
-- Code Review 20261110b item 18: repo connect -- <URL starting with a dash> reaches git ls-remote as an option
-	- ID: 2026111016332231
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163322
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: In a repo with no origin, whose branch tracks another remote, run `gitsby -q repo connect -- "--upload-pack=touch PWNED;git-upload-pack"`.
-	- Incorrect behavior [Bug]: The probe's `git ls-remote` runs the command and PWNED appears. It then fails at `git remote add`, exit 129.
-	- Expected behavior [Bug]: A URL that starts with a dash is refused before anything runs.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: repo.go:88 and :393 put the URL in git argv with no `--`. The 2026-10-06 sweep in Bug 2026100607545802 rested on the parser refusing dash-led words.
-	- Origin: bbb6445, 2026-11-10, made `--` end gitsby's options. The probe from 26c8a42, the remote add from 4918b5b. Regression. Confirmed.
-	- Notes: The URL is the user's own, so this matters for a script that passes one through. `repo create -- --x/y` hands `--x/y` to `gh repo view`, and the br switch refusal suggests a br create line that no longer pastes.
-
-- Code Review 20261110b item 19: Converting a SHCL 2.x accounts file cuts off any value with a quote before a #
-	- ID: 2026111016332218
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163322
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: A 2.x accounts file with `name: O"Brien#2` and `pathcontains: dev/c"#/proj`. Run `gitsby account list`.
-	- Incorrect behavior [Bug]: The file becomes `name: 'O"Brien'#2`, which v3 reads as `O"Brien` with the rest a comment. The folder rule changes the same way. gitsby says the lines were re-spelled to keep their values, exit 0.
-	- Expected behavior [Bug]: The converted file reads the same values the 2.x reader did, or the conversion is refused.
-	- Reproduced [Bug]: 2026-11-10 on b23. 9 of 11 such values were cut.
-	- Possible cause [Bug]: shcl's migrateLine and valueEdits, reached through `MigrateUnstamped` at cfgformat.go:82. gitsby doesn't check the result against the 2.x reading.
-	- Origin: 37f4843, 2026-10-03. [ddg6e] feeds only values the 2.x writer quoted itself. No round saw it. Confirmed.
-	- Notes: The module half belongs upstream in shcl. Only dev and gover builds wrote 2.x files, since v2.1.0 used the flat layout.
-
 - Code Review 20261110b item 20: On GitHub Enterprise, gh never sees the account's token
 	- ID: 2026111016332206
 	- Type: Bug
@@ -248,23 +63,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: repo.go:373 runs a plain `git checkout dev`.
 	- Origin: 4918b5b, 2026-08-19. The 2026-10-04 tag collision fixes, 2026100411344972 and its siblings, didn't reach the clone. Confirmed.
 
-- Code Review 20261110b item 22: A file whose mtime falls before the cutover is re-spelled whatever its age or source
-	- ID: 2026111016332181
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163321
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: Write a name with a backslash through `account set`, then `touch -d 2026-11-01` the file. Or read a read-only file with mtime 1, as a Nix store gives.
-	- Incorrect behavior [Bug]: The touched file is converted, and `\n` in the name turns into a real newline that apply writes into the fragment. The read-only file says it couldn't be converted on every run, and the reason names the lock, not the folder. The kept `_format-v3old` backup gets a new mtime, so moving it back reads its escapes as text.
-	- Expected behavior [Bug]: Only a file written by the old pin is converted, and a restored backup reads as it did.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: config.go:558 and cfgformat.go:272 go by an upper bound only. The old pin began at ca0e55c, 2026-09-24, so anything older can't be from it.
-	- Origin: The mtime rule from Bug 2026110710480989. Confirmed.
-	- Against: The answer on 2026110710480989 to go by the file's mtime. A lower bound and keeping the backup's mtime don't change that rule.
-	- Answered 2026-11-10: fix it as filed.
-
 - Code Review 20261110b item 23: 2 accounts can get the same fragment file, and the later one wins
 	- ID: 2026111016332169
 	- Type: Bug
@@ -279,51 +77,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23.
 	- Possible cause [Bug]: fragmentNames in accountcmd.go adds the suffix without checking the result is unique.
 	- Origin: a421343, 2026-09-30, from enhancement 2026093013031520. Confirmed.
-
-- Code Review 20261110b item 24: A file stamped with a newer SHCL format is read silently, and account set fails after the plan
-	- ID: 2026111016332157
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163321
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: End the accounts file with a Format 4 stamp, then run `account list` and `gitsby -q account set work name B`.
-	- Incorrect behavior [Bug]: list reads it as v3 with no notice. set prints its plan, then fails with a save refusal whose Fix says to run it again once that's fixed, which can't help. Exit 1, file unchanged.
-	- Expected behavior [Bug]: gitsby says the file is newer than this build, and set and unset refuse before the plan.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: cfgformat.go:59 counts a newer format as current. accountcmd.go:1342-1350 handles `SaveRefused` and not `SaveTooNew`.
-	- Origin: 37f4843, 75ce642 and 8d3f857. No round saw it. Confirmed.
-
-- Code Review 20261110b item 28: br merge's plan shows 2 pushes when the target has no local branch yet, and the run does 1 atomic push
-	- ID: 2026111016332107
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163321
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: In a fresh clone with only origin's dev, run `gitsby br merge` from a feature branch.
-	- Incorrect behavior [Bug]: The plan lists a push and then the leased delete, printed twice. The run does `git push --atomic`.
-	- Expected behavior [Bug]: The plan shows the atomic push.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: atomicMergeFits reads the local branch's upstream before the checkout makes it.
-	- Origin: 2437605, 2026-11-07, from Code Review 20261107 enhancement 3. Confirmed.
-
-- Code Review 20261110b item 29: br create takes @{-1} as a name, and fails after the park
-	- ID: 2026111016332095
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163320
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: On a feature branch, `gitsby br create '@{-1}'`.
-	- Incorrect behavior [Bug]: It commits, pushes and checks out dev, then fails saying a branch with the previous branch's name exists. Exit 1.
-	- Expected behavior [Bug]: The name is refused before anything runs.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: branchcmd.go:22 checks with `check-ref-format --branch`, which expands `@{-N}` and passes.
-	- Origin: 4918b5b. No round saw it. Confirmed.
 
 - Code Review 20261110b item 30: release run from main ends on dev, and the plan's last line says it goes back to main
 	- ID: 2026111016332082
@@ -354,52 +107,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23.
 	- Possible cause [Bug]: args.go:335 keeps `-m` and drops the word.
 	- Origin: No round saw it. Code Review 20261110 item 1 covered options a command doesn't read, not this. Confirmed.
-
-- Code Review 20261110b item 32: repo create's refusal prints a token typed in the URL
-	- ID: 2026111016332057
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163320
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: `gitsby -q repo create https://user:SECRET@example.com/o/n.git`.
-	- Incorrect behavior [Bug]: The refusal prints SECRET twice.
-	- Expected behavior [Bug]: It masks the token, as every other line that shows a URL does.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: repo.go:304 prints the argument without maskURL.
-	- Origin: No round saw it. Confirmed.
-	- Sweep: Every message that prints a typed URL.
-
-- Code Review 20261110b item 33: The ssh probe passes $HOME in GIT_SSH_COMMAND to ssh unexpanded
-	- ID: 2026111016332045
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163320
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: `GIT_SSH_COMMAND='ssh -i $HOME/.ssh/work_key'` with an ssh origin. Run `gitsby status`.
-	- Incorrect behavior [Bug]: The probe runs ssh with the literal `$HOME/.ssh/work_key`. ssh falls back to its default keys, so the identity check may name the wrong account or refuse a push. git itself runs the command through a shell and expands it.
-	- Expected behavior [Bug]: A command with `$`, a backtick or `~user` falls back to plain ssh, as one with quotes already does.
-	- Reproduced [Bug]: 2026-11-10 on b23, the argv. The wrong account is Plausible.
-	- Possible cause [Bug]: remote.go:198 and show.go:607 split the command on spaces.
-	- Origin: No round saw it. Confirmed.
-
-- Code Review 20261110b item 34: maskURL leaves a token showing in a URL with a newline, and FuzzMaskURL can't see an unmasked URL
-	- ID: 2026111016332033
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261110-163320
-	- Opened by: jim-collier
-	- Steps to reproduce [Bug]: A remote URL with a token and a newline after it in .git/config, then `gitsby status`. For the fuzz half, make maskURL return its input and run `go test -fuzz FuzzMaskURL`.
-	- Incorrect behavior [Bug]: status prints the token. The fuzz target passed 935k inputs with masking turned off. Only TestMaskURL failed.
-	- Expected behavior [Bug]: The token is masked, and the fuzz target fails when the userinfo is still in the output.
-	- Reproduced [Bug]: 2026-11-10 on b23.
-	- Possible cause [Bug]: maskURLRE's `(.*)$` stops at a newline. fuzz_test.go:112-121 checks only when the output changed.
-	- Origin: c943c5a, 2026-08-21. No round saw it. Confirmed.
 
 - Code Review 20261110b item 35: account set's plan shows a different line than it writes
 	- ID: 2026111016332021
@@ -1785,6 +1492,276 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
+
+- Code Review 20261110b item 6: br switch from main or dev pushes commits straight to the protected branch without --direct
+	- ID: 2026111016332380
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163323
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: On main, `gitsby pullcom` a change, then `gitsby -q br switch dev`.
+	- Incorrect behavior [Bug]: It pushes main to origin's main and exits 0. `gitsby -q sync` refuses the same push without `--direct`.
+	- Expected behavior [Bug]: br switch refuses a direct push the way sync does.
+	- Reproduced [Bug]: 2026-11-10 on b23, local bare origin.
+	- Possible cause [Bug]: directPush in mutate.go checks only when the command is sync.
+	- Origin: e1cc030, 2026-10-05. A missed twin of 2026100516202544, Code Review 20261005 item 1, which fixed sync only. Confirmed.
+	- Sweep: Every command whose park step pushes: br switch, br create, br merge, br hotfix, release.
+	- Closed reason: Done
+	- Actual cause [Bug]: directPush returned false for every command but sync, so br switch's park push from a protected branch never warned or refused.
+	- Actual fix [Bug]: directPush also covers br switch when it moves and is online. Under -q its refusal now runs after the dirty-tree refusal, and --direct is taken by br switch. Help, README, changelog and design.md say so.
+	- Branch: nov18-2026111016332380
+	- Commit: 878b05b
+	- Test case: test.bash [dffyd] to [dffyh]; [ddj6t] for the help line; TestOptionsOnlyWhereRead [df4e9] and TestHelpForEveryCommand [df4f1] for --direct on br switch.
+	- Verified: [dffyd] to [dffyg] fail on the dev build, where br switch -q pushed main and exited 0, and pass with the fix. [dffyh] passes on both. The quick gate passed with every area: test.bash 1985/0, fuzz 310/0, parity 31/0. gosec reports the same 27 hits as before, none in the changed lines.
+		- Swept: br create and br hotfix take a dirty tree from a protected branch to the new one, and push only the new branch (cmdNewBranch). br merge refuses a protected current branch up front (preflightBranch), and its push of the target is the merge. release is left out, per Decisions. pr create refuses main, dev and the default branch in prPreflight. A leftover master that isn't the default is the one protected branch it would park-push, which was left alone.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261118-155243
+	- Decisions:
+		- release is left out. It exists to push main and dev, and the admin bypass in design.md Enforcement is what lets it.
+		- The warning and refusal are sync's own text, and so is the 'br create' advice. That advice doesn't move committed work, for sync either, so it's filed as 2026111815522440 rather than changed here.
+		- 20261118: test.bash [da8mq] now runs 'br switch feat' with --direct. main held update's 'local edit' there, and the old switch pushed it as a side effect, which [dab66] later relied on. The check is otherwise as it was.
+
+- Code Review 20261110b item 7: raw git -C <other repo> acts as the current folder's account
+	- ID: 2026111016332367
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163323
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: From a folder of the work account, run `gitsby raw git -C <a repo of the personal account> config --get user.email`, or `credential fill` the same way.
+	- Incorrect behavior [Bug]: It gives the work email and the work token, so a commit or push in the personal repo goes out as work.
+	- Expected behavior [Bug]: raw acts as the account of the repo git works in. The README says raw runs as the account the folder belongs to, and scripts use `-C` a lot.
+	- Reproduced [Bug]: 2026-11-10 on b23, hermetic fixture.
+	- Possible cause [Bug]: cmdPassthrough resolves the account from the working directory and ignores `-C`, `--git-dir` and `GIT_DIR`.
+	- Origin: 483ebc5. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. cmdPassthrough ran the account work in the folder raw started in. With GIT_DIR set, the folder rules also matched the working directory, which git takes for the top, while the includeIf rules from account apply match the git dir.
+	- Actual fix [Bug]: toolRepoOf in main.go reads git's -C, --git-dir, --work-tree and --bare, tig's leading -C, and lazygit's -p, -w and -g the way each tool does. enterToolRepo moves the run there, with GIT_DIR and GIT_WORK_TREE set from those options, for the account work only, and goes back before the handover. contextDir takes the repo from the git dir when GIT_DIR is set.
+	- Decisions: With GIT_DIR set, the folder is the git dir's parent when it's named .git, the git dir itself for a bare repo, and the top as before otherwise, such as a linked worktree's or submodule's git dir in a hook. This holds for every command, not only raw. tig takes -C only ahead of anything else, as tig 2.5.8 does. README's 'the account this folder belongs to' is left as it is. gh -R and glab -R name a repo on the host rather than a folder, so they're left alone, the same as plain gh.
+	- Test case: test.bash [dffyz] to [dffz7], Go [dffz8].
+	- Verified: test.bash [dffyz] to [dffz4], [dffz6] and [dffz7] fail on the unfixed build (1986/8) and pass after. The commands of [dffz5] fail with the move back before the handover taken out, and those of [dffz2] and [dffz3] with the contextDir change taken out. [dffz8] fails with each -C taking the place of the last. Quick gate passed, all areas: test.bash 1994/0, fuzz 310/0, parity 31/0.
+	- Swept: every tool raw runs. git, tig and lazygit take a folder or git dir. gh, tea and glab don't. GIT_DIR from the caller, for every command, through contextDir, and from a hook in a linked worktree or submodule, which keeps the top, by reading only. resolveAccount and selectAccount make all their git calls inside the moved run.
+	- Branch: nov18-2026111016332367
+	- Commit: 18e26dd
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261118-161013
+
+- Code Review 20261110b item 8: account apply removes every rule before adding any, so a failure partway leaves too few, and the error says nothing changed
+	- ID: 2026111016332355
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163323
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Make the 3rd `git config --global` call of `account apply` fail, as a held `~/.gitconfig.lock` does. Or run 2 applies at once.
+	- Incorrect behavior [Bug]: The global config is left with no includeIf rules, and a repo under the account's folder has no email. The message names only the rule that failed. Failing the 2nd call says nothing further was applied, though the first rule is already gone. 2 applies at once failed 14 of 40 times and left a duplicate `path` entry.
+	- Expected behavior [Bug]: Each step leaves a working set of rules, and the error says which rules changed.
+	- Reproduced [Bug]: 2026-11-10 on b23, with a git wrapper that fails a chosen call.
+	- Possible cause [Bug]: accountcmd.go:449-462 unsets each old rule, then adds the new ones. `account set` also takes a path with a newline, which git refuses as a key, so nothing is added back.
+	- Origin: 4918b5b and 353f5c9, 2026-08-19, messages from 47bcda3. Same end state as Code Review 20260819a item 1, which was fixed for one cause only. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. Each old rule came out of the global config in its own git call, then each new one went in. One failed call left only some rules. 2 applies at once collided on git's lock and mixed their edits. A newline in a folder rule is a key git refuses, so that add always failed.
+	- Actual fix [Bug]: The global config is copied beside itself, every removal and add goes into the copy through git, and the copy is renamed over the file, all under git's own lock beside it, which apply waits on for up to 3 seconds. A failure leaves the file as it was, and the error says so and names the rule or the file. The rename follows a link, as git does, and keeps the file's mode.
+	- Decisions: A rule git won't take still fails the whole apply, with nothing changed and the rule named. Skipping it would bind the other folders and leave that one quietly unbound. account set still takes a path with a newline. The lock code is the accounts file's, shared, with its messages unchanged. Reapplying still rewrites the file and puts the rules at its end, as before.
+		- 2026-11-18: [dd5eg] read "Couldn't add 'includeIf.gitdir". It now reads "Couldn't make the lock beside your global git config.", since a global config under a plain file fails at its lock now, ahead of any rule. The rule-named refusal is [dffzk].
+	- Test case: test.bash [dffzh] to [dffzr], [dffzx], [dffzz].
+	- Verified: [dffzj], [dffzm], [dffzp], [dffzq] and [dffzr] fail on the unfixed build and pass after. [dffzx] fails with the mode restore taken out, and with the rename over the link rather than its target. [dffzz] fails with the same-file test taken out. Quick gate, all areas: test.bash 2008/0, fuzz 310/0, parity 31/0.
+	- Swept: accountManagedIncludes and cmdAccountApply held the only git config --global calls in src-go. Fragments already go through a new file and a rename (b59aab1). The accounts file save takes the same lock code.
+	- Branch: nov18-2026111016332355
+	- Commit: 9f1bf48
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261118-164347
+
+- Code Review 20261110b item 9: account apply misses its rules in ~/.config/git/config once ~/.gitconfig exists
+	- ID: 2026111016332342
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163323
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Run `account apply` with no `~/.gitconfig`, so the rule goes into `~/.config/git/config`. Create `~/.gitconfig`, move the folder from account a to b, and apply again.
+	- Incorrect behavior [Bug]: Apply shows no unset, adds b's rule to `~/.gitconfig`, and exits 0. a's rule stays in the other file, so the repo still gets a's email. `account list`'s stale-rule warning misses it too.
+	- Expected behavior [Bug]: Apply finds and replaces its rules in every global file git reads.
+	- Reproduced [Bug]: 2026-11-10 on b23, git 2.51.
+	- Possible cause [Bug]: `git config --global --get-regexp` reads only `~/.gitconfig` when it exists, while git reads both.
+	- Origin: dfa5d05 and 4918b5b, 2026-08-19. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Note: On git 2.51 the repo took b's email, since git reads ~/.gitconfig last. The keys b leaves unset, such as name, still came from a's fragment through the old rule.
+	- Actual cause [Bug]: As guessed. git config --global reads only ~/.gitconfig once it exists, while git reads ~/.config/git/config first and then ~/.gitconfig.
+	- Actual fix [Bug]: apply asks git var GIT_CONFIG_GLOBAL for every global file, or follows git's rule for a git before 2.42. The new rules go into the file git config --global writes, in one replace, and then ours come out of the other. The plan names that file, and account list's warning reads both. A file under 2 names, such as ~/.config/git/config linked to ~/.gitconfig, is handled once.
+	- Decisions: The other file gets only removals, after the write, so a failure there leaves the new rules in force, and they outrank it where they overlap. The error says that file was left as it was. The fallback for a git before 2.42 ran on no box here (unverified).
+	- Test case: test.bash [dffzs] to [dffzw], [dffzz], Go [dffzy].
+	- Verified: [dffzs], [dffzt], [dffzv] and [dffzw] fail on the unfixed build and pass after. [dffzz] fails with the same-file test taken out. Quick gate, all areas: test.bash 2008/0, fuzz 310/0, parity 31/0.
+	- Swept: every read of our rules goes through accountManagedIncludes: apply, its plan, and account list's warning.
+	- Branch: nov18-2026111016332355
+	- Commit: 9f1bf48
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261118-164347
+
+- Code Review 20261110b item 10: account unset deletes lines its plan doesn't show
+	- ID: 2026111016332330
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163323
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Under an account block, put a comment above `path`, and child keys and a comment under it. Run `gitsby account unset work path`.
+	- Incorrect behavior [Bug]: The plan shows 1 line removed. The run removes 5: the comment above, the key, its children and the comment between them. `account unset w host` also took the comment above host.
+	- Expected behavior [Bug]: The plan lists every line that goes. accounts.md says unset shows each line before asking.
+	- Reproduced [Bug]: 2026-11-10 on b23, hermetic fixture.
+	- Possible cause [Bug]: The plan in preview.go lists only the key's own line, and the module removes its comments and children with it.
+	- Origin: 1ed0f3a, 2026-09-28. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. The module's remove takes the comment lines above a key and the lines under it along with the key, and the plan named only the key lines.
+	- Actual fix [Bug]: The plan is read off the text the save writes: every non-blank line the file loses is named, with its number. A save that rewrites the whole file compares the layout before and after, and names the lines without numbers. accounts.md says the comments above a key and the lines under it go too.
+	- Decisions: The removal stays as the module does it, and the plan shows it, since a comment left behind would describe a key that's gone. Blank lines that go aren't named. Each line shows as the file spells it, trailing comment included. Of 2 like lines, the one above a key that goes is named.
+	- Test case: Go TestAccountUnsetPlanNamesEveryLineThatGoes [dfg0h], test.bash [dfg0j] and [dfg0k].
+	- Verified: all 3 fail on the unfixed build and pass after. Quick gate, all areas: test.bash 2010/0, fuzz 310/0, parity 31/0.
+	- Swept: src-go has one remove of a config key, in accountUnsetPlan. account set keeps the lines under a key. Setting a key that holds a dash list moves the list's comment above the new line, and the plan shows the old and new value, so it was left alone.
+	- Branch: nov18-2026111016332330
+	- Commit: dfe5742
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261118-165532
+
+- Code Review 20261110b item 11: repo connect and repo create in an existing repo don't list the files they publish
+	- ID: 2026111016332317
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163323
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: In a repo with no origin and an untracked `secret/` folder holding `.env` and `id_rsa`, run `gitsby repo connect <url>`.
+	- Incorrect behavior [Bug]: The plan shows only `?? secret/`, then both files are committed and pushed. The README says these commands list every file they are about to publish.
+	- Expected behavior [Bug]: The plan lists each file, as it does from a plain folder. Or the README says it's only from a plain folder, as design.md does.
+	- Reproduced [Bug]: 2026-11-10 on b23, local bare origin.
+	- Possible cause [Bug]: showFilesToPublish runs only outside a repo, at main.go:717-732. Inside one the plan uses the normal status block, which folds untracked folders.
+	- Origin: 4918b5b, 2026-08-19. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: The file list ran only from a plain folder. In a repo the plan had only the status block, and git status shows an untracked folder as one line.
+	- Actual fix [Bug]: From a repo with no origin, create and connect now list every file the first push sends, from the repo's own index: what was committed before, less what 'git add --all' deletes, plus what it adds, from a subfolder too. With origin set, connect's status block names each file in an untracked folder. design.md says so.
+	- Branch: nov18-2026111016332317
+	- Commit: cd5dd5c
+	- Test case: test.bash [dfg0x] to [dfg11].
+	- Verified: [dfg0x], [dfg0y] and [dfg11] fail on the nov18 build and pass with the fix. [dfg0z] and [dfg10] pass on both. The quick gate passed with every area: test.bash 2019/0, fuzz 310/0, parity 31/0. gosec reports nothing in the changed files.
+	- Swept: showFilesToPublish and showTreeToPublish are the only file lists. Both create and connect reach them through showBeforeState, in every mode. The README's claim now holds, so it's unchanged.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261118-171224
+	- Decisions:
+		- The list from a repo with no origin is the whole tree the push sends, since files committed before go public for the first time too. Files deleted before and still in history aren't listed.
+		- With origin set the remote already has history, so only what's new is named, in the status block. An origin that was added by hand and is still empty gets the same, since nothing asks it.
+
+- Code Review 20261110b item 12: br create and br hotfix say Done after the autostash conflicts
+	- ID: 2026111016332305
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163323
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Edit f.txt on dev while origin's dev has a change to the same lines. Run `gitsby br create newb`.
+	- Incorrect behavior [Bug]: The pull says applying the autostash gave conflicts. It then creates newb, pushes it, and ends with Done, exit 0, with `UU f.txt` and the stash left behind.
+	- Expected behavior [Bug]: It stops after the conflict and names the stash, as pullcom does.
+	- Reproduced [Bug]: 2026-11-10 on b23, local bare origin.
+	- Possible cause [Bug]: branchcmd.go:47 doesn't check for conflicts after the pull.
+	- Origin: 86ca0b1 and 9f53a91. A missed twin of Code Review 20260727b item 1, which guarded the commit site only. Confirmed.
+	- Sweep: Every pull with autostash: pullIfOnline and its callers.
+	- Closed reason: Done
+	- Actual cause [Bug]: The pull's autostash restore can conflict and git still exits 0. pullcom and sync catch that in the commit, but br create and br hotfix off a protected branch commit nothing after the pull, so nothing checked.
+	- Actual fix [Bug]: Every pull with --autostash inside a multi-step command checks for conflicted files after it. If there are any, the command lists them and stops, with the same advice and stash pointer as pullcom, naming the command to run again. pullcom's own check is the same shared code.
+	- Branch: nov18-2026111016332305
+	- Commit: 451bac1
+	- Test case: test.bash [dfg1e] to [dfg1j]; [daf7w] to [daf7z] still cover pullcom.
+	- Verified: [dfg1e] to [dfg1j] fail on the build before the fix, where br create and br hotfix exited 0 and pushed the new branch, and pass with it. The quick gate passed with every area: test.bash 2033/0, fuzz 310/0, parity 31/0. gosec reports nothing in the changed files.
+	- Swept: every --autostash pull, by grep for autostash(). cmdPull (pullcom, sync, and every park through cmdCommitPull) is followed by cmdCommit's check. cmdNewBranch's protected path now checks. The other pullIfOnline callers (br switch, br merge and its back-merge, release, pr ok) pull without --autostash after the park commit, so git refuses rather than leaving a conflict. --staged pulls never use --autostash.
+	- Decisions: The check sits in pullIfOnline, keyed on --autostash, so a new caller that passes it is covered. The rerun advice uses the command as typed with its branch argument, which is right for br create and br hotfix, the only callers that pass it.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261118-173202
+
+- Code Review 20261110b item 13: A dirty submodule makes every command that parks work fail
+	- ID: 2026111016332293
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163322
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Put an untracked file inside a submodule, then run `gitsby pullcom`, `sync`, `br switch`, `br merge`, `br create` or `release`.
+	- Incorrect behavior [Bug]: Status lists the submodule as modified, so gitsby parks. `git add --all` stages nothing, the commit fails with no changes added, and the command exits 1.
+	- Expected behavior [Bug]: A submodule with only its own changes doesn't stop the command.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: mutate.go:42 decides there's something to commit from `git status --porcelain`, not from the index after `add`.
+	- Origin: cfb6d90, 2026-08-18, the same as v2.1.0. No round saw it. Confirmed.
+	- Sweep: The other porcelain checks: directPush, releasePreflight, and br switch's dirty-branch refusal.
+	- Closed reason: Done
+	- Actual cause [Bug]: Status lists a submodule with its own edits or untracked files as modified, but git add --all stages nothing for it. The commit decided from status, so it ran with nothing staged and failed. The protected-branch and release checks read status the same way.
+	- Actual fix [Bug]: The commit decides from the index after the add. The checks that run before anything is staged read status with --ignore-submodules=dirty, through one helper, treeDirty. A submodule moved to another commit still counts.
+	- Branch: nov18-2026111016332305
+	- Commit: e3a2644
+	- Test case: test.bash [dfg1k] to [dfg1t], and [dfg1v] for pr ok.
+	- Verified: [dfg1k], [dfg1n], [dfg1p], [dfg1q], [dfg1r] and [dfg1v] fail on the build before the fix. With the commit fixed and the other sites put back, [dfg1p], [dfg1q], [dfg1r], [dfg1s] and [dfg1v] fail, one per site. [dfg1m] and [dfg1t] pass on both, as guards. The quick gate passed with every area: test.bash 2033/0, fuzz 310/0, parity 31/0. gosec reports nothing in the changed files.
+	- Swept: every git status --porcelain check in src-go. directPush, releasePreflight, br switch's dirty-branch refusal (preflightBranch) and pr ok's refusal (prAcceptPreflight) now use treeDirty. settleRepoConnect's hasWork is left as is, since a repo with a submodule also has commits.
+	- Decisions: pr ok's refusal is in the fix too, though not named in the Sweep, since it refused the same submodule-only tree for having work that isn't on origin. The status header and the --staged plan still list the submodule, since it is there. They are only shown.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261118-173202
+
+- Code Review 20261110b item 14: repo url ssh rewrites an ssh host alias to the bare host, which changes the key
+	- ID: 2026111016332280
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163322
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Origin `git@gh-work:org/proj.git`, where `gh-work` in `~/.ssh/config` names its own key. Run `gitsby repo url ssh`.
+	- Incorrect behavior [Bug]: It sets origin to `git@github.com:org/proj.git`, which uses the default keys.
+	- Expected behavior [Bug]: It says origin already uses ssh and leaves it alone. The README says nothing else about the repo changes.
+	- Reproduced [Bug]: 2026-11-10 on b23, with a fake ssh that reads `~/.ssh/config` for `-G`.
+	- Possible cause [Bug]: repo.go:198 compares the URL with the one it would build from the resolved host, not by scheme.
+	- Origin: 6ddb349, 2026-09-16. Backlog line 7195 refused rewriting remotes to or from an alias, since a wrong guess points the repo at the wrong key. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: settleRepoURL called origin converted only when it matched the URL rebuilt from the resolved host. An alias resolves to its real host, so `git@gh-work:...` never matched and was rewritten to the bare host.
+	- Actual fix [Bug]: repo url asks which transport origin's text already uses, and leaves an origin already on the asked one alone, alias included. The plan, the step and the bare listing share one helper, so the listing's ssh line is the alias as it stands. Converting to https still names the real host.
+	- Branch: nov18-2026111016332280
+	- Test case: test.bash [dfg29] to [dfg2c]; TestURLTransport [dfg2h].
+	- Verified: [dfg29], [dfg2a] and [dfg2b] fail on the nov18 build and pass with the fix. [dfg2c] passes on both, as a guard. The quick gate passed with every area: test.bash 2044/0, fuzz 310/0, parity 31/0. gosec reports nothing in the changed files.
+	- Swept: every place that rebuilds origin with hostURL. settleRepoURL, the plan line, cmdRepoURL and cmdRepoURLShow all go through respelledURL. repo clone and repo create build from 'owner/name' with no origin to keep.
+	- Decisions: An ssh:// origin is left alone by repo url ssh too, and an https one with a user part or no .git by repo url https, since each already uses that transport. That answer now comes before the check for a host and 'owner/name'. The bare listing masks both lines, since one can be origin as it stands.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-175647
+	- Commit: 46b3360
+
+- Code Review 20261110b item 15: With GIT_SSH set, the fetch says offline and the pull is skipped
+	- ID: 2026111016332268
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261110-163322
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Set `GIT_SSH` to a working ssh program, as PuTTY and TortoiseGit users do, with an ssh origin. Run `gitsby status`.
+	- Incorrect behavior [Bug]: It warns that git fetch failed, maybe offline. The fetch ran PATH's ssh with gitsby's options, since gitsby sets `GIT_SSH_COMMAND`, which outranks `GIT_SSH`. The push in the same run uses `GIT_SSH` and works.
+	- Expected behavior [Bug]: gitsby uses the user's ssh program for fetches and probes.
+	- Reproduced [Bug]: 2026-11-10 on b23, with a logging stand-in for the ssh program.
+	- Possible cause [Bug]: remoteEnv in remote.go always sets `GIT_SSH_COMMAND`. A `core.sshCommand` of plink also gets `-o ConnectTimeout=3`, which plink doesn't take. That part is Plausible.
+	- Origin: 88ff4ab, 2026-08-19, from v2.1.0. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: remoteEnv exported `GIT_SSH_COMMAND` whenever the caller hadn't, to add the connect timeout. git runs `GIT_SSH` only when no ssh command is set, so the fetch ran PATH's ssh. The identity probe ignored `GIT_SSH` too. A plink `core.sshCommand` got `-o ConnectTimeout=3`, which plink refuses.
+	- Actual fix [Bug]: With `GIT_SSH` set and no ssh command, the fetch leaves the environment to git, and the identity probe runs that program. A command git reads as PuTTY's, by name or by `GIT_SSH_VARIANT`, gets no timeout, and the probe leaves its account unknown rather than asking plain ssh. design.md says so under the ssh identity notes.
+	- Branch: nov18-2026111016332280
+	- Test case: test.bash [dfg2d], [dfg2e], [dfg2j], [dfg2k] and [dfg2m]; TestRemoteEnvLeavesGITSSHToGit [dfg26], TestSSHArgvRunsGITSSH [dfg27], TestRemoteEnvLeavesPuTTYToGit [dfg28].
+	- Verified: [dfg2d], [dfg2e], [dfg2j] and [dfg2m] fail on the nov18 build and pass with the fix. [dfg2k] passes on both, and fails with the probe's PuTTY check taken out. [dfg26] to [dfg28] fail against the old remote.go. The plink part is pinned by [dfg28], not run against a real plink, which this box doesn't have. The quick gate passed with every area.
+	- Swept: every place gitsby exports or runs an ssh command. remoteEnv covers the fetch, the origin check and the repo probe. The login probe, its look-ahead and the SSH line's key read sshArgv. account.go's sshkey export is left alone: it sets one command that the fetch and the push both use, so they can't disagree. The -G read stays on PATH's ssh, since it reads OpenSSH's config.
+	- Decisions: GIT_SSH gets no connect timeout, since adding one takes a GIT_SSH_COMMAND, which outranks it. git config's ssh.variant isn't read, since that costs a process on every run. The test.bash block is skipped on Windows, where a bash script can't be GIT_SSH for the native build. The Go tests cover the logic there, a backslash path included. test.bash now unsets GIT_SSH, GIT_SSH_COMMAND and GIT_SSH_VARIANT, so an inherited one can't steer its checks.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-175751
+	- Commit: fe582c7
 
 - Code Review 20261110b item 3: A second release after a failed push of main cuts a new tag on the same commit
 	- ID: 2026111016332417
@@ -3621,6 +3598,316 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- Converting an SHCL 2.x accounts file changes a value holding a byte that isn't UTF-8
+	- ID: 2026111819043675
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261118-190436
+	- Opened by: jim-collier
+	- Related IDs: 2026111016332218
+	- Steps to reproduce [Bug]: A 2.x accounts file with the byte 0x87 as a name's whole value. Run `account list`.
+	- Incorrect behavior [Bug]: 2.x read the value as U+FFFD. After the conversion it reads as the byte 0x87, and the notice says nothing about it.
+	- Expected behavior [Bug]: The converted file reads what 2.x read, or the conversion is refused.
+	- Reproduced [Bug]: 2026-11-18 on b23, found by FuzzOld2xHandTyped `[dfg4d]`, which now skips such values.
+	- Possible cause [Bug]: shcl 2.x replaced a broken byte when it read the file, and v3 keeps it as written. Not looked at further.
+	- Closed reason: Done
+	- Actual cause [Bug]: shcl 2.x turned each byte of a line that isn't UTF-8 into U+FFFD as it read the line, one per byte. v3 keeps the byte, so the module's migration wrote it out as it was.
+	- Actual fix [Bug]: `broken2xBytes` in cfgformat.go, called first in `convert2x`. Each such byte in a 2.x value is written as U+FFFD before the module converts the file. The notice counts the line as re-spelled.
+	- Decisions: Converted rather than refused, since U+FFFD is the value 2.x read and the file as it was is kept. One U+FFFD per byte, as 2.x did, not one per run as strings.ToValidUTF8 gives. Only the value is changed. A comment keeps its bytes, since nothing reads it and the after-check compares comments with the file as it was. A quoted key with such a byte isn't changed, since gitsby reads no such key.
+	- Branch: nov18-2026111819043675
+	- Commit: 93bab4e
+	- Test case: Go `[dfg4d]` FuzzOld2xHandTyped no longer skips such values, with 4 new seeds; `[dfg5b]` TestOld2xBrokenByte: 3 values read what the real 2.x module read, a comment keeps its bytes, the kept copy is the file as it was. test.bash `[dfg5c]` the steps' file through the binary.
+	- Verified: `[dfg4d]` (its 4 new seeds) and `[dfg5b]` fail without the `broken2xBytes` call, and `[dfg5c]` fails on a binary built without it. All pass with it. 90 seconds of fuzzing found nothing more. Quick gate, every area: test.bash 2064/0, fuzz 310/0, parity 31/0.
+	- Swept: `convert2x` is the only 2.x conversion. The flat conversion keeps the byte, as v2.1.0's bash build read it, from reading only. Whether its pwsh build read U+FFFD wasn't checked. The earlier SHCL 3 module's reader has no such replacement, also from reading, and its re-spelling touches double-quoted escapes only.
+	- Acceptance signoff: Self-closed: reproduced, and its tests fail before the fix and pass after.
+	- Closed: 20261118-193251
+
+- Spawn count [dbftm] for br switch measures 28 against its expected 26
+	- ID: 2026111818374045
+	- Type: Bug
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261118-183740
+	- Opened by:
+	- Estimated effort: Low
+	- Progress log:
+		- Seen in round nov18 after 878b05b (2026111016332380) added the direct-push check to br switch. The row still passes, so it's at its limit. Raise the expected count in cicd/utility/spawn-count.bash if the 2 extra calls are the check's, or cut them.
+	- Actual cause [Bug]: br switch from a protected branch runs the direct-push check, which asks git twice: rev-list for commits ahead of the upstream, and status for a dirty tree. Both run on a clean main, so the count rose by 2.
+	- Actual fix [Bug]: The expected count for [dbftm] is 28, which makes its limit 30. Both calls are needed, so they stay.
+	- Branch: nov18-2026111818374045
+	- Test case: spawn-count.bash [dbftm], run in the quick gate. No separate test, since the row is the gate.
+	- Verified: spawn-count.bash gives [dbftm] 28 and every row passes. shellcheck is clean.
+	- Acceptance signoff: Self-closed: mechanical, the expected count follows the check 878b05b added.
+	- Closed: 20261118-193500
+
+- The --direct refusal and warning advise br create for commits already on main, which br create leaves there
+	- ID: 2026111815522440
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261118-155224
+	- Opened by: jim-collier
+	- Related IDs: 2026111016332380
+	- Steps to reproduce [Bug]: On main in a repo with dev, commit a change with pullcom, then run gitsby -q sync or gitsby -q br switch dev. Follow the advice and run gitsby br create x.
+	- Incorrect behavior [Bug]: The refusal says to move the work to a branch with br create. br create from main checks out dev first, so the commit stays on main, still unpushed, and the next sync or br switch from main refuses again. Without dev the new branch has the commit, and main still holds it too.
+	- Expected behavior [Bug]: The advice names a way out that works for committed work, or speaks only of a dirty tree when the work is uncommitted.
+	- Reproduced [Bug]: 2026-11-18 on b23. [dfg30] fails on the build before the fix: after br create, main still held the commit.
+	- Origin: e1cc030, 2026-10-05, the sync warning. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: The refusal and the warning named br create whatever was going out. br create takes a dirty tree along, and leaves commits on the branch they were made on.
+	- Actual fix [Bug]: With commits going out, both name 'git checkout -b <branch-name>', then 'git branch -f <branch> <upstream>', which takes the commits and the tree to a new branch and puts the protected branch back at origin's tip. A dirty tree alone still gets br create. pr create's refusal on main or dev does the same. design.md and the changelog say so.
+	- Branch: nov18-2026111815522440
+	- Commit: c203ecd
+	- Test case: test.bash [dfg2y] to [dfg32], and [dfg38] for pr create.
+	- Verified: [dfg2y] to [dfg32] and [dfg38] fail on the build before the fix and pass with it. [dfg30] runs the commands as the refusal prints them. [dfg31] guards the dirty-tree advice, and fails before only since main still held [dfg30]'s commit. The quick gate passed with every area: test.bash 2055/0, fuzz 310/0, parity 31/0. gosec reports nothing in the changed files.
+	- Swept: every message that names br create. The --direct refusal and warning, and pr create's refusal on main or dev, now fit committed work. br switch's dirty-branch refusal and its no-such-branch hint are about a dirty tree or a new name, so br create fits there.
+	- Decisions: The way off is plain git, since no gitsby command moves commits off a branch. Making br create take commits along would change what it does, and wasn't asked for. git checkout -b rather than git switch -c, to match the plan's own steps and older git. The upstream is named as git has it, so a fork's upstream is right too.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-183606
+
+- Code Review 20261110b item 18: repo connect -- <URL starting with a dash> reaches git ls-remote as an option
+	- ID: 2026111016332231
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163322
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: In a repo with no origin, whose branch tracks another remote, run `gitsby -q repo connect -- "--upload-pack=touch PWNED;git-upload-pack"`.
+	- Incorrect behavior [Bug]: The probe's `git ls-remote` runs the command and PWNED appears. It then fails at `git remote add`, exit 129.
+	- Expected behavior [Bug]: A URL that starts with a dash is refused before anything runs.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: repo.go:88 and :393 put the URL in git argv with no `--`. The 2026-10-06 sweep in Bug 2026100607545802 rested on the parser refusing dash-led words.
+	- Origin: bbb6445, 2026-11-10, made `--` end gitsby's options. The probe from 26c8a42, the remote add from 4918b5b. Regression. Confirmed.
+	- Notes: The URL is the user's own, so this matters for a script that passes one through. `repo create -- --x/y` hands `--x/y` to `gh repo view`, and the br switch refusal suggests a br create line that no longer pastes.
+	- Closed reason: Done
+	- Actual cause [Bug]: The probe's ls-remote and the remote add put the URL in git's argv with no '--'. Both relied on the parser refusing a dash-led word, which stopped once '--' ended gitsby's options.
+	- Actual fix [Bug]: repo connect and repo create refuse a dash-led target in sortCommand, ahead of the account lookup, the probe and gh. The probe's ls-remote and the remote add also pass '--' before the URL, and the plan's remote add line shows it.
+	- Branch: nov18-2026111016332317
+	- Commit: cd5dd5c
+	- Test case: test.bash [dfg12] to [dfg15]; TestSortCommandRefusesDashLedRepoTarget [dfg16]; TestProbeRemoteDashLedURL [dfg17].
+	- Verified: [dfg13] to [dfg15] fail on the nov18 build, where the probe ran the touch and 'repo create' asked gh, and pass with the fix. [dfg12] passes on both, since the old build failed later. [dfg16] fails with the refusal taken out, and [dfg17] with the probe's '--' taken out. The quick gate passed with every area.
+	- Swept: every git and gh argv in repo.go that takes the target. clone already passes '--'. 'gh repo view' and 'gh repo create' take only an 'owner/name' the parser has checked. The br switch refusal already says a branch can't start with a dash, so its br create advice is never offered for one.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-171224
+
+- Code Review 20261110b item 19: Converting a SHCL 2.x accounts file cuts off any value with a quote before a #
+	- ID: 2026111016332218
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163322
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: A 2.x accounts file with `name: O"Brien#2` and `pathcontains: dev/c"#/proj`. Run `gitsby account list`.
+	- Incorrect behavior [Bug]: The file becomes `name: 'O"Brien'#2`, which v3 reads as `O"Brien` with the rest a comment. The folder rule changes the same way. gitsby says the lines were re-spelled to keep their values, exit 0.
+	- Expected behavior [Bug]: The converted file reads the same values the 2.x reader did, or the conversion is refused.
+	- Reproduced [Bug]: 2026-11-10 on b23. 9 of 11 such values were cut.
+	- Possible cause [Bug]: shcl's migrateLine and valueEdits, reached through `MigrateUnstamped` at cfgformat.go:82. gitsby doesn't check the result against the 2.x reading.
+	- Origin: 37f4843, 2026-10-03. [ddg6e] feeds only values the 2.x writer quoted itself. No round saw it. Confirmed.
+	- Notes: The module half belongs upstream in shcl. Only dev and gover builds wrote 2.x files, since v2.1.0 used the flat layout.
+	- Closed reason: Done
+	- Actual cause [Bug]: In 2.x a quote anywhere in a value opened a run to the same quote or the end of the line, so a `#` or `,` after it was text. shcl v3.0.0-beta1 reads a 2.x line with its own 2.x rules, which don't run a quote opened mid-value, so its migration ends the value at the `#` or splits it at the `,`. The 2.x writer always quoted such a value, so `[ddg6e]` never fed one.
+	- Actual fix [Bug]: `convert2x` in cfgformat.go. Before the module converts the file, a value it would cut or split, where 2.x read one value, goes in single quotes, or double where it holds an apostrophe. Quotes with no backslash read the same in 2.x. After, each line's comment and list reading is checked against 2.x's. A line that still differs, or one no quote fits, keeps the file as it is, and the notice and `account set`'s refusal name the line, with a Fix to quote it.
+	- Decisions: The 2.x module stays out of the binary, per design.md, so the check uses a copy of 2.x's quote rule. 2.x is frozen, so it can't drift, and the fuzz target holds it to the real module. A value a quote can keep is converted rather than refused. The fuzz target skips lists, since `name` takes one value, and bytes that aren't UTF-8, filed as 2026111819043675.
+		- 20261118: FuzzOld2xHandTyped [dfg4d] no longer skips bytes that aren't UTF-8, since 2026111819043675 added them.
+	- Branch: nov18-2026111016332218
+	- Commit: 5d58999
+	- Test case: Go `[dfg4d]` FuzzOld2xHandTyped: a hand-typed 2.x value reads what the real 2.x module read, or the file is left as it was; `[dfg4e]` 8 such values, the steps' folder rule and their comments; `[dfg4f]` a value no quote fits refuses, naming the line. test.bash `[dfg4g]` the steps' file through the binary.
+	- Verified: `[dfg4d]` (8 of 15 seeds), `[dfg4e]` and `[dfg4f]` fail on the previous config.go, cfgformat.go and accountcmd.go, and `[dfg4g]` fails on the binary built from 5f96830. With the quoting taken out, the after-check refuses every seed instead, and with both out `[dfg4d]` fails. 2 minutes of fuzzing found nothing more. Quick gate, every area: test.bash 2059/0, fuzz 310/0, parity 31/0.
+	- Swept: the flat conversion and the earlier module's re-spelling write values through the setter, not the module's 2.x reading, so neither has this shape. `convert2x` is the only caller of `migrateText` in the load.
+	- Note: The module half is upstream, in shcl's 2.x reading of a line.
+	- Acceptance signoff: Self-closed: reproduced, and its tests fail before the fix and pass after.
+	- Closed: 20261118-190600
+
+- Code Review 20261110b item 22: A file whose mtime falls before the cutover is re-spelled whatever its age or source
+	- ID: 2026111016332181
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163321
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: Write a name with a backslash through `account set`, then `touch -d 2026-11-01` the file. Or read a read-only file with mtime 1, as a Nix store gives.
+	- Incorrect behavior [Bug]: The touched file is converted, and `\n` in the name turns into a real newline that apply writes into the fragment. The read-only file says it couldn't be converted on every run, and the reason names the lock, not the folder. The kept `_format-v3old` backup gets a new mtime, so moving it back reads its escapes as text.
+	- Expected behavior [Bug]: Only a file written by the old pin is converted, and a restored backup reads as it did.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: config.go:558 and cfgformat.go:272 go by an upper bound only. The old pin began at ca0e55c, 2026-09-24, so anything older can't be from it.
+	- Origin: The mtime rule from Bug 2026110710480989. Confirmed.
+	- Against: The answer on 2026110710480989 to go by the file's mtime. A lower bound and keeping the backup's mtime don't change that rule.
+	- Answered 2026-11-10: fix it as filed.
+	- Closed reason: Done
+	- Actual cause [Bug]: The earlier module's rule had only an upper bound. A lock that couldn't be made gave one fixed reason, whatever the cause. The kept copy was written with the time of the conversion.
+	- Actual fix [Bug]: `fromOldPin` in cfgformat.go also wants a time no earlier than 2026-09-24 19:49:10 UTC, the commit time of the first module ca0e55c pinned. Every kept copy gets the file's own time, and a copy that can't keep it is removed and the file left as it was. A lock refused for permissions says the folder can't be written, another cause is named, and a held lock says another run held it.
+	- Decisions: The lower bound is the first pinned module's commit time rather than ca0e55c's, since a build from the working tree could run before that commit but not before the module existed. A file touched to a time inside the window, as in the first steps, is still converted: the time is the rule, per the Against line. Every kind of kept copy keeps the time, so a restored 2.x or flat copy also reads as it did.
+	- Branch: nov18-2026111016332218
+	- Commit: be9eb57
+	- Test case: Go `[dfg49]` time 1, a second before the start, and the cutover itself read as v3 text; `[dfg4a]` the kept copy has the file's time, and moved back it is converted again; `[dfg4b]` an unwritable folder is named. test.bash `[dfg4c]` a read-only folder with time 1, through the binary, has no notice and reads as v3 text.
+	- Verified: `[dfg49]` to `[dfg4b]` fail on the previous config.go and cfgformat.go, and `[dfg4c]` fails on the binary built from 5f96830. `[df08m]` to `[df08y]` still pass. Quick gate, every area: test.bash 2059/0, fuzz 310/0, parity 31/0.
+	- Swept: the time is read in one place, config.go's load, and the window is `fromOldPin` only. `replaceOldFormat` is the one place a kept copy is made, for all 3 kinds. The lock reason is set only there; `account set` reports the lock's own refusal.
+	- Acceptance signoff: Self-closed: answered 2026-11-10 to fix it as filed, and its tests fail before the fix and pass after.
+	- Closed: 20261118-190400
+
+- Code Review 20261110b item 24: A file stamped with a newer SHCL format is read silently, and account set fails after the plan
+	- ID: 2026111016332157
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163321
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: End the accounts file with a Format 4 stamp, then run `account list` and `gitsby -q account set work name B`.
+	- Incorrect behavior [Bug]: list reads it as v3 with no notice. set prints its plan, then fails with a save refusal whose Fix says to run it again once that's fixed, which can't help. Exit 1, file unchanged.
+	- Expected behavior [Bug]: gitsby says the file is newer than this build, and set and unset refuse before the plan.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: cfgformat.go:59 counts a newer format as current. accountcmd.go:1342-1350 handles `SaveRefused` and not `SaveTooNew`.
+	- Origin: 37f4843, 75ce642 and 8d3f857. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: oldFormat counted a newer format as current, so the load said nothing, and the only stop was the module's save refusal after the plan, which the save reported as a write failure. A Format 4 file with a time in the earlier module's window was also re-spelled and written, past that refusal.
+	- Actual fix [Bug]: The load notes a format newer than the module's, and the run says so once on stderr, with the file. `account set` and `account unset` refuse before the plan, with Fix "Update gitsby", and a `SaveTooNew` from the save gets the same refusal. The earlier module's re-spelling skips such a file.
+	- Decisions: The file is still read, by this build's rules, since reads work and the notice says values may differ. The notice ignores `-q`, as the conversion notice does.
+	- Branch: nov18-2026111016332218
+	- Commit: 6d7a1f1
+	- Test case: Go `[dfg44]` the notice, the read, and the file left alone with a time in the earlier module's window; `[dfg45]` set and unset refuse before the plan; `[dfg46]` the save's `SaveTooNew` refusal. test.bash `[dfg47]` and `[dfg48]` the same through the binary.
+	- Verified: `[dfg44]` to `[dfg46]` fail on the previous config.go, cfgformat.go and accountcmd.go, and `[dfg47]` and `[dfg48]` fail on the binary built from 5f96830. Quick gate, every area: test.bash 2059/0, fuzz 310/0, parity 31/0.
+	- Swept: `SaveFileKeepLines` is the only save of a file that exists, and `createNew` only makes a new one. `replaceOldFormat` writes with `WriteFileAtomic`, and all 3 of its calls in the load now skip a newer file.
+	- Acceptance signoff: Self-closed: reproduced, and its tests fail before the fix and pass after.
+	- Closed: 20261118-190400
+
+- Code Review 20261110b item 28: br merge's plan shows 2 pushes when the target has no local branch yet, and the run does 1 atomic push
+	- ID: 2026111016332107
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163321
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: In a fresh clone with only origin's dev, run `gitsby br merge` from a feature branch.
+	- Incorrect behavior [Bug]: The plan lists a push and then the leased delete, printed twice. The run does `git push --atomic`.
+	- Expected behavior [Bug]: The plan shows the atomic push.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: atomicMergeFits reads the local branch's upstream before the checkout makes it.
+	- Origin: 2437605, 2026-11-07, from Code Review 20261107 enhancement 3. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: atomicMergeFits read the target's upstream from the local branches only. The plan runs before the checkout makes the target, so it found none and planned 2 pushes. The run asks after the checkout, and made 1.
+	- Actual fix [Bug]: atomicMergeFits asks upstreamOf, which gives a target with no local copy origin's branch, the one the checkout tracks. The changelog says so.
+	- Branch: nov18-2026111815522440
+	- Commit: c203ecd
+	- Test case: test.bash [dfg33] and [dfg34].
+	- Verified: [dfg33] and [dfg34] fail on the build before the fix, where the plan listed the push and the leased delete, and pass with it. The run made 1 push both times. The quick gate passed with every area.
+	- Swept: every read of a local branch's upstream in src-go. The pull steps in the plan already go through upstreamOf. branchExistsLocal asks about existence only.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261118-183606
+
+- Code Review 20261110b item 29: br create takes @{-1} as a name, and fails after the park
+	- ID: 2026111016332095
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163320
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: On a feature branch, `gitsby br create '@{-1}'`.
+	- Incorrect behavior [Bug]: It commits, pushes and checks out dev, then fails saying a branch with the previous branch's name exists. Exit 1.
+	- Expected behavior [Bug]: The name is refused before anything runs.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: branchcmd.go:22 checks with `check-ref-format --branch`, which expands `@{-N}` and passes.
+	- Origin: 4918b5b. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: check-ref-format --branch reads @{-N} as the branch checked out N switches ago and answers with its name, so the check passed. The name was only found taken at 'git checkout -b', after the park.
+	- Actual fix [Bug]: The name passes only when check-ref-format prints it back unchanged. @{-1}, @{-1}/x and the like are refused before anything runs. The changelog says so.
+	- Branch: nov18-2026111815522440
+	- Commit: c203ecd
+	- Test case: test.bash [dfg35] to [dfg37].
+	- Verified: [dfg35] to [dfg37] fail on the build before the fix, which committed and pushed first, and pass with it. The quick gate passed with every area.
+	- Swept: check-ref-format is called once in src-go, in checkNewBranchName, which br create and br hotfix share. br hotfix's 'hotfix/@{-1}' was already refused, since @{ can't be inside a name. br switch takes only a branch that exists. A branch named '@' passes, as git allows it, and was left alone.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-183606
+
+- Code Review 20261110b item 32: repo create's refusal prints a token typed in the URL
+	- ID: 2026111016332057
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163320
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: `gitsby -q repo create https://user:SECRET@example.com/o/n.git`.
+	- Incorrect behavior [Bug]: The refusal prints SECRET twice.
+	- Expected behavior [Bug]: It masks the token, as every other line that shows a URL does.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: repo.go:304 prints the argument without maskURL.
+	- Origin: No round saw it. Confirmed.
+	- Sweep: Every message that prints a typed URL.
+	- Closed reason: Done
+	- Actual cause [Bug]: The refusal handed the typed argument to usagef unmasked. Only sites that called maskURL by hand masked a URL, so each refusal that quotes an argument back was one more site to miss.
+	- Actual fix [Bug]: escArgs, which usagef, usageSubf, usageWrapf and errorf run their args through, masks each text arg with maskURL. Every refusal that quotes back what was typed masks a token in it now, such as repo create, an unknown 'repo' or 'pr' word, br create, br switch, and repo connect's origin line.
+	- Decisions: The paste line in the refusal shows '***' too, as repo.go's 'clone it instead' line already did. The maskURL calls already inside usagef args stay, since masking twice gives the same text.
+	- Branch: nov18-2026111016332057
+	- Test case: Go TestTypedURLsAreMasked [dfg4x]; test.bash [dfg4y] [dfg4z].
+	- Verified: [dfg4x] fails for all 4 writers without the escArgs change. test.bash [dfg4y] [dfg4z] fail on the nov18 build (2059 passed, the 4 new checks failed) and pass with the fix. The quick gate passed with every area.
+	- Swept: every Sprintf-style writer (usagef, usageSubf, usageWrapf, printer.errorf) goes through escArgs, and every refuse() lead is a literal. Line writers (status, clean, warn, statusNotes) grepped for a typed argument or URL: the URL ones call maskURL, preview.go's set-url line shows a URL rebuilt from host and owner/name with no userinfo, and a branch name that isn't one is refused through usagef before any plan. No Sprintf, Errorf or errors.New builds a message from a URL or typed argument.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-191949
+	- Commit: f7f0630
+
+- Code Review 20261110b item 33: The ssh probe passes $HOME in GIT_SSH_COMMAND to ssh unexpanded
+	- ID: 2026111016332045
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163320
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: `GIT_SSH_COMMAND='ssh -i $HOME/.ssh/work_key'` with an ssh origin. Run `gitsby status`.
+	- Incorrect behavior [Bug]: The probe runs ssh with the literal `$HOME/.ssh/work_key`. ssh falls back to its default keys, so the identity check may name the wrong account or refuse a push. git itself runs the command through a shell and expands it.
+	- Expected behavior [Bug]: A command with `$`, a backtick or `~user` falls back to plain ssh, as one with quotes already does.
+	- Reproduced [Bug]: 2026-11-10 on b23, the argv. The wrong account is Plausible.
+	- Possible cause [Bug]: remote.go:198 and show.go:607 split the command on spaces.
+	- Origin: No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: gitSSHCommand split the command on blanks, and sent only a quoted one to plain ssh. A `$HOME`, a backtick or `~user` reached ssh as typed, where git's shell expands it.
+	- Actual fix [Bug]: A command is split only when a shell would do nothing more than split it. A quote, backslash, `$`, backtick, `~user`, `#`, newline, `;`, `&`, `|`, `<`, `>` or parenthesis sends the probe and the SSH line's key to plain ssh, and the fetch leaves the command to git. A leading `~/` is still split, since ssh expands it in a key path, and gitsby's sshkey command is spelled that way.
+	- Branch: nov18-2026111016332280
+	- Test case: test.bash [dfg2f] and [dfg2g]; TestSSHCommandOnlyAShellCanRead [dfg25].
+	- Verified: [dfg2f], [dfg2g] and [dfg25] fail on the nov18 build and pass with the fix. The quick gate passed with every area.
+	- Swept: remote.go's probe and show.go's key line, the two splits the item names, both read sshArgv now. remoteEnv uses the same test. No other site splits an ssh command.
+	- Decisions: A command only a shell can read now goes without the connect timeout on the fetch, as a quoted one already did. Before, a `$HOME` command in core.sshCommand got it. Recorded in design.md.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-175751
+	- Commit: fe582c7
+
+- Code Review 20261110b item 34: maskURL leaves a token showing in a URL with a newline, and FuzzMaskURL can't see an unmasked URL
+	- ID: 2026111016332033
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261110-163320
+	- Opened by: jim-collier
+	- Steps to reproduce [Bug]: A remote URL with a token and a newline after it in .git/config, then `gitsby status`. For the fuzz half, make maskURL return its input and run `go test -fuzz FuzzMaskURL`.
+	- Incorrect behavior [Bug]: status prints the token. The fuzz target passed 935k inputs with masking turned off. Only TestMaskURL failed.
+	- Expected behavior [Bug]: The token is masked, and the fuzz target fails when the userinfo is still in the output.
+	- Reproduced [Bug]: 2026-11-10 on b23.
+	- Possible cause [Bug]: maskURLRE's `(.*)$` stops at a newline. fuzz_test.go:112-121 checks only when the output changed.
+	- Origin: c943c5a, 2026-08-21. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: maskURLRE's '.' stopped at a newline, so a URL with one after the host didn't match and printed whole. Its userinfo also stopped at the first '@', so a password with an '@' in it left the rest showing. FuzzMaskURL checked only output that had changed.
+	- Actual fix [Bug]: maskURLRE matches across newlines, and the userinfo runs to the last '@' before the first '/'. FuzzMaskURL also builds a URL around each input as its userinfo, with and without a newline tail, and wants exactly '***' in its place.
+	- Decisions: Masking to the last '@' before the path hides more than git's own parse, which stops at the first one. Showing less is the safe side.
+	- Branch: nov18-2026111016332057
+	- Test case: Go TestMaskURL [dbfrt] (4 new cases) and FuzzMaskURL [dbjwt] (a new property and 2 seeds); test.bash [dfg50] [dfg51].
+	- Verified: TestMaskURL and FuzzMaskURL's seeds fail with the old maskURL and pass after. test.bash [dfg50] [dfg51] fail on the nov18 build and pass with the fix. FuzzMaskURL ran 30 s, 1.24M inputs, clean. The quick gate passed with every area: test.bash 2063/0, fuzz 310/0, parity 31/0.
+	- Swept: maskURL is the one masker, so its callers in exec.go, main.go, preview.go, pr.go, repo.go and show.go all take the fix.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261118-191939
+	- Commit: f749457
 
 - cicd.bash's go test -list compiles with every core
 	- ID: 2026111020264871

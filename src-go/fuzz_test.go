@@ -109,6 +109,8 @@ func FuzzMaskURL(f *testing.F) { // [dbjwt]
 	f.Add("https://user:token@github.com/owner/name")
 	f.Add("https://x-access-token:ghp_abc@github.com/o/n.git")
 	f.Add("git@github.com:owner/name.git")
+	f.Add("tok\nen")
+	f.Add("p@ss")
 	f.Fuzz(func(t *testing.T, url string) {
 		masked := maskURL(url)
 		// The mask exists so a credential in a remote URL never reaches a screen or
@@ -117,6 +119,17 @@ func FuzzMaskURL(f *testing.F) { // [dbjwt]
 			rest := masked[strings.Index(masked, "://")+3:]
 			if at := strings.Index(rest, "@"); at >= 0 && rest[:at] != "***" && !strings.HasSuffix(rest[:at], ":***") {
 				t.Errorf("maskURL(%q) = %q left userinfo unmasked", url, masked)
+			}
+		}
+		// The check above sees only a URL that got masked, so one left as it was
+		// passed. Here the input is the userinfo of a URL built around it, and
+		// whatever it holds, and whatever follows the host, only it goes.
+		if secret := strings.ReplaceAll(url, "/", ""); secret != "" {
+			for _, tail := range []string{"", "/o/n.git", "/o/n.git\n" + url} {
+				in := "https://" + secret + "@example.com" + tail
+				if got, want := maskURL(in), "https://***@example.com"+tail; got != want {
+					t.Errorf("maskURL(%q) = %q, want %q", in, got, want)
+				}
 			}
 		}
 	})
@@ -238,6 +251,40 @@ func FuzzSetValue(f *testing.F) { // [ddcc1]
 // A value the 2.x module wrote reads the same after the conversion as 2.x read
 // it. The text is the 2.x writer's own, so this follows whatever it did with
 // quotes and escapes rather than a guess at it.
+// Hand-typed 2.x values, not only ones its writer quoted: a quote opens a run that
+// takes a '#' after it as text, which the module's migration cuts. The converted
+// file reads what 2.x read, or the conversion is refused and the file left as it was.
+func FuzzOld2xHandTyped(f *testing.F) { // [dfg4d]
+	for _, seed := range []string{`O"Brien#2`, `dev/c"#/proj`, `a'b#c`, `x"y" #z`, `"a"#b`, `a"b"c#d`, `it's#1`, `q"#`, `a#b`, `O"Brien #2`, `"x" y#z`, `C:\it's#x`, `a"b, c#d`, `it's "q"#1`, `O"Brien#2  # me`, "\x87", "O\"Br\xe9en#2", "a\xff\xfeb # n\x87te", "\\\x87"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, value string) {
+		if strings.ContainsAny(value, "\r\n") {
+			return
+		}
+		text := "account: w\n\tname: " + value + "\n" + shcl2Footer
+		old := shcl2.Parse(text)
+		was, status := old.GetString("account[#0].name")
+		// A list is another question: name takes one value.
+		if list, _ := old.GetStringArray("account[#0].name"); status != shcl2.Good || len(list) != 1 {
+			return
+		}
+		cfg := writeConfig(t, text)
+		if cfg.migration == nil {
+			t.Fatalf("not seen as 2.x:\n%s", text)
+		}
+		if !cfg.migration.done {
+			if readBack(t, cfg.file) != text || !strings.HasPrefix(cfg.migration.why, "line 2 ") {
+				t.Errorf("refused, but %+v, and the file:\n%s", cfg.migration, readBack(t, cfg.file))
+			}
+			return
+		}
+		if got := cfg.value("w", "name"); got != was {
+			t.Errorf("2.x read %q from\n%s\nand after the conversion it reads %q:\n%s", was, text, got, readBack(t, cfg.file))
+		}
+	})
+}
+
 func FuzzOldFormatValue(f *testing.F) { // [ddg6e]
 	for _, seed := range []string{`C:\work\new`, `~\dev\tools`, `\\srv\share`, `C:\Bob's\new`, `%USERPROFILE%\x`, `a\tb`, `"q"`, `'q'`, `x # y`, `[a, b]`, `\`, "tab\there", "plain"} {
 		f.Add(seed)

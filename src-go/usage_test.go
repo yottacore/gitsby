@@ -97,6 +97,7 @@ func TestHelpForEveryCommand(t *testing.T) { // [df4f1]
 		"repo --help":          "Syntax: " + meName + " repo <clone",
 		"branch -h":            "Syntax: " + meName + " br [",
 		"sync --direct --help": "--direct",
+		"br switch --help":     "--config, --direct, --staged, -m.",
 	} {
 		if got := strings.Join(helpFor(strings.Fields(argv)), "\n"); !strings.Contains(got, want) {
 			t.Errorf("%s: want %q in %q", argv, want, got)
