@@ -38,6 +38,20 @@ func (a *app) upstream() upstreamRef {
 
 func (a *app) hasUpstream() bool { return a.upstream().full != "" }
 
+// goneUpstream is the current branch's upstream on a remote when it's still set
+// but its ref is gone, as once a fetch prunes a branch origin deleted. rev-parse
+// reads that as no upstream at all, so the next push is a first publish that puts
+// the branch back. for-each-ref still names it.
+func (a *app) goneUpstream() string {
+	if a.hasUpstream() {
+		return ""
+	}
+	if up := a.branchRefs().local[a.currentBranch()]; strings.HasPrefix(up.full, "refs/remotes/") {
+		return up.short
+	}
+	return ""
+}
+
 // branchRefs is every local branch with its upstream, and every branch origin
 // has with git's short name for it. One for-each-ref answers all of the run's
 // existence checks.
@@ -288,6 +302,9 @@ func (a *app) branchDisp(branch string) string {
 // quiet line means "nothing pending".
 func (a *app) branchSync() string {
 	if !a.hasUpstream() {
+		if gone := a.goneUpstream(); gone != "" {
+			return "(" + gone + " gone)"
+		}
 		return "(no upstream)"
 	}
 	ahead, behind := a.aheadBehind()

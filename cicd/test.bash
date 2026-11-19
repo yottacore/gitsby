@@ -1848,6 +1848,29 @@ fRunSuite(){
 	( cd "${directA}" && echo three > h.txt && git add --all && git commit --quiet -m "on side" && git checkout --quiet main && git merge --quiet --no-ff side -m "merge side" )
 	fAssert "[dffyh] a merge on main needs no --direct for br switch to send it" \
 		bash -c "cd '${directA}' && '${gitsby}' -q br switch side && [[ \"\$(git -C '${directO}' rev-parse main)\" == \"\$(git rev-parse main)\" ]]"
+	## A branch deleted on origin after its pull request merged still has its upstream set, and
+	## git reads that as none once the fetch prunes it. sync and br switch's park push would put
+	## it back as a first publish, so they warn above the prompt, and -q refuses.
+	local goneO="${work}/$1-goneo.git" goneA="${work}/$1-gonea"
+	git init --quiet --bare -b main "${goneO}"
+	git clone --quiet "${goneO}" "${goneA}" 2>/dev/null
+	( cd "${goneA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git checkout --quiet -b feat && echo two > g.txt && git add --all && git commit --quiet -m "on feat" && git push --quiet -u origin feat && git -C "${goneO}" branch --quiet -D feat && echo three > h.txt )
+	fAssert "[dfgxn] sync -q on a branch deleted on origin refuses, naming the way to publish it again" \
+		bash -c "cd '${goneA}' && out=\"\$('${gitsby}' -q sync 'more' 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'origin/feat' is gone\" <<< \"\${out}\" && grep -qF \"'git switch main'\" <<< \"\${out}\" && grep -qF 'git branch --unset-upstream' <<< \"\${out}\""
+	fAssert "[dfgxp] and br switch -q too, staying put, with nothing pushed or committed" \
+		bash -c "cd '${goneA}' && ! '${gitsby}' -q br switch main >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == feat ]] && [[ -z \"\$(git ls-remote '${goneO}' refs/heads/feat)\" ]] && [[ -n \"\$(git status --porcelain)\" ]]"
+	if ((hasPty)); then
+		fAssertOut "[dfgxq] asked in person, sync warns above the prompt" "WARNING: 'origin/feat' is gone, most often because its pull request merged" \
+			fAnswerPrompt n "cd '${goneA}' && '${gitsby}' sync 'more'"
+	else
+		fSkipBlock "the gone-branch warning above the prompt (no pty)"
+	fi
+	fAssertOut "[dfgxr] status names the gone upstream" "^Current branch: main :: feat \\(origin/feat gone\\)" \
+		bash -c "cd '${goneA}' && '${gitsby}' status"
+	fAssertOut "[dfgxs] pullcom says it's gone rather than never pushed" "'origin/feat' is gone; nothing to pull\\." \
+		bash -c "cd '${goneA}' && '${gitsby}' -q pullcom 'more'"
+	fAssert "[dfgxt] after 'git branch --unset-upstream', sync -q publishes it as new" \
+		bash -c "cd '${goneA}' && git branch --unset-upstream && '${gitsby}' -q sync >/dev/null 2>&1 && [[ \"\$(git ls-remote '${goneO}' refs/heads/feat | cut -f1)\" == \"\$(git rev-parse feat)\" ]]"
 	## The way off main that the refusal names has to work for what is there. br create takes a
 	## dirty tree along but leaves commits on main, where the next sync refuses again.
 	local offO="${work}/$1-wayoffo.git" offA="${work}/$1-wayoffa" offFix=""

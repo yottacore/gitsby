@@ -208,6 +208,12 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- The flag is for this one case, not a general `--no-warn`. Flags are permanent, and a general one would also hide whatever warning comes next.
 	- `br switch` parks before it moves, and from `main` or `dev` its park push is the same push, so it gets the same warning, refusal and flag (2026-11-18). `br create` and `br hotfix` carry the tree off a protected branch rather than push it, `br merge` refuses to run from one, and `release` exists to push one.
 
+- `sync` and `br switch` warn before they push a branch back up that origin deleted, most often when its pull request merged on the git host (2026-11-19). Once the fetch prunes it, git reads the branch's upstream as none, so the push was a first publish that put the branch back.
+	- The state line shows such a branch as `(origin/<branch> gone)`, and the pull step says it's gone rather than that there's no upstream.
+	- The warning goes last before the prompt, and `-q` refuses, as for a push straight to `main`.
+	- There is no flag for it. `git branch --unset-upstream` makes the next push an ordinary first publish, and `git switch` leaves the branch without pushing it, since `br switch` would park it.
+	- `br merge` pushes it back and deletes origin's copy again in the same run, and `pr create` needs it on origin, so neither asks.
+
 - Being offline must never turn a good commit into a failed command, now that `pullcom` is the only way to commit.
 	- A remote that can't be reached warns and skips the pull. A remote that *is* reachable but can't fast-forward is a real problem and still fails hard - the distinction is what the pre-command fetch already discovered.
 	- `--no-fetch` declines the incoming round trip, so it skips the pull as well as the fetch. Skipping only the fetch and then pulling anyway would have saved nothing. It is not a way to say "I am offline" - see the offline rule below for why that distinction is deliberate.

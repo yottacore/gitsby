@@ -240,13 +240,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b enhancement 1: sync re-creates a branch on origin that was deleted after its PR merged
 	- ID: 2026111016331930
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163319
 	- Opened by: jim-collier
 	- Requirements [Feature]: When the upstream is gone, gitsby says so, and asks before pushing the branch up again.
 	- Origin: mutate.go:69 and :149 read a gone upstream as no upstream. No round raised it. Confirmed: after a PR merged on the web with the branch deleted, sync said no upstream and pushed the branch back.
+	- Closed reason: Done
+	- Done: sync, and br switch's park push, warn last before the prompt when the branch's upstream is gone, and -q refuses. The warning names 'git switch <target>' to leave it gone, and 'git branch --unset-upstream' to publish it again as new. The state line shows '(origin/<branch> gone)', and the pull step says it's gone.
+	- Decisions: The single prompt is the ask, with the warning above it, and -q refuses, as for --direct and per the UI rule for a warning nobody reads. No new flag, since flags are permanent and 'git branch --unset-upstream' already says the push is meant. br merge and pr create don't ask: br merge deletes origin's copy again in the same run, checked with a gone branch, and pr create needs it on origin. Only an upstream on a remote counts, so a deleted local upstream isn't called gone. Reasoning in design.md.
+	- Test case: Go TestGoneUpstream [dfgxm], test.bash [dfgxn] to [dfgxt]. [dfgxn] to [dfgxs] fail on the build before the fix and pass after, and [dfgxm] fails with goneUpstream answering nothing. [dfgxt] pins the way to publish again, which worked before too.
+	- Swept: every hasUpstream and upstream reader in src-go. pushIfOnline runs through cmdPush for sync, br switch, br merge and pr create, and in the hotfix back-merge on dev. pr ok's post-merge check wants a gone upstream read as none. repo connect's push mode and release's default-branch push are left alone, since publishing is their job. cicd.bash's own stage 0 sync only pulls.
+	- Verified: the quick gate with every area at d1b24a4's tree (test.bash 2086/0, fuzz and spawn counts 310/0, parity 31/0).
+	- Branch: nov19-2026111016331930
+	- Commit: d1b24a4
+	- Actual effort: Low
+	- Acceptance signoff: Self-closed: its tests fail before the fix and pass after, and the quick gate passed with every area.
+	- Closed: 20261119-082618
 
 - Code Review 20261110b enhancement 2: install.bash runs whatever part of itself arrived through curl | bash
 	- ID: 2026111016331918

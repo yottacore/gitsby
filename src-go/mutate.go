@@ -63,6 +63,8 @@ func (a *app) cmdPull() error {
 		a.out.status("WARNING: remote unreachable; skipping the pull. Local changes still get committed.")
 	case a.hasUpstream():
 		return a.step("git", a.pullArgs(a.autostash()...)...)
+	case a.goneUpstream() != "":
+		a.out.status("'" + a.goneUpstream() + "' is gone; nothing to pull.")
 	default:
 		a.out.status("No upstream configured for this branch; nothing to pull.")
 	}
@@ -218,6 +220,52 @@ func (a *app) keepOffText(committed bool) string {
 
 func (a *app) directPushText() string {
 	return "This pushes your work straight to '" + a.currentBranch() + "'. But the recommended workflow is to push to a branch and merge one level higher through a pull request."
+}
+
+// pushesGoneBranch is the gone upstream that sync, or br switch's park push, is
+// about to put back, most often a branch deleted when its pull request merged.
+// Empty when there's none. br merge deletes origin's copy again in the same run,
+// and pr create needs the branch on origin, so neither asks.
+func (a *app) pushesGoneBranch() string {
+	switch a.cmd.name {
+	case "sync":
+	case "br-switch":
+		if a.currentBranch() == a.switchTarget() || a.isOffline() {
+			return ""
+		}
+	default:
+		return ""
+	}
+	if !a.hasOrigin() {
+		return ""
+	}
+	return a.goneUpstream()
+}
+
+func (a *app) goneBranchText(gone string) string {
+	return "'" + gone + "' is gone, most often because its pull request merged and the branch was deleted. This pushes '" + a.currentBranch() + "' back up."
+}
+
+// goneBranchLeave is the way off that leaves it gone. Plain git, since sync and br
+// switch would both push it. Without its upstream setting, the push is an ordinary
+// first publish, which asks nothing.
+func (a *app) goneBranchLeave() string {
+	target := a.branchTarget("")
+	if a.cmd.name == "br-switch" {
+		target = a.switchTarget()
+	}
+	return "'git switch " + typedArg(target, runtime.GOOS) + "'"
+}
+
+// refuseGoneBranch: the -q side of the warning above the prompt.
+func (a *app) refuseGoneBranch() error {
+	if !a.opt.quiet {
+		return nil
+	}
+	if gone := a.pushesGoneBranch(); gone != "" {
+		return usagef("%s Nothing was done. To leave it gone, run %s. To publish it again, run 'git branch --unset-upstream' first.", a.goneBranchText(gone), a.goneBranchLeave())
+	}
+	return nil
 }
 
 // pushArgs pushes the current branch and nothing else, named in full, since a bare
