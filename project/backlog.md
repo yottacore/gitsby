@@ -725,9 +725,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 33: install.ps1 can leave no gitsby.exe when its last move fails
 	- ID: 2026111910222830
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w, in Windows PowerShell 5.1 and pwsh 7: test.bash [dfha2] to [dfha4], and a whole upgrade over an existing install with the old gitsby.exe running, which should leave one gitsby.exe.replaced-* that the next install clears.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102228
 	- Opened by:
@@ -745,7 +744,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: aa54839
 	- Test case: test.bash [dfha2] (a replace over an old gitsby.exe leaves only the new one), [dfha3] (a refused last move puts the old one back) and [dfha4] (a refused move back names where the old one is).
 	- Swept: every move-aside or rename over an installed binary. install.bash and the Go code rename over the target in one step and never move it aside first. legacy/install.ps1 is frozen.
-	- Verified: [dfha3] and [dfha4] fail with the old order put back in Install-Binary, and all 3 fail on daa5add's install.ps1, which has no such function. Quick gate, every area, passed: test.bash 2159/0, fuzz 310/0, parity 31/0. PSScriptAnalyzer clean on install.ps1. The Windows branch ran only on Linux pwsh, over plain files, with Move-Item stubbed to fail.
+	- Verified: [dfha3] and [dfha4] fail with the old order put back in Install-Binary, and all 3 fail on daa5add's install.ps1, which has no such function. Quick gate, every area, passed: test.bash 2159/0, fuzz 310/0, parity 31/0. PSScriptAnalyzer clean on install.ps1. On vm925w at 8f259fd, in Windows PowerShell 5.1.26100 and pwsh 7.6.10: the [dfha2] to [dfha4] bodies passed, with Windows paths. A whole upgrade with -Yes over an install whose gitsby.exe was running put the new build in place and left exactly one gitsby.exe.replaced-*, holding the old copy. The next install named the cleanup in its plan and left only gitsby.exe. The release downloads were served locally.
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: [dfha2] to [dfha4] and the running-copy upgrade passed on vm925w in 5.1 and pwsh 7.
+	- Closed: 20261119-151603
 
 - Code Review 20261119 item 34: install.ps1 can add PATH twice and says Added when it was already there
 	- ID: 2026111910222815
