@@ -271,6 +271,9 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- A bare probe cannot see that. It answers for ssh's default key while git pushes as somebody else, and the two wrong halves agree often enough to read as a clean bill of health - the check passed most confidently in exactly the setup it exists for.
 	- `GIT_SSH_COMMAND` beats `core.sshCommand`, which is git's own precedence. The value is split, never re-shelled: config is not a place to run code, so a quoted path falls back to a plain probe instead of misparsing. Answering "unknown" is safe; answering with the wrong name is not.
 	- The same command backs the fetch and the remote probe. Both used to force a bare `ssh` for the connect timeout, and because `GIT_SSH_COMMAND` outranks `core.sshCommand` that silently overrode the repo's key - a private repo only that key can read looked like being offline. A quoted command is the exception: gitsby can't add the timeout to it without re-shelling, so the fetch leaves it to git and goes without one.
+	- A command only a shell can read goes the same way as a quoted one: a variable such as `$HOME`, a backtick, `~user`, a backslash, or a `;` or `|`. Split as typed, `$HOME/.ssh/key` reached ssh literally, and ssh offered its default keys. A leading `~/` is still split, since ssh expands it in a key path itself.
+	- `GIT_SSH` names one program, which git runs only when neither command is set. The probe runs it too. The fetch leaves it to git, since a `GIT_SSH_COMMAND` added for the timeout would outrank it.
+	- PuTTY's `plink` takes no `-o`, so a command git knows as PuTTY's, by its name or by `GIT_SSH_VARIANT`, goes without the timeout. The probe leaves its account unknown rather than asking plain ssh, which may hold another key.
 	- The key named in the identity line comes from the same place, so the line cannot report the right account beside the wrong key file. Half-right is worse than either half alone: it invites you to trust whichever half happens to be wrong.
 
 - Which account you act as is decided by the folder you are in.
@@ -321,6 +324,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- The conventional answer is a key per account plus `~/.ssh/config` host aliases, which then have to be baked into every remote URL. It works, and it spreads the account across three places that can disagree.
 	- Over https, git can authenticate with the same token gh already stores. Gitsby supplies it through the environment for one command, so nothing is written and a killed run leaves nothing behind.
 	- `repo url` converts an existing remote, because that is the only thing standing between an ssh repo and a token. Only the URL changes.
+	- `repo url` goes by transport. A remote spelled with an ssh host alias already uses ssh, so `repo url ssh` leaves it alone. The alias may name its own key, and rebuilding the URL from the real host would trade that key for ssh's default.
 	- Keys remain fully supported, and `IdentitiesOnly` is set with them: without it ssh offers every key the agent holds and the server takes the first that authenticates, which on a two-account machine is a coin toss.
 	- Anything the user set themselves - `GIT_SSH_COMMAND`, `core.sshCommand` on the repo, a repo-local `user.email` - outranks a folder rule. A folder rule is a default, not an override.
 	- The suggestion to convert is one line, shown only when it would actually help, and `protocol = ssh` retires it. Advice you cannot turn off is noise.

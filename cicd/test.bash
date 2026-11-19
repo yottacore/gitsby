@@ -86,6 +86,8 @@ unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST 
 ## git asks an askpass before it checks GIT_TERMINAL_PROMPT. Git for Windows' login shell sets
 ## SSH_ASKPASS, and over ssh its dialog waits forever for a password nobody can type.
 unset GIT_ASKPASS SSH_ASKPASS
+## An inherited ssh command or program decides what every fetch and identity probe runs.
+unset GIT_SSH GIT_SSH_COMMAND GIT_SSH_VARIANT
 
 ## Output helpers, the same family as cicd.bash's: fEcho_Clean prints a line as given and
 ## collapses repeated blanks, and fUsage refuses the command line.
@@ -2841,11 +2843,61 @@ fRunSuite(){
 	# 	bash -c "${sidRun} FAKE_SSH_LOG='${sid}/dd.log' '${gitsby}' -q -NoFetch status >/dev/null 2>&1; grep -qx -- '-G -- gh-acme' '${sid}/dd.log'"
 	fAssert "[df054] and an aliased remote asks ssh -G once, options ended before the target" \
 		bash -c "${sidRun} FAKE_SSH_LOG='${sid}/dd.log' '${gitsby}' -q -NoFetch status >/dev/null 2>&1; [[ \"\$(grep -c -- '^-G ' '${sid}/dd.log')\" == 1 ]] && grep -qx -- '-G -- git@gh-acme' '${sid}/dd.log'"
+	## repo url goes by transport. Compared with the URL rebuilt from the real host, the alias read
+	## as another spelling and became the bare host, which swaps the alias's key for ssh's default.
+	fAssertOut "[dfg29] repo url ssh says an aliased origin already uses ssh"  'already uses ssh'  bash -c "${sidRun} '${gitsby}' -q -NoFetch repo url ssh 2>&1"
+	fAssert    "[dfg2a] and leaves the alias in place"  bash -c "[[ \"\$(git -C '${sid}/proj' remote get-url origin)\" == 'git@gh-acme:acme/api.git' ]]"
+	fAssertOut "[dfg2b] repo url shows the alias as its ssh spelling"  'as ssh \.+: git@gh-acme:acme/api\.git$'  bash -c "${sidRun} '${gitsby}' -q -NoFetch repo url 2>&1"
+	fAssertPlan "[dfg2c] and its https spelling still names the real host"  'git remote set-url origin https://github\.com/acme/api\.git' \
+		bash -c "${sidRun} '${gitsby}' -q -NoFetch repo url https 2>&1"
 	git -C "${sid}/proj" remote set-url origin git@github.com:acme/api.git
 	## Offline (the fetch failed): say we don't know rather than guess, and don't spend the
 	## round trip finding out. Asserting the log is what proves the probe was actually skipped.
 	fAssertOut "[dakpb] an unreachable remote leaves the account unknown"  "SSH \.+: \(unknown - offline, so .* wasn't asked\) \(git@github\.com"  bash -c "${sidRun} '${gitsby}' -q status"
 	fAssert    "[dakpc] and no identity round trip was attempted"  bash -c "${sidRun} FAKE_SSH_LOG='${sid}/log' '${gitsby}' -q status >/dev/null 2>&1; ! grep -q -- '-T' '${sid}/log'"
+	## Split without a shell, '$HOME/...' reached ssh as typed and ssh offered its default keys. A
+	## command only a shell can read is probed as plain ssh, as a quoted one already was.
+	: > "${sid}/hm.log"
+	local hmRun="${sidRun} GIT_SSH_COMMAND='ssh -i \$HOME/.ssh/work_key' FAKE_SSH_LOG='${sid}/hm.log'"
+	fAssert "[dfg2f] an ssh command that needs a shell for \$HOME is probed as plain ssh" \
+		bash -c "${hmRun} '${gitsby}' -q -NoFetch status >/dev/null 2>&1; grep -qE -- '^-T .* -- git@github\.com$' '${sid}/hm.log' && ! grep -qF -- '\$HOME' '${sid}/hm.log'"
+	fAssertNotOut "[dfg2g] and the key line doesn't name the path as typed"  'work_key'  bash -c "${hmRun} '${gitsby}' -q -NoFetch status"
+	## GIT_SSH is the user's own ssh program, as PuTTY and TortoiseGit users set it. git runs it only
+	## when no ssh command is set, so the GIT_SSH_COMMAND exported for the connect timeout ran PATH's
+	## ssh in its place, and the fetch read as offline. The stub serves the fetch from a bare copy.
+	if ! ((isWindows)); then
+		git clone --quiet --bare "${sid}/proj" "${sid}/remote/acme/api.git"
+		fStub "${sid}/gitssh" <<-'EOF'
+			#!/usr/bin/env bash
+			[[ -n "${FAKE_SSH_LOG:-}" ]] && echo "gitssh $*" >> "${FAKE_SSH_LOG}"
+			case "$1" in
+				-G) exit 1 ;;
+				-T) echo "Hi gitsshdev! You've successfully authenticated, but GitHub does not provide shell access." >&2; exit 1 ;;
+			esac
+			cd "${FAKE_REMOTE_ROOT:?}" || exit 1
+			last="${*: -1}"
+			eval "git ${last#git-}"
+		EOF
+		: > "${sid}/gs.log"
+		local gsRun="${sidRun} GIT_SSH='${sid}/gitssh' FAKE_REMOTE_ROOT='${sid}/remote' FAKE_SSH_LOG='${sid}/gs.log'"
+		fAssertNotOut "[dfg2d] with GIT_SSH set, the fetch isn't read as offline"  'git fetch failed'  bash -c "${gsRun} '${gitsby}' -q status"
+		fAssert       "[dfg2e] it fetched through that program"  bash -c "grep -q '^gitssh .*upload-pack' '${sid}/gs.log'"
+		fAssertOut    "[dfg2j] and the identity probe asks that program too"  "SSH \.+: gitsshdev \("  bash -c "${gsRun} '${gitsby}' -q -NoFetch status"
+		## plink takes none of the probe's OpenSSH options, so it isn't asked at all, and the
+		## account stays unknown rather than plain ssh's answer.
+		mkdir -p "${sid}/putty"
+		fStub "${sid}/putty/plink" <<-'EOF'
+			#!/usr/bin/env bash
+			echo "plink $*" >> "${FAKE_SSH_LOG:?}"
+			exit 1
+		EOF
+		: > "${sid}/pl.log"
+		fAssert "[dfg2k] a PuTTY GIT_SSH is never handed the probe's OpenSSH options" \
+			bash -c "${sidRun} GIT_SSH='${sid}/putty/plink' FAKE_SSH_LOG='${sid}/pl.log' '${gitsby}' -q -NoFetch status >/dev/null 2>&1; ! grep -q -- '^plink .*-T' '${sid}/pl.log'"
+		fAssertNotOut "[dfg2m] and the account isn't plain ssh's answer"  "SSH \.+: acmedev "  bash -c "${sidRun} GIT_SSH='${sid}/putty/plink' '${gitsby}' -q -NoFetch status"
+	else
+		fSkipBlock "a bash script can't be GIT_SSH for the native build"
+	fi
 
 	## The pre-command fetch must never sit and ask for credentials: it runs before any of our
 	## own checks, so an https remote you can't authenticate to would block every command.
@@ -9305,3 +9357,5 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261110 JC: release.bash, gen-winres.bash and 'gitsby release' take one version shape, and the two scripts refuse what git can't tag. A stop after 'br create' says the branch is pushed. [df4yk] to [df4yq].
 ##		- 20261111 JC: markdownlint-cli from its lock, by sha512, with no scripts, [df50y], and the image tag follows the lock, [df50z].
 ##		- 20261118 JC: account apply replaces its rules in each global git config file in one go, waits on git's lock, and finds them in ~/.config/git/config, [dffzh] to [dffzz]. [dd5eg] now reads the lock refusal.
+##		- 20261118 JC: repo url leaves an origin already on the asked transport alone, so an ssh host alias keeps its key, [dfg29] to [dfg2c].
+##		- 20261118 JC: GIT_SSH runs the fetch and the identity probe, plink gets no OpenSSH options, and an ssh command only a shell can read is probed as plain ssh, [dfg2d] to [dfg2m]. The suite unsets GIT_SSH, GIT_SSH_COMMAND and GIT_SSH_VARIANT.

@@ -306,6 +306,163 @@ func TestRemoteEnvAddsTheConnectTimeoutToTheRepoSSHCommand(t *testing.T) { // [d
 	}
 }
 
+// Split on blanks and run without a shell, '$HOME/key' reached ssh as typed, and
+// ssh offered its default keys. Anything only a shell can read gets plain ssh, the
+// way a quoted command already did, and the fetch leaves it to git.
+func TestSSHCommandOnlyAShellCanRead(t *testing.T) { // [dfg25]
+	t.Setenv("GIT_SSH", "")
+	for _, cmd := range []string{
+		"ssh -i $HOME/.ssh/work_key",
+		"ssh -i ${HOME}/k",
+		"ssh -i `echo k`",
+		"ssh -i ~bob/k",
+		`ssh -i "/k y/key"`,
+		"ssh -i '/k y/key'",
+		`ssh -i /k\ y/key`,
+		"ssh -i k; true",
+		"ssh -i k && true",
+		"ssh -i k | true",
+		"ssh -i k > /dev/null",
+		"ssh -i k\ntrue",
+		"ssh -i k # work",
+	} {
+		t.Setenv("GIT_SSH_COMMAND", "")
+		if err := os.Unsetenv("GIT_SSH_COMMAND"); err != nil {
+			t.Fatal(err)
+		}
+		a := &app{}
+		a.git.coreSSHCommand.set(cmd)
+		if got := a.gitSSHCommand(); got != "ssh" {
+			t.Errorf("gitSSHCommand() with %q = %q, want ssh", cmd, got)
+		}
+		if got := a.sshArgv(); len(got) != 1 || got[0] != "ssh" {
+			t.Errorf("sshArgv() with %q = %q, want [ssh]", cmd, got)
+		}
+		for _, entry := range a.remoteEnv() {
+			if strings.HasPrefix(entry, "GIT_SSH_COMMAND=") {
+				t.Errorf("remoteEnv() replaced %q, which only a shell can read: %q", cmd, entry)
+			}
+		}
+	}
+	// ssh expands a leading '~/' in a key path itself, and gitsby's own sshkey
+	// command is spelled that way.
+	a := &app{}
+	a.git.coreSSHCommand.set("ssh -i ~/.ssh/work -o IdentitiesOnly=yes")
+	if got := a.sshArgv(); len(got) != 5 || got[2] != "~/.ssh/work" {
+		t.Errorf("sshArgv() with a '~/' key = %q, want it split as typed", got)
+	}
+}
+
+// GIT_SSH_COMMAND outranks GIT_SSH, so exporting one for the timeout ran PATH's ssh
+// in place of the user's program. The fetch read as offline while the push worked.
+func TestRemoteEnvLeavesGITSSHToGit(t *testing.T) { // [dfg26]
+	t.Setenv("GIT_SSH_COMMAND", "")
+	if err := os.Unsetenv("GIT_SSH_COMMAND"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_SSH", "/opt/putty/plink")
+	a := &app{}
+	a.git.coreSSHCommand.set("")
+	for _, entry := range a.remoteEnv() {
+		if strings.HasPrefix(entry, "GIT_SSH_COMMAND=") {
+			t.Errorf("remoteEnv() outranked GIT_SSH: %q", entry)
+		}
+	}
+	// git reads core.sshCommand ahead of GIT_SSH, so that one still gets the timeout.
+	a = &app{}
+	a.git.coreSSHCommand.set("ssh -i /keys/repo")
+	if !hasEnv(a.remoteEnv(), "GIT_SSH_COMMAND=ssh -i /keys/repo -o ConnectTimeout=3") {
+		t.Errorf("remoteEnv() dropped the timeout from a core.sshCommand that outranks GIT_SSH")
+	}
+}
+
+// The probe asks as the program git runs. GIT_SSH is one path, never split, since
+// 'C:/Program Files/...' is the usual place for it.
+func TestSSHArgvRunsGITSSH(t *testing.T) { // [dfg27]
+	t.Setenv("GIT_SSH_COMMAND", "")
+	if err := os.Unsetenv("GIT_SSH_COMMAND"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_SSH", "/opt/My Tools/ssh")
+	a := &app{}
+	a.git.coreSSHCommand.set("")
+	if got := a.sshArgv(); len(got) != 1 || got[0] != "/opt/My Tools/ssh" {
+		t.Errorf("sshArgv() with GIT_SSH = %q, want the one path", got)
+	}
+	a = &app{}
+	a.git.coreSSHCommand.set("ssh -i /keys/repo")
+	if got := a.sshArgv(); len(got) != 3 || got[0] != "ssh" {
+		t.Errorf("sshArgv() with core.sshCommand and GIT_SSH = %q, want core.sshCommand", got)
+	}
+}
+
+// plink takes no '-o', so the timeout turned a working core.sshCommand into a
+// failed fetch, read as offline.
+func TestRemoteEnvLeavesPuTTYToGit(t *testing.T) { // [dfg28]
+	t.Setenv("GIT_SSH_COMMAND", "")
+	if err := os.Unsetenv("GIT_SSH_COMMAND"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_SSH", "")
+	t.Setenv("GIT_SSH_VARIANT", "")
+	for _, cmd := range []string{"plink -batch -i /keys/work.ppk", "PLINK.EXE -batch", "C:/PuTTY/plink.exe -batch", "/usr/bin/tortoiseplink"} {
+		a := &app{}
+		a.git.coreSSHCommand.set(cmd)
+		for _, entry := range a.remoteEnv() {
+			if strings.HasPrefix(entry, "GIT_SSH_COMMAND=") {
+				t.Errorf("remoteEnv() gave PuTTY's %q OpenSSH options: %q", cmd, entry)
+			}
+		}
+	}
+	for program, want := range map[string]bool{
+		`C:\Program Files\PuTTY\plink.exe`:    false,
+		"tortoiseplink":                       false,
+		"ssh":                                 true,
+		"/usr/bin/ssh":                        true,
+		`C:\Windows\System32\OpenSSH\ssh.exe`: true,
+		"plinky":                              true,
+	} {
+		if got := sshTakesOptions(program); got != want {
+			t.Errorf("sshTakesOptions(%q) = %v, want %v", program, got, want)
+		}
+	}
+	// git's own override of the name, either way.
+	for variant, want := range map[string]bool{"plink": false, "putty": false, "tortoiseplink": false, "simple": false, "ssh": true, "auto": true} {
+		t.Setenv("GIT_SSH_VARIANT", variant)
+		if got := sshTakesOptions("ssh"); got != want {
+			t.Errorf("sshTakesOptions(ssh) under GIT_SSH_VARIANT=%s = %v, want %v", variant, got, want)
+		}
+	}
+	t.Setenv("GIT_SSH_VARIANT", "ssh")
+	if !sshTakesOptions("plink") {
+		t.Errorf("sshTakesOptions(plink) under GIT_SSH_VARIANT=ssh = false, want true, as git reads it")
+	}
+}
+
+// 'repo url ssh' compared origin with the URL rebuilt from the resolved host, so an
+// ssh_config alias read as another spelling and was rewritten to the bare host.
+func TestURLTransport(t *testing.T) { // [dfg2h]
+	for url, want := range map[string]string{
+		"git@gh-work:org/proj.git":            "ssh",
+		"gh-work:org/proj.git":                "ssh",
+		"ssh://git@gh-work/org/proj.git":      "ssh",
+		"ssh://git@host:2222/org/proj.git":    "ssh",
+		"https://github.com/org/proj.git":     "https",
+		"HTTPS://github.com/org/proj.git":     "https",
+		"https://tok@github.com/org/proj.git": "https",
+		"http://github.com/org/proj.git":      "",
+		"git://github.com/org/proj.git":       "",
+		"file:///srv/proj.git":                "",
+		"/srv/proj.git":                       "",
+		"C:/srv/proj.git":                     "",
+		"https://":                            "",
+	} {
+		if got := urlTransport(url); got != want {
+			t.Errorf("urlTransport(%q) = %q, want %q", url, got, want)
+		}
+	}
+}
+
 func hasEnv(env []string, want string) bool {
 	for _, entry := range env {
 		if entry == want {

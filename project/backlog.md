@@ -269,7 +269,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 14: repo url ssh rewrites an ssh host alias to the bare host, which changes the key
 	- ID: 2026111016332280
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163322
@@ -280,11 +280,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23, with a fake ssh that reads `~/.ssh/config` for `-G`.
 	- Possible cause [Bug]: repo.go:198 compares the URL with the one it would build from the resolved host, not by scheme.
 	- Origin: 6ddb349, 2026-09-16. Backlog line 7195 refused rewriting remotes to or from an alias, since a wrong guess points the repo at the wrong key. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: settleRepoURL called origin converted only when it matched the URL rebuilt from the resolved host. An alias resolves to its real host, so `git@gh-work:...` never matched and was rewritten to the bare host.
+	- Actual fix [Bug]: repo url asks which transport origin's text already uses, and leaves an origin already on the asked one alone, alias included. The plan, the step and the bare listing share one helper, so the listing's ssh line is the alias as it stands. Converting to https still names the real host.
+	- Branch: nov18-2026111016332280
+	- Test case: test.bash [dfg29] to [dfg2c]; TestURLTransport [dfg2h].
+	- Verified: [dfg29], [dfg2a] and [dfg2b] fail on the nov18 build and pass with the fix. [dfg2c] passes on both, as a guard. The quick gate passed with every area: test.bash 2044/0, fuzz 310/0, parity 31/0. gosec reports nothing in the changed files.
+	- Swept: every place that rebuilds origin with hostURL. settleRepoURL, the plan line, cmdRepoURL and cmdRepoURLShow all go through respelledURL. repo clone and repo create build from 'owner/name' with no origin to keep.
+	- Decisions: An ssh:// origin is left alone by repo url ssh too, and an https one with a user part or no .git by repo url https, since each already uses that transport. That answer now comes before the check for a host and 'owner/name'. The bare listing masks both lines, since one can be origin as it stands.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-175647
+	- Commit: 46b3360
 
 - Code Review 20261110b item 15: With GIT_SSH set, the fetch says offline and the pull is skipped
 	- ID: 2026111016332268
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163322
@@ -295,6 +306,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23, with a logging stand-in for the ssh program.
 	- Possible cause [Bug]: remoteEnv in remote.go always sets `GIT_SSH_COMMAND`. A `core.sshCommand` of plink also gets `-o ConnectTimeout=3`, which plink doesn't take. That part is Plausible.
 	- Origin: 88ff4ab, 2026-08-19, from v2.1.0. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: remoteEnv exported `GIT_SSH_COMMAND` whenever the caller hadn't, to add the connect timeout. git runs `GIT_SSH` only when no ssh command is set, so the fetch ran PATH's ssh. The identity probe ignored `GIT_SSH` too. A plink `core.sshCommand` got `-o ConnectTimeout=3`, which plink refuses.
+	- Actual fix [Bug]: With `GIT_SSH` set and no ssh command, the fetch leaves the environment to git, and the identity probe runs that program. A command git reads as PuTTY's, by name or by `GIT_SSH_VARIANT`, gets no timeout, and the probe leaves its account unknown rather than asking plain ssh. design.md says so under the ssh identity notes.
+	- Branch: nov18-2026111016332280
+	- Test case: test.bash [dfg2d], [dfg2e], [dfg2j], [dfg2k] and [dfg2m]; TestRemoteEnvLeavesGITSSHToGit [dfg26], TestSSHArgvRunsGITSSH [dfg27], TestRemoteEnvLeavesPuTTYToGit [dfg28].
+	- Verified: [dfg2d], [dfg2e], [dfg2j] and [dfg2m] fail on the nov18 build and pass with the fix. [dfg2k] passes on both, and fails with the probe's PuTTY check taken out. [dfg26] to [dfg28] fail against the old remote.go. The plink part is pinned by [dfg28], not run against a real plink, which this box doesn't have. The quick gate passed with every area.
+	- Swept: every place gitsby exports or runs an ssh command. remoteEnv covers the fetch, the origin check and the repo probe. The login probe, its look-ahead and the SSH line's key read sshArgv. account.go's sshkey export is left alone: it sets one command that the fetch and the push both use, so they can't disagree. The -G read stays on PATH's ssh, since it reads OpenSSH's config.
+	- Decisions: GIT_SSH gets no connect timeout, since adding one takes a GIT_SSH_COMMAND, which outranks it. git config's ssh.variant isn't read, since that costs a process on every run. The test.bash block is skipped on Windows, where a bash script can't be GIT_SSH for the native build. The Go tests cover the logic there, a backslash path included. test.bash now unsets GIT_SSH, GIT_SSH_COMMAND and GIT_SSH_VARIANT, so an inherited one can't steer its checks.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-175751
+	- Commit: fe582c7
 
 - Code Review 20261110b item 18: repo connect -- <URL starting with a dash> reaches git ls-remote as an option
 	- ID: 2026111016332231
@@ -494,7 +516,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 33: The ssh probe passes $HOME in GIT_SSH_COMMAND to ssh unexpanded
 	- ID: 2026111016332045
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
@@ -505,6 +527,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23, the argv. The wrong account is Plausible.
 	- Possible cause [Bug]: remote.go:198 and show.go:607 split the command on spaces.
 	- Origin: No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: gitSSHCommand split the command on blanks, and sent only a quoted one to plain ssh. A `$HOME`, a backtick or `~user` reached ssh as typed, where git's shell expands it.
+	- Actual fix [Bug]: A command is split only when a shell would do nothing more than split it. A quote, backslash, `$`, backtick, `~user`, `#`, newline, `;`, `&`, `|`, `<`, `>` or parenthesis sends the probe and the SSH line's key to plain ssh, and the fetch leaves the command to git. A leading `~/` is still split, since ssh expands it in a key path, and gitsby's sshkey command is spelled that way.
+	- Branch: nov18-2026111016332280
+	- Test case: test.bash [dfg2f] and [dfg2g]; TestSSHCommandOnlyAShellCanRead [dfg25].
+	- Verified: [dfg2f], [dfg2g] and [dfg25] fail on the nov18 build and pass with the fix. The quick gate passed with every area.
+	- Swept: remote.go's probe and show.go's key line, the two splits the item names, both read sshArgv now. remoteEnv uses the same test. No other site splits an ssh command.
+	- Decisions: A command only a shell can read now goes without the connect timeout on the fetch, as a quoted one already did. Before, a `$HOME` command in core.sshCommand got it. Recorded in design.md.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-175751
+	- Commit: fe582c7
 
 - Code Review 20261110b item 34: maskURL leaves a token showing in a URL with a newline, and FuzzMaskURL can't see an unmasked URL
 	- ID: 2026111016332033

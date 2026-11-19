@@ -610,7 +610,7 @@ func (a *app) showSSHLine(remoteURL string) {
 	ssh := readSSHConfig(sshConnectTarget(remoteURL))
 	// An '-i' in git's own ssh command outranks ssh -G's pick, since with IdentitiesOnly
 	// ssh_config's candidates never get a look in.
-	fields := strings.Fields(a.gitSSHCommand())
+	fields := a.sshArgv()
 	for i, arg := range fields {
 		if arg == "-i" && i+1 < len(fields) {
 			ssh.keyFile = fields[i+1]

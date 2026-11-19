@@ -188,6 +188,14 @@ func (a *app) settleRepoURL() (bool, error) {
 		return false, usagef("No origin to re-spell. Connect one first: %s repo connect <url>, or <owner/name> for a GitHub repo.", meName)
 	}
 	if a.cmd.arg != "" {
+		// Asked of the text, by transport. Comparing with the URL rebuilt from the
+		// resolved host read an ssh_config alias as some other spelling, and rewrote it
+		// to the bare host, whose key is a different one.
+		if urlTransport(current) == a.cmd.arg {
+			a.out.status("origin already uses " + a.cmd.arg + "; nothing to do.")
+			a.out.clean("")
+			return true, nil
+		}
 		// Any host, not just github.com: re-spelling a remote is text work that the
 		// host never hears about, and refusing it anywhere else was the parser's limit
 		// showing through as a rule. A local path still has nothing to re-spell.
@@ -197,11 +205,6 @@ func (a *app) settleRepoURL() (bool, error) {
 				where = noteLines("File", nativePath(current))
 			}
 			return false, refusalBlock("origin has no host and 'owner/name' to re-spell, so there is no other spelling of it to switch to.", [][]string{where}, nil)
-		}
-		if hostURL(a.originHost(), remoteTarget(current), a.cmd.arg) == current {
-			a.out.status("origin already uses " + a.cmd.arg + "; nothing to do.")
-			a.out.clean("")
-			return true, nil
 		}
 	}
 	return false, nil
@@ -413,8 +416,30 @@ func (a *app) cmdConnect() error {
 // repo changes: same remote, same history, same name - only how git
 // authenticates to it.
 func (a *app) cmdRepoURL() error {
+	return a.step("git", "remote", "set-url", "origin", a.respelledURL(a.cmd.arg))
+}
+
+// urlTransport is which of the two transports a remote URL speaks, or nothing for
+// any other. Read off the text, so an ssh_config alias stays the alias.
+func urlTransport(url string) string {
+	switch {
+	case sshTarget(url) != "":
+		return "ssh"
+	case len(url) > len("https://") && strings.EqualFold(url[:len("https://")], "https://"):
+		return "https"
+	}
+	return ""
+}
+
+// respelledURL is origin in one of the two transports: as it stands when it
+// already uses that one, since an alias may name its own key, and otherwise
+// rebuilt from the resolved host and 'owner/name'.
+func (a *app) respelledURL(proto string) string {
 	url := a.originURL()
-	return a.step("git", "remote", "set-url", "origin", hostURL(a.originHost(), remoteTarget(url), a.cmd.arg))
+	if urlTransport(url) == proto {
+		return url
+	}
+	return hostURL(a.originHost(), remoteTarget(url), proto)
 }
 
 // cmdRepoURLShow is the bare, read-only form: what origin is now, and its other
@@ -429,8 +454,9 @@ func (a *app) cmdRepoURLShow() {
 		a.out.clean("No host and 'owner/name' to re-spell, so there is no other spelling of it.")
 		return
 	}
-	a.out.clean("as https .....: " + hostURL(host, urlTarget, "https"))
-	a.out.clean("as ssh .......: " + hostURL(host, urlTarget, "ssh"))
+	// Masked, since the spelling origin already has is shown as it stands.
+	a.out.clean("as https .....: " + maskURL(a.respelledURL("https")))
+	a.out.clean("as ssh .......: " + maskURL(a.respelledURL("ssh")))
 	a.out.clean("Switch with '" + meName + " repo url <https|ssh>'.")
 }
 
