@@ -190,9 +190,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 6: On Windows, a folder rule through a junction never matches
 	- ID: 2026111910223218
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261119-102232
 	- Opened by:
@@ -203,6 +202,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on vm925w. GODEBUG=winsymlink=0 makes it match. Confirmed.
 	- Possible cause [Bug]: Go 1.23 and later no longer resolve mount points in EvalSymlinks.
 	- Origin: d476da9, 2026-08-17. No round reached it. No Go test makes a junction.
+	- Closed reason [Closed]: Done
+	- Actual cause [Bug]: Go 1.23 made EvalSymlinks leave mount points as written, and a junction is one. resolveLinks leans on EvalSymlinks, so a rule through a junction kept the junction path while git answered with the real one.
+	- Actual fix [Bug]: go.mod sets winsymlink=0 and winreadlinkvolume=0, the pre-1.23 reading. A junction resolves like a symlink again, in canonPath and in the gitdir rule account apply writes. A comment at resolveLinks names the dependency.
+	- Decisions: The Go setting rather than our own junction walk, since it's the reading the code was written against and Go refuses the build once the setting is dropped. winreadlinkvolume=0 too, so a folder with a volume mounted in it reads by drive letter rather than as a volume GUID path, as before Go 1.23. That half wasn't run on a box.
+	- Swept: every EvalSymlinks, Lstat, ReadDir and Readlink call under src-go. lockBeside now takes one lock for a config file reached through a junction. The others test existence or list names, and read the same either way.
+	- Verified: on vm925w, the Go tests pass on the fixed build. On a build without the go.mod block both new tests fail, and on the fixed build run with GODEBUG=winsymlink=1 the junction test fails. The real gitsby.exe was run the same way: status, account list, and plain git after account apply named the account from both spellings, where the old build named it nowhere. Under Wine the junction test skips, since mklink there makes nothing. Quick gate passed with every area.
+	- Test case: TestAccountForDirThroughJunction [dfh6e] in Go, Windows only, and TestJunctionGodebugBuiltIn [dfh6f] on every platform.
+	- Branch: nov19b-2026111910223218
+	- Commit: 20da070
+	- Acceptance signoff: Self-closed: reproduced, test failed before and passes after on vm925w.
+	- Closed: 20261119-131110
 
 - Code Review 20261119 item 7: pr create pushes to one branch and opens the PR on another
 	- ID: 2026111910223203

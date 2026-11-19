@@ -227,7 +227,8 @@ func canonPath(p string) string {
 
 // resolveLinks settles symlink and junction spellings through the nearest ancestor that
 // exists, since a clone target need not exist. Every platform, since rev-parse answers
-// with the real path and a rule typed through a link never matched.
+// with the real path and a rule typed through a link never matched. Junctions only
+// resolve because of the godebug pair in go.mod.
 func resolveLinks(p string) string {
 	head, tail := p, ""
 	for head != "" && strings.Contains(head, "/") {

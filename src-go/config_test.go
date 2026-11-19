@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"testing"
@@ -401,6 +402,26 @@ func TestCanonPathStopsAtTheDriveRoot(t *testing.T) { // [dcmfc]
 	p := vol + "/gitsby-no-such-folder-" + filepath.Base(t.TempDir()) + "/x"
 	if got, want := canonPath(p), strings.ToLower(p); got != want {
 		t.Errorf("canonPath(%q) = %q, want %q", p, got, want)
+	}
+}
+
+// go.mod's godebug pair is what resolves a junction, and only a Windows run makes
+// one, so a build that lost it is caught here too.
+func TestJunctionGodebugBuiltIn(t *testing.T) { // [dfh6f]
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		t.Fatal("no build info in the test binary")
+	}
+	var got []string
+	for _, s := range bi.Settings {
+		if s.Key == "DefaultGODEBUG" {
+			got = strings.Split(s.Value, ",")
+		}
+	}
+	for _, want := range []string{"winsymlink=0", "winreadlinkvolume=0"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("DefaultGODEBUG = %q, want it to have %s", got, want)
+		}
 	}
 }
 
