@@ -96,7 +96,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 3: A pending am, range pick or resolved merge is finished or left behind by gitsby
 	- ID: 2026111910223262
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261119-102232
@@ -107,6 +107,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, 5 cases. Confirmed.
 	- Possible cause [Bug]: Nothing checks MERGE_HEAD, CHERRY_PICK_HEAD, REVERT_HEAD, sequencer or rebase-apply. git's own refusal runs only when a pull does.
 	- Origin: 4918b5b, Go port. The bash build had no guard either. No round reached it.
+	- Closed reason: Done
+	- Actual cause [Bug]: Nothing read the files git keeps while an operation is stopped: MERGE_HEAD, CHERRY_PICK_HEAD, REVERT_HEAD, sequencer, rebase-apply, rebase-merge and BISECT_LOG. Only a stopped rebase, or a bisect with checkout, was refused, and as a detached HEAD.
+	- Actual fix [Bug]: The branch commands, pr create, pr ok and release refuse before the fetch and the plan while git has one stopped. The refusal names it and its --continue and --abort, or git bisect reset. The paths come from git rev-parse --git-path in the rev-parse call every run already makes, so no spawn was added. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223262
+	- Commit: d1f0d4e
+	- Test case: test.bash [dfh54] to [dfh5d]. Go test [dfh53] TestPendingOpNamed.
+	- Verified: [dfh54] to [dfh5c] fail on the build before the fix and pass with it, and [dfh5d] passes on both. [dfh53] fails with the guard turned off, and its hand-committed pick and revert cases fail without the sequencer check. The quick gate passed with every area: test.bash 2111/0, fuzz 310/0, parity 31/0, spawn counts unchanged.
+	- Swept: every mutating command. pullcom, sync, br create, br hotfix, br switch, br merge, br prune, pr create, pr ok and release go through the one check in run. status, whoami, br list and pr view only read. git's own refusal on a pull and backOutMerge's MERGE_HEAD check after a merge step are unchanged.
+	- Decisions: A bisect refuses too, with checkout or without, since git status calls it in progress and git bisect reset moves HEAD back. The repo and account commands don't check, since none commits onto existing history or switches. A rebase is named ahead of a merge or pick it stopped on, since the rebase is what has to be finished.
+	- Note: gosec reports 2 new findings in pendingOp, for os.Lstat and os.ReadFile of paths git rev-parse gave. Both are in the user's own repo, the same kind as the earlier false positives. CodeQL wasn't run.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261119-123039
 
 - Code Review 20261119 item 4: In a nested folder, plain git sends the inner account's token to the outer account's host
 	- ID: 2026111910223247

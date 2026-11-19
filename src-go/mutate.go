@@ -12,6 +12,8 @@ package main
 
 import (
 	"cmp"
+	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -69,6 +71,79 @@ func (a *app) cmdPull() error {
 		a.out.status("No upstream configured for this branch; nothing to pull.")
 	}
 	return nil
+}
+
+// opFiles are what git keeps in the git dir while an operation is stopped partway,
+// in the order pendingOp checks them. The rebase goes first, so a merge or pick it
+// stopped on is named as the rebase, which is what has to be finished or dropped.
+// The sequencer outlives CHERRY_PICK_HEAD once a pick in a range is committed by
+// hand, and its todo says which command it belongs to.
+var opFiles = []string{"rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer", "BISECT_LOG"}
+
+// stoppedOp is a git operation stopped partway: the command that started it, and the
+// arguments that finish it and that drop it. A bisect has nothing to finish.
+type stoppedOp struct {
+	name, finish, drop string
+}
+
+// pendingOp names the operation git has stopped partway here, if any. paths line up
+// with opFiles.
+func pendingOp(paths []string) (stoppedOp, bool) {
+	exists := func(p string) bool { _, err := os.Lstat(p); return err == nil }
+	for i, p := range paths {
+		if i >= len(opFiles) || !exists(p) {
+			continue
+		}
+		switch opFiles[i] {
+		case "rebase-apply":
+			if exists(filepath.Join(p, "applying")) {
+				return stoppedOp{"am", "--continue", "--abort"}, true
+			}
+			return stoppedOp{"rebase", "--continue", "--abort"}, true
+		case "rebase-merge":
+			return stoppedOp{"rebase", "--continue", "--abort"}, true
+		case "MERGE_HEAD":
+			return stoppedOp{"merge", "--continue", "--abort"}, true
+		case "CHERRY_PICK_HEAD":
+			return stoppedOp{"cherry-pick", "--continue", "--abort"}, true
+		case "REVERT_HEAD":
+			return stoppedOp{"revert", "--continue", "--abort"}, true
+		case "sequencer":
+			todo, _ := os.ReadFile(filepath.Join(p, "todo"))
+			if word, _, _ := strings.Cut(strings.TrimSpace(string(todo)), " "); word == "revert" {
+				return stoppedOp{"revert", "--continue", "--abort"}, true
+			}
+			return stoppedOp{"cherry-pick", "--continue", "--abort"}, true
+		case "BISECT_LOG":
+			return stoppedOp{"bisect", "", "reset"}, true
+		}
+	}
+	return stoppedOp{}, false
+}
+
+// refusePendingOp stops a command that commits, pulls, switches or merges while git
+// has an operation stopped partway. Run over one, a commit takes the half-done work
+// under gitsby's message, and a switch leaves the rest of a range for --continue to
+// apply onto the next branch.
+func (a *app) refusePendingOp() error {
+	// The branch commands, pr and release; repo and account never commit onto history.
+	if !a.inRepo || !a.cmd.mutating || !a.needsConfirmableBranch() {
+		return nil
+	}
+	op, found := pendingOp(a.opPaths)
+	if !found {
+		return nil
+	}
+	why := "git stopped partway through it. A commit, pull or switch now would take in its half-done work, or leave the rest to land on another branch."
+	fix := []string{"Finish it:", "  git " + op.name + " " + op.finish, "Or drop it:", "  git " + op.name + " " + op.drop}
+	if op.finish == "" {
+		why = "A switch or commit now moves HEAD off what it is testing, and 'git bisect reset' moves it back."
+		fix = []string{"End it:", "  git " + op.name + " " + op.drop}
+	}
+	return refusalBlock("A 'git "+op.name+"' is in progress here.", [][]string{
+		noteLines("Why", why),
+		noteLines("Fix", append(fix, "Then run this again.")...),
+	}, nil)
 }
 
 // refuseConflicts stops on any unmerged path, and names the stash git kept.

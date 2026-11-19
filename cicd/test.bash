@@ -4897,6 +4897,55 @@ GHEOF
 	fAssertOut  "[dfh4n] br switch off dev with only a hidden untracked file refuses"  "Working tree has changes on 'dev'"  bash -c "cd '${hu}/work' && '${gitsby}' -q br switch hufeat 2>&1"
 	fAssert     "[dfh4p] repo connect with no commits and only hidden untracked files publishes them"  bash -c "cd '${hu}/fresh' && '${gitsby}' -q repo connect '${hu}/fresh.git' >/dev/null 2>&1 && git -C '${hu}/fresh.git' ls-tree -r --name-only main | grep -qx f\.txt"
 
+	## A stopped am, range pick, revert or merge was finished under gitsby's message, or left
+	## for its --continue to apply onto the branch gitsby switched to. src's first commit
+	## clashes with feat's, so each '|| :' is a stop that is the point.
+	local po="${work}/$1-pendingop" c=""
+	mkdir -p "${po}"
+	git init --quiet --bare -b main "${po}/origin.git"
+	git clone --quiet "${po}/origin.git" "${po}/seed" 2>/dev/null
+	(
+		cd "${po}/seed" || exit 1
+		echo base > f.txt && git add f.txt && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b src main && echo src > f.txt && git commit --quiet -am c1
+		echo g > g.txt && git add g.txt && git commit --quiet -m c2 && git push --quiet -u origin src
+		git checkout --quiet -b feat dev && echo feat > f.txt && git commit --quiet -am feat1 && git push --quiet -u origin feat
+		git format-patch --quiet -o "${po}/p" main..src
+	) >/dev/null 2>&1
+	for c in picked pick am am3 merge revert rebase bisect; do
+		git clone --quiet -b feat "${po}/origin.git" "${po}/${c}" 2>/dev/null
+	done
+	(
+		cd "${po}/picked" || exit 1
+		git cherry-pick origin/main..origin/src || :; echo x > f.txt; git add f.txt; git commit --quiet -m pick1
+		cd "${po}/pick" || exit 1
+		git cherry-pick origin/main..origin/src || :; echo x > f.txt; git add f.txt
+		cd "${po}/am" || exit 1
+		git am "${po}/p/0001-c1.patch" "${po}/p/0002-c2.patch" || :
+		cd "${po}/am3" || exit 1
+		git am -3 "${po}/p/0001-c1.patch" "${po}/p/0002-c2.patch" || :; echo x > f.txt; git add f.txt
+		cd "${po}/merge" || exit 1
+		git merge origin/src || :; echo x > f.txt; git add f.txt
+		cd "${po}/revert" || exit 1
+		git checkout --quiet -b rv origin/src && echo y > f.txt && git commit --quiet -am y
+		git revert --no-edit origin/src~1 origin/src || :; echo x > f.txt; git add f.txt; git commit --quiet -m rv1
+		cd "${po}/rebase" || exit 1
+		git rebase origin/src || :
+		cd "${po}/bisect" || exit 1
+		git bisect start --no-checkout HEAD origin/main
+	) >/dev/null 2>&1
+	fAssertOut  "[dfh54] a range pick with pick 1 committed by hand refuses br switch, naming the pick"  "A 'git cherry-pick' is in progress here"  bash -c "cd '${po}/picked' && '${gitsby}' -q --no-fetch br switch dev 2>&1"
+	fAssert     "[dfh55] and stays on its branch with the rest of the range still queued"  bash -c "cd '${po}/picked' && [[ \"\$(git branch --show-current)\" == feat && \"\$(git log -1 --pretty=%s)\" == pick1 ]] && test -d \"\$(git rev-parse --git-path sequencer)\""
+	fAssertOut  "[dfh56] a stopped am refuses br switch, naming its --abort"  '^ +git am --abort$'  bash -c "cd '${po}/am' && '${gitsby}' -q --no-fetch br switch dev 2>&1"
+	fAssert     "[dfh57] a resolved range pick refuses sync, and commits and pushes nothing"  bash -c "cd '${po}/pick' && ! '${gitsby}' -q sync >/dev/null 2>&1 && [[ \"\$(git log -1 --pretty=%s)\" == feat1 && \"\$(git rev-parse origin/feat)\" == \"\$(git rev-parse HEAD)\" ]] && git rev-parse -q --verify CHERRY_PICK_HEAD"
+	fAssert     "[dfh58] a resolved am -3 refuses pullcom, and commits nothing"  bash -c "cd '${po}/am3' && ! '${gitsby}' -q --no-fetch pullcom wip >/dev/null 2>&1 && [[ \"\$(git log -1 --pretty=%s)\" == feat1 ]] && test -d \"\$(git rev-parse --git-path rebase-apply)\""
+	fAssert     "[dfh59] a resolved merge refuses br merge, and leaves the merge and feat as they were"  bash -c "cd '${po}/merge' && ! '${gitsby}' -q --no-fetch br merge >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == feat && \"\$(git log -1 --pretty=%s)\" == feat1 ]] && git rev-parse -q --verify MERGE_HEAD"
+	fAssertOut  "[dfh5a] a range revert with revert 1 committed by hand refuses br switch, naming the revert"  "A 'git revert' is in progress here"  bash -c "cd '${po}/revert' && '${gitsby}' -q --no-fetch br switch dev 2>&1"
+	fAssertOut  "[dfh5b] a stopped rebase is named as one, not as a detached HEAD"  "A 'git rebase' is in progress here"  bash -c "cd '${po}/rebase' && '${gitsby}' -q --no-fetch br switch dev 2>&1"
+	fAssertOut  "[dfh5c] a bisect without checkout refuses pullcom, naming 'git bisect reset'"  '^ +git bisect reset$'  bash -c "cd '${po}/bisect' && '${gitsby}' -q --no-fetch pullcom wip 2>&1"
+	fAssert     "[dfh5d] status still answers during a stopped range pick"  bash -c "cd '${po}/picked' && '${gitsby}' --no-fetch status"
+
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"
 	git init --quiet -b main "${nr}"

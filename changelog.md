@@ -81,6 +81,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - With `status.showUntrackedFiles=no` set, untracked files count as work. The plan said the tree was clean, then `sync` on `dev` committed them and pushed them straight to origin at exit 0, past the direct-push refusal. `br switch` off `main` or `dev`, `pr ok`, `release` and `repo connect` read them the same way now.
 
+- `pullcom`, `sync`, `br switch`, `br merge`, `br create`, `br hotfix`, `br prune`, `pr create`, `pr ok` and `release` refuse while a merge, `git am`, cherry-pick, revert, rebase or bisect is stopped partway, and name the commands that finish it and drop it. They used to commit the half-done work under their own message, or switch branches and leave the rest of a cherry-pick range or patch series to apply onto the next branch. A stopped rebase was refused only as a detached HEAD.
+
 - A syntax error from `release` or `raw` that quotes what was typed shows a control character by name, as every other error does, so an escape typed by mistake no longer changes the terminal's colors.
 
 - With commits on `main` or `dev` that origin doesn't have, `sync` and `br switch` name a way to move them to a new branch that works: `git checkout -b <branch-name>`, then `git branch -f main origin/main`. They named `br create`, which takes a dirty tree along but leaves commits on `main`, so the next `sync` refused again. A dirty tree alone still gets `br create`. `pr create` from `main` or `dev` with commits on it names the same way off.

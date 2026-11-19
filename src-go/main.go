@@ -142,6 +142,10 @@ func run(out *printer, argv []string) error {
 	if err := a.settleAccount(); err != nil {
 		return err
 	}
+	// Before the fetch, which a refused run doesn't need.
+	if err := a.refusePendingOp(); err != nil {
+		return err
+	}
 	a.freshenRemote()
 	if err := a.settleBranchNames(); err != nil {
 		return err
@@ -237,8 +241,13 @@ func (a *app) settleCommand(argv []string) error {
 func (a *app) enterRepo() error {
 	// One call, 4 answers, read from the text, since rev-parse exits 0 in a bare repo or
 	// .git too, and nonzero outside a work tree after printing the first 3. Bare goes
-	// first.
-	out, _ := toolCmd("git", "rev-parse", "--is-inside-work-tree", "--is-inside-git-dir", "--is-bare-repository", "--show-toplevel").Output()
+	// first. In a work tree the same call also locates what a stopped operation leaves
+	// behind, which saves pendingOp a spawn.
+	args := []string{"rev-parse", "--is-inside-work-tree", "--is-inside-git-dir", "--is-bare-repository", "--show-toplevel"}
+	for _, name := range opFiles {
+		args = append(args, "--git-path", name)
+	}
+	out, _ := toolCmd("git", args...).Output()
 	var answers []string
 	for _, line := range splitLines(string(out)) {
 		if line != "" {
@@ -246,8 +255,8 @@ func (a *app) enterRepo() error {
 		}
 	}
 	top := ""
-	if len(answers) == 4 && answers[0] == "true" {
-		top, answers = answers[3], answers[:3]
+	if len(answers) == 4+len(opFiles) && answers[0] == "true" {
+		top, a.opPaths, answers = answers[3], answers[4:], answers[:3]
 	}
 	a.git.contextDir.set(topOrWorkingDir(top))
 	if len(answers) == 3 {

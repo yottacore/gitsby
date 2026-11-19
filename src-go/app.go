@@ -206,6 +206,9 @@ type app struct {
 	host   hostState
 
 	inRepo bool
+	// Where git keeps each of opFiles for this work tree, as rev-parse gave it relative
+	// to the current dir. Empty outside one.
+	opPaths []string
 
 	// Whether GIT_SSH_COMMAND was already set when the run started. Ours goes into
 	// the same variable a moment later, and the probes have to be able to tell the

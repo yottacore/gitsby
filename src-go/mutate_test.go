@@ -11,6 +11,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -190,5 +191,107 @@ func TestStatusNamesUntracked(t *testing.T) { // [dfh4h]
 	}
 	if found < 4 {
 		t.Errorf("found %d git status calls, want at least 4; the pattern no longer matches the source", found)
+	}
+}
+
+// A stopped am, pick, revert, merge, rebase or bisect was finished under gitsby's
+// message, or left for its --continue to apply onto the branch gitsby switched to.
+// Each state is made by real git, and named before anything else runs.
+func TestPendingOpNamed(t *testing.T) { // [dfh53]
+	write := func(dir, name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// src holds 2 commits, the first clashing with work's.
+	stopped := func() string {
+		_, clone := gitTestRepo(t)
+		write(clone, "f.txt", "base\n")
+		runGit(t, clone, "add", "f.txt")
+		runGit(t, clone, "commit", "-q", "-m", "base")
+		runGit(t, clone, "checkout", "-q", "-b", "src")
+		write(clone, "f.txt", "src\n")
+		runGit(t, clone, "commit", "-q", "-am", "c1")
+		write(clone, "g.txt", "g\n")
+		runGit(t, clone, "add", "g.txt")
+		runGit(t, clone, "commit", "-q", "-m", "c2")
+		runGit(t, clone, "checkout", "-q", "-b", "work", "src~2")
+		write(clone, "f.txt", "work\n")
+		runGit(t, clone, "commit", "-q", "-am", "w")
+		return clone
+	}
+	mayFail := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		_ = cmd.Run() // the stop is the point
+	}
+	resolve := func(dir string) {
+		write(dir, "f.txt", "x\n")
+		runGit(t, dir, "add", "f.txt")
+	}
+	cases := []struct {
+		state, want string
+		setup       func(dir string)
+	}{
+		{"nothing stopped", "", func(string) {}},
+		{"resolved merge", "merge", func(d string) { mayFail(d, "merge", "src"); resolve(d) }},
+		{"stopped am", "am", func(d string) {
+			runGit(t, d, "format-patch", "-q", "-o", "../p", "src~2..src")
+			mayFail(d, "am", "../p/0001-c1.patch", "../p/0002-c2.patch")
+		}},
+		{"resolved am -3", "am", func(d string) {
+			runGit(t, d, "format-patch", "-q", "-o", "../p", "src~2..src")
+			mayFail(d, "am", "-3", "../p/0001-c1.patch", "../p/0002-c2.patch")
+			resolve(d)
+		}},
+		{"resolved range pick", "cherry-pick", func(d string) { mayFail(d, "cherry-pick", "src~2..src"); resolve(d) }},
+		{"range pick, pick 1 committed by hand", "cherry-pick", func(d string) {
+			mayFail(d, "cherry-pick", "src~2..src")
+			resolve(d)
+			runGit(t, d, "commit", "-q", "-m", "pick1")
+		}},
+		{"range revert, revert 1 committed by hand", "revert", func(d string) {
+			runGit(t, d, "checkout", "-q", "-b", "rv", "src")
+			write(d, "f.txt", "y\n")
+			runGit(t, d, "commit", "-q", "-am", "y")
+			mayFail(d, "revert", "--no-edit", "src~1", "src")
+			resolve(d)
+			runGit(t, d, "commit", "-q", "-m", "rv1")
+		}},
+		{"rebase", "rebase", func(d string) { mayFail(d, "rebase", "src") }},
+		{"apply rebase", "rebase", func(d string) { mayFail(d, "rebase", "--apply", "src") }},
+		{"bisect without checkout", "bisect", func(d string) { runGit(t, d, "bisect", "start", "--no-checkout", "work", "src~2") }},
+	}
+	for _, tc := range cases {
+		dir := stopped()
+		tc.setup(dir)
+		// From a subfolder, where rev-parse answers with relative paths.
+		sub := filepath.Join(dir, "sub")
+		if err := os.MkdirAll(sub, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		t.Chdir(sub)
+		a := newApp(newPrinter())
+		a.cmd = command{name: "pullcom", mutating: true}
+		if err := a.enterRepo(); err != nil || !a.inRepo || len(a.opPaths) != len(opFiles) {
+			t.Fatalf("%s: enterRepo: inRepo %v, %d op paths, %v", tc.state, a.inRepo, len(a.opPaths), err)
+		}
+		op, found := pendingOp(a.opPaths)
+		if op.name != tc.want || found != (tc.want != "") {
+			t.Errorf("%s: pendingOp = %q, %v, want %q", tc.state, op.name, found, tc.want)
+		}
+		err := a.refusePendingOp()
+		switch {
+		case tc.want == "" && err != nil:
+			t.Errorf("%s: refused: %v", tc.state, err)
+		case tc.want != "" && (err == nil || !strings.Contains(err.Error(), "A 'git "+tc.want+"' is in progress here.")):
+			t.Errorf("%s: refusePendingOp = %v, want it to name git %s", tc.state, err, tc.want)
+		}
+		// Reading the state is how you see what to do about it.
+		a.cmd = command{name: "status"}
+		if err := a.refusePendingOp(); err != nil {
+			t.Errorf("%s: status refused: %v", tc.state, err)
+		}
 	}
 }
