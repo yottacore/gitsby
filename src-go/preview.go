@@ -108,8 +108,15 @@ func (a *app) preview(what string) {
 			a.out.clean(planPad + "edit " + nativePath(t.file))
 		}
 		if t.exists {
-			a.out.clean(planPad + "  was:     " + t.field + ": " + t.old)
-			a.out.clean(planPad + "  becomes: " + t.field + ": " + shclValue(t.value))
+			was, becomes := t.oldLine, t.newLine
+			if was == "" {
+				was = t.field + ": " + t.old
+			}
+			if becomes == "" {
+				becomes = t.field + ": " + shclValue(t.value)
+			}
+			a.out.clean(planPad + "  was:     " + was)
+			a.out.clean(planPad + "  becomes: " + becomes)
 		} else {
 			a.out.clean(planPad + "  add:     " + t.disp + "." + t.field + ": " + shclValue(t.value))
 		}

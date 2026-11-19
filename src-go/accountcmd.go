@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -89,6 +90,10 @@ func (c *config) includeDir() string {
 
 // fragmentNames maps each account to its fragment's file name: host, then login, or the
 // account's own name with no login. 2 accounts sharing both add their names.
+// That can still be another account's plain name, such as logins jim for work
+// and personal next to an account jim_work with no login (2026111016332169). The
+// plain one keeps it, and the other takes a number, so a login nobody shares
+// always gets the same file.
 func (c *config) fragmentNames() map[string]string {
 	names := c.accountNames()
 	base := make(map[string]string, len(names))
@@ -101,13 +106,31 @@ func (c *config) fragmentNames() map[string]string {
 		base[name] = fileSafe(c.hostOf(name)) + "_" + fileSafe(who)
 		count[base[name]]++
 	}
+	// Folded, for the file systems that don't tell case apart.
+	stems := make(map[string]string, len(names))
+	all, used := map[string]bool{}, map[string]bool{}
+	for _, name := range names {
+		stem := base[name]
+		if count[stem] > 1 {
+			stem += "_" + name
+		} else {
+			used[strings.ToLower(stem)] = true
+		}
+		stems[name] = stem
+		all[strings.ToLower(stem)] = true
+	}
 	files := make(map[string]string, len(names))
 	for _, name := range names {
-		file := base[name]
-		if count[file] > 1 {
-			file += "_" + name
+		stem := stems[name]
+		if count[base[name]] > 1 {
+			for n := 2; used[strings.ToLower(stem)]; n++ {
+				if s := stems[name] + "_" + strconv.Itoa(n); !all[strings.ToLower(s)] && !used[strings.ToLower(s)] {
+					stem = s
+				}
+			}
+			used[strings.ToLower(stem)] = true
 		}
-		files[name] = file + ".gitconfig"
+		files[name] = stem + ".gitconfig"
 	}
 	return files
 }
@@ -994,6 +1017,8 @@ type accountSetTarget struct {
 	exists   bool   // the key is in the block already
 	lineNum  int    // the line it is on now, where the file keeps its shape
 	old      string // its value now, as typed
+	oldLine  string // its line now, as the file has it
+	newLine  string // its line once saved, read off the text the save writes
 	creates  bool   // the file itself does not exist yet
 	converts bool   // the file is in the old flat layout, and comes out in the current one
 	reshapes bool   // the save changes more of the file than the key: spacing, key case, line ends
@@ -1399,6 +1424,11 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 		if read.Raw != nil {
 			t.old = *read.Raw
 		}
+		// A flat file has no such line: it is rewritten whole, in blocks. A dash list
+		// or fenced value isn't on the key's line either, so those keep field: value.
+		if line := lineAt(t.read, read.Line); !t.converts && (read.Raw == nil || strings.Contains(line, *read.Raw)) {
+			t.oldLine = line
+		}
 	}
 	// Made here rather than at the save, so a key the file can't hold is refused
 	// before the plan, and the plan knows whether the rest of the file comes back
@@ -1407,14 +1437,28 @@ func (a *app) accountSetPlan() (accountSetTarget, error) {
 	if status := t.doc.SetString(t.path(), t.value); status != shcl.SetOk {
 		return t, usagef("'%s' isn't a setting the file can hold (%s).", t.disp+"."+t.field, status)
 	}
-	_, kept := t.doc.ToTextKeepLines()
+	after, kept := t.doc.ToTextKeepLines()
 	if err := lostRefusal(t, kept); err != nil {
 		return t, err
 	}
 	if !kept && !tidy && !t.creates && !t.converts {
 		t.reshapes = true
 	}
+	// The module keeps the line's own key, quotes and comment, so the plan reads
+	// the line back rather than building it (2026111016332021).
+	if t.exists {
+		t.newLine = lineAt(after, shcl.Parse(after).ReadString(t.path()).Line)
+	}
 	return t, nil
+}
+
+// lineAt is line n of the the text, trimmed, or "" when there isn't one.
+func lineAt(text string, n int) string {
+	lines := strings.Split(strings.TrimPrefix(text, utf8BOM), "\n")
+	if n < 1 || n > len(lines) {
+		return ""
+	}
+	return strings.TrimSpace(lines[n-1])
 }
 
 // loadForEdit points t at the accounts file the run loaded, and at the document an

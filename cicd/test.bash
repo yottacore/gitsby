@@ -5258,7 +5258,7 @@ GHEOF
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw host gitea.example 2>&1"
 	fAssertOut "[dbsrj] and the block now has it"  '^ +host: gitea\.example$'  cat "${ac}/hier-set.shcl"
 	fAssertOut "[dbsrk] with the comment above it kept"  '^# blocks$'  cat "${ac}/hier-set.shcl"
-	fAssertOut "[dbsrm] and an existing key is shown before and after"  'was: +ghaccount: hieracct' \
+	fAssertOut "[dbsrm] and an existing key is shown before and after"  'was: +ghAccount: hieracct' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw ghaccount other 2>&1"
 	fAssertOut "[df36v] and says it wrote the file with no path in the status line"  '^\[ Wrote the accounts file\. \]$' \
 		bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q -NoFetch -Config '${ac}/hier-set.shcl' account set hw ghaccount other2 2>&1"
@@ -5697,6 +5697,14 @@ LGEOF
 		bash -c "${acRelRun} '${acRel}/cfg/relkey.shcl' account list"
 	fAssert "[dcnnx] a relative sshkey goes into no git config fragment" \
 		bash -c "${acRelRun} '${acRel}/cfg/relkey.shcl' account apply >/dev/null && grep -q rk@example.com '${acRel}/cfg/accounts/github.com_rk.gitconfig' && ! grep -qi sshcommand '${acRel}/cfg/accounts/github.com_rk.gitconfig'"
+	## 2 accounts sharing a login add their names, and also work's came out as jim_work's own name.
+	printf 'account: personal\n\tghaccount: jim\n\temail: p@example.com\naccount: work\n\tghaccount: jim\n\temail: w@example.com\naccount: jim_work\n\temail: jw@example.com\n' > "${acRel}/cfg/samefrag.shcl"
+	fAssert "[dfgwf] account apply gives each account its own fragment when an added name is another's" \
+		bash -c "${acRelRun} '${acRel}/cfg/samefrag.shcl' account apply >/dev/null && grep -q w@example.com '${acRel}/cfg/accounts/github.com_jim_work_2.gitconfig' && grep -q jw@example.com '${acRel}/cfg/accounts/github.com_jim_work.gitconfig' && grep -q p@example.com '${acRel}/cfg/accounts/github.com_jim_personal.gitconfig'"
+	## The plan shows the line as the save writes it, key case, quotes and comment included.
+	printf 'account: rk\n\tEmail: "a@b.c"   # work mail\n' > "${acRel}/cfg/planline.shcl"
+	fAssertOut "[dfgwg] account set's plan shows the line it writes"  'becomes: Email: "c@d\.e"   # work mail$' \
+		bash -c "${acRelRun} '${acRel}/cfg/planline.shcl' account set rk email c@d.e 2>&1"
 	: > "${acRel}/cfg/keyset.shcl"
 	fAssert "[dcnny] account set writes a relative tokenfile as the file it names from here" \
 		bash -c "${acRelRun} '${acRel}/cfg/keyset.shcl' account set rk tokenfile tok.txt >/dev/null && grep -qF -e 'tokenfile: ${acRelProj}/tok.txt' -e 'tokenfile: \"${acRelProj}/tok.txt\"' '${acRel}/cfg/keyset.shcl'"

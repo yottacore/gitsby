@@ -95,6 +95,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A message typed as a word beside `-m`, as in `gitsby pullcom 'first message' -m second`, is refused. It used to commit with the `-m` one and drop the other without a word. A `pr create` title typed beside `-m` is refused the same way.
 
+- `account apply` gives each account its own fragment. Two accounts with the same login add their names to it, and that could be a third account's own name, such as `work` beside `jim_work`, so both wrote one file and a repo in one folder took the other account's email. The one named for its own login keeps the name, and the other gets a number on the end, such as `github.com_jim_work_2.gitconfig`. Re-run `gitsby account apply` to get it.
+
+- The `was:` and `becomes:` lines in `account set`'s plan show the line as the file has it, key, quotes and comment included. They used to rebuild it from the key and value, so the plan could show `email: c@d.e` where the file got `Email: "c@d.e"   # work mail`.
+
 ## v3.0.0-beta.1 - 2026-11-08
 
 ### Notes

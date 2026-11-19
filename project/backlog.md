@@ -106,7 +106,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 23: 2 accounts can get the same fragment file, and the later one wins
 	- ID: 2026111016332169
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
@@ -117,6 +117,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23.
 	- Possible cause [Bug]: fragmentNames in accountcmd.go adds the suffix without checking the result is unique.
 	- Origin: a421343, 2026-09-30, from enhancement 2026093013031520. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. A name with the account added was never checked against the other accounts' plain names, so work's github.com_jim_work matched jim_work's own.
+	- Actual fix [Bug]: An account whose login nobody else shares keeps its plain name. A name with the account added that is already taken gets `_2`, `_3` and so on, the first one no other account has. Names are compared in lower case, for file systems that don't tell case apart. Changelog vNEXT says so.
+	- Decisions: The plain name wins, so an account with its own login always keeps the same file, and only the rare clash gets a number. A number rather than a new separator, so every other fragment keeps its name.
+	- Test case: Go TestFragmentNamesNeverShare [dfgwd], which also tries over 1000 mixes of clashing names and logins, and test.bash [dfgwf].
+	- Verified: [dfgwd] and [dfgwf] fail on the unfixed build and pass after. Quick gate, all areas: test.bash 2071/0, fuzz 310/0, parity 31/0.
+	- Swept: fragmentNames is the only place a fragment name is built. apply, its plan and the unused-fragment check all read it. accounts.md's naming sentence still holds for the usual case.
+	- Branch: nov19-2026111016332169
+	- Commit: dca424d
+	- Acceptance signoff: Self-closed: its tests fail before the fix and pass after.
+	- Closed: 20261119-075422
 
 - Code Review 20261110b item 30: release run from main ends on dev, and the plan's last line says it goes back to main
 	- ID: 2026111016332082
@@ -164,7 +175,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 35: account set's plan shows a different line than it writes
 	- ID: 2026111016332021
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
@@ -175,6 +186,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23.
 	- Possible cause [Bug]: preview.go:112 builds the line from the field and value. The module keeps the old line's quotes and key.
 	- Origin: c4fa47c, 2026-11-07. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. The plan built both lines from the lower-case key and the value, while the module keeps the line's own key, quotes and comment.
+	- Actual fix [Bug]: was: is the key's line in the file as read, and becomes: its line in the text the save writes, both trimmed. A value on lines of its own, such as a dash list or a fenced block, and a flat file being converted, keep the old key: value form for was:, since there is no one line to show. Changelog vNEXT says so.
+	- Decisions: add: stays as it was, naming the block and the key, since a new line takes the module's own quotes, which shclValue asks for.
+		- 2026-11-19: test assert given a new value for this change. test.bash [dbsrm]: was: ghaccount: hieracct is now was: ghAccount: hieracct, the file's own key.
+	- Test case: Go TestAccountSetPlanShowsTheFileLines [dfgwe], which also checks each line is one of the file before or after, and test.bash [dfgwg].
+	- Verified: [dfgwe] and [dfgwg] fail on the unfixed build and pass after. The dash list and fenced cases fail with the one-line check taken out. Quick gate, all areas: test.bash 2071/0, fuzz 310/0, parity 31/0.
+	- Swept: the account set and unset plans. unset already reads its remove: lines off the save's text (2026111016332330). add: is the only line left built from parts, as above. shclValue's comment now says it is for a new line.
+	- Branch: nov19-2026111016332169
+	- Commit: dca424d
+	- Acceptance signoff: Self-closed: its tests fail before the fix and pass after.
+	- Closed: 20261119-075422
 
 - Code Review 20261110b item 36: install.ps1 changes PATH without telling Windows, so a new shell from the Start menu doesn't find gitsby
 	- ID: 2026111016332008

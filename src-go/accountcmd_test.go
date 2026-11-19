@@ -147,6 +147,81 @@ account.f.ghAccount = shared
 	}
 }
 
+// A name with the account added can be another account's own: work and personal
+// both log in as jim, and jim_work has no login. Both wrote github.com_jim_work,
+// and the later one won. The plain name stays put, and the added one takes a number.
+func TestFragmentNamesNeverShare(t *testing.T) { // [dfgwd]
+	cfg := planFor(t, `
+account.personal.ghAccount = jim
+account.work.ghAccount = jim
+account.jim_work.email = jw@example.com
+`)
+	want := map[string]string{
+		"personal": "github.com_jim_personal.gitconfig",
+		"work":     "github.com_jim_work_2.gitconfig",
+		"jim_work": "github.com_jim_work.gitconfig",
+	}
+	got := cfg.fragmentNames()
+	for name, file := range want {
+		if got[name] != file {
+			t.Errorf("fragment for %s = %q, want %q", name, got[name], file)
+		}
+	}
+	// Every mix of a few names and logins that run into each other.
+	names := []string{"jim", "work", "jim_work", "work_2", "jim_work_2"}
+	logins := []string{"", "jim", "Jim", "jim_work"}
+	tried := 0
+	for mask := range 1 << len(names) {
+		var picked []string
+		for i, n := range names {
+			if mask&(1<<i) != 0 {
+				picked = append(picked, n)
+			}
+		}
+		if len(picked) < 2 || len(picked) > 4 {
+			continue
+		}
+		combos := 1
+		for range picked {
+			combos *= len(logins)
+		}
+		for c := range combos {
+			var body strings.Builder
+			for i, n := range picked {
+				login := logins[c/pow(len(logins), i)%len(logins)]
+				if login == "" {
+					body.WriteString("account." + n + ".email = " + n + "@example.com\n")
+				} else {
+					body.WriteString("account." + n + ".ghAccount = " + login + "\n")
+				}
+			}
+			files := writeConfig(t, body.String()).fragmentNames()
+			seen := map[string]string{}
+			for name, file := range files {
+				if other, ok := seen[strings.ToLower(file)]; ok {
+					t.Fatalf("%s and %s both get %s from:\n%s", other, name, file, body.String())
+				}
+				seen[strings.ToLower(file)] = name
+			}
+			if len(files) != len(picked) {
+				t.Fatalf("fragments = %v from:\n%s", files, body.String())
+			}
+			tried++
+		}
+	}
+	if tried < 1000 {
+		t.Errorf("only %d configs tried", tried)
+	}
+}
+
+func pow(b, e int) int {
+	n := 1
+	for range e {
+		n *= b
+	}
+	return n
+}
+
 // However the accounts file is named, the fragments go in the folder holding it.
 // Joined with backslashes on Windows, or named with no folder, they went under
 // the file itself and apply refused.
@@ -1021,6 +1096,64 @@ func TestAccountSetPlanSaysWhenTheFileIsReshaped(t *testing.T) { // [dcnrp]
 		}
 		if tc.want && got != "account:\n\twork:\n\t\temail: a@b.c\n\t\thost: gitea.com\n" {
 			t.Errorf("%s: got:\n%q", tc.name, got)
+		}
+	}
+}
+
+// The plan's was: and becomes: are lines of the file before and after, as typed.
+// Built from the key and value, they lower-cased the key, and dropped the quotes
+// and comment the module keeps.
+func TestAccountSetPlanShowsTheFileLines(t *testing.T) { // [dfgwe]
+	for _, tc := range []struct {
+		name, body, key, value, was, becomes string
+	}{
+		{"comment", "account: work\n\tEmail: \"a@b.c\"   # work mail\n", "email", "c@d.e", `Email: "a@b.c"   # work mail`, `Email: "c@d.e"   # work mail`},
+		{"single quotes", "account: work\n\tname: 'Bob'\n", "name", "Bob Smith", "name: 'Bob'", "name: 'Bob Smith'"},
+		{"dotted", "account.work.host: github.com\n", "host", "gitea.com", "account.work.host: github.com", "account.work.host: gitea.com"},
+		{"line ends", "account: work\r\n\tHost: github.com\r\n", "host", "gitea.com", "Host: github.com", "Host: gitea.com"},
+		{"mark", utf8BOM + "account: work\n\thost: github.com\n", "host", "gitea.com", "host: github.com", "host: gitea.com"},
+		{"second block", "account: home\n\thost: a.example\naccount: work\n\tHOST: b.example  # b\n", "host", "c.example", "HOST: b.example  # b", "HOST: c.example  # b"},
+		{"needs quotes", "account: work\n\tname: Bob\n", "name", "Bob # Smith", "name: Bob", `name: "Bob # Smith"`},
+		// The old value isn't on the key's line, so was: names it as read.
+		{"dash list", "account: work\n\tpath:\n\t\t- /a\n", "path", "/c", "path: [/a]", "path: /c"},
+		{"fenced", "account: work\n\tname: ```\n\t\tBob\n\t\t```\n", "name", "Al", "name: Bob", "name: Al"},
+	} {
+		p, out, _ := testPrinter()
+		a, file := setApp(t, tc.body, "work", tc.key, tc.value)
+		a.out = p
+		if err := a.preflight(); err != nil {
+			t.Fatalf("%s: preflight: %v", tc.name, err)
+		}
+		a.preview("account-set")
+		var was, becomes string
+		for line := range strings.Lines(out.String()) {
+			line = strings.TrimRight(line, "\n")
+			if _, v, ok := strings.Cut(line, "  was:     "); ok {
+				was = v
+			}
+			if _, v, ok := strings.Cut(line, "  becomes: "); ok {
+				becomes = v
+			}
+		}
+		if was != tc.was || becomes != tc.becomes {
+			t.Errorf("%s: was %q, becomes %q; want %q, %q:\n%s", tc.name, was, becomes, tc.was, tc.becomes, out)
+		}
+		if err := a.cmdAccountSet(); err != nil {
+			t.Fatalf("%s: set: %v", tc.name, err)
+		}
+		lineIn := func(text, want string) bool {
+			for line := range strings.Lines(text) {
+				if strings.TrimSpace(strings.TrimPrefix(line, utf8BOM)) == want {
+					return true
+				}
+			}
+			return false
+		}
+		if !lineIn(tc.body, was) && !strings.Contains(tc.body, "\t\t") {
+			t.Errorf("%s: was: %q isn't a line of the file before", tc.name, was)
+		}
+		if got := readBack(t, file); !lineIn(got, becomes) {
+			t.Errorf("%s: becomes: %q isn't a line of the file written:\n%s", tc.name, becomes, got)
 		}
 	}
 }
