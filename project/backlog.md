@@ -81,7 +81,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 7: raw git -C <other repo> acts as the current folder's account
 	- ID: 2026111016332367
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261110-163323
@@ -92,6 +92,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23, hermetic fixture.
 	- Possible cause [Bug]: cmdPassthrough resolves the account from the working directory and ignores `-C`, `--git-dir` and `GIT_DIR`.
 	- Origin: 483ebc5. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. cmdPassthrough ran the account work in the folder raw started in. With GIT_DIR set, the folder rules also matched the working directory, which git takes for the top, while the includeIf rules from account apply match the git dir.
+	- Actual fix [Bug]: toolRepoOf in main.go reads git's -C, --git-dir, --work-tree and --bare, tig's leading -C, and lazygit's -p, -w and -g the way each tool does. enterToolRepo moves the run there, with GIT_DIR and GIT_WORK_TREE set from those options, for the account work only, and goes back before the handover. contextDir takes the repo from the git dir when GIT_DIR is set.
+	- Decisions: With GIT_DIR set, the folder is the git dir's parent when it's named .git, the git dir itself for a bare repo, and the top as before otherwise, such as a linked worktree's or submodule's git dir in a hook. This holds for every command, not only raw. tig takes -C only ahead of anything else, as tig 2.5.8 does. README's 'the account this folder belongs to' is left as it is. gh -R and glab -R name a repo on the host rather than a folder, so they're left alone, the same as plain gh.
+	- Test case: test.bash [dffyz] to [dffz7], Go [dffz8].
+	- Verified: test.bash [dffyz] to [dffz4], [dffz6] and [dffz7] fail on the unfixed build (1986/8) and pass after. The commands of [dffz5] fail with the move back before the handover taken out, and those of [dffz2] and [dffz3] with the contextDir change taken out. [dffz8] fails with each -C taking the place of the last. Quick gate passed, all areas: test.bash 1994/0, fuzz 310/0, parity 31/0.
+	- Swept: every tool raw runs. git, tig and lazygit take a folder or git dir. gh, tea and glab don't. GIT_DIR from the caller, for every command, through contextDir, and from a hook in a linked worktree or submodule, which keeps the top, by reading only. resolveAccount and selectAccount make all their git calls inside the moved run.
+	- Branch: nov18-2026111016332367
+	- Commit: 18e26dd
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261118-161013
 
 - Code Review 20261110b item 8: account apply removes every rule before adding any, so a failure partway leaves too few, and the error says nothing changed
 	- ID: 2026111016332355

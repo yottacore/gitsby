@@ -906,7 +906,22 @@ func (c *config) loginOf(name string) string {
 // directory when not - which is what a fresh 'repo clone' has to go on.
 func (a *app) contextDir() string {
 	return a.git.contextDir.get(func() string {
-		return topOrWorkingDir(runOut("git", "rev-parse", "--show-toplevel"))
+		top := runOut("git", "rev-parse", "--show-toplevel")
+		// With GIT_DIR set, git takes the working directory for the top unless told
+		// a work tree. The repo is where the git dir is, which is also what the
+		// includeIf rules 'account apply' writes go by. A git dir not named .git, as
+		// in a linked worktree, keeps the top.
+		if os.Getenv("GIT_DIR") != "" {
+			if gitDir := runOut("git", "rev-parse", "--absolute-git-dir"); gitDir != "" {
+				if filepath.Base(gitDir) == ".git" {
+					return filepath.Dir(gitDir)
+				}
+				if top == "" { // bare
+					return gitDir
+				}
+			}
+		}
+		return topOrWorkingDir(top)
 	})
 }
 

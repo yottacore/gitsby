@@ -237,3 +237,47 @@ func TestOneSpawnSite(t *testing.T) { // [de8a0]
 		}
 	}
 }
+
+// Where a raw tool's own options put it, read as the tool reads them: git up to its
+// command, -C on from the last -C, a separate value for an option that takes one.
+func TestToolRepoOf(t *testing.T) { // [dffz8]
+	t.Setenv("GIT_DIR", "")
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	abs := func(p string) string { return filepath.Join(wd, p) }
+	other := filepath.Join(t.TempDir(), "other")
+	cases := []struct {
+		tool string
+		args []string
+		want toolRepo
+	}{
+		{"git", []string{"status"}, toolRepo{}},
+		{"git", []string{"-C", other, "status"}, toolRepo{dir: other}},
+		{"git", []string{"-C", "a", "-C", "b", "log"}, toolRepo{dir: filepath.Join("a", "b")}},
+		{"git", []string{"-C", "a", "-C", other}, toolRepo{dir: other}},
+		{"git", []string{"-C", "", "status"}, toolRepo{}},
+		{"git", []string{"-c", "-C", "status"}, toolRepo{}},
+		{"git", []string{"-c", "x.y=1", "-C", "a", "status"}, toolRepo{dir: "a"}},
+		{"git", []string{"--namespace", "-C", "status"}, toolRepo{}},
+		{"git", []string{"--git-dir=g", "--work-tree", "w", "status"}, toolRepo{gitDir: "g", workTree: "w"}},
+		{"git", []string{"--git-dir", "g", "--git-dir=h"}, toolRepo{gitDir: "h"}},
+		{"git", []string{"-C", "a", "--bare", "log"}, toolRepo{dir: "a", gitDir: abs("a")}},
+		{"git", []string{"--git-dir=g", "--bare"}, toolRepo{gitDir: "g"}},
+		{"git", []string{"log", "-C", "a"}, toolRepo{}},
+		{"git", []string{"--", "-C", "a"}, toolRepo{}},
+		{"git", []string{"-C"}, toolRepo{}},
+		{"tig", []string{"-C", "a", "-C", "b", "status"}, toolRepo{dir: filepath.Join("a", "b")}},
+		{"tig", []string{"status", "-C", "a"}, toolRepo{}},
+		{"lazygit", []string{"-p", "a"}, toolRepo{dir: abs("a"), workTree: abs("a"), gitDir: filepath.Join(abs("a"), ".git")}},
+		{"lazygit", []string{"status", "--path=" + other}, toolRepo{dir: other, workTree: other, gitDir: filepath.Join(other, ".git")}},
+		{"lazygit", []string{"-g", "g", "-w", "w"}, toolRepo{gitDir: abs("g"), dir: abs("w"), workTree: abs("w")}},
+		{"gh", []string{"-C", "a"}, toolRepo{}},
+	}
+	for _, c := range cases {
+		if got := toolRepoOf(c.tool, c.args); got != c.want {
+			t.Errorf("toolRepoOf(%s, %q) = %+v, want %+v", c.tool, c.args, got, c.want)
+		}
+	}
+}

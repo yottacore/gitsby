@@ -5342,6 +5342,49 @@ GHEOF
 		bash -c "cd '${acNested}' && env ${acNestEnv} git config core.sshCommand"
 	fAssertOut "[df4wx] and the outer folder still gets its own token"  '^password=tok_outer_file$' \
 		bash -c "cd '${ac}/trees/outer/proj' && ${acFillNest} git credential fill"
+	## raw acts as the account of the repo the tool works in, which -C, --git-dir or GIT_DIR can put
+	## outside the folder raw started in.
+	mkdir -p "${ac}/dirhome" "${ac}/dirbin" "${ac}/dtrees/work/proj/sub" "${ac}/dtrees/home"
+	: > "${ac}/dirhome/.gitconfig"
+	git init --quiet "${ac}/dtrees/work/proj"
+	git init --quiet "${ac}/dtrees/home/proj"
+	git init --quiet --bare "${ac}/dtrees/home/bare.git"
+	printf 'tok_dir_work\n' > "${ac}/dirhome/work.tok"
+	printf 'tok_dir_home\n' > "${ac}/dirhome/home.tok"
+	printf 'account: dw\n\tpath: %s/dtrees/work\n\temail: dw@example.com\n\ttokenfile: %s/dirhome/work.tok\n\naccount: dh\n\tpath: %s/dtrees/home\n\temail: dh@example.com\n\ttokenfile: %s/dirhome/home.tok\n' \
+		"${acCanon}" "${acCanon}" "${acCanon}" "${acCanon}" > "${ac}/dir.shcl"
+	fStub "${ac}/dirbin/tig" <<'TIGEOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == -C ]] && { cd "$2" || exit 1; }
+git config --get user.email
+TIGEOF
+	fStub "${ac}/dirbin/lazygit" <<'LGEOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == -p ]] && { cd "$2" || exit 1; }
+git config --get user.email
+LGEOF
+	local acDirEnv="${acNoDiscovery} HOME='${ac}/dirhome' GIT_CONFIG_GLOBAL='${ac}/dirhome/.gitconfig' PATH='${ac}/dirbin:${PATH}' GIT_TERMINAL_PROMPT=0"
+	local acDirRaw="env ${acDirEnv} '${gitsby}' -q -NoFetch --config '${ac}/dir.shcl' raw"
+	local acDirWork="${ac}/dtrees/work/proj"
+	local acDirHome="${ac}/dtrees/home/proj"
+	fAssertOut "[dffyz] raw git -C another account's repo acts as that account"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && ${acDirRaw} git -C '${acDirHome}' config --get user.email"
+	fAssertOut "[dffz0] and hands git that account's token"  '^password=tok_dir_home$' \
+		bash -c "cd '${acDirWork}' && printf 'protocol=https\nhost=github.com\n\n' | ${acDirRaw} git -C '${acDirHome}' credential fill"
+	fAssertOut "[dffz1] each relative -C from where the last one left off"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && ${acDirRaw} git -c x.y=1 -C ../.. -C home/proj config --get user.email"
+	fAssertOut "[dffz2] raw git --git-dir acts as the account of that repo"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && ${acDirRaw} git --git-dir='${acDirHome}/.git' config --get user.email"
+	fAssertOut "[dffz3] and so does GIT_DIR"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && GIT_DIR='${acDirHome}/.git' ${acDirRaw} git config --get user.email"
+	fAssertOut "[dffz4] and -C into a bare repo"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && ${acDirRaw} git -C '${ac}/dtrees/home/bare.git' config --get user.email"
+	fAssertOut "[dffz5] git still reads a relative -C from where raw started"  '/dtrees/work/proj$' \
+		bash -c "cd '${acDirWork}/sub' && ${acDirRaw} git -C .. rev-parse --show-toplevel"
+	fAssertOut "[dffz6] raw tig -C acts as the account of that repo"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && ${acDirRaw} tig -C '${acDirHome}'"
+	fAssertOut "[dffz7] and raw lazygit -p"  '^dh@example\.com$' \
+		bash -c "cd '${acDirWork}' && ${acDirRaw} lazygit -p '${acDirHome}'"
 	## A rule for the root covers every folder. It looked for the rule plus a slash, '//', and
 	## covered none, and the includeIf git got had the same extra slash.
 	mkdir -p "${ac}/roothome"
