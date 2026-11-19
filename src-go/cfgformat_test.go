@@ -10,10 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	shcl2 "github.com/jim-collier/shcl/source/go/v2"
 	shcl "github.com/yottacore/shcl/source/go/v3"
 )
 
@@ -535,5 +537,227 @@ func TestFormatNoticeOneName(t *testing.T) { // [df367]
 		if got := stderr.String(); !strings.Contains(got, "earlier SHCL 3 spelling") || strings.Contains(got, "module") {
 			t.Errorf("done=%v: %q", mig.done, got)
 		}
+	}
+}
+
+// A file stamped with a format newer than this build's is read by this build's
+// rules, said once, and never rewritten, even with a time from before the move to
+// v3.0.0-beta1, where a Format 3 file would be re-spelled.
+const newerBody = "account: work\n\tname: \"O'Brien \\\\ x\"\n##\n##    Format   4\n##\n"
+
+func TestNewerFormatIsSaid(t *testing.T) { // [dfg44]
+	dir, file := writeOldPin(t, newerBody, true)
+	var stderr bytes.Buffer
+	p := newPrinter()
+	p.out, p.err = &bytes.Buffer{}, &stderr
+	a := newApp(p)
+	a.opt.configFile, a.opt.configGiven, a.opt.quiet = file, true, true
+	if err := a.resolveAccount(dir, ""); err != nil {
+		t.Fatal(err)
+	}
+	a.reportMigration()
+	wantValue(t, a.cfg, "work", "name", `O'Brien \\ x`)
+	msg := stderr.String()
+	for _, want := range []string{"is in SHCL format 4, newer than this build reads.", "by format 3's rules", "File: " + nativePath(file)} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("notice is missing %q: %q", want, msg)
+		}
+	}
+	if strings.Count(msg, "newer than this build") != 1 {
+		t.Errorf("said more than once: %q", msg)
+	}
+	if a.cfg.migration != nil || len(dirEntries(t, dir)) != 1 || readBack(t, file) != newerBody {
+		t.Errorf("a newer file was converted: %+v, %v", a.cfg.migration, dirEntries(t, dir))
+	}
+}
+
+// 'account set' and 'account unset' refuse before the plan, and the file stays.
+func TestNewerFormatEditRefusesBeforePlan(t *testing.T) { // [dfg45]
+	for _, unset := range []bool{false, true} {
+		a, file := setApp(t, newerBody, "work", "name", "B")
+		var err error
+		if unset {
+			a.cmd = command{name: "account-unset", arg: "work", arg2: "name", mutating: true}
+			_, _, err = a.accountUnsetPlan()
+		} else {
+			_, err = a.accountSetPlan()
+		}
+		if err == nil || !strings.Contains(err.Error(), "newer SHCL format than this build writes") || !strings.Contains(err.Error(), "It names format 4.") || !strings.Contains(err.Error(), "Update ") {
+			t.Errorf("unset=%v: %v", unset, err)
+		}
+		if a.set != nil || readBack(t, file) != newerBody {
+			t.Errorf("unset=%v: planned or wrote", unset)
+		}
+	}
+}
+
+// The module's own save refusal reads the same, should a newer file reach the save.
+func TestNewerFormatSaveRefusal(t *testing.T) { // [dfg46]
+	a, file := setApp(t, newerBody, "work", "name", "B")
+	tgt := accountSetTarget{file: file, read: newerBody, doc: shcl.Parse(newerBody), base: "account(0)", field: "name", value: "B"}
+	tgt.doc.SetString("account(0).name", "B")
+	a.set = &tgt
+	if err := a.cmdAccountSet(); err == nil || !strings.Contains(err.Error(), "newer SHCL format than this build writes") || strings.Contains(err.Error(), "once that is fixed") {
+		t.Errorf("save: %v", err)
+	}
+	if readBack(t, file) != newerBody {
+		t.Error("the save wrote the file")
+	}
+}
+
+// Only a time while the earlier module was in use says a file is its own. One older
+// than the first build on it, or with no real time, as a Nix store gives, is read as
+// v3 text and left alone.
+func TestOldPinNeedsATimeInItsWindow(t *testing.T) { // [dfg49]
+	for _, was := range []time.Time{time.Unix(1, 0), oldPinStart.Add(-time.Second), oldPinCutover} {
+		dir, file := writeOldPin(t, oldPinBody, false)
+		if err := os.Chtimes(file, was, was); err != nil {
+			t.Fatal(err)
+		}
+		cfg := &config{values: map[string]string{}}
+		opt := defaultOptions()
+		opt.configFile, opt.configGiven = file, true
+		if err := cfg.load(opt); err != nil {
+			t.Fatal(err)
+		}
+		wantValue(t, cfg, "work", "name", `O'Brien \\ x`)
+		if cfg.migration != nil || len(dirEntries(t, dir)) != 1 {
+			t.Errorf("%v: converted: %+v", was, cfg.migration)
+		}
+	}
+	for _, was := range []time.Time{oldPinStart, oldPinCutover.Add(-time.Second)} {
+		if !fromOldPin(was) {
+			t.Errorf("%v reads as outside the window", was)
+		}
+	}
+}
+
+// The kept copy has the file's own time, so moving it back reads as the file did,
+// and is converted again the same way.
+func TestOldPinBackupKeepsItsTime(t *testing.T) { // [dfg4a]
+	dir, file := writeOldPin(t, oldPinBody, true)
+	before, err := os.Stat(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	load := func() *config {
+		cfg := &config{values: map[string]string{}}
+		opt := defaultOptions()
+		opt.configFile, opt.configGiven = file, true
+		if err := cfg.load(opt); err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}
+	if cfg := load(); cfg.migration == nil || !cfg.migration.done {
+		t.Fatalf("not converted: %+v", cfg.migration)
+	}
+	backup := backupIn(t, dir, "v3old")
+	kept, err := os.Stat(backup)
+	if err != nil || !kept.ModTime().Equal(before.ModTime()) {
+		t.Fatalf("backup time %v, want %v (%v)", kept.ModTime(), before.ModTime(), err)
+	}
+	if err := os.Rename(backup, file); err != nil {
+		t.Fatal(err)
+	}
+	cfg := load()
+	wantValue(t, cfg, "work", "name", `O'Brien \ x`)
+	if cfg.migration == nil || !cfg.migration.done {
+		t.Errorf("the restored copy read as v3 text: %+v", cfg.migration)
+	}
+}
+
+// Where the folder can't be written, the reason says so, not that a lock was busy.
+func TestOldPinUnwritableNamesTheFolder(t *testing.T) { // [dfg4b]
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a folder this user can't write")
+	}
+	dir, file := writeOldPin(t, oldPinBody, true)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	cfg := &config{values: map[string]string{}}
+	opt := defaultOptions()
+	opt.configFile, opt.configGiven = file, true
+	if err := cfg.load(opt); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.migration == nil || cfg.migration.done || cfg.migration.why != "the folder it is in can't be written" {
+		t.Errorf("%+v", cfg.migration)
+	}
+}
+
+// Hand-typed 2.x values where a quote mid-value opened a run, so a '#' or ',' after
+// it was text. The converted file reads each the way the real 2.x module did, and
+// keeps the comments 2.x saw.
+func TestOld2xQuoteRuns(t *testing.T) { // [dfg4e]
+	values := []string{`O"Brien#2`, `dev/c"#/proj`, `it's#1`, `O"Brien #2`, `0',0`, `x"y" #z`, `a"b#c" # mine`, `plain # note`}
+	body := "account: w\n"
+	for i, v := range values {
+		body += "\tk" + strconv.Itoa(i) + ": " + v + "\n"
+	}
+	body += "\tpathcontains: dev/c\"#/proj\n" + shcl2Footer
+	dir := t.TempDir()
+	file := filepath.Join(dir, "config.shcl")
+	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config{values: map[string]string{}}
+	opt := defaultOptions()
+	opt.configFile, opt.configGiven = file, true
+	if err := cfg.load(opt); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.migration == nil || !cfg.migration.done {
+		t.Fatalf("not converted: %+v", cfg.migration)
+	}
+	old, now := shcl2.Parse(body), shcl.Parse(readBack(t, file))
+	for i := range values {
+		k := "k" + strconv.Itoa(i)
+		was, _ := old.GetString("account[#0]." + k)
+		if got, _ := now.GetString("account(0)." + k); got != was {
+			t.Errorf("%s: 2.x read %q, now %q", values[i], was, got)
+		}
+	}
+	if got := readBack(t, file); !strings.Contains(got, "\tk6: 'a\"b#c\"' # mine\n") || !strings.Contains(got, "\tk7: plain # note\n") {
+		t.Errorf("comments not kept:\n%s", got)
+	}
+	if len(cfg.segments) != 1 || cfg.segments[0].written != `dev/c"#/proj` {
+		t.Errorf("folder rule: %+v", cfg.segments)
+	}
+}
+
+// A value no quote can keep, here for its backslash, keeps the file as it is. The
+// notice names the line, and an edit refuses with a fix that names it too.
+func TestOld2xUnquotableRefuses(t *testing.T) { // [dfg4f]
+	body := "account: w\n\tname: C:\\it's#x\n" + shcl2Footer
+	dir := t.TempDir()
+	file := filepath.Join(dir, "config.shcl")
+	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	p := newPrinter()
+	p.out, p.err = &bytes.Buffer{}, &stderr
+	a := newApp(p)
+	a.opt.configFile, a.opt.configGiven, a.opt.quiet = file, true, true
+	if err := a.resolveAccount(dir, ""); err != nil {
+		t.Fatal(err)
+	}
+	if names := dirEntries(t, dir); len(names) != 1 || readBack(t, file) != body {
+		t.Errorf("left behind: %v", names)
+	}
+	for _, want := range []string{"couldn't be converted", "Why:  line 2 reads one way in the old format", "Fix:  Put the value on line 2 in quotes"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("notice is missing %q: %q", want, stderr.String())
+		}
+	}
+	a.cmd = command{name: "account-set", arg: "w", arg2: "email", arg3: "e@x", mutating: true}
+	if err := a.cmdAccountSet(); err == nil || !strings.Contains(err.Error(), "Put the value on line 2 in quotes") || strings.Contains(err.Error(), "next run tries") {
+		t.Errorf("set: %v", err)
+	}
+	if readBack(t, file) != body {
+		t.Error("set wrote the file")
 	}
 }

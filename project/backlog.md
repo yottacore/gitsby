@@ -33,6 +33,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Converting an SHCL 2.x accounts file changes a value holding a byte that isn't UTF-8
+	- ID: 2026111819043675
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261118-190436
+	- Opened by: jim-collier
+	- Related IDs: 2026111016332218
+	- Steps to reproduce [Bug]: A 2.x accounts file with the byte 0x87 as a name's whole value. Run `account list`.
+	- Incorrect behavior [Bug]: 2.x read the value as U+FFFD. After the conversion it reads as the byte 0x87, and the notice says nothing about it.
+	- Expected behavior [Bug]: The converted file reads what 2.x read, or the conversion is refused.
+	- Reproduced [Bug]: 2026-11-18 on b23, found by FuzzOld2xHandTyped `[dfg4d]`, which now skips such values.
+	- Possible cause [Bug]: shcl 2.x replaced a broken byte when it read the file, and v3 keeps it as written. Not looked at further.
+
 - Spawn count [dbftm] for br switch measures 28 against its expected 26
 	- ID: 2026111818374045
 	- Type: Bug
@@ -369,7 +384,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 19: Converting a SHCL 2.x accounts file cuts off any value with a quote before a #
 	- ID: 2026111016332218
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163322
@@ -381,6 +396,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: shcl's migrateLine and valueEdits, reached through `MigrateUnstamped` at cfgformat.go:82. gitsby doesn't check the result against the 2.x reading.
 	- Origin: 37f4843, 2026-10-03. [ddg6e] feeds only values the 2.x writer quoted itself. No round saw it. Confirmed.
 	- Notes: The module half belongs upstream in shcl. Only dev and gover builds wrote 2.x files, since v2.1.0 used the flat layout.
+	- Closed reason: Done
+	- Actual cause [Bug]: In 2.x a quote anywhere in a value opened a run to the same quote or the end of the line, so a `#` or `,` after it was text. shcl v3.0.0-beta1 reads a 2.x line with its own 2.x rules, which don't run a quote opened mid-value, so its migration ends the value at the `#` or splits it at the `,`. The 2.x writer always quoted such a value, so `[ddg6e]` never fed one.
+	- Actual fix [Bug]: `convert2x` in cfgformat.go. Before the module converts the file, a value it would cut or split, where 2.x read one value, goes in single quotes, or double where it holds an apostrophe. Quotes with no backslash read the same in 2.x. After, each line's comment and list reading is checked against 2.x's. A line that still differs, or one no quote fits, keeps the file as it is, and the notice and `account set`'s refusal name the line, with a Fix to quote it.
+	- Decisions: The 2.x module stays out of the binary, per design.md, so the check uses a copy of 2.x's quote rule. 2.x is frozen, so it can't drift, and the fuzz target holds it to the real module. A value a quote can keep is converted rather than refused. The fuzz target skips lists, since `name` takes one value, and bytes that aren't UTF-8, filed as 2026111819043675.
+	- Branch: nov18-2026111016332218
+	- Commit: 5d58999
+	- Test case: Go `[dfg4d]` FuzzOld2xHandTyped: a hand-typed 2.x value reads what the real 2.x module read, or the file is left as it was; `[dfg4e]` 8 such values, the steps' folder rule and their comments; `[dfg4f]` a value no quote fits refuses, naming the line. test.bash `[dfg4g]` the steps' file through the binary.
+	- Verified: `[dfg4d]` (8 of 15 seeds), `[dfg4e]` and `[dfg4f]` fail on the previous config.go, cfgformat.go and accountcmd.go, and `[dfg4g]` fails on the binary built from 5f96830. With the quoting taken out, the after-check refuses every seed instead, and with both out `[dfg4d]` fails. 2 minutes of fuzzing found nothing more. Quick gate, every area: test.bash 2059/0, fuzz 310/0, parity 31/0.
+	- Swept: the flat conversion and the earlier module's re-spelling write values through the setter, not the module's 2.x reading, so neither has this shape. `convert2x` is the only caller of `migrateText` in the load.
+	- Note: The module half is upstream, in shcl's 2.x reading of a line.
+	- Acceptance signoff: Self-closed: reproduced, and its tests fail before the fix and pass after.
+	- Closed: 20261118-190600
 
 - Code Review 20261110b item 20: On GitHub Enterprise, gh never sees the account's token
 	- ID: 2026111016332206
@@ -415,7 +442,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 22: A file whose mtime falls before the cutover is re-spelled whatever its age or source
 	- ID: 2026111016332181
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
@@ -428,6 +455,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Origin: The mtime rule from Bug 2026110710480989. Confirmed.
 	- Against: The answer on 2026110710480989 to go by the file's mtime. A lower bound and keeping the backup's mtime don't change that rule.
 	- Answered 2026-11-10: fix it as filed.
+	- Closed reason: Done
+	- Actual cause [Bug]: The earlier module's rule had only an upper bound. A lock that couldn't be made gave one fixed reason, whatever the cause. The kept copy was written with the time of the conversion.
+	- Actual fix [Bug]: `fromOldPin` in cfgformat.go also wants a time no earlier than 2026-09-24 19:49:10 UTC, the commit time of the first module ca0e55c pinned. Every kept copy gets the file's own time, and a copy that can't keep it is removed and the file left as it was. A lock refused for permissions says the folder can't be written, another cause is named, and a held lock says another run held it.
+	- Decisions: The lower bound is the first pinned module's commit time rather than ca0e55c's, since a build from the working tree could run before that commit but not before the module existed. A file touched to a time inside the window, as in the first steps, is still converted: the time is the rule, per the Against line. Every kind of kept copy keeps the time, so a restored 2.x or flat copy also reads as it did.
+	- Branch: nov18-2026111016332218
+	- Commit: be9eb57
+	- Test case: Go `[dfg49]` time 1, a second before the start, and the cutover itself read as v3 text; `[dfg4a]` the kept copy has the file's time, and moved back it is converted again; `[dfg4b]` an unwritable folder is named. test.bash `[dfg4c]` a read-only folder with time 1, through the binary, has no notice and reads as v3 text.
+	- Verified: `[dfg49]` to `[dfg4b]` fail on the previous config.go and cfgformat.go, and `[dfg4c]` fails on the binary built from 5f96830. `[df08m]` to `[df08y]` still pass. Quick gate, every area: test.bash 2059/0, fuzz 310/0, parity 31/0.
+	- Swept: the time is read in one place, config.go's load, and the window is `fromOldPin` only. `replaceOldFormat` is the one place a kept copy is made, for all 3 kinds. The lock reason is set only there; `account set` reports the lock's own refusal.
+	- Acceptance signoff: Self-closed: answered 2026-11-10 to fix it as filed, and its tests fail before the fix and pass after.
+	- Closed: 20261118-190400
 
 - Code Review 20261110b item 23: 2 accounts can get the same fragment file, and the later one wins
 	- ID: 2026111016332169
@@ -447,7 +485,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 24: A file stamped with a newer SHCL format is read silently, and account set fails after the plan
 	- ID: 2026111016332157
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
@@ -458,6 +496,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23.
 	- Possible cause [Bug]: cfgformat.go:59 counts a newer format as current. accountcmd.go:1342-1350 handles `SaveRefused` and not `SaveTooNew`.
 	- Origin: 37f4843, 75ce642 and 8d3f857. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: oldFormat counted a newer format as current, so the load said nothing, and the only stop was the module's save refusal after the plan, which the save reported as a write failure. A Format 4 file with a time in the earlier module's window was also re-spelled and written, past that refusal.
+	- Actual fix [Bug]: The load notes a format newer than the module's, and the run says so once on stderr, with the file. `account set` and `account unset` refuse before the plan, with Fix "Update gitsby", and a `SaveTooNew` from the save gets the same refusal. The earlier module's re-spelling skips such a file.
+	- Decisions: The file is still read, by this build's rules, since reads work and the notice says values may differ. The notice ignores `-q`, as the conversion notice does.
+	- Branch: nov18-2026111016332218
+	- Commit: 6d7a1f1
+	- Test case: Go `[dfg44]` the notice, the read, and the file left alone with a time in the earlier module's window; `[dfg45]` set and unset refuse before the plan; `[dfg46]` the save's `SaveTooNew` refusal. test.bash `[dfg47]` and `[dfg48]` the same through the binary.
+	- Verified: `[dfg44]` to `[dfg46]` fail on the previous config.go, cfgformat.go and accountcmd.go, and `[dfg47]` and `[dfg48]` fail on the binary built from 5f96830. Quick gate, every area: test.bash 2059/0, fuzz 310/0, parity 31/0.
+	- Swept: `SaveFileKeepLines` is the only save of a file that exists, and `createNew` only makes a new one. `replaceOldFormat` writes with `WriteFileAtomic`, and all 3 of its calls in the load now skip a newer file.
+	- Acceptance signoff: Self-closed: reproduced, and its tests fail before the fix and pass after.
+	- Closed: 20261118-190400
 
 - Code Review 20261110b item 28: br merge's plan shows 2 pushes when the target has no local branch yet, and the run does 1 atomic push
 	- ID: 2026111016332107

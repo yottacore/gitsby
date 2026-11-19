@@ -11,6 +11,8 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -30,6 +32,17 @@ const shcl2Banner = "# This config file format is SHCL."
 // 2026110710480989.
 var oldPinCutover = time.Date(2026, 11, 7, 3, 37, 0, 0, time.UTC)
 
+// oldPinStart is the commit time of the first module ca0e55c pinned, so no build on
+// it wrote anything earlier. A file older than that, or with no real time, as a Nix
+// store gives, isn't from it.
+var oldPinStart = time.Date(2026, 9, 24, 19, 49, 10, 0, time.UTC)
+
+// fromOldPin is whether a Format 3 file last written at mtime could be the earlier
+// module's.
+func fromOldPin(mtime time.Time) bool {
+	return !mtime.Before(oldPinStart) && mtime.Before(oldPinCutover)
+}
+
 // oldKind is which older layout a file was in.
 type oldKind int
 
@@ -47,6 +60,7 @@ type formatMigration struct {
 	changed  int    // lines re-spelled so they mean what they did
 	lost     int    // lines that set something under the old rules and set nothing now
 	why      string // why the file couldn't be replaced, when it couldn't
+	fix      string // what to do about it, when running again won't
 	done     bool   // the converted text is what the file has now
 	reported bool
 }
@@ -88,6 +102,141 @@ func migrateText(text string) (string, shcl.Migration) {
 	banner := strings.Split(strings.TrimSuffix(shcl.GenBanner, "\n"), "\n")
 	out = append(out[:start], append(banner, out[end+1:]...)...)
 	return strings.Join(out, eol), m
+}
+
+// convert2x is migrateText for a 2.x file, checked against how 2.x read it. A value
+// the module would cut or split is put in quotes first. bad is the first line that
+// still reads differently, which keeps the file as it is; 0 when none does.
+func convert2x(text string) (converted string, m shcl.Migration, bad int) {
+	quoted, bad := quote2xRuns(text)
+	converted, m = migrateText(quoted)
+	if bad == 0 {
+		bad = readings2xDiffer(text, m.Text)
+	}
+	return converted, m, bad
+}
+
+// scan2x is where 2.x found stop in s: outside a quoted run and not after a
+// backslash, or -1. A quote anywhere opens a run, even mid-value as in O"Brien#2,
+// and it ends at the same quote or the end of the line. splitComment and
+// splitUnquotedCommas in shcl 2.x, which is frozen, so this can't drift from it;
+// FuzzOld2xHandTyped holds it to the real module.
+func scan2x(s string, stop byte) int {
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '\\':
+			i++
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == stop:
+			return i
+		}
+	}
+	return -1
+}
+
+// line2x is one line as 2.x split it: the value's text, trimmed, and where the
+// comment starts, or -1. ok is false for a line binding nothing. tok holds the
+// module's own 2.x reading of the line, for its separator.
+func line2x(body string, tok *shcl.Tokens) (value string, region [2]int, hash int, ok bool) {
+	if body == "" || body[0] == '#' {
+		return "", region, -1, false
+	}
+	shcl.Tokenize(body, ':', false, shcl.RulesV2, tok)
+	hash = scan2x(body, '#')
+	if tok.Sep < 0 || (hash >= 0 && hash < tok.Sep) {
+		return "", region, hash, false
+	}
+	region = [2]int{tok.Sep + 1, len(body)}
+	if hash >= 0 {
+		region[1] = hash
+	}
+	return strings.Trim(body[region[0]:region[1]], " \t"), region, hash, true
+}
+
+// quote2xRuns puts in quotes each value the module would end at a '#', or split at
+// a ',', that 2.x read as text, since a quote before it opened a run. Upstream,
+// shcl's 2.x reading doesn't run a quote mid-value to its end. Quotes holding no
+// backslash read the same in 2.x, and the module carries them over. bad is the
+// first such line no quote fits: a list, or text holding a backslash or both
+// quotes.
+func quote2xRuns(text string) (string, int) {
+	lines := strings.Split(text, "\n")
+	bad := 0
+	var tok shcl.Tokens
+	for i, line := range lines {
+		cr := strings.HasSuffix(line, "\r")
+		line = strings.TrimSuffix(line, "\r")
+		body := strings.TrimLeft(line, " \t")
+		value, region, hash, ok := line2x(body, &tok)
+		single := scan2x(value, ',') < 0
+		if !ok || (hash == tok.Comment && (!single || len(tok.Elements) <= 1)) {
+			continue
+		}
+		var q string
+		switch {
+		case value == "" || !single || strings.Contains(value, "\\"):
+		case !strings.Contains(value, "'"):
+			q = "'"
+		case !strings.Contains(value, `"`):
+			q = `"`
+		}
+		if q == "" {
+			if bad == 0 {
+				bad = i + 1
+			}
+			continue
+		}
+		was := body[region[0]:region[1]]
+		lead := was[:len(was)-len(strings.TrimLeft(was, " \t"))]
+		gap := was[len(strings.TrimRight(was, " \t")):]
+		line = line[:len(line)-len(body)] + body[:region[0]] + lead + q + value + q + gap + body[region[1]:]
+		if cr {
+			line += "\r"
+		}
+		lines[i] = line
+	}
+	return strings.Join(lines, "\n"), bad
+}
+
+// readings2xDiffer is the first line v3 reads apart from how 2.x read the line
+// before: its comment starts elsewhere, or one is a list and the other isn't. 0
+// when none is. The module keeps one line for one line, so after is its text
+// before any banner is swapped in.
+func readings2xDiffer(before, after string) int {
+	was, now := splitLines(before), splitLines(after)
+	var old, cur shcl.Tokens
+	for i := range was {
+		if i >= len(now) {
+			break
+		}
+		body := strings.TrimLeft(now[i], " \t")
+		if body == "" || body[0] == '#' {
+			continue
+		}
+		shcl.Tokenize(body, ':', false, shcl.RulesCurrent, &cur)
+		if cur.Sep < 0 {
+			continue
+		}
+		oldBody := strings.TrimLeft(was[i], " \t")
+		value, _, hash, ok := line2x(oldBody, &old)
+		oldNote, curNote := "", ""
+		if hash >= 0 {
+			oldNote = oldBody[hash:]
+		}
+		if cur.Comment >= 0 {
+			curNote = body[cur.Comment:]
+		}
+		if !ok || oldNote != curNote || (scan2x(value, ',') >= 0) != (cur.Array >= 0) {
+			return i + 1
+		}
+	}
+	return 0
 }
 
 // oldBannerAt finds the 2.x banner block: a lone '#', the banner line, '# ' lines,
@@ -247,7 +396,14 @@ func replaceOldFormat(file, read, converted string, mig *formatMigration) {
 	}
 	unlock, err := lockAccountsFile(target, accountLockWait)
 	if err != nil {
-		mig.why = "the lock beside it couldn't be taken"
+		switch cause := errors.Unwrap(err); {
+		case errors.Is(err, fs.ErrPermission):
+			mig.why = "the folder it is in can't be written"
+		case cause != nil:
+			mig.why = "the lock beside it couldn't be made: " + causeText(cause)
+		default:
+			mig.why = "another run held the lock beside it"
+		}
 		return
 	}
 	defer unlock()
@@ -273,6 +429,13 @@ func replaceOldFormat(file, read, converted string, mig *formatMigration) {
 		mig.why = "the old copy couldn't be written: " + causeText(err)
 		return
 	}
+	// The file's own time, so a copy moved back reads as the file did: the time is
+	// what tells the earlier module's file from a v3 one.
+	if err := os.Chtimes(backup, time.Time{}, fi.ModTime()); err != nil {
+		_ = os.Remove(backup) // ours, and the file is untouched
+		mig.why = "the old copy couldn't keep the file's time: " + causeText(err)
+		return
+	}
 	if err := shcl.WriteFileAtomic(target, converted); err != nil {
 		// The copy is ours and the file is untouched, so the next run starts clean.
 		_ = os.Remove(backup)
@@ -286,6 +449,11 @@ func replaceOldFormat(file, read, converted string, mig *formatMigration) {
 // pipeline reading stdout sees none of it, and not silenced by '-q': a config
 // rewritten without a word is worse than a line nobody asked for.
 func (a *app) reportMigration() {
+	if a.cfg.newer > 0 && !a.cfg.newerSaid {
+		a.cfg.newerSaid = true
+		a.out.errorf("The accounts file is in SHCL format %d, newer than this build reads. This run read it by format %d's rules, so some values may read differently. 'account set' and 'account unset' refuse until %s is updated.", a.cfg.newer, shcl.FormatMajor, meName)
+		a.out.notes(noteLines("File", nativePath(a.cfg.file)))
+	}
 	mig := a.cfg.migration
 	if mig == nil || mig.reported {
 		return
@@ -295,7 +463,11 @@ func (a *app) reportMigration() {
 	notes := noteLines("File", file)
 	if !mig.done {
 		a.out.errorf("The accounts file is in the %s and couldn't be converted. This run read it in that format. 'account set' and 'account unset' refuse until it is converted.", mig.formatName())
-		a.out.notes(append(notes, noteLines("Why", mig.why+".")...))
+		notes = append(notes, noteLines("Why", mig.why+".")...)
+		if mig.fix != "" {
+			notes = append(notes, noteLines("Fix", mig.fix)...)
+		}
+		a.out.notes(notes)
 		return
 	}
 	notes = append(notes, noteLines("From", nativePath(mig.backup))...)

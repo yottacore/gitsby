@@ -8951,6 +8951,30 @@ GLEOF
 		bash -c "set -- '${fg}/oldpin'/config_backup_*_format-v3old.shcl; [[ \$# == 1 && -f \"\$1\" ]] && cat '${fg}/oldpin/config.shcl'"
 	fAssertNotOut "[df08y] and the same text written since the move is read as it is"  'Converted' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/newpin/config.shcl' identity 2>&1; ls '${fg}/newpin'"
+	## A file stamped with a newer format than this build's is read by this build's rules and said
+	## so, and an edit refuses before its plan, since the module would refuse the save after it.
+	mkdir -p "${fg}/newer"
+	printf 'account: work\n\tname: Ada\n##\n##    Format   4\n##\n' > "${fg}/newer/config.shcl"
+	touch -d '2026-11-01 12:00:00' "${fg}/newer/config.shcl"
+	fAssertOut "[dfg47] a file stamped with a newer SHCL format is read, and the run says so"  '^ok$' \
+		bash -c "cd '${fgRepo}' && out=\$(PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/newer/config.shcl' account list 2>&1); [[ \$out == *'is in SHCL format 4, newer than this build reads'* && \$out == *'commits .: Ada'* ]] && echo ok"
+	fAssertOut "[dfg48] and account set refuses before its plan, exit 1, file as it was"  '^ok$' \
+		bash -c "cd '${fgRepo}' && out=\$(PATH='${fgPath}' '${gitsby}' -q -NoFetch --config '${fg}/newer/config.shcl' account set work name B 2>&1); rc=\$?; [[ \$rc == 1 && \$out == *'newer SHCL format than this build writes'* && \$out != *'Going to do'* ]] && grep -qx '	name: Ada' '${fg}/newer/config.shcl' && [[ \$(ls '${fg}/newer') == config.shcl ]] && echo ok"
+	## The earlier module's window has a start too: a file from a read-only store, with time 1, isn't
+	## its file, so the escapes read as text and nothing tries to convert it on every run.
+	mkdir -p "${fg}/nixpin"
+	cp "${fg}/newpin/config.shcl" "${fg}/nixpin/config.shcl"
+	touch -d '@1' "${fg}/nixpin/config.shcl"
+	chmod 0555 "${fg}/nixpin"
+	fAssertNotOut "[dfg4c] a Format 3 file older than the earlier module is read as it is, with no notice"  'Converted|converted|O.Brien \\ x' \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/nixpin/config.shcl' account list 2>&1 | grep -v '^Config file'; ls '${fg}/nixpin' | grep -vx config.shcl"
+	chmod 0755 "${fg}/nixpin"
+	## A hand-typed 2.x value where a quote opened a run, so the '#' after it was text. The module
+	## alone ends the value there; the converted file has to read what 2.x read.
+	mkdir -p "${fg}/old2xrun"
+	printf 'account: work\n\tname: O"Brien#2\n\tpathcontains: dev/c"#/proj\n\n#\n# This config file format is SHCL.\n# "Simple Hierarchical Config Language"\n#\n' > "${fg}/old2xrun/config.shcl"
+	fAssertOut "[dfg4g] a 2.x value with a quote before a '#' reads whole after the conversion"  '^ok$' \
+		bash -c "cd '${fgRepo}' && out=\$(PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/old2xrun/config.shcl' account list 2>&1); [[ \$out == *'Converted the accounts file from the SHCL 2.x format'* && \$out == *'O\"Brien#2 <'* ]] && grep -qxF \"	pathcontains: 'dev/c\\\"#/proj'\" '${fg}/old2xrun/config.shcl' && echo ok"
 	## The same on a file the last build on shcl 2.x wrote itself, compiled here from its commit.
 	## Nothing may be downloaded in this suite, so its shcl module has to be in the module cache
 	## already. go.mod lists it for the Go tests, so the lint and unit test stages fetch it.
@@ -9411,3 +9435,6 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261118 JC: repo url leaves an origin already on the asked transport alone, so an ssh host alias keeps its key, [dfg29] to [dfg2c].
 ##		- 20261118 JC: GIT_SSH runs the fetch and the identity probe, plink gets no OpenSSH options, and an ssh command only a shell can read is probed as plain ssh, [dfg2d] to [dfg2m]. The suite unsets GIT_SSH, GIT_SSH_COMMAND and GIT_SSH_VARIANT.
 ##		- 20261118 JC: the way off main that sync and br switch name takes commits along, [dfg2y] to [dfg32]. br create refuses @{-1}, [dfg35] to [dfg37]. br merge plans its 1 atomic push with no local target yet, [dfg33] and [dfg34]. pr create from dev with a commit on it names the same way off, [dfg38].
+##		- 20261118 JC: An accounts file stamped with a newer SHCL format says so, and account set refuses before its plan, [dfg47] and [dfg48].
+##		- 20261118 JC: A Format 3 file older than the earlier module is read as it is, [dfg4c].
+##		- 20261118 JC: A hand-typed 2.x value with a quote before a "#" reads whole after the conversion, [dfg4g].

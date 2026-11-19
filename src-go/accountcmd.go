@@ -1437,17 +1437,40 @@ func (a *app) loadForEdit(t *accountSetTarget) error {
 	} else {
 		t.file, t.doc, t.read = a.cfg.file, a.cfg.doc, a.cfg.raw
 	}
+	if a.cfg.newer > 0 {
+		return newerFormatRefusal(t.file, a.cfg.newer)
+	}
 	// Saved as it stands, the file would mix the two formats' spellings, and the
 	// next run would convert lines that were already right.
 	if mig := a.cfg.migration; mig != nil && !mig.done {
+		fix := mig.fix
+		if fix == "" {
+			fix = "Run this again. The next run tries the conversion first."
+		}
 		return refusalBlock("The accounts file is still in the "+mig.formatName()+".", [][]string{
 			noteLines("File", nativePath(t.file)),
 			noteLines("Why", "It couldn't be converted: "+mig.why+"."),
 			noteLines("Kept", "Nothing was written."),
-			noteLines("Fix", "Run this again. The next run tries the conversion first."),
+			noteLines("Fix", fix),
 		}, nil)
 	}
 	return nil
+}
+
+// newerFormatRefusal: the file names a newer SHCL format than this build writes,
+// so a save would write its lines by older rules. The module refuses that save
+// too; this says so before the plan.
+func newerFormatRefusal(file string, format int) error {
+	why := fmt.Sprintf("This build writes format %d, which could change what the other lines mean.", shcl.FormatMajor)
+	if format > shcl.FormatMajor {
+		why = fmt.Sprintf("It names format %d. ", format) + why
+	}
+	return refusalBlock("The accounts file is in a newer SHCL format than this build writes.", [][]string{
+		noteLines("File", nativePath(file)),
+		noteLines("Why", why),
+		noteLines("Kept", "Nothing was written."),
+		noteLines("Fix", "Update "+meName+", then run this again."),
+	}, nil)
 }
 
 // lostLinesRefusal: the save would drop lines the read couldn't keep.
@@ -1684,6 +1707,11 @@ func (a *app) cmdAccountSet() error {
 		var refused *shcl.SaveRefused
 		if errors.As(err, &refused) {
 			return lostLinesRefusal(t.file, refused.Lost)
+		}
+		var tooNew *shcl.SaveTooNew
+		if errors.As(err, &tooNew) {
+			v, _ := shcl.FormatVersion(t.read)
+			return newerFormatRefusal(t.file, v)
 		}
 		// The save writes a new file beside it and renames it over, so a permissions
 		// error is the folder's, not the file's.

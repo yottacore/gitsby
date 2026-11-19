@@ -79,6 +79,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The plan for `br merge` in a clone with no local `dev` yet shows the 1 atomic push the run makes. It listed a push and a separate delete.
 
+- An accounts file stamped with a newer SHCL format than this build reads says so, and `account set` and `account unset` refuse before their plan. It used to be read with no word, and `account set` showed its plan, then failed to save.
+
+- Converting an SHCL 2.x accounts file keeps a value where a quote comes before a `#` or a `,`, such as `name: O"Brien#2`. It used to cut the value at the `#` and say the lines were re-spelled to keep their values. A line that can't be kept that way leaves the file as it is, and the notice names the line.
+
+- An accounts file last written before the first SHCL 3 module Gitsby used, or with no real time, as a Nix store gives, is read as it is rather than re-spelled as that module's. The copy a conversion keeps has the file's own time, so moving it back reads as the file did. Where the folder can't be written, the notice says so rather than blaming a lock.
+
 ## v3.0.0-beta.1 - 2026-11-08
 
 ### Notes
