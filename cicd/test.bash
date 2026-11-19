@@ -232,6 +232,24 @@ fPsPathTold(){ PS_FILE="$1" pwsh -NoProfile -Command '$ast = [Management.Automat
 		if ($t.Extent.StartOffset -le $write[0].Extent.EndOffset) { "told before the write"; exit 1 }
 		if ($inner -and $t.Extent.StartOffset -lt $inner.Extent.EndOffset) { "told inside the write'"'"'s try"; exit 1 }
 	}' </dev/null 2>&1 ;}
+## Defines install.ps1's Install-Binary from the file and runs its Windows branch over an old
+## gitsby.exe in <dir>. <mode> ok lets every move through, fail refuses the move of the staged
+## file, and fail2 also refuses moving the old copy back. Prints what's left in <dir>.
+# shellcheck disable=SC2016  ## pwsh's own variables; pwsh does the expanding.
+fPsReplace(){ mkdir -p "$2"; PS_FILE="$1" PS_DIR="$2" PS_MODE="$3" POWERSHELL_TELEMETRY_OPTOUT=1 pwsh -NoProfile -Command '$ErrorActionPreference = "Stop"
+	$fn = [Management.Automation.Language.Parser]::ParseFile($env:PS_FILE, [ref]$null, [ref]$null).Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq "Install-Binary" }, $true)
+	if (-not $fn) { "no Install-Binary"; exit 1 }
+	. ([scriptblock]::Create($fn.Extent.Text))
+	$dest = Join-Path $env:PS_DIR "gitsby.exe"; $src = Join-Path $env:PS_DIR "new.bin"
+	Set-Content -LiteralPath $dest -Value old -NoNewline; Set-Content -LiteralPath $src -Value new -NoNewline
+	function Move-Item([string]$LiteralPath, [string]$Destination, [switch]$Force) {
+		if ($env:PS_MODE -ne "ok" -and ($LiteralPath -match "\.gitsby\.install\." -or ($env:PS_MODE -eq "fail2" -and $LiteralPath -match "\.replaced-"))) { throw "move refused" }
+		Microsoft.PowerShell.Management\Move-Item -LiteralPath $LiteralPath -Destination $Destination -Force:$Force
+	}
+	$err = ""
+	try { Install-Binary -source $src -destPath $dest -onWindows $true } catch { $err = $_.Exception.Message }
+	$have = if (Test-Path -LiteralPath $dest) { Get-Content -LiteralPath $dest -Raw } else { "none" }
+	"dest=$have left=$(@(Get-ChildItem -LiteralPath $env:PS_DIR -Force -Name | Where-Object { $_ -ne "new.bin" }) -join ",") err=$err"' </dev/null 2>&1 ;}
 ## Succeeds when install.bash's --help names every option its argument loop takes.
 fBashHelpNamesAll(){ local inst="$1" help="" opts="" opt=""
 	help="$(bash "${inst}" --help)"
@@ -4605,6 +4623,14 @@ GHEOF
 			fPsSettingChange "${goInstPs}"
 		fAssert    "[dfgxd] and is sent after the PATH write, outside its try" \
 			fPsPathTold "${goInstPs}"
+		## The old copy was moved aside and deleted before the new one went in, so a failed last
+		## move left no gitsby.exe at all. The Windows branch is only renames, so it runs here.
+		fAssertOut "[dfha2] go install.ps1 replaces an old gitsby.exe and leaves nothing beside it" '^dest=new left=gitsby\.exe err=$' \
+			fPsReplace "${goInstPs}" "${work}/psrep-ok" ok
+		fAssertOut "[dfha3] and puts the old one back when the new one can't move in" '^dest=old left=gitsby\.exe err=move refused$' \
+			fPsReplace "${goInstPs}" "${work}/psrep-fail" fail
+		fAssertOut "[dfha4] and says where the old one is when that fails too" "^dest=none left=gitsby\.exe\.replaced-[^,]+ err=move refused The old copy couldn't be put back either: rename .*/gitsby\.exe\.replaced-[^ ]+ to .*/gitsby\.exe\.$" \
+			fPsReplace "${goInstPs}" "${work}/psrep-fail2" fail2
 		## The portal check looks at one byte, and once read the whole download for it.
 		fAssert "[deysn] go install.ps1 reads one byte of the download for the portal check" \
 			bash -c "n=\$(grep -cE 'Get-Content -LiteralPath \\\$tmpFile ' '${goInstPs}'); [[ \${n} -ge 1 && \$(grep -cE 'Get-Content -LiteralPath \\\$tmpFile .*-TotalCount 1( |\$)' '${goInstPs}') == \"\${n}\" ]] && ! grep -q 'ReadAllBytes' '${goInstPs}'"
