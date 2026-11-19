@@ -202,6 +202,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 	- workflows.md had promised gitsby never does this, and `sync` always had. Refusing outright was out. Gitsby's own advice on a dirty `main` is to commit there with `pullcom`, and some repos commit on `main` every day.
 	- Only commits made on the branch itself count, plus a tree about to become one. A merge doesn't. `br merge` offline, the hotfix back-merge and `release` each leave one for `sync` to publish, and gitsby names `sync` as the way to do it.
 	- The warning goes to stderr, last before the prompt. Under `-q` it's a refusal, the rule for any warning nobody is there to read.
+	- The way off the branch that both name fits what would go. A dirty tree alone gets `br create`, which takes it along. Commits get `git checkout -b <branch-name>`, then `git branch -f` back to the upstream, since `br create` leaves them behind. `pr create`'s refusal on `main` or `dev` does the same (2026-11-18).
 	- `pullcom` stays quiet. It sends nothing, and the push is what the workflow is about.
 	- The flag is for this one case, not a general `--no-warn`. Flags are permanent, and a general one would also hide whatever warning comes next.
 	- `br switch` parks before it moves, and from `main` or `dev` its park push is the same push, so it gets the same warning, refusal and flag (2026-11-18). `br create` and `br hotfix` carry the tree off a protected branch rather than push it, `br merge` refuses to run from one, and `release` exists to push one.

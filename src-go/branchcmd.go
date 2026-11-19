@@ -18,8 +18,10 @@ import (
 
 // checkNewBranchName vets the name given to br create/hotfix. Git owns the rules
 // for what a ref may be called, so ask git rather than keep a second copy of them.
+// It prints the name it vetted, which for @{-1} and the like is another branch's,
+// already taken. So a name that comes back changed is refused here, before the park.
 func (a *app) checkNewBranchName(name string) error {
-	if !runOK("git", "check-ref-format", "--branch", name) {
+	if runOut("git", "check-ref-format", "--branch", name) != name {
 		return usagef("'%s' is not a valid branch name.", name)
 	}
 	if a.branchExistsLocal(name) {
@@ -184,8 +186,10 @@ func (a *app) cmdMerge() error {
 
 // atomicMergeFits: whether br merge's push can be named in full, the target to
 // its own name on origin. Only then do the merge and the delete go as 1 push.
+// The plan asks before the checkout has made a local target, so upstreamOf, which
+// knows what that checkout will track.
 func (a *app) atomicMergeFits(target string) bool {
-	return a.branchRefs().local[target].full == "refs/remotes/origin/"+target
+	return a.upstreamOf(target).full == "refs/remotes/origin/"+target
 }
 
 // atomicMergePush pushes the merged target and deletes origin's copy of the

@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The --direct refusal and warning advise br create for commits already on main, which br create leaves there
 	- ID: 2026111815522440
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261118-155224
@@ -45,8 +45,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Steps to reproduce [Bug]: On main in a repo with dev, commit a change with pullcom, then run gitsby -q sync or gitsby -q br switch dev. Follow the advice and run gitsby br create x.
 	- Incorrect behavior [Bug]: The refusal says to move the work to a branch with br create. br create from main checks out dev first, so the commit stays on main, still unpushed, and the next sync or br switch from main refuses again. Without dev the new branch has the commit, and main still holds it too.
 	- Expected behavior [Bug]: The advice names a way out that works for committed work, or speaks only of a dirty tree when the work is uncommitted.
-	- Reproduced [Bug]: No. Read from cmdNewBranch and refuseDirectPush in src-go on nov18.
-	- Origin: e1cc030, 2026-10-05, the sync warning. Plausible.
+	- Reproduced [Bug]: 2026-11-18 on b23. [dfg30] fails on the build before the fix: after br create, main still held the commit.
+	- Origin: e1cc030, 2026-10-05, the sync warning. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: The refusal and the warning named br create whatever was going out. br create takes a dirty tree along, and leaves commits on the branch they were made on.
+	- Actual fix [Bug]: With commits going out, both name 'git checkout -b <branch-name>', then 'git branch -f <branch> <upstream>', which takes the commits and the tree to a new branch and puts the protected branch back at origin's tip. A dirty tree alone still gets br create. pr create's refusal on main or dev does the same. design.md and the changelog say so.
+	- Branch: nov18-2026111815522440
+	- Commit: c203ecd
+	- Test case: test.bash [dfg2y] to [dfg32], and [dfg38] for pr create.
+	- Verified: [dfg2y] to [dfg32] and [dfg38] fail on the build before the fix and pass with it. [dfg30] runs the commands as the refusal prints them. [dfg31] guards the dirty-tree advice, and fails before only since main still held [dfg30]'s commit. The quick gate passed with every area: test.bash 2055/0, fuzz 310/0, parity 31/0. gosec reports nothing in the changed files.
+	- Swept: every message that names br create. The --direct refusal and warning, and pr create's refusal on main or dev, now fit committed work. br switch's dirty-branch refusal and its no-such-branch hint are about a dirty tree or a new name, so br create fits there.
+	- Decisions: The way off is plain git, since no gitsby command moves commits off a branch. Making br create take commits along would change what it does, and wasn't asked for. git checkout -b rather than git switch -c, to match the plan's own steps and older git. The upstream is named as git has it, so a fork's upstream is right too.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-183606
 
 - Code Review 20261110b item 6: br switch from main or dev pushes commits straight to the protected branch without --direct
 	- ID: 2026111016332380
@@ -440,7 +451,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 28: br merge's plan shows 2 pushes when the target has no local branch yet, and the run does 1 atomic push
 	- ID: 2026111016332107
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
@@ -451,11 +462,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23.
 	- Possible cause [Bug]: atomicMergeFits reads the local branch's upstream before the checkout makes it.
 	- Origin: 2437605, 2026-11-07, from Code Review 20261107 enhancement 3. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: atomicMergeFits read the target's upstream from the local branches only. The plan runs before the checkout makes the target, so it found none and planned 2 pushes. The run asks after the checkout, and made 1.
+	- Actual fix [Bug]: atomicMergeFits asks upstreamOf, which gives a target with no local copy origin's branch, the one the checkout tracks. The changelog says so.
+	- Branch: nov18-2026111815522440
+	- Commit: c203ecd
+	- Test case: test.bash [dfg33] and [dfg34].
+	- Verified: [dfg33] and [dfg34] fail on the build before the fix, where the plan listed the push and the leased delete, and pass with it. The run made 1 push both times. The quick gate passed with every area.
+	- Swept: every read of a local branch's upstream in src-go. The pull steps in the plan already go through upstreamOf. branchExistsLocal asks about existence only.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261118-183606
 
 - Code Review 20261110b item 29: br create takes @{-1} as a name, and fails after the park
 	- ID: 2026111016332095
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
@@ -466,6 +487,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23.
 	- Possible cause [Bug]: branchcmd.go:22 checks with `check-ref-format --branch`, which expands `@{-N}` and passes.
 	- Origin: 4918b5b. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: check-ref-format --branch reads @{-N} as the branch checked out N switches ago and answers with its name, so the check passed. The name was only found taken at 'git checkout -b', after the park.
+	- Actual fix [Bug]: The name passes only when check-ref-format prints it back unchanged. @{-1}, @{-1}/x and the like are refused before anything runs. The changelog says so.
+	- Branch: nov18-2026111815522440
+	- Commit: c203ecd
+	- Test case: test.bash [dfg35] to [dfg37].
+	- Verified: [dfg35] to [dfg37] fail on the build before the fix, which committed and pushed first, and pass with it. The quick gate passed with every area.
+	- Swept: check-ref-format is called once in src-go, in checkNewBranchName, which br create and br hotfix share. br hotfix's 'hotfix/@{-1}' was already refused, since @{ can't be inside a name. br switch takes only a branch that exists. A branch named '@' passes, as git allows it, and was left alone.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-183606
 
 - Code Review 20261110b item 30: release run from main ends on dev, and the plan's last line says it goes back to main
 	- ID: 2026111016332082

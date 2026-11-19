@@ -676,12 +676,12 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 		}
 		a.out.clean("  Continue only if that is what you mean. (--any-identity silences this.)")
 	}
-	if !a.opt.quiet && a.directPush() {
-		a.out.clean("")
-		a.out.warn("WARNING: " + a.directPushText())
-		a.out.warn("  To keep it off '" + a.currentBranch() + "', answer n and run '" + meName + " br create <branch-name>'. (The '--direct' flag silences this warning.)")
-	}
 	if !a.opt.quiet {
+		if push, committed := a.directPush(); push {
+			a.out.clean("")
+			a.out.warn("WARNING: " + a.directPushText())
+			a.out.warn("  To keep it off '" + a.currentBranch() + "', answer n and run " + a.keepOffText(committed) + ". (The '--direct' flag silences this warning.)")
+		}
 		a.out.clean("")
 		if !a.out.confirm("Continue? (y|n): ") {
 			a.out.status("User aborted.")

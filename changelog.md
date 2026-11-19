@@ -73,6 +73,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A syntax error from `release` or `raw` that quotes what was typed shows a control character by name, as every other error does, so an escape typed by mistake no longer changes the terminal's colors.
 
+- With commits on `main` or `dev` that origin doesn't have, `sync` and `br switch` name a way to move them to a new branch that works: `git checkout -b <branch-name>`, then `git branch -f main origin/main`. They named `br create`, which takes a dirty tree along but leaves commits on `main`, so the next `sync` refused again. A dirty tree alone still gets `br create`. `pr create` from `main` or `dev` with commits on it names the same way off.
+
+- `br create` refuses `@{-1}` and other names git reads as another branch, before anything runs. It used to commit, push and check out `dev` first, then fail.
+
+- The plan for `br merge` in a clone with no local `dev` yet shows the 1 atomic push the run makes. It listed a push and a separate delete.
+
 ## v3.0.0-beta.1 - 2026-11-08
 
 ### Notes

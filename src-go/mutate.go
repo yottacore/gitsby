@@ -155,28 +155,36 @@ func (a *app) pushIfOnline() error {
 // straight to main, dev or the default branch. A merge left for sync doesn't count.
 // design.md "--direct". br create and br hotfix carry the tree off a protected branch
 // instead of pushing it, br merge refuses one, and release exists to push one.
-func (a *app) directPush() bool {
+// committed says commits are part of what goes, which need another way off the
+// branch than a dirty tree does.
+func (a *app) directPush() (push, committed bool) {
 	switch a.cmd.name {
 	case "sync":
 	case "br-switch":
 		// Only a move parks, and offline its push is skipped. A dirty protected tree
 		// was refused before this.
 		if a.currentBranch() == a.switchTarget() || a.isOffline() {
-			return false
+			return false, false
 		}
 	default:
-		return false
+		return false, false
 	}
 	if a.opt.direct || !a.hasOrigin() || !a.isProtectedBranch("") {
-		return false
+		return false, false
 	}
-	if a.hasUpstream() && runOut("git", "rev-list", "--first-parent", "--no-merges", "-n", "1", "@{u}..HEAD") != "" {
-		return true
+	if a.ownCommitsAhead() {
+		return true, true
 	}
 	if a.opt.staged {
-		return !runOK("git", "diff", "--cached", "--quiet")
+		return !runOK("git", "diff", "--cached", "--quiet"), false
 	}
-	return treeDirty()
+	return treeDirty(), false
+}
+
+// ownCommitsAhead: commits made on this branch that its upstream doesn't have. A
+// merge isn't one.
+func (a *app) ownCommitsAhead() bool {
+	return a.hasUpstream() && runOut("git", "rev-list", "--first-parent", "--no-merges", "-n", "1", "@{u}..HEAD") != ""
 }
 
 // treeDirty: whether 'git add --all' has anything to take. A submodule's own edits
@@ -188,10 +196,24 @@ func treeDirty() bool {
 
 // refuseDirectPush: nobody is there to read the warning, so -q refuses instead.
 func (a *app) refuseDirectPush() error {
-	if a.opt.quiet && a.directPush() {
-		return usagef("%s Nothing was done. Re-run with --direct if that is intended, or move the work to a branch with '%s br create <branch-name>'.", a.directPushText(), meName)
+	if !a.opt.quiet {
+		return nil
+	}
+	if push, committed := a.directPush(); push {
+		return usagef("%s Nothing was done. Re-run with --direct if that is intended, or move the work to a branch with %s.", a.directPushText(), a.keepOffText(committed))
 	}
 	return nil
+}
+
+// keepOffText is the way to move the work off the protected branch instead. br
+// create takes a dirty tree along, but leaves commits behind on the branch, and
+// the next push from there is refused again. So commits go with the tree to a new
+// branch in git's own step, and the branch goes back to its upstream's tip.
+func (a *app) keepOffText(committed bool) string {
+	if !committed {
+		return "'" + meName + " br create <branch-name>'"
+	}
+	return "'git checkout -b <branch-name>', then 'git branch -f " + typedArg(a.currentBranch(), runtime.GOOS) + " " + typedArg(a.upstream().short, runtime.GOOS) + "'"
 }
 
 func (a *app) directPushText() string {

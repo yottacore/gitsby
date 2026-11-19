@@ -423,6 +423,10 @@ func (a *app) prPreflight() error {
 		return a.prAcceptPreflight(prBranch)
 	}
 	if prBranch == a.mergeTarget() || prBranch == a.defaultBranch() {
+		// br create would leave the commits here.
+		if a.ownCommitsAhead() {
+			return usagef("'%s' is what pull requests merge into; there is nothing to propose. Move its commits to a new branch first with %s.", prBranch, a.keepOffText(true))
+		}
 		return usagef("'%s' is what pull requests merge into; there is nothing to propose. Start a branch first: %s br create <name>", prBranch, meName)
 	}
 	// No title given: the last commit subject is what the work is called already.

@@ -1816,6 +1816,43 @@ fRunSuite(){
 	( cd "${directA}" && echo three > h.txt && git add --all && git commit --quiet -m "on side" && git checkout --quiet main && git merge --quiet --no-ff side -m "merge side" )
 	fAssert "[dffyh] a merge on main needs no --direct for br switch to send it" \
 		bash -c "cd '${directA}' && '${gitsby}' -q br switch side && [[ \"\$(git -C '${directO}' rev-parse main)\" == \"\$(git rev-parse main)\" ]]"
+	## The way off main that the refusal names has to work for what is there. br create takes a
+	## dirty tree along but leaves commits on main, where the next sync refuses again.
+	local offO="${work}/$1-wayoffo.git" offA="${work}/$1-wayoffa" offFix=""
+	git init --quiet --bare -b main "${offO}"
+	git clone --quiet "${offO}" "${offA}" 2>/dev/null
+	( cd "${offA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git push --quiet origin main:dev && echo two > g.txt && git add --all && git commit --quiet -m "on main" )
+	( cd "${offA}" && "${gitsby}" -q sync ) > "${work}/$1-wayoff1.out" 2>&1 || true
+	fAssert "[dfg2y] sync -q on main with a commit names a way off that takes commits" \
+		bash -c "grep -qF \"'git checkout -b <branch-name>', then 'git branch -f main origin/main'\" '${work}/$1-wayoff1.out' && ! grep -qF 'br create' '${work}/$1-wayoff1.out'"
+	fAssert "[dfg2z] and so does br switch -q" \
+		bash -c "cd '${offA}' && out=\"\$('${gitsby}' -q br switch dev 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"then 'git branch -f main origin/main'\" <<< \"\${out}\""
+	## Run as the refusal gives it, with a name put in, and main is level with origin after.
+	offFix="$(grep -oE "'git checkout -b <branch-name>', then 'git branch -f [^']+'" "${work}/$1-wayoff1.out" | sed -e "s/<branch-name>/moved/" -e "s/', then '/ \&\& /" -e "s/^'//" -e "s/'\$//")" || true
+	fAssert "[dfg30] following it moves the commit off main, and sync from main then runs" \
+		bash -c "cd '${offA}' && [[ -n \"${offFix}\" ]] && eval \"${offFix}\" && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]] && git log -1 --format=%s moved | grep -qx 'on main' && '${gitsby}' -q br switch main && '${gitsby}' -q sync && [[ \"\$(git -C '${offO}' rev-parse main)\" != \"\$(git rev-parse moved)\" ]] && [[ \"\$(git -C '${offO}' rev-parse moved)\" == \"\$(git rev-parse moved)\" ]]"
+	( cd "${offA}" && echo three > h.txt )
+	fAssert "[dfg31] a dirty tree alone on main still gets br create, which takes it along" \
+		bash -c "cd '${offA}' && out=\"\$('${gitsby}' -q sync 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"move the work to a branch with '${APP_NAME} br create <branch-name>'.\" <<< \"\${out}\" && '${gitsby}' -q br create carried && [[ -f h.txt ]] && [[ \"\$(git branch --show-current)\" == carried ]] && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" ]]"
+	if ((hasPty)); then
+		( cd "${offA}" && git checkout --quiet main && echo four > i.txt && git add --all && git commit --quiet -m "on main again" )
+		fAssertOut "[dfg32] asked in person, the warning names the same way off for a commit" "answer n and run 'git checkout -b <branch-name>', then 'git branch -f main origin/main'\\." \
+			fAnswerPrompt n "cd '${offA}' && '${gitsby}' sync"
+	else
+		fSkipBlock "the way off in the warning above the prompt (no pty)"
+	fi
+	## br create's name is vetted before anything runs. check-ref-format --branch takes @{-1} as
+	## the previous branch and answers with its name, which is taken.
+	local prevO="${work}/$1-prevo.git" prevA="${work}/$1-preva"
+	git init --quiet --bare -b main "${prevO}"
+	git clone --quiet "${prevO}" "${prevA}" 2>/dev/null
+	( cd "${prevA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git push --quiet origin main:dev && git checkout --quiet -b one && git checkout --quiet -b two && echo wip > w.txt )
+	fAssert "[dfg35] br create '@{-1}' is refused as a branch name" \
+		bash -c "cd '${prevA}' && out=\"\$('${gitsby}' -q br create '@{-1}' 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'@{-1}' is not a valid branch name.\" <<< \"\${out}\""
+	fAssert "[dfg36] before anything ran" \
+		bash -c "cd '${prevA}' && [[ \"\$(git branch --show-current)\" == two ]] && [[ \"\$(git status --porcelain)\" == '?? w.txt' ]] && ! git -C '${prevO}' show-ref --verify --quiet refs/heads/two"
+	fAssert "[dfg37] and so is a name that only starts with it" \
+		bash -c "cd '${prevA}' && out=\"\$('${gitsby}' -q br create '@{-1}/x' 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'is not a valid branch name.' <<< \"\${out}\" && [[ \"\$(git branch --show-current)\" == two ]] && ! git -C '${prevO}' show-ref --verify --quiet refs/heads/two"
 
 	## remote moved ahead + local dirty -> update commits the local work, then fast-forwards
 	(
@@ -2503,6 +2540,16 @@ fRunSuite(){
 		bash -c "! git -C '${pnOrigin}' show-ref --verify --quiet refs/heads/atom && git -C '${pnOrigin}' log -1 --format=%s refs/heads/dev | grep -qx 'merge atom' && [[ \$(grep -c 'built-in: git push' '${work}/$1-pn11.trace') == 1 ]] && grep -qF -- \"push --atomic --force-with-lease=refs/heads/atom:\$(cat '${work}/$1-pn11tip')\" '${work}/$1-pn11.trace'"
 	fAssert    "[df06n] and doesn't ask origin about the branch first"  bash -c "[[ -s '${work}/$1-pn11.trace' ]] && ! grep -qF 'ls-remote' '${work}/$1-pn11.trace'"
 	fAssertOut "[df06p] and its plan names the 1 push"  "^ +git push --atomic \\(the merge, and the leased delete of origin's 'atom'\\) \\*\$"  cat "${work}/$1-pn11.out"
+	## A clone with no local dev yet: the checkout makes it, tracking origin's, so the plan says
+	## the same 1 push the run makes.
+	local pnC="${work}/$1-pnc"
+	git clone --quiet "${pnOrigin}" "${pnC}" 2>/dev/null
+	( cd "${pnC}" && git checkout --quiet --no-track -b atom2 origin/dev && echo atom2 > atom2.txt && git add --all && git commit --quiet -m atom2 && git push --quiet -u origin atom2 )
+	( cd "${pnC}" && ! git show-ref --verify --quiet refs/heads/dev && GIT_TRACE="${work}/$1-pn12.trace" "${gitsby}" -q br merge "merge atom2" ) > "${work}/$1-pn12.out" 2>&1 || true
+	fAssertOut "[dfg33] br merge with no local target yet plans the 1 atomic push"  "^ +git push --atomic \\(the merge, and the leased delete of origin's 'atom2'\\) \\*\$"  cat "${work}/$1-pn12.out"
+	fAssert    "[dfg34] and makes just that push, with no second delete in the plan" \
+		bash -c "[[ \$(grep -c 'built-in: git push' '${work}/$1-pn12.trace') == 1 ]] && ! grep -qF -- '--force-with-lease origin --delete atom2' '${work}/$1-pn12.out' && ! git -C '${pnOrigin}' show-ref --verify --quiet refs/heads/atom2"
+	git -C "${pnA}" pull --quiet --ff-only
 	## Someone else pushes to the branch, and br merge --no-fetch never pulls it in. Origin's copy
 	## is then the only ref to that commit.
 	(
@@ -3208,6 +3255,10 @@ GHEOF
 		git checkout --quiet -b pnfeat && echo work > work.txt && git add --all && git commit --quiet -m "Teach it to retry"
 	)
 	fAssertFail "[dadsq] pr create refuses from the merge target"  bash -c "cd '${pnc}' && git checkout --quiet dev && PATH='${ghp}' '${gitsby}' -q pr create 'nope'"
+	( cd "${pnc}" && git checkout --quiet dev && echo direct > direct.txt && git add --all && git commit --quiet -m "on dev" )
+	fAssert     "[dfg38] and with a commit on it, names a way off that takes the commit, which then works" \
+		bash -c "cd '${pnc}' && out=\"\$(PATH='${ghp}' '${gitsby}' -q pr create 'nope' 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"with 'git checkout -b <branch-name>', then 'git branch -f dev origin/dev'.\" <<< \"\${out}\" && git checkout --quiet -b prmoved && git branch -f dev origin/dev && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" ]] && git log -1 --format=%s prmoved | grep -qx 'on dev'"
+	( cd "${pnc}" && git checkout --quiet pnfeat && git branch -f dev origin/dev && { git branch --quiet -D prmoved 2>/dev/null || true; } )
 	fAssertFail "[dadsr] pr create refuses an already-open PR"     bash -c "cd '${pnc}' && git checkout --quiet pnfeat && PATH='${ghp}' FAKE_GH_EXISTING=99 '${gitsby}' -q pr create"
 	fAssert     "[dadss] pr create opens the PR"                   bash -c "cd '${pnc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prnew.log' '${gitsby}' -q pr create"
 	fAssert     "[dadst] pr create pushed the branch first"        bash -c "cd '${pnc}' && git ls-remote --heads origin pnfeat | grep -q pnfeat"
@@ -9359,3 +9410,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261118 JC: account apply replaces its rules in each global git config file in one go, waits on git's lock, and finds them in ~/.config/git/config, [dffzh] to [dffzz]. [dd5eg] now reads the lock refusal.
 ##		- 20261118 JC: repo url leaves an origin already on the asked transport alone, so an ssh host alias keeps its key, [dfg29] to [dfg2c].
 ##		- 20261118 JC: GIT_SSH runs the fetch and the identity probe, plink gets no OpenSSH options, and an ssh command only a shell can read is probed as plain ssh, [dfg2d] to [dfg2m]. The suite unsets GIT_SSH, GIT_SSH_COMMAND and GIT_SSH_VARIANT.
+##		- 20261118 JC: the way off main that sync and br switch name takes commits along, [dfg2y] to [dfg32]. br create refuses @{-1}, [dfg35] to [dfg37]. br merge plans its 1 atomic push with no local target yet, [dfg33] and [dfg34]. pr create from dev with a commit on it names the same way off, [dfg38].
