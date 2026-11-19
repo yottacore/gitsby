@@ -33,6 +33,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Spawn count [dbftm] for br switch measures 28 against its expected 26
+	- ID: 2026111818374045
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261118-183740
+	- Opened by:
+	- Estimated effort: Low
+	- Progress log:
+		- Seen in round nov18 after 878b05b (2026111016332380) added the direct-push check to br switch. The row still passes, so it's at its limit. Raise the expected count in cicd/utility/spawn-count.bash if the 2 extra calls are the check's, or cut them.
+
 - The --direct refusal and warning advise br create for commits already on main, which br create leaves there
 	- ID: 2026111815522440
 	- Type: Bug
