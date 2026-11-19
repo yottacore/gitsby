@@ -75,6 +75,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - With commits on `main` or `dev` that origin doesn't have, `sync` and `br switch` name a way to move them to a new branch that works: `git checkout -b <branch-name>`, then `git branch -f main origin/main`. They named `br create`, which takes a dirty tree along but leaves commits on `main`, so the next `sync` refused again. A dirty tree alone still gets `br create`. `pr create` from `main` or `dev` with commits on it names the same way off.
 
+- A token typed in a URL no longer shows in an error. `gitsby repo create https://user:TOKEN@example.com/o/n.git` printed it twice, and so did any refusal that quotes back what was typed, such as `br switch` and an unknown `repo` word. An origin URL with a newline in it, or a password with an `@` in it, also showed its token in `status` and `repo url`. Each shows `***` in its place now.
+
 - `br create` refuses `@{-1}` and other names git reads as another branch, before anything runs. It used to commit, push and check out `dev` first, then fail.
 
 - The plan for `br merge` in a clone with no local `dev` yet shows the 1 atomic push the run makes. It listed a push and a separate delete.

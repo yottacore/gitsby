@@ -591,7 +591,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 32: repo create's refusal prints a token typed in the URL
 	- ID: 2026111016332057
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
@@ -603,6 +603,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: repo.go:304 prints the argument without maskURL.
 	- Origin: No round saw it. Confirmed.
 	- Sweep: Every message that prints a typed URL.
+	- Closed reason: Done
+	- Actual cause [Bug]: The refusal handed the typed argument to usagef unmasked. Only sites that called maskURL by hand masked a URL, so each refusal that quotes an argument back was one more site to miss.
+	- Actual fix [Bug]: escArgs, which usagef, usageSubf, usageWrapf and errorf run their args through, masks each text arg with maskURL. Every refusal that quotes back what was typed masks a token in it now, such as repo create, an unknown 'repo' or 'pr' word, br create, br switch, and repo connect's origin line.
+	- Decisions: The paste line in the refusal shows '***' too, as repo.go's 'clone it instead' line already did. The maskURL calls already inside usagef args stay, since masking twice gives the same text.
+	- Branch: nov18-2026111016332057
+	- Test case: Go TestTypedURLsAreMasked [dfg4x]; test.bash [dfg4y] [dfg4z].
+	- Verified: [dfg4x] fails for all 4 writers without the escArgs change. test.bash [dfg4y] [dfg4z] fail on the nov18 build (2059 passed, the 4 new checks failed) and pass with the fix. The quick gate passed with every area.
+	- Swept: every Sprintf-style writer (usagef, usageSubf, usageWrapf, printer.errorf) goes through escArgs, and every refuse() lead is a literal. Line writers (status, clean, warn, statusNotes) grepped for a typed argument or URL: the URL ones call maskURL, preview.go's set-url line shows a URL rebuilt from host and owner/name with no userinfo, and a branch name that isn't one is refused through usagef before any plan. No Sprintf, Errorf or errors.New builds a message from a URL or typed argument.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261118-191949
+	- Commit: f7f0630
 
 - Code Review 20261110b item 33: The ssh probe passes $HOME in GIT_SSH_COMMAND to ssh unexpanded
 	- ID: 2026111016332045
@@ -633,7 +644,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 34: maskURL leaves a token showing in a URL with a newline, and FuzzMaskURL can't see an unmasked URL
 	- ID: 2026111016332033
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
@@ -644,6 +655,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23.
 	- Possible cause [Bug]: maskURLRE's `(.*)$` stops at a newline. fuzz_test.go:112-121 checks only when the output changed.
 	- Origin: c943c5a, 2026-08-21. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: maskURLRE's '.' stopped at a newline, so a URL with one after the host didn't match and printed whole. Its userinfo also stopped at the first '@', so a password with an '@' in it left the rest showing. FuzzMaskURL checked only output that had changed.
+	- Actual fix [Bug]: maskURLRE matches across newlines, and the userinfo runs to the last '@' before the first '/'. FuzzMaskURL also builds a URL around each input as its userinfo, with and without a newline tail, and wants exactly '***' in its place.
+	- Decisions: Masking to the last '@' before the path hides more than git's own parse, which stops at the first one. Showing less is the safe side.
+	- Branch: nov18-2026111016332057
+	- Test case: Go TestMaskURL [dbfrt] (4 new cases) and FuzzMaskURL [dbjwt] (a new property and 2 seeds); test.bash [dfg50] [dfg51].
+	- Verified: TestMaskURL and FuzzMaskURL's seeds fail with the old maskURL and pass after. test.bash [dfg50] [dfg51] fail on the nov18 build and pass with the fix. FuzzMaskURL ran 30 s, 1.24M inputs, clean. The quick gate passed with every area: test.bash 2063/0, fuzz 310/0, parity 31/0.
+	- Swept: maskURL is the one masker, so its callers in exec.go, main.go, preview.go, pr.go, repo.go and show.go all take the fix.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261118-191939
+	- Commit: f749457
 
 - Code Review 20261110b item 35: account set's plan shows a different line than it writes
 	- ID: 2026111016332021

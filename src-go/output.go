@@ -104,13 +104,14 @@ func (p *printer) errorText(msg string) {
 
 // escArgs runs printable over the text args of a Sprintf. Every line writer
 // escapes too, but only these can't, since a usage error is meant to have
-// more than one line.
+// more than one line. It masks a URL's userinfo too: a refusal that quotes back
+// what was typed would otherwise print the token typed in it.
 func escArgs(a []any) []any {
 	out := make([]any, len(a))
 	for i, v := range a {
 		switch x := v.(type) {
 		case string:
-			out[i] = printable(x)
+			out[i] = printable(maskURL(x))
 		case error:
 			out[i] = printable(x.Error())
 		default:

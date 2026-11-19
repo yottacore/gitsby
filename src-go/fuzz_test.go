@@ -109,6 +109,8 @@ func FuzzMaskURL(f *testing.F) { // [dbjwt]
 	f.Add("https://user:token@github.com/owner/name")
 	f.Add("https://x-access-token:ghp_abc@github.com/o/n.git")
 	f.Add("git@github.com:owner/name.git")
+	f.Add("tok\nen")
+	f.Add("p@ss")
 	f.Fuzz(func(t *testing.T, url string) {
 		masked := maskURL(url)
 		// The mask exists so a credential in a remote URL never reaches a screen or
@@ -117,6 +119,17 @@ func FuzzMaskURL(f *testing.F) { // [dbjwt]
 			rest := masked[strings.Index(masked, "://")+3:]
 			if at := strings.Index(rest, "@"); at >= 0 && rest[:at] != "***" && !strings.HasSuffix(rest[:at], ":***") {
 				t.Errorf("maskURL(%q) = %q left userinfo unmasked", url, masked)
+			}
+		}
+		// The check above sees only a URL that got masked, so one left as it was
+		// passed. Here the input is the userinfo of a URL built around it, and
+		// whatever it holds, and whatever follows the host, only it goes.
+		if secret := strings.ReplaceAll(url, "/", ""); secret != "" {
+			for _, tail := range []string{"", "/o/n.git", "/o/n.git\n" + url} {
+				in := "https://" + secret + "@example.com" + tail
+				if got, want := maskURL(in), "https://***@example.com"+tail; got != want {
+					t.Errorf("maskURL(%q) = %q, want %q", in, got, want)
+				}
 			}
 		}
 	})

@@ -3146,6 +3146,16 @@ GHEOF
 	fAssertNotOut "[dbfgf] and does not point at repo create"  'repo create me/proj' \
 		bash -c "cd '${gh}/offl' && PATH='${ghp}' FAKE_GH_VIEW=offline '${gitsby}' -q repo connect me/proj 2>&1"
 	fAssertFail "[dadvr] repo create refuses a plain url"                       bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create '${gh}/backing-https.git'"
+	## A token typed in a URL, or kept in an origin that holds a newline, prints masked.
+	fAssertOut    "[dfg4y] repo create's refusal masks a token typed in the URL"  "'https://\*\*\*@example\.com/o/n\.git' isn't a GitHub" \
+		bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create https://user:SECRET@example.com/o/n.git 2>&1"
+	fAssertNotOut "[dfg4z] and doesn't print the token"  'SECRET' \
+		bash -c "cd '${gh}/split' && PATH='${ghp}' '${gitsby}' -q repo create https://user:SECRET@example.com/o/n.git 2>&1"
+	mkdir -p "${gh}/nl-origin"; ( cd "${gh}/nl-origin" && git init --quiet -b main && git commit --quiet --allow-empty -m init && git config remote.origin.url "$(printf 'https://user:SECRET@example.invalid/o/n.git\nx')" )
+	fAssertOut    "[dfg50] status masks the token in an origin with a newline in it"  'https://\*\*\*@example\.invalid/o/n\.git◉NEWLINE◉x' \
+		bash -c "cd '${gh}/nl-origin' && PATH='${ghp}' '${gitsby}' --no-fetch status 2>&1"
+	fAssertNotOut "[dfg51] and doesn't print the token"  'SECRET' \
+		bash -c "cd '${gh}/nl-origin' && PATH='${ghp}' '${gitsby}' --no-fetch status 2>&1"
 	## Keep the insteadOf rewrite: origin is a real github.com URL, and the fetch runs before the
 	## refusal. These 2 have no origin yet, so the account comes from the owner on the command
 	## line.

@@ -145,6 +145,12 @@ func TestMaskURL(t *testing.T) { // [dbfrt]
 		{"https://github.com/o/n.git", "https://github.com/o/n.git"},
 		{"git@github.com:o/n.git", "git@github.com:o/n.git"},
 		{"", ""},
+		// A value read back from .git/config can hold a newline.
+		{"https://user:token@github.com/o/n.git\nx", "https://***@github.com/o/n.git\nx"},
+		{"https://user:to\nken@github.com/o/n.git", "https://***@github.com/o/n.git"},
+		// A password can hold an '@'. One after the path is the path's.
+		{"https://user:p@ss@github.com/o/n.git", "https://***@github.com/o/n.git"},
+		{"https://github.com/o/n@x", "https://github.com/o/n@x"},
 	}
 	for _, tc := range tests {
 		if got := maskURL(tc.in); got != tc.want {
