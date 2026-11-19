@@ -1047,9 +1047,12 @@ type accountSetTarget struct {
 	read     string // the file as the plan read it; the save refuses once it has anything else
 	unset    bool   // 'account unset': the key comes out rather than going in
 	gone     []goneLine
+	added    []goneLine // lines the unset's save writes that the file doesn't have, such as the blocks of a dotted key line
+	unlisted bool       // the save may change more lines than gone names; too much differs to list them
 }
 
-// goneLine is one line 'account unset' takes out: where it is now, and what it says.
+// goneLine is one line 'account unset' takes out or puts in: where it is, and what
+// it says.
 type goneLine struct {
 	num  int
 	text string
@@ -1640,23 +1643,24 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 	if err := lostRefusal(t, kept); err != nil {
 		return t, false, err
 	}
-	// The module takes a key's comments and the lines under it along with it, so
-	// the plan is read off the text the save writes rather than the key lines.
-	// A rewrite has no file line numbers to give, so it compares layouts.
+	// The module takes a key's comments and the lines under it along with it, and
+	// a key on a dotted line leaves its blocks behind as lines of their own, so the
+	// plan is read off the text the save writes rather than the key lines. A
+	// rewrite has no file line numbers to give, so it compares layouts.
 	ok := false
 	if kept {
 		var sure []int
 		for _, k := range keys {
 			sure = append(sure, k.num)
 		}
-		t.gone, ok = removedLines(t.read, after, sure)
-	} else if t.gone, ok = removedLines(before, after, nil); ok {
+		t.gone, t.added, ok = lineChanges(t.read, after, sure)
+	} else if t.gone, t.added, ok = lineChanges(before, after, nil); ok {
 		for i := range t.gone {
 			t.gone[i].num = 0
 		}
 	}
 	if !ok || len(t.gone) == 0 {
-		t.gone = keys
+		t.gone, t.added, t.unlisted = keys, nil, true
 	}
 	if !kept && !tidy && !t.converts {
 		t.reshapes = true
@@ -1664,35 +1668,59 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 	return t, false, nil
 }
 
-// removedLines lists the lines of before that after doesn't have, when after is
-// before with lines taken out; ok is false when it isn't. Blank lines are left
-// out, since one going with a key says nothing. sure are line numbers known to
-// go. Matched from the end, so of 2 like lines the one above a key that goes is
-// the one named, since a key's comments sit above it.
-func removedLines(before, after string, sure []int) (gone []goneLine, ok bool) {
-	bl := strings.Split(strings.TrimPrefix(before, utf8BOM), "\n")
-	al := strings.Split(strings.TrimPrefix(after, utf8BOM), "\n")
-	j := len(al) - 1
-	skipBlank := func() {
-		for j >= 0 && strings.TrimSpace(al[j]) == "" {
+// lineChanges lists the non-blank lines of before that after doesn't have, and
+// the ones after has that before doesn't, by a longest common subsequence. Blank
+// lines are left out, since one going with a key says nothing. sure are line
+// numbers of before known to go, so none of them is matched. Matched from the
+// end, so of 2 like lines the one above a key that goes is the one named, since a
+// key's comments sit above it; that's also why only the shared tail is trimmed
+// before the table. ok is false when too much differs to compare.
+func lineChanges(before, after string, sure []int) (gone, added []goneLine, ok bool) {
+	split := func(s string) (lines []goneLine, raw []string) {
+		for i, l := range strings.Split(strings.TrimPrefix(s, utf8BOM), "\n") {
+			if text := strings.TrimSpace(l); text != "" {
+				lines, raw = append(lines, goneLine{num: i + 1, text: text}), append(raw, l)
+			}
+		}
+		return lines, raw
+	}
+	bl, braw := split(before)
+	al, araw := split(after)
+	same := func(i, j int) bool { return braw[i] == araw[j] && !slices.Contains(sure, bl[i].num) }
+	n, m := len(bl), len(al)
+	for n > 0 && m > 0 && same(n-1, m-1) {
+		n, m = n-1, m-1
+	}
+	if (n+1)*(m+1) > 1<<22 {
+		return nil, nil, false
+	}
+	// lcs[i*(m+1)+j] is the longest common subsequence of bl[:i] and al[:j].
+	w := m + 1
+	lcs := make([]int32, (n+1)*w)
+	for i := 1; i <= n; i++ {
+		for j := 1; j <= m; j++ {
+			if same(i-1, j-1) {
+				lcs[i*w+j] = lcs[(i-1)*w+j-1] + 1
+			} else {
+				lcs[i*w+j] = max(lcs[(i-1)*w+j], lcs[i*w+j-1])
+			}
+		}
+	}
+	for i, j := n, m; i > 0 || j > 0; {
+		switch {
+		case i > 0 && j > 0 && same(i-1, j-1):
+			i, j = i-1, j-1
+		case j == 0 || i > 0 && lcs[(i-1)*w+j] >= lcs[i*w+j-1]:
+			gone = append(gone, bl[i-1])
+			i--
+		default:
+			added = append(added, al[j-1])
 			j--
 		}
 	}
-	for i := len(bl) - 1; i >= 0; i-- {
-		text := strings.TrimSpace(bl[i])
-		if text == "" {
-			continue
-		}
-		skipBlank()
-		if j >= 0 && al[j] == bl[i] && !slices.Contains(sure, i+1) {
-			j--
-			continue
-		}
-		gone = append(gone, goneLine{num: i + 1, text: text})
-	}
-	skipBlank()
 	slices.Reverse(gone)
-	return gone, j < 0
+	slices.Reverse(added)
+	return gone, added, true
 }
 
 // unsetUnreadable: nothing was loaded, but something is where an accounts file can

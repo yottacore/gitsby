@@ -11,6 +11,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -1486,8 +1487,8 @@ func TestAccountUnsetPlanNamesEveryLineThatGoes(t *testing.T) { // [dfg0h]
 		if err != nil || done || plan.reshapes {
 			t.Fatalf("%q: done = %v, reshapes = %v, err = %v", c.body, done, plan.reshapes, err)
 		}
-		if !slices.Equal(plan.gone, c.want) {
-			t.Errorf("%q unset %s: plan names\n%v\nwant\n%v", c.body, c.key, plan.gone, c.want)
+		if !slices.Equal(plan.gone, c.want) || len(plan.added) > 0 {
+			t.Errorf("%q unset %s: plan names\n%v\nwant\n%v\nand adds %v", c.body, c.key, plan.gone, c.want, plan.added)
 		}
 		a.set = &plan
 		if err := a.cmdAccountSet(); err != nil {
@@ -1504,6 +1505,80 @@ func TestAccountUnsetPlanNamesEveryLineThatGoes(t *testing.T) { // [dfg0h]
 	plan, _, err := a.accountUnsetPlan()
 	if err != nil || !plan.reshapes || !slices.Contains(plan.gone, goneLine{0, "# again"}) {
 		t.Errorf("rewrite: reshapes = %v, gone = %v, err = %v; want the comment, unnumbered", plan.reshapes, plan.gone, err)
+	}
+}
+
+// A key on a dotted line leaves its blocks behind as lines of their own when it
+// goes, and the plan names those too. It named only the key line, so the save
+// wrote lines the plan never showed. Checked both ways against what the save
+// wrote, worked out apart from the plan's own code.
+func TestAccountUnsetPlanNamesLinesTheSaveAdds(t *testing.T) { // [dfh9q]
+	cases := []struct {
+		body, key   string
+		gone, added []string
+	}{
+		{"account.work.email: a@x\naccount.work.name: Me\n", "email", []string{"account.work.email: a@x"}, []string{"account:", "work:"}},
+		{"account.work.email: a@x\n", "email", []string{"account.work.email: a@x"}, []string{"account:", "work:"}},
+		// Under another dotted line of the block, nothing comes back.
+		{"# mine\naccount.work.name: Me\naccount.work.email: a@x # tr\n", "email", []string{"account.work.email: a@x # tr"}, nil},
+		{"account: work\n\temail: a@x\naccount.work.name: Me\n", "name", nil, nil},
+	}
+	for _, c := range cases {
+		a, file := unsetApp(t, c.body, "work", c.key)
+		plan, done, err := a.accountUnsetPlan()
+		if err != nil || done || plan.unlisted {
+			t.Fatalf("%q: done = %v, unlisted = %v, err = %v", c.body, done, plan.unlisted, err)
+		}
+		if c.gone != nil && (!slices.Equal(texts(plan.gone), c.gone) || !slices.Equal(texts(plan.added), c.added)) {
+			t.Errorf("%q unset %s: plan removes %v and adds %v; want %v and %v", c.body, c.key, plan.gone, plan.added, c.gone, c.added)
+		}
+		a.set = &plan
+		if err := a.cmdAccountSet(); err != nil {
+			t.Fatalf("unset: %v", err)
+		}
+		saved := readBack(t, file)
+		if left := linesLeft(c.body, saved); !slices.Equal(texts(plan.gone), texts(left)) {
+			t.Errorf("%q unset %s: plan removes %v, but the file lost %v", c.body, c.key, plan.gone, left)
+		}
+		if put := linesLeft(saved, c.body); !slices.Equal(texts(plan.added), texts(put)) {
+			t.Errorf("%q unset %s: plan adds %v, but the file gained %v\n%s", c.body, c.key, plan.added, put, saved)
+		}
+	}
+	// The plan prints them, and with more than the key line in it, the header names
+	// no single line.
+	a, _ := unsetApp(t, cases[0].body, "work", "email")
+	plan, _, err := a.accountUnsetPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, buf, _ := testPrinter()
+	a.out, a.set = p, &plan
+	a.preview("account-unset")
+	out := buf.String()
+	for _, want := range []string{"remove:  line 1, account.work.email: a@x", "add:     account:", "add:     work:"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("plan is missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, ", line 1\n") {
+		t.Errorf("plan header names one line, though the save changes 3:\n%s", out)
+	}
+}
+
+// Too much to compare is said rather than guessed.
+func TestLineChangesGivesUpOnAHugeDiff(t *testing.T) { // [dfh9r]
+	var b, f strings.Builder
+	for i := range 2100 {
+		fmt.Fprintf(&b, "b%d\n", i)
+		fmt.Fprintf(&f, "f%d\n", i)
+	}
+	if _, _, ok := lineChanges(b.String(), f.String(), nil); ok {
+		t.Error("a 2100 by 2100 line table was built")
+	}
+	// The shared tail needs no table, so a long file with its first line gone is
+	// still listed.
+	if gone, added, ok := lineChanges("k\n"+b.String(), b.String(), []int{1}); !ok || !slices.Equal(gone, []goneLine{{1, "k"}}) || len(added) != 0 {
+		t.Errorf("a long file with one line gone: gone = %v, added = %v, ok = %v", gone, added, ok)
 	}
 }
 

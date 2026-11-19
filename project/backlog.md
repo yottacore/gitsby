@@ -511,7 +511,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 20: account unset on a dotted key line changes lines the plan doesn't name
 	- ID: 2026111910223016
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102230
@@ -522,6 +522,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
 	- Possible cause [Bug]: When removedLines can't match, the plan falls back to the old key-only list without saying so.
 	- Origin: 75ec0ec, round-20261111 (Code Review 20261110b item 10). Missed case of that fix.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. The module keeps the account and work blocks a dotted line made, and writes them as lines of their own once the key goes. The plan's match took only lines going, so it failed and fell back to the key line, shown as email: a@x.
+	- Actual fix [Bug]: The plan compares the file with the text the save writes line by line, so it names the lines that go and the lines that come in, each as the file spells it. Lines that come in show as add:, unnumbered, after the removals. A diff too big to compare says so on an also: line rather than naming only the key. accounts.md and the changelog say so.
+	- Decisions: The plan names the added lines rather than a general note, since every line of an unset is already named (2026111016332330). Only the shared tail is trimmed before the table, so of 2 like lines the one above the key is still the one named. The compare gives up past about 2000 by 2000 differing lines.
+	- Test case: Go TestAccountUnsetPlanNamesLinesTheSaveAdds [dfh9q] and TestLineChangesGivesUpOnAHugeDiff [dfh9r], test.bash [dfh9s]. [dfg0h] also checks that no other unset adds a line.
+	- Verified: [dfh9s] fails on the build before the fix and passes after. [dfh9q] fails with the old fallback put back, [dfh9r] with the cap lifted. Quick gate, every area: test.bash 2156/0, fuzz 310/0, parity 31/0.
+	- Swept: src-go has one remove of a config key, in accountUnsetPlan. account set on a dotted line is a rewrite and its plan says so. A set that adds a new account block shows it as add: account[name].key, which names the block.
+	- Branch: nov19b-2026111910223016
+	- Commit: 8df1160
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261119-145523
 
 - Code Review 20261119 item 21: When a 2.x file can't be converted, its notice says two opposite things
 	- ID: 2026111910223002

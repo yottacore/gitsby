@@ -121,6 +121,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The `was:` and `becomes:` lines in `account set`'s plan show the line as the file has it, key, quotes and comment included. They used to rebuild it from the key and value, so the plan could show `email: c@d.e` where the file got `Email: "c@d.e"   # work mail`.
 
+- `account unset` on a key written on a dotted line, such as `account.work.email`, shows the `account:` and `work:` lines the save writes in its place. Its plan named only the key's line, and showed it as `email: a@x`.
+
 ## v3.0.0-beta.1 - 2026-11-08
 
 ### Notes
