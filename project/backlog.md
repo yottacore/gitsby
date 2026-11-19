@@ -33,6 +33,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- br merge on a branch that tracks one of another name leaves that branch on origin and warns about the wrong one
+	- ID: 2026111913330350
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-133303
+	- Opened by:
+	- Related IDs: 2026111910223203
+	- Steps to reproduce [Bug]: Have feat track origin/feature-x under push.default=upstream while origin also has an older feat, add a commit, and run gitsby -q br merge.
+	- Incorrect behavior [Bug]: It pushes to feature-x, merges into dev, and asks to delete origin's feat. The lease refuses, so it warns that origin's feat has commits the merge doesn't, which is false, and feature-x stays on origin. Exit 0.
+	- Expected behavior [Bug]: The delete names the branch the push went to, as pr create's head does, or br merge refuses before the plan.
+	- Reproduced [Bug]: 2026-11-19 on b23, local bare origin, while fixing 2026111910223203. Confirmed.
+	- Possible cause [Bug]: The atomic push, mergeDeleteRemote and the plan name the current branch, while pushDest pushes to the upstream.
+	- Origin: The delete has named the current branch since the Go port, and a push to another name came with push.default=upstream. No round saw it. Confirmed.
+
 - Code Review 20261119 item 1: sync, br switch and br create push to origin's main when the branch tracks origin/main
 	- ID: 2026111910223293
 	- Type: Bug
@@ -217,7 +233,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 7: pr create pushes to one branch and opens the PR on another
 	- ID: 2026111910223203
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261119-102232
@@ -229,6 +245,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, with a fake gh. d5e76f2 refused before gh ran. Confirmed.
 	- Possible cause [Bug]: prCreateArgs passes the current branch name, while pushDest pushes to the upstream.
 	- Origin: 6e3ab95, round-20261111 (Code Review 20261110b item 5). Regression of that fix.
+	- Closed reason: Done
+	- Actual cause [Bug]: prCreateArgs handed gh, tea and glab the current branch's name, while the park push went where pushDest sends it: to an upstream of another name under push.default=upstream or a renaming push refspec, or to another remote.
+	- Actual fix [Bug]: pr create names the branch on origin its push lands on, in the create call and the open-PR check. It refuses before the plan where git would refuse the push, where the push goes to another remote or to a ref that isn't a branch, and where it lands on main, dev or the default branch, whether or not anything is left to push. The way off is 'git branch --unset-upstream'. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223203
+	- Commit: 9b6b16a
+	- Test case: test.bash [dfh71] to [dfh75]; Go TestPrCreateHead [dfh76].
+	- Verified: [dfh71], [dfh72], [dfh74] and [dfh75] fail on the build before the fix and pass with it. [dfh73] passes on both, since the push already went to the right branch. [dfh76] fails 8 of its 12 cases with the head read as the current branch. The quick gate passed with every area: test.bash 2138/0, fuzz 310/0, parity 31/0, spawn counts [df37w] 38 and [df052] 43, unchanged. gosec has no finding in the changed lines.
+	- Swept: every place pr create names its branch: the gh, tea and glab create calls and openPrForBranch. The plan's push line already names the target. pr ok reads its head from the git host. br merge's delete names the current branch too, filed as 2026111913330350. release names no branch after its park push.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-133335
+	- Decisions:
+		- A push to another remote is refused rather than named as owner:branch. The PR opens on origin, gitsby's PR commands act on origin, and gh, tea and glab each name a fork's branch differently. The way off is 'git branch --unset-upstream', as for the other push refusals, so the next push is a first publish to origin. Check: entry filed.
+		- Asked whether or not anything is left to push, since the PR needs a head either way. Under simple with nothing new, it used to open the PR from origin's older branch of the same name.
+		- A push landing on a protected branch gets pr create's own refusal, ahead of refuseParkPush's 'sync --direct' text, since a PR from that branch would propose the branch itself.
 
 - Code Review 20261119 item 8: An account with no email commits as an empty address after account apply
 	- ID: 2026111910223190
@@ -248,7 +278,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 9: br create, br hotfix and release push back a branch deleted on origin
 	- ID: 2026111910223176
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261119-102231
@@ -259,6 +289,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23 for br create. br hotfix and release by reading. Confirmed.
 	- Possible cause [Bug]: pushesGoneBranch covers only sync and br switch.
 	- Origin: eaaa64c, nov19 (2026111016331930). Missed twin of that fix.
+	- Closed reason: Done
+	- Actual cause [Bug]: pushesGoneBranch answered only for sync and br switch, and only those 2 called refuseGoneBranch, so br create, br hotfix and release parked a gone branch as a first publish.
+	- Actual fix [Bug]: The gone-branch warning and -q refusal cover every park push but br merge's and pr create's: sync, br switch, br create and br hotfix off a branch that isn't protected, and release. The refusal runs in one place for every command, after the park-push refusal. Its way off names the branch the command was headed for. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223203
+	- Commit: 9b6b16a
+	- Test case: test.bash [dfh6x] to [dfh70]; Go TestGoneUpstream [dfgxm] with 4 new cases.
+	- Verified: [dfh6x] to [dfh70] fail on the build before the fix and pass with it. [dfgxq] to [dfgxs] fail there too, since the old br create put the branch back. [dfgxm]'s 3 new parking cases fail with pushesGoneBranch answering nothing for them. The quick gate passed with every area: test.bash 2138/0, fuzz 310/0, parity 31/0, spawn counts unchanged.
+	- Swept: every cmdPush caller: sync, br switch, br create, br hotfix, br merge, pr create and release. br merge and pr create stay out, per 2026111016331930. The hotfix back-merge's push of dev and release's pushes of main and dev don't push the branch the run started on.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-133344
+	- Decisions:
+		- release asks too, from any branch it starts on, since its park push is the same push.
+		- The way off is 'git switch' to where the command goes next: br create's merge target, br hotfix's default branch, and the merge target for release and sync, as before.
+		- sync's and br switch's refusal moved to the shared spot after refuseParkPush. Neither refuses anything new, since a gone upstream always reads as a push under the branch's own name, which refuseParkPush passes.
 
 - Code Review 20261119 item 10: With GIT_DIR set, every command except raw picks the account from the current folder
 	- ID: 2026111910223162

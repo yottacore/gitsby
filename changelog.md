@@ -77,6 +77,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A branch made from `origin/main`, as `git switch -c feat origin/main` makes it, tracks `main`. Its push from `sync`, `br switch`, `br create`, `br hotfix`, `br merge` or `pr create` went to origin's `main` and exited 0, though the plan said it pushed `feat`. Under git's default `push.default=simple`, where git refuses that push, Gitsby now refuses before the plan, and `git branch --unset-upstream` lets it publish the branch under its own name. Under `push.default=upstream` the push goes to `main` as git sends it: the plan says so, `sync` and `br switch` ask for `--direct`, and the other commands refuse.
 
+- `pr create` on a branch that tracks one of another name, as `push.default=upstream` pushes it, opens the pull request from the branch it pushed to. It named the current branch, so the pull request came from an older branch of that name on origin, at exit 0. A branch that pushes to a remote other than origin is refused before the plan, since the pull request opens on origin, and `git branch --unset-upstream` lets it publish there under its own name.
+
+- `sync`, `br switch`, `br create`, `br hotfix` and `release` warn before they push a branch back up that origin deleted, most often when its pull request merged, and with `-q` they refuse. Their push put it back on origin as a new branch. `git branch --unset-upstream` first says the push is meant.
+
 - `br switch` from `main` or `dev` with commits origin doesn't have yet warns before it pushes them, the way `sync` does, and with `-q` it refuses unless given `--direct`. It used to push them straight to origin's `main` or `dev` and exit 0.
 
 - `br create` and `br hotfix` off `main` or `dev` stop when the pull's restore of your edits conflicts, list the files, and point at the stash git kept, as `pullcom` does. They used to make the branch and push it over the conflict markers, and say Done.

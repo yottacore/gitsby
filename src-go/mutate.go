@@ -315,22 +315,23 @@ func (a *app) directTarget() string {
 	return target
 }
 
-// pushesGoneBranch is the gone upstream that sync, or br switch's park push, is
-// about to put back, most often a branch deleted when its pull request merged.
-// Empty when there's none. br merge deletes origin's copy again in the same run,
-// and pr create needs the branch on origin, so neither asks.
+// pushesGoneBranch is the gone upstream that a park push is about to put back,
+// most often a branch deleted when its pull request merged. Empty when there's
+// none. br merge deletes origin's copy again in the same run, and pr create needs
+// the branch on origin, so neither asks.
 func (a *app) pushesGoneBranch() string {
 	switch a.cmd.name {
-	case "sync":
-	case "br-switch":
-		if a.currentBranch() == a.switchTarget() || a.isOffline() {
+	case "br-merge", "pr":
+		return ""
+	case "release":
+		// Parks from whatever branch it starts on, protected or not.
+		if !a.hasOrigin() || a.isOffline() {
 			return ""
 		}
 	default:
-		return ""
-	}
-	if !a.hasOrigin() {
-		return ""
+		if !a.parkPushes() {
+			return ""
+		}
 	}
 	return a.goneUpstream()
 }
@@ -339,13 +340,18 @@ func (a *app) goneBranchText(gone string) string {
 	return "'" + gone + "' is gone, most often because its pull request merged and the branch was deleted. This pushes '" + a.currentBranch() + "' back up."
 }
 
-// goneBranchLeave is the way off that leaves it gone. Plain git, since sync and br
-// switch would both push it. Without its upstream setting, the push is an ordinary
-// first publish, which asks nothing.
+// goneBranchLeave is the way off that leaves it gone: plain git to the branch the
+// command was headed for, since the command itself would push it. Without its
+// upstream setting, the push is an ordinary first publish, which asks nothing.
 func (a *app) goneBranchLeave() string {
 	target := a.branchTarget("")
-	if a.cmd.name == "br-switch" {
+	switch a.cmd.name {
+	case "br-switch":
 		target = a.switchTarget()
+	case "br-create":
+		target = a.mergeTarget()
+	case "br-hotfix":
+		target = a.defaultBranch()
 	}
 	return "'git switch " + typedArg(target, runtime.GOOS) + "'"
 }

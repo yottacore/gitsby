@@ -1871,9 +1871,17 @@ fRunSuite(){
 		bash -c "cd '${goneA}' && out=\"\$('${gitsby}' -q sync 'more' 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'origin/feat' is gone\" <<< \"\${out}\" && grep -qF \"'git switch main'\" <<< \"\${out}\" && grep -qF 'git branch --unset-upstream' <<< \"\${out}\""
 	fAssert "[dfgxp] and br switch -q too, staying put, with nothing pushed or committed" \
 		bash -c "cd '${goneA}' && ! '${gitsby}' -q br switch main >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == feat ]] && [[ -z \"\$(git ls-remote '${goneO}' refs/heads/feat)\" ]] && [[ -n \"\$(git status --porcelain)\" ]]"
+	## Every other park push but br merge's and pr create's puts it back the same way.
+	fGoneKept(){ ( cd "${goneA}" || exit 1; [[ "$(git branch --show-current)" == feat && -z "$(git ls-remote "${goneO}" refs/heads/feat)" && -n "$(git status --porcelain)" && -z "$(git tag --list)" ]] ) ;}
+	fGoneRefused(){ local out=""; out="$(cd "${goneA}" && "${gitsby}" -q "$@" 2>&1)" && return 1; grep -qF "'origin/feat' is gone" <<< "${out}" && grep -qF "'git switch main'" <<< "${out}" && grep -qF 'git branch --unset-upstream' <<< "${out}" && fGoneKept ;}
+	fAssert "[dfh6x] br create -q refuses it too, naming the switch to main, with nothing pushed"  fGoneRefused br create next
+	fAssert "[dfh6y] and so does br hotfix -q"  fGoneRefused br hotfix fix1
+	fAssert "[dfh6z] and release -q"  fGoneRefused release 9.9.9
 	if ((hasPty)); then
 		fAssertOut "[dfgxq] asked in person, sync warns above the prompt" "WARNING: 'origin/feat' is gone, most often because its pull request merged" \
 			fAnswerPrompt n "cd '${goneA}' && '${gitsby}' sync 'more'"
+		fAssertOut "[dfh70] and so does br create" "WARNING: 'origin/feat' is gone, most often because its pull request merged" \
+			fAnswerPrompt n "cd '${goneA}' && '${gitsby}' br create next"
 	else
 		fSkipBlock "the gone-branch warning above the prompt (no pty)"
 	fi
@@ -3421,6 +3429,35 @@ GHEOF
 	fAssert "[ddhvn] and leaves the rest of the tree as it was" \
 		bash -c "cd '${pnc}' && [[ \"\$(git status --porcelain | tr '\n' ,)\" == ' M t.txt,?? u.txt,' ]] && grep -qx t2 t.txt"
 	fAssertOut "[ddhvp] pr ok still refuses --staged"  'staged works with pullcom, sync'  bash -c "cd '${pnc}' && PATH='${ghp}' '${gitsby}' -q pr ok 7 --staged 2>&1"
+	## The PR names the branch the park push went to. A branch can track one of another name
+	## while origin still has an older one of its own name, or push to another remote, and the
+	## PR used to open from that older branch.
+	local pnf="${gh}/prnew/far"
+	git clone --quiet "${gh}/prnew/origin.git" "${pnf}" 2>/dev/null
+	git init --quiet --bare -b main "${gh}/prnew/second.git"
+	(
+		cd "${pnf}" || exit 1
+		git push --quiet origin origin/dev:refs/heads/pnx origin/dev:refs/heads/pnx-far origin/dev:refs/heads/pny
+		git fetch --quiet && git switch --quiet -c pnx --track origin/pnx-far
+	)
+	fAssert "[dfh71] pr create on a branch tracking one of another name refuses under push.default=simple, with nothing to push" \
+		bash -c "cd '${pnf}' && out=\"\$(PATH='${ghp}' FAKE_GH_LOG='${gh}/prfar1.log' '${gitsby}' -q pr create 'Far' 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'git branch --unset-upstream' <<< \"\${out}\" && { [[ ! -f '${gh}/prfar1.log' ]] || ! grep -q '^pr create' '${gh}/prfar1.log'; }"
+	( cd "${pnf}" && git config push.default upstream && echo far > far.txt && git add far.txt && git commit --quiet -m "Far work" )
+	fAssert "[dfh72] under push.default=upstream it opens the PR from the branch the push went to" \
+		bash -c "cd '${pnf}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prfar2.log' '${gitsby}' -q pr create 'Far' && grep -q -- '^pr create .*--head pnx-far --title Far' '${gh}/prfar2.log'"
+	fAssert "[dfh73] and origin's older branch of the same name is left as it was" \
+		bash -c "cd '${pnf}' && [[ \"\$(git ls-remote origin refs/heads/pnx-far | cut -f1)\" == \"\$(git rev-parse pnx)\" && \"\$(git ls-remote origin refs/heads/pnx | cut -f1)\" == \"\$(git rev-parse origin/dev)\" ]]"
+	( cd "${pnf}" && git switch --quiet -c pnd --track origin/dev )
+	fAssert "[dfh75] one whose push lands on dev refuses, with nothing to push" \
+		bash -c "cd '${pnf}' && out=\"\$(PATH='${ghp}' FAKE_GH_LOG='${gh}/prfar3.log' '${gitsby}' -q pr create 'Dev' 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"would propose 'dev' itself\" <<< \"\${out}\" && { [[ ! -f '${gh}/prfar3.log' ]] || ! grep -q '^pr create' '${gh}/prfar3.log'; }"
+	(
+		cd "${pnf}" || exit 1
+		git config --unset push.default
+		git remote add second "${gh}/prnew/second.git" && git switch --quiet -c pny origin/dev && git push --quiet -u second pny
+		echo y > y.txt && git add y.txt && git commit --quiet -m "Second work"
+	)
+	fAssert "[dfh74] an upstream on another remote refuses, with nothing pushed and no PR" \
+		bash -c "cd '${pnf}' && out=\"\$(PATH='${ghp}' FAKE_GH_LOG='${gh}/prfar4.log' '${gitsby}' -q pr create 'Second' 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"pushes to the remote 'second'\" <<< \"\${out}\" && { [[ ! -f '${gh}/prfar4.log' ]] || ! grep -q '^pr create' '${gh}/prfar4.log'; } && [[ \"\$(git -C '${gh}/prnew/second.git' rev-parse pny)\" != \"\$(git rev-parse pny)\" && \"\$(git ls-remote origin refs/heads/pny | cut -f1)\" == \"\$(git rev-parse origin/dev)\" ]]"
 
 	## A branch whose name starts with a dash comes from a clone or raw git, or is typed after '--',
 	## and git reads it as options: 'git checkout -evil' answers "unknown switch". There is no

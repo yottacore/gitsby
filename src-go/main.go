@@ -377,9 +377,6 @@ func (a *app) preflight() error {
 		if err := a.refuseDirectPush(); err != nil {
 			return err
 		}
-		if err := a.refuseGoneBranch(); err != nil {
-			return err
-		}
 	case "release":
 		// With no remote at all the check below never trips - there is nothing to find
 		// unreachable - and the tag would be cut, pushed nowhere, and reported as done.
@@ -424,6 +421,9 @@ func (a *app) preflight() error {
 		return err
 	}
 	if err := a.refuseParkPush(); err != nil {
+		return err
+	}
+	if err := a.refuseGoneBranch(); err != nil {
 		return err
 	}
 	return a.stagedPreflight()
@@ -471,10 +471,7 @@ func (a *app) preflightBranch() error {
 			return usagef("Working tree has changes on '%s'; won't auto-commit to a protected branch. Carry them to a new branch (%s br create <name>), or commit them here deliberately (%s pullcom) first.", a.currentBranch(), meName, meName)
 		}
 		// A clean one can still be ahead, and the park push would send that.
-		if err := a.refuseDirectPush(); err != nil {
-			return err
-		}
-		return a.refuseGoneBranch()
+		return a.refuseDirectPush()
 	}
 	return nil
 }

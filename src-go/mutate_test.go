@@ -99,9 +99,59 @@ func TestPushArgs(t *testing.T) { // [df52f]
 	}
 }
 
+// pr create names the branch on origin its park push sends the work to, and refuses
+// where that isn't one, since the PR opens on origin. An empty want is a refusal.
+func TestPrCreateHead(t *testing.T) { // [dfh76]
+	origin, clone := gitTestRepo(t)
+	runGit(t, clone, "checkout", "-q", "-b", "feat")
+	runGit(t, clone, "push", "-q", "-u", "origin", "feat")
+	runGit(t, clone, "push", "-q", "origin", "feat:up")
+	runGit(t, clone, "remote", "add", "second", origin)
+	runGit(t, clone, "fetch", "-q", "second")
+	runGit(t, clone, "branch", "-q", "lone")
+	t.Chdir(clone)
+	tests := []struct {
+		name   string
+		config [][2]string
+		branch string
+		want   string
+	}{
+		{"plain", nil, "feat", "feat"},
+		{"no upstream", nil, "lone", "lone"},
+		{"upstream by another name", [][2]string{{"branch.feat.merge", "refs/heads/up"}}, "feat", ""},
+		{"upstream by another name, upstream", [][2]string{{"branch.feat.merge", "refs/heads/up"}, {"push.default", "upstream"}}, "feat", "up"},
+		{"upstream by another name, current", [][2]string{{"branch.feat.merge", "refs/heads/up"}, {"push.default", "current"}}, "feat", "feat"},
+		{"refspec that renames", [][2]string{{"remote.origin.push", "refs/heads/feat:refs/heads/other"}}, "feat", "other"},
+		{"refspec to a ref that isn't a branch", [][2]string{{"remote.origin.push", "refs/heads/feat:refs/for/main"}}, "feat", ""},
+		{"tracks main, upstream", [][2]string{{"branch.feat.merge", "refs/heads/main"}, {"push.default", "upstream"}}, "feat", ""},
+		{"upstream on another remote", [][2]string{{"branch.feat.remote", "second"}}, "feat", ""},
+		{"push remote", [][2]string{{"branch.feat.pushRemote", "second"}}, "feat", ""},
+		{"push default", [][2]string{{"remote.pushDefault", "second"}}, "feat", ""},
+		{"push remote, no upstream", [][2]string{{"remote.pushDefault", "second"}}, "lone", "lone"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runGit(t, clone, "checkout", "-q", tc.branch)
+			for _, kv := range tc.config {
+				runGit(t, clone, "config", kv[0], kv[1])
+			}
+			a := newApp(newPrinter())
+			got, err := a.prCreateHead(tc.branch)
+			for _, kv := range tc.config {
+				runGit(t, clone, "config", "--unset", kv[0])
+			}
+			runGit(t, clone, "config", "branch.feat.remote", "origin")
+			runGit(t, clone, "config", "branch.feat.merge", "refs/heads/feat")
+			if got != tc.want || (err != nil) != (tc.want == "") {
+				t.Errorf("prCreateHead() = %q, %v, want %q", got, err, tc.want)
+			}
+		})
+	}
+}
+
 // A branch origin deleted, once a fetch prunes its ref, still has its upstream set,
-// and git reads that as none. sync and br switch's park push would publish it again
-// under the old name, so they have to see it as gone rather than as never pushed.
+// and git reads that as none. A park push would publish it again under the old
+// name, so it has to be seen as gone rather than as never pushed.
 func TestGoneUpstream(t *testing.T) { // [dfgxm]
 	origin, clone := gitTestRepo(t)
 	runGit(t, clone, "checkout", "-q", "-b", "feat")
@@ -139,6 +189,10 @@ func TestGoneUpstream(t *testing.T) { // [dfgxm]
 		{"deleted on origin", "feat", "sync", "origin/feat", "origin/feat"},
 		{"deleted on origin, br switch parks it", "feat", "br-switch", "origin/feat", "origin/feat"},
 		{"deleted on origin, pr create needs it there", "feat", "pr", "origin/feat", ""},
+		{"deleted on origin, br create parks it", "feat", "br-create", "origin/feat", "origin/feat"},
+		{"deleted on origin, br hotfix parks it", "feat", "br-hotfix", "origin/feat", "origin/feat"},
+		{"deleted on origin, release parks it", "feat", "release", "origin/feat", "origin/feat"},
+		{"deleted on origin, br merge deletes it again", "feat", "br-merge", "origin/feat", ""},
 		{"local upstream deleted", "local", "sync", "", ""},
 	} {
 		check(tc)

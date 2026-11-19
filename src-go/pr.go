@@ -24,7 +24,7 @@ type prRequest struct {
 	sub        string // "create" or "ok"; empty for the bare list and the numeric view
 	num        string
 	title      string
-	headBranch string
+	headBranch string   // the PR's branch on origin: read from the host for ok, from the push for create
 	tool       hostTool // which CLI answers for this repo's host
 	cli        string   // that tool as this machine spells it
 }
@@ -138,12 +138,12 @@ func (a *app) prViewArgs() [][]string {
 
 func (a *app) prCreateArgs(base string) []string {
 	if a.pr.tool == toolGlab {
-		return a.glabArgs("mr", "create", "--target-branch", base, "--source-branch", a.currentBranch(), "--title", a.pr.title, "--description", "", "--yes")
+		return a.glabArgs("mr", "create", "--target-branch", base, "--source-branch", a.pr.headBranch, "--title", a.pr.title, "--description", "", "--yes")
 	}
 	if a.pr.tool == toolTea {
-		return []string{"pulls", "create", "--base", base, "--head", a.currentBranch(), "--title", a.pr.title}
+		return []string{"pulls", "create", "--base", base, "--head", a.pr.headBranch, "--title", a.pr.title}
 	}
-	return []string{"pr", "create", "--base", base, "--head", a.currentBranch(), "--title", a.pr.title, "--body", ""}
+	return []string{"pr", "create", "--base", base, "--head", a.pr.headBranch, "--title", a.pr.title, "--body", ""}
 }
 
 func (a *app) prApproveArgs() []string {
@@ -429,6 +429,11 @@ func (a *app) prPreflight() error {
 		}
 		return usagef("'%s' is what pull requests merge into; there is nothing to propose. Start a branch first: %s br create <name>", prBranch, meName)
 	}
+	head, err := a.prCreateHead(prBranch)
+	if err != nil {
+		return err
+	}
+	a.pr.headBranch = head
 	// No title given: the last commit subject is what the work is called already.
 	if a.pr.title == "" {
 		a.pr.title = runOut("git", "log", "-1", "--pretty=%s")
@@ -438,10 +443,39 @@ func (a *app) prPreflight() error {
 	}
 	// An open PR for this branch already is the answer to 'pr create' - say so
 	// instead of letting the git host error.
-	if existing := a.openPrForBranch(prBranch); existing != "" {
-		return usagef("PR #%s is already open for '%s'. View it: %s pr %s", existing, prBranch, meName, existing)
+	if existing := a.openPrForBranch(head); existing != "" {
+		return usagef("PR #%s is already open for '%s'. View it: %s pr %s", existing, head, meName, existing)
 	}
 	return nil
+}
+
+// prCreateHead is the branch on origin the park push sends the work to, which the
+// pull request has to name. A branch can track one of another name, or push to
+// another remote, so the current branch's name could open the PR from an older
+// branch on origin. Asked whether or not anything is left to push.
+func (a *app) prCreateHead(branch string) (string, error) {
+	d := a.pushDest()
+	if d.refused == "" && d.remote == "origin" && d.ref == "refs/heads/"+branch {
+		return branch, nil
+	}
+	// Without an upstream the push is a first publish, to origin under its own name.
+	if !a.hasUpstream() {
+		return branch, nil
+	}
+	if err := d.refusal(); err != nil {
+		return "", err
+	}
+	unset := "To publish it to origin under its own name, run 'git branch --unset-upstream' first."
+	head, isBranch := strings.CutPrefix(d.ref, "refs/heads/")
+	switch {
+	case d.remote != "origin":
+		return "", usagef("'%s' pushes to the remote '%s', but its pull request opens on origin, which wouldn't have the work. Nothing was done. %s", branch, d.remote, unset)
+	case !isBranch:
+		return "", usagef("'%s' pushes to '%s' on origin, which isn't a branch a pull request can name. Nothing was done.", branch, d.ref)
+	case a.isProtectedBranch(head):
+		return "", usagef("'%s' pushes to '%s', so its pull request would propose '%s' itself. Nothing was done. %s", branch, head, head, unset)
+	}
+	return head, nil
 }
 
 // openPrForBranch is the number of the open PR proposing this branch, or nothing -

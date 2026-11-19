@@ -204,7 +204,8 @@ The rule for every path that hands out a token. The token goes only to the host 
 	- It goes where a bare push would send that branch alone: the push remote, as `pushRemote` or `remote.pushDefault` sets it, and the ref that remote's push refspecs map it to. Where git has no one answer, as under `push.default=nothing`, it goes to the upstream the pull reads.
 	- A first push is still `git push -u origin HEAD`. On a mirror remote git refuses a named branch, so the push fails and nothing moves.
 	- `push.default` decides only when the upstream, on the remote the push goes to, has another name than the branch, as for a branch made from `origin/main` (2026-11-19). `simple`, git's default, refuses that push, so Gitsby refuses before the plan, naming `git branch --unset-upstream`. `upstream` and `nothing` send it to the upstream, and `current` and `matching` to the branch's own name.
-	- `--direct` is judged by where the push lands, not the branch's name. `sync` and `br switch` warn, and with `-q` refuse without it, as they do on `main` itself. `br create`, `br hotfix`, `br merge` and `pr create` never push a protected branch, so they refuse, naming `sync --direct`.
+	- `--direct` is judged by where the push lands, not the branch's name. `sync` and `br switch` warn, and with `-q` refuse without it, as they do on `main` itself. `br create`, `br hotfix` and `br merge` never push a protected branch, so they refuse, naming `sync --direct`. `pr create` refuses too, since its pull request would propose that branch itself.
+	- `pr create` opens the pull request from the branch on origin its push goes to, which for a branch tracking another name isn't its own (2026-11-19). It named the current branch, so the PR came from an older branch of that name on origin, or one that wasn't there. Where the push goes to another remote, or to a ref that isn't a branch, it refuses before the plan, since the pull request opens on origin. That is asked whether or not anything is left to push.
 
 - `--staged` commits the index only, and its pulls go without `--autostash` (2026-10-05).
 	- It is a flag on `pullcom`, `sync`, `pr create`, `release`, and the branch commands that commit before they move. Any other command refuses it, since ignoring it would sweep in the edits it was typed to keep out. It is opt-in: a file staged long ago would otherwise make a commit quietly smaller.
@@ -226,10 +227,10 @@ The rule for every path that hands out a token. The token goes only to the host 
 	- The flag is for this one case, not a general `--no-warn`. Flags are permanent, and a general one would also hide whatever warning comes next.
 	- `br switch` parks before it moves, and from `main` or `dev` its park push is the same push, so it gets the same warning, refusal and flag (2026-11-18). `br create` and `br hotfix` carry the tree off a protected branch rather than push it, `br merge` refuses to run from one, and `release` exists to push one.
 
-- `sync` and `br switch` warn before they push a branch back up that origin deleted, most often when its pull request merged on the git host (2026-11-19). Once the fetch prunes it, git reads the branch's upstream as none, so the push was a first publish that put the branch back.
+- `sync`, `br switch`, `br create`, `br hotfix` and `release` warn before their push puts a branch back up that origin deleted, most often when its pull request merged on the git host (2026-11-19). Once the fetch prunes it, git reads the branch's upstream as none, so the push was a first publish that put the branch back.
 	- The state line shows such a branch as `(origin/<branch> gone)`, and the pull step says it's gone rather than that there's no upstream.
 	- The warning goes last before the prompt, and `-q` refuses, as for a push straight to `main`.
-	- There is no flag for it. `git branch --unset-upstream` makes the next push an ordinary first publish, and `git switch` leaves the branch without pushing it, since `br switch` would park it.
+	- There is no flag for it. `git branch --unset-upstream` makes the next push an ordinary first publish, and `git switch` to the branch the command was headed for leaves it without pushing it, since the command itself would park it.
 	- `br merge` pushes it back and deletes origin's copy again in the same run, and `pr create` needs it on origin, so neither asks.
 
 - Being offline must never turn a good commit into a failed command, now that `pullcom` is the only way to commit.
