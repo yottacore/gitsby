@@ -2054,6 +2054,11 @@ fRunSuite(){
 	( cd "${cloneA}" && echo m4 > m4.txt )
 	fAssert "[dafr3] message starting with a dash commits"    bash -c "cd '${cloneA}' && '${gitsby}' -q update -m '-Wall added to CFLAGS' && git log -1 --format=%s | grep -qx -- '-Wall added to CFLAGS'"
 	fAssertFail "[dab6q] unquoted two-word message rejected"  bash -c "cd '${cloneA}' && '${gitsby}' -q update Fixed bug"
+	## A typed message beside -m used to be dropped for the -m one, at exit 0.
+	( cd "${cloneA}" && echo m5 > m5.txt )
+	fAssert "[dfgw0] a typed message beside -m is refused, and nothing is committed" \
+		bash -c "cd '${cloneA}' && h=\"\$(git rev-parse HEAD)\"; out=\"\$('${gitsby}' -q pullcom 'first message' -m second 2>&1)\"; [[ \$? == 1 ]] && grep -qF \"Two commit messages given: 'first message', and -m 'second'.\" <<< \"\${out}\" && [[ \"\$(git rev-parse HEAD)\" == \"\${h}\" ]]"
+	rm -f "${cloneA:?}/m5.txt"
 
 	## Non-tty: mutating commands fail closed without -q; read-only ones go quiet
 	( cd "${cloneA}" && echo nt > nt.txt )
@@ -2686,6 +2691,16 @@ fRunSuite(){
 	git clone --quiet "${o3}" "${cl}/nodev-seed" 2>/dev/null
 	( cd "${cl}/nodev-seed" && echo n > n.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main )
 	fAssert "[dab8w] repo clone of a no-dev repo stays on default"  bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o3}' nd && [[ \"\$(cd nd && git branch --show-current)\" == main ]]"
+	## A tag named dev beside origin's dev branch: a plain 'checkout dev' took the tag and left
+	## HEAD detached, and the clone still said Cloned, at exit 0.
+	local o4="${cl}/tagdev.git"
+	git init --quiet --bare -b main "${o4}"
+	git clone --quiet "${o4}" "${cl}/tagdev-seed" 2>/dev/null
+	( cd "${cl}/tagdev-seed" && echo t > t.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main \
+		&& git tag dev && git push --quiet origin refs/tags/dev && git checkout --quiet -b work && echo d > d.txt && git add --all \
+		&& git commit --quiet -m dev && git push --quiet origin refs/heads/work:refs/heads/dev )
+	fAssert "[dfgw1] repo clone ends on the dev branch beside a tag named dev, tracking origin's" \
+		bash -c "cd '${cl}' && '${gitsby}' -q repo clone '${o4}' td >/dev/null 2>&1 && cd td && [[ \"\$(git symbolic-ref --quiet HEAD)\" == refs/heads/dev && \"\$(git for-each-ref --format='%(upstream)' refs/heads/dev)\" == refs/remotes/origin/dev && \"\$(git rev-parse HEAD)\" == \"\$(git rev-parse refs/remotes/origin/dev)\" ]]"
 	fAssert "[dab8x] repo clone into a pre-existing empty dir"      bash -c "cd '${cl}' && mkdir -p pre && '${gitsby}' -q repo clone '${origin}' pre && [[ -d pre/.git ]]"
 	## A folder given relative was shown the way it was typed, which leaves the reader to work out
 	## where it ends up. The git command keeps the typed form.

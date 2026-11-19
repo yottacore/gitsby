@@ -82,7 +82,7 @@ func (a *app) preview(what string) {
 		a.previewRelease()
 	case "repo-clone":
 		a.out.clean(planPad + "git clone -- " + maskURL(a.tgt.cloneURL) + " " + a.tgt.cloneDir)
-		a.out.clean(planPad + "git -C " + a.tgt.cloneDir + " checkout dev *")
+		a.out.clean(planPad + "git " + strings.Join(cloneDevArgs(a.tgt.cloneDir), " ") + " *")
 	case "repo-url":
 		a.out.clean(planPad + "git remote set-url origin " + a.respelledURL(a.cmd.arg))
 	case "account-set", "account-unset":

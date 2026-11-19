@@ -80,7 +80,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 21: repo clone ends on a tag when origin has a tag and a branch both named dev
 	- ID: 2026111016332194
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163321
@@ -91,6 +91,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23.
 	- Possible cause [Bug]: repo.go:373 runs a plain `git checkout dev`.
 	- Origin: 4918b5b, 2026-08-19. The 2026-10-04 tag collision fixes, 2026100411344972 and its siblings, didn't reach the clone. Confirmed.
+	- Actual cause [Bug]: The clone ran a plain `git checkout dev`. With no local dev yet, git takes the tag dev ahead of origin's branch, so HEAD was left detached at the tag.
+	- Actual fix [Bug]: The clone checks out dev with `checkout -b dev --track refs/remotes/origin/dev`, naming origin's branch in full, as br switch already does. The plan line shows the same command. When dev is the default branch the step is skipped, since the clone already has it.
+		- Swept: every checkout gitsby runs. br switch, pr ok and br create's base go through checkoutArgs, which names origin's branch in full when there's no local one, and a local branch wins over a tag in a plain checkout (checked by hand with a tag dev beside a local dev). br create's own `checkout -b` names a new branch.
+	- Decisions:
+		- The step is skipped when the clone's default branch is dev, since `checkout -b` would fail there and there is nothing to do.
+		- A changelog entry under vNEXT Fixed, since v3.0.0-beta.1 has the bug.
+	- Branch: nov19-2026111016332194
+	- Test case: test.bash [dfgw1]. It failed with the build before the fix, which left HEAD detached at the tag, and passes after.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the quick gate passed with every area.
+	- Closed reason: Done
+	- Closed: 20261119-073645
 
 - Code Review 20261110b item 23: 2 accounts can get the same fragment file, and the later one wins
 	- ID: 2026111016332169
@@ -125,7 +136,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261110b item 31: A message typed as a word is dropped when -m is also given
 	- ID: 2026111016332070
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261110-163320
@@ -136,6 +147,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-10 on b23.
 	- Possible cause [Bug]: args.go:335 keeps `-m` and drops the word.
 	- Origin: No round saw it. Code Review 20261110 item 1 covered options a command doesn't read, not this. Confirmed.
+	- Actual cause [Bug]: sortCommand took the typed word as the message only when -m was empty, and otherwise dropped it. sortPr did the same with a pr create title typed beside -m.
+	- Actual fix [Bug]: pullcom, sync and br merge refuse a typed message beside -m, and pr create a typed title beside -m, before anything runs, at exit 1: "Two commit messages given: 'first message', and -m 'second'. Give one."
+		- Swept: every command that takes -m. pullcom, sync, br merge and pr create also take a typed message or title, and all 4 refuse the pair. repo create, repo connect, br create, br hotfix, br switch and release take a name, URL or version as their word, never a message.
+	- Decisions:
+		- pr create's title gets the same refusal, as the same class.
+		- -m won in the Go code (a comment in pr.go, and [dbfqw]). No recorded decision was behind it, and the item asks for the refusal.
+		- 20261119: Go [dbfqw] asserted -m won over a typed message (message "flag"). It now asserts the pair is refused. Its first half, a typed message alone, is unchanged.
+		- A changelog entry under vNEXT Fixed, since v3.0.0-beta.1 has the bug.
+	- Branch: nov19-2026111016332194
+	- Test case: Go [dfgvz] and [dbfqw], test.bash [dfgw0]. [dfgvz] and [dbfqw] fail with the fix taken out. [dfgw0] failed with the build before the fix, which committed with second at exit 0.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the quick gate passed with every area.
+	- Closed reason: Done
+	- Closed: 20261119-073653
 
 - Code Review 20261110b item 35: account set's plan shows a different line than it writes
 	- ID: 2026111016332021

@@ -186,6 +186,11 @@ func parseArgs(argv []string) (opt options, cmd command, info string, err error)
 	return opt, cmd, "", nil
 }
 
+// twoMessages refuses a typed message beside -m, since one of the 2 would be dropped.
+func twoMessages(what, typed, flag string) error {
+	return usagef("Two %ss given: '%s', and -m '%s'. Give one.", what, typed, flag)
+}
+
 // collapseCommand folds '<noun> <verb>' to one internal token and shifts the
 // positionals down, so everything downstream deals with a single flat name. No
 // real command has a hyphen, so rejecting one keeps the tokens untypeable.
@@ -323,6 +328,9 @@ func sortCommand(cmd command, opt *options) (command, error) {
 			if cmd.arg3 != "" {
 				return cmd, usagef("Unexpected extra argument '%s'; quote your title.", cmd.arg3)
 			}
+			if opt.message != "" && cmd.arg2 != "" {
+				return cmd, twoMessages("title", cmd.arg2, opt.message)
+			}
 		case "ok":
 		default:
 			// A number, or nothing. Either way there is no third word.
@@ -332,6 +340,9 @@ func sortCommand(cmd command, opt *options) (command, error) {
 			}
 		}
 	case "pullcom", "sync", "br-merge":
+		if opt.message != "" && cmd.arg != "" {
+			return cmd, twoMessages("commit message", cmd.arg, opt.message)
+		}
 		if opt.message == "" {
 			opt.message = cmd.arg
 		}

@@ -91,6 +91,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - An accounts file last written before the first SHCL 3 module Gitsby used, or with no real time, as a Nix store gives, is read as it is rather than re-spelled as that module's. The copy a conversion keeps has the file's own time, so moving it back reads as the file did. Where the folder can't be written, the notice says so rather than blaming a lock.
 
+- `repo clone` ends on the `dev` branch, tracking origin's, when origin also has a tag named `dev`. It used to leave the clone detached at the tag and say Done, and the next command refused.
+
+- A message typed as a word beside `-m`, as in `gitsby pullcom 'first message' -m second`, is refused. It used to commit with the `-m` one and drop the other without a word. A `pr create` title typed beside `-m` is refused the same way.
+
 ## v3.0.0-beta.1 - 2026-11-08
 
 ### Notes

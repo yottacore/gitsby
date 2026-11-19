@@ -44,7 +44,7 @@ func (a *app) sortPr() error {
 		}
 	case "create":
 		a.pr.sub = "create"
-		a.pr.title = a.opt.message // -m wins, same as everywhere else
+		a.pr.title = a.opt.message // sortCommand refused -m beside a typed title
 		if a.pr.title == "" {
 			a.pr.title = a.cmd.arg2
 		}
