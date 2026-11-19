@@ -142,6 +142,10 @@ func run(out *printer, argv []string) error {
 	if err := a.settleAccount(); err != nil {
 		return err
 	}
+	// Before the fetch, which a refused run doesn't need.
+	if err := a.refusePendingOp(); err != nil {
+		return err
+	}
 	a.freshenRemote()
 	if err := a.settleBranchNames(); err != nil {
 		return err
@@ -237,8 +241,13 @@ func (a *app) settleCommand(argv []string) error {
 func (a *app) enterRepo() error {
 	// One call, 4 answers, read from the text, since rev-parse exits 0 in a bare repo or
 	// .git too, and nonzero outside a work tree after printing the first 3. Bare goes
-	// first.
-	out, _ := toolCmd("git", "rev-parse", "--is-inside-work-tree", "--is-inside-git-dir", "--is-bare-repository", "--show-toplevel").Output()
+	// first. In a work tree the same call also locates what a stopped operation leaves
+	// behind, which saves pendingOp a spawn.
+	args := []string{"rev-parse", "--is-inside-work-tree", "--is-inside-git-dir", "--is-bare-repository", "--show-toplevel"}
+	for _, name := range opFiles {
+		args = append(args, "--git-path", name)
+	}
+	out, _ := toolCmd("git", args...).Output()
 	var answers []string
 	for _, line := range splitLines(string(out)) {
 		if line != "" {
@@ -246,10 +255,10 @@ func (a *app) enterRepo() error {
 		}
 	}
 	top := ""
-	if len(answers) == 4 && answers[0] == "true" {
-		top, answers = answers[3], answers[:3]
+	if len(answers) == 4+len(opFiles) && answers[0] == "true" {
+		top, a.opPaths, answers = answers[3], answers[4:], answers[:3]
 	}
-	a.git.contextDir.set(topOrWorkingDir(top))
+	a.git.contextDir.set(contextOf(top))
 	if len(answers) == 3 {
 		if answers[2] == "true" {
 			return usagef("This is a bare repository: no working tree, so there is nothing here to commit, switch or push. Work in a clone of it instead.")
@@ -368,9 +377,6 @@ func (a *app) preflight() error {
 		if err := a.refuseDirectPush(); err != nil {
 			return err
 		}
-		if err := a.refuseGoneBranch(); err != nil {
-			return err
-		}
 	case "release":
 		// With no remote at all the check below never trips - there is nothing to find
 		// unreachable - and the tag would be cut, pushed nowhere, and reported as done.
@@ -386,6 +392,10 @@ func (a *app) preflight() error {
 				return err
 			}
 		}
+	}
+	// Ahead of release's and pr's own checks, which read origin's branches.
+	if err := a.refuseNarrowFetch(); err != nil {
+		return err
 	}
 	// The release version resolves up front so the preview and the command agree,
 	// and so bad input dies early.
@@ -412,6 +422,15 @@ func (a *app) preflight() error {
 		a.set = &t
 	}
 	if err := a.preflightBranch(); err != nil {
+		return err
+	}
+	if err := a.refuseHeldBranch(); err != nil {
+		return err
+	}
+	if err := a.refuseParkPush(); err != nil {
+		return err
+	}
+	if err := a.refuseGoneBranch(); err != nil {
 		return err
 	}
 	return a.stagedPreflight()
@@ -443,6 +462,9 @@ func (a *app) preflightBranch() error {
 		}
 	case "br-switch":
 		if a.cmd.arg != "" && !a.branchExistsLocal(a.cmd.arg) && !a.branchExistsRemote(a.cmd.arg) {
+			if a.hasOrigin() && !a.fetchSees(a.cmd.arg) {
+				return narrowFetchRefusal("whether origin has a '" + a.cmd.arg + "'")
+			}
 			if strings.HasPrefix(a.cmd.arg, "-") {
 				return usagef("No branch '%s' locally or on origin, and a branch name can't start with a dash.", a.cmd.arg)
 			}
@@ -459,10 +481,7 @@ func (a *app) preflightBranch() error {
 			return usagef("Working tree has changes on '%s'; won't auto-commit to a protected branch. Carry them to a new branch (%s br create <name>), or commit them here deliberately (%s pullcom) first.", a.currentBranch(), meName, meName)
 		}
 		// A clean one can still be ahead, and the park push would send that.
-		if err := a.refuseDirectPush(); err != nil {
-			return err
-		}
-		return a.refuseGoneBranch()
+		return a.refuseDirectPush()
 	}
 	return nil
 }
@@ -686,7 +705,7 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 		if push, committed := a.directPush(); push {
 			a.out.clean("")
 			a.out.warn("WARNING: " + a.directPushText())
-			a.out.warn("  To keep it off '" + a.currentBranch() + "', answer n and run " + a.keepOffText(committed) + ". (The '--direct' flag silences this warning.)")
+			a.out.warn("  To keep it off '" + a.directTarget() + "', answer n and run " + a.keepOffText(committed) + ". (The '--direct' flag silences this warning.)")
 		}
 		if gone := a.pushesGoneBranch(); gone != "" {
 			a.out.clean("")
@@ -859,12 +878,20 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	if err := a.resolveAccount(a.contextDir(), a.originURL()); err != nil {
 		return err
 	}
+	if name == "gh" {
+		a.acct.toolHosts = ghNamedHosts(args)
+	}
 	if err := a.selectAccount(true); err != nil {
 		return err
 	}
 	warned := false
 	if !a.acct.bypassed {
 		switch tool {
+		case "gh":
+			if a.acct.ghElsewhere != "" && !a.opt.quiet {
+				a.out.errorf("not acting as the account: gh is pointed at %s, and the account's token is for %s", printable(a.acct.ghElsewhere), a.acct.credHost)
+				warned = true
+			}
 		case "tea", "tea-cli":
 			var err error
 			if warned, err = a.teaAsAccount(path); err != nil {

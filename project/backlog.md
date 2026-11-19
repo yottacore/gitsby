@@ -33,162 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Code Review 20261119 item 1: sync, br switch and br create push to origin's main when the branch tracks origin/main
-	- ID: 2026111910223293
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261119-102232
-	- Opened by:
-	- Related IDs: 2026111016332392
-	- Steps to reproduce [Bug]: git switch -c feat origin/main, commit, then gitsby -q sync.
-	- Incorrect behavior [Bug]: It pushes HEAD to origin's main and exits 0. The plan says it pushes feat, and --direct never asks. br switch and br create park the same way.
-	- Expected behavior [Bug]: A push goes where a bare push would send it, which under push.default=simple is a refusal, per item 2026111016332392's decision. A push that would reach a protected branch asks for --direct.
-	- Reproduced [Bug]: 2026-11-19 on b23. d5e76f2 refused. Confirmed.
-	- Possible cause [Bug]: pushDest falls back to the upstream's ref. directPush judges the current branch's name, not the push's target.
-	- Origin: 6e3ab95, round-20261111 (Code Review 20261110b item 5), and bb905b6, nov18. Regression of item 5.
-
-- Code Review 20261119 item 2: With status.showUntrackedFiles=no, untracked files are committed and pushed past every guard
-	- ID: 2026111910223277
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261119-102232
-	- Opened by:
-	- Steps to reproduce [Bug]: On dev, set status.showUntrackedFiles=no, add an untracked file, and run gitsby -q sync.
-	- Incorrect behavior [Bug]: The plan says working tree clean, then the file is committed and pushed to origin's dev, exit 0. Without the setting sync refuses.
-	- Expected behavior [Bug]: Untracked files count as work in every check and in the plan.
-	- Reproduced [Bug]: 2026-11-19 on b23, sync and br switch. Confirmed.
-	- Possible cause [Bug]: treeDirty and the plan's git status follow the setting. git add --all doesn't.
-	- Origin: Go port. 8dfe5ff (nov18) moved the check into treeDirty without it. No round saw it.
-
-- Code Review 20261119 item 3: A pending am, range pick or resolved merge is finished or left behind by gitsby
-	- ID: 2026111910223262
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261119-102232
-	- Opened by:
-	- Steps to reproduce [Bug]: Stop a range cherry-pick or a git am partway, then run gitsby -q br switch dev, sync or pullcom.
-	- Incorrect behavior [Bug]: gitsby commits the half-done work under its own message, switches, exits 0, and leaves the sequencer. A later --continue applies the rest onto dev. br merge finishes a resolved merge of the user's.
-	- Expected behavior [Bug]: Refuse before the plan, naming the operation and its --continue or --abort.
-	- Reproduced [Bug]: 2026-11-19 on b23, 5 cases. Confirmed.
-	- Possible cause [Bug]: Nothing checks MERGE_HEAD, CHERRY_PICK_HEAD, REVERT_HEAD, sequencer or rebase-apply. git's own refusal runs only when a pull does.
-	- Origin: 4918b5b, Go port. The bash build had no guard either. No round reached it.
-
-- Code Review 20261119 item 4: In a nested folder, plain git sends the inner account's token to the outer account's host
-	- ID: 2026111910223247
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261119-102232
-	- Opened by:
-	- Related IDs: 2026111016332429
-	- Steps to reproduce [Bug]: Nest a gitea.com account's folder inside a github.com account's folder, each with a token file, run account apply, then ask git credential fill for github.com in the inner folder.
-	- Incorrect behavior [Bug]: git answers with the inner account's gitea token.
-	- Expected behavior [Bug]: Each host gets only its own account's token.
-	- Reproduced [Bug]: 2026-11-19 on b23. Same at d5e76f2. Confirmed.
-	- Possible cause [Bug]: The outer helper stays in git's list and reads the token file key the inner fragment sets.
-	- Origin: 08e7452, 2026-11-08. Round-20261111 (2026111016332429) kept the helper on purpose but didn't try differing hosts. Same class as Code Review 20261110b item 1.
-
-- Code Review 20261119 item 5: raw gh hands the Enterprise token to any other host
-	- ID: 2026111910223233
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261119-102232
-	- Opened by:
-	- Related IDs: 2026111016332206
-	- Steps to reproduce [Bug]: With GH_HOST on an Enterprise host whose account has a token, run gitsby raw gh auth token --hostname evil.example.
-	- Incorrect behavior [Bug]: gh prints the account's token. gh applies GH_ENTERPRISE_TOKEN to every host but github.com.
-	- Expected behavior [Bug]: No token for a raw gh that names another host, as glabTokenEnv does for glab.
-	- Reproduced [Bug]: 2026-11-19 on b23, real gh 2.96 and a fake token. Confirmed.
-	- Possible cause [Bug]: tokenEnvVar exports the variable without checking the host gh is pointed at.
-	- Origin: d5d8cfa, nov19 (2026111016332206). Regression: it moved the leak from github.com to other hosts. Same class as Code Review 20261110b item 1.
-
-- Code Review 20261119 item 6: On Windows, a folder rule through a junction never matches
-	- ID: 2026111910223218
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261119-102232
-	- Opened by:
-	- Target OS: Windows
-	- Steps to reproduce [Bug]: Make a junction to a folder holding a repo, write a path rule that names the junction, and run gitsby account from the repo either way.
-	- Incorrect behavior [Bug]: No account matches. account apply writes the junction path, so plain git gets no identity either. A symlink works.
-	- Expected behavior [Bug]: A junction resolves like a symlink, as the comment in canonPath says and v2.1.0 did.
-	- Reproduced [Bug]: 2026-11-19 on vm925w. GODEBUG=winsymlink=0 makes it match. Confirmed.
-	- Possible cause [Bug]: Go 1.23 and later no longer resolve mount points in EvalSymlinks.
-	- Origin: d476da9, 2026-08-17. No round reached it. No Go test makes a junction.
-
-- Code Review 20261119 item 7: pr create pushes to one branch and opens the PR on another
-	- ID: 2026111910223203
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261119-102232
-	- Opened by:
-	- Related IDs: 2026111016332392
-	- Steps to reproduce [Bug]: Have feat track origin/feature-x while origin also has an older feat, add a commit, and run gitsby -q pr create T.
-	- Incorrect behavior [Bug]: It pushes to feature-x, then asks gh for a PR from feat, the stale branch, exit 0. An upstream on a second remote does the same.
-	- Expected behavior [Bug]: The PR names the branch the push went to, or pr create refuses.
-	- Reproduced [Bug]: 2026-11-19 on b23, with a fake gh. d5e76f2 refused before gh ran. Confirmed.
-	- Possible cause [Bug]: prCreateArgs passes the current branch name, while pushDest pushes to the upstream.
-	- Origin: 6e3ab95, round-20261111 (Code Review 20261110b item 5). Regression of that fix.
-
-- Code Review 20261119 item 8: An account with no email commits as an empty address after account apply
-	- ID: 2026111910223190
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261119-102231
-	- Opened by:
-	- Steps to reproduce [Bug]: With one account that uses a folder-name rule and another path account with no email, run account apply, then git var GIT_AUTHOR_IDENT in the second's folder.
-	- Incorrect behavior [Bug]: git prints the name with <> and exits 0. Before, git refused for want of an email. whoami doesn't flag it.
-	- Expected behavior [Bug]: An account with no email leaves git to refuse, or apply warns.
-	- Reproduced [Bug]: 2026-11-19 on b23, against d5e76f2 too. Confirmed.
-	- Possible cause [Bug]: The fragment now writes email with an empty value. git treats an empty email as given and an empty name as missing.
-	- Origin: 6770e4f, round-20261111 (Code Review 20261110b item 2). Regression of that fix.
-
-- Code Review 20261119 item 9: br create, br hotfix and release push back a branch deleted on origin
-	- ID: 2026111910223176
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261119-102231
-	- Opened by:
-	- Steps to reproduce [Bug]: Push feat, merge it into dev on origin and delete it there, as a merged PR does, then run gitsby br create next.
-	- Incorrect behavior [Bug]: The plan shows origin/feat gone but no warning, and the park push puts feat back on origin, -q too. sync refuses the same case.
-	- Expected behavior [Bug]: The gone-branch warning and -q refusal cover every park push but br merge and pr create.
-	- Reproduced [Bug]: 2026-11-19 on b23 for br create. br hotfix and release by reading. Confirmed.
-	- Possible cause [Bug]: pushesGoneBranch covers only sync and br switch.
-	- Origin: eaaa64c, nov19 (2026111016331930). Missed twin of that fix.
-
-- Code Review 20261119 item 10: With GIT_DIR set, every command except raw picks the account from the current folder
-	- ID: 2026111910223162
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261119-102231
-	- Opened by:
-	- Steps to reproduce [Bug]: With a repo in an account's folder and the shell in another account's folder, set GIT_DIR to the repo's .git and run gitsby whoami.
-	- Incorrect behavior [Bug]: whoami, status and account list show the other account. raw git shows the repo's.
-	- Expected behavior [Bug]: Every command takes the account from the repo, as item 2026111016332367's decision says.
-	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
-	- Possible cause [Bug]: enterRepo sets contextDir itself, so the GIT_DIR branch in config.go never runs for those commands.
-	- Origin: 12f1bc2, nov18. Missed sibling of that fix.
-
 - Code Review 20261119 item 11: A stalled https remote hangs every command
 	- ID: 2026111910223148
 	- Type: Bug
@@ -203,36 +47,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
 	- Possible cause [Bug]: remoteEnv sets no http speed limit, only the ssh connect timeout.
 	- Origin: 88ff4ab, 2026-08-19. The comment came in 8c7a856. No round reached it.
-
-- Code Review 20261119 item 12: In a single-branch clone, br merge merges into main and passes over origin's dev
-	- ID: 2026111910223133
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261119-102231
-	- Opened by:
-	- Steps to reproduce [Bug]: Clone with --depth 1 from an origin with main and dev, then gitsby -q br create feat, commit, and gitsby -q br merge.
-	- Incorrect behavior [Bug]: feat is branched from main and merged into main, pushed, exit 0. br switch dev says there is no dev on origin.
-	- Expected behavior [Bug]: gitsby finds origin's dev, or refuses and says the fetch is narrowed.
-	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
-	- Possible cause [Bug]: mergeTarget and branchExistsRemote read only refs/remotes/origin, which a narrowed fetch never fills.
-	- Origin: f9716e4, 2026-10-04. No round saw it.
-
-- Code Review 20261119 item 13: From a linked worktree, br merge, br switch, br create and release push, then fail at a checkout
-	- ID: 2026111910223119
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261119-102231
-	- Opened by:
-	- Steps to reproduce [Bug]: Keep dev checked out in the main worktree, work on w in a linked one with a dirty file, and run gitsby -q br merge.
-	- Incorrect behavior [Bug]: It commits and pushes w, then dies on dev is already used by worktree, exit 1. release ends on dev with nothing tagged.
-	- Expected behavior [Bug]: Refuse before the plan when a branch the run checks out is held by another worktree, as design.md says.
-	- Reproduced [Bug]: 2026-11-19 on b23, all 4 commands. Confirmed.
-	- Possible cause [Bug]: Preflight doesn't read git worktree list. Only br prune knows the case.
-	- Origin: Go port. No round reached it.
 
 - Code Review 20261119 item 14: On Windows, curly single quotes in a branch name break out of a paste line
 	- ID: 2026111910223104
@@ -250,6 +64,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on vm925w. Confirmed.
 	- Possible cause [Bug]: PowerShell reads the 4 curly single quotes as a quote, and typedArg doubles only the ASCII one.
 	- Origin: df38db0, 2026-09-15. No round saw it.
+
+- br merge on a branch that tracks one of another name leaves that branch on origin and warns about the wrong one
+	- ID: 2026111913330350
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-133303
+	- Opened by:
+	- Related IDs: 2026111910223203
+	- Steps to reproduce [Bug]: Have feat track origin/feature-x under push.default=upstream while origin also has an older feat, add a commit, and run gitsby -q br merge.
+	- Incorrect behavior [Bug]: It pushes to feature-x, merges into dev, and asks to delete origin's feat. The lease refuses, so it warns that origin's feat has commits the merge doesn't, which is false, and feature-x stays on origin. Exit 0.
+	- Expected behavior [Bug]: The delete names the branch the push went to, as pr create's head does, or br merge refuses before the plan.
+	- Reproduced [Bug]: 2026-11-19 on b23, local bare origin, while fixing 2026111910223203. Confirmed.
+	- Possible cause [Bug]: The atomic push, mergeDeleteRemote and the plan name the current branch, while pushDest pushes to the upstream.
+	- Origin: The delete has named the current branch since the Go port, and a push to another name came with push.default=upstream. No round saw it. Confirmed.
 
 - Code Review 20261119 item 15: pr ok from another branch pulls that branch while its plan says the target
 	- ID: 2026111910223089
@@ -325,21 +155,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, also pr create. Confirmed.
 	- Possible cause [Bug]: The -m setter in args.go overwrites.
 	- Origin: Missed sibling of 2026111016332070, round-20261111.
-
-- Code Review 20261119 item 20: account unset on a dotted key line changes lines the plan doesn't name
-	- ID: 2026111910223016
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102230
-	- Opened by:
-	- Steps to reproduce [Bug]: With account.work.email and account.work.name on their own lines, run gitsby account unset work email.
-	- Incorrect behavior [Bug]: The plan names only the email line. The save also writes account: and work: lines.
-	- Expected behavior [Bug]: The plan says the save reshapes more than the key.
-	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
-	- Possible cause [Bug]: When removedLines can't match, the plan falls back to the old key-only list without saying so.
-	- Origin: 75ec0ec, round-20261111 (Code Review 20261110b item 10). Missed case of that fix.
 
 - Code Review 20261119 item 21: When a 2.x file can't be converted, its notice says two opposite things
 	- ID: 2026111910223002
@@ -529,23 +344,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: The line dates from the bash era.
 	- Origin: 4f9ef7b, 2026-08-08. No round saw it.
 
-- Code Review 20261119 item 33: install.ps1 can leave no gitsby.exe when its last move fails
-	- ID: 2026111910222830
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102228
-	- Opened by:
-	- Target OS: Windows
-	- Steps to reproduce [Bug]: Upgrade over an existing install and make the final Move-Item fail, such as with the folder made read-only after the old copy moves aside.
-	- Incorrect behavior [Bug]: The catch removes only the staged file, leaving gitsby.exe.replaced-* and no gitsby.exe.
-	- Expected behavior [Bug]: A failed install leaves the old copy in place.
-	- Reproduced [Bug]: No. Read on 2026-11-19. Plausible.
-	- Possible cause [Bug]: install.ps1 lines 367 to 377 don't move the old copy back.
-	- Origin: The move-aside code. No round saw it.
-
 - Code Review 20261119 item 34: install.ps1 can add PATH twice and says Added when it was already there
 	- ID: 2026111910222815
 	- Type: Bug
@@ -708,6 +506,187 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 	- Acceptance signoff: Hand test on b28l, run in the 2026-10-23 round as asked.
 	- Closed: 20261023-195424
+
+- Code Review 20261119 item 1: sync, br switch and br create push to origin's main when the branch tracks origin/main
+	- ID: 2026111910223293
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-102232
+	- Opened by:
+	- Related IDs: 2026111016332392
+	- Steps to reproduce [Bug]: git switch -c feat origin/main, commit, then gitsby -q sync.
+	- Incorrect behavior [Bug]: It pushes HEAD to origin's main and exits 0. The plan says it pushes feat, and --direct never asks. br switch and br create park the same way.
+	- Expected behavior [Bug]: A push goes where a bare push would send it, which under push.default=simple is a refusal, per item 2026111016332392's decision. A push that would reach a protected branch asks for --direct.
+	- Reproduced [Bug]: 2026-11-19 on b23. d5e76f2 refused. Confirmed.
+	- Possible cause [Bug]: pushDest falls back to the upstream's ref. directPush judges the current branch's name, not the push's target.
+	- Origin: 6e3ab95, round-20261111 (Code Review 20261110b item 5), and bb905b6, nov18. Regression of item 5.
+	- Closed reason: Done
+	- Actual cause [Bug]: pushDest sent a branch whose upstream has another name to the upstream's ref whatever push.default said, so it did what push.default=upstream does where git's default refuses. directPush judged the current branch's name, so a push from feat to main never asked for --direct.
+	- Actual fix [Bug]: pushDest follows push.default where the upstream on the push's remote has another name: simple refuses, upstream and nothing go to the upstream, current and matching to the branch's own name. sync, br switch, br create, br hotfix, br merge and pr create refuse before the plan where git would refuse the push, naming 'git branch --unset-upstream'. directPush judges where the push lands, so sync and br switch ask for --direct for a push to main from feat. The other 4 refuse it, naming 'sync --direct'. The sync plan line names the target when it differs. Any other push of the current branch refuses at the step. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223293
+	- Commit: ca1f916
+	- Test case: test.bash [dfh3s] to [dfh40]; Go TestPushArgs [df52f] with 8 new cases.
+	- Verified: [dfh3s] to [dfh40] fail on the build before the fix, all but [dfh3z], which passes on both since --direct pushed to main before too. All 8 pass with the fix. The quick gate passed with every area: test.bash 2096/0, fuzz 310/0, parity 31/0, spawn counts [df37w] 38 and [df052] 43, as before. gosec reports the same 32 hits, none in the changed files.
+	- Swept: every push of the current branch goes through pushArgs: the park push of sync, br switch, br create, br hotfix, br merge, pr create and release, br merge's push of the target, release's 2 pushes, repo connect's push. The park pushes refuse before the plan, the rest at the step. Every other isProtectedBranch("") caller is about committing on or deleting a protected branch, not where a push lands, and was left alone. publishBranch and every first publish push to the branch's own name. release stays out of --direct, per 2026111016332380.
+	- Against: 2026111016332392's Decisions. Its Go case for an upstream of another name expected a push there under the default push.default, and now expects a refusal, as this item asks. Its call for push.default=nothing, the upstream, stands.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-115700
+	- Decisions:
+		- simple refuses before the plan, under -q or not, since git would refuse the push only after the commit. That covers push.default unset, and a value git doesn't know, which git refuses too. The way off is 'git branch --unset-upstream', as for a gone branch, so the next push publishes it under its own name.
+		- A push remote other than the upstream's still gets the branch under its own name, as before.
+		- br create, br hotfix, br merge and pr create refuse a park push that lands on a protected branch, naming 'sync --direct', rather than take --direct. That keeps 2026111016332380's line that they never push a protected branch, and leaves --direct's command list as it is. Check: entry filed.
+		- The refusals are asked only when something would go, since a branch made from origin/main and never touched has nothing to push.
+		- Spawn counts are unchanged: branchRefs's one for-each-ref also reads the push fields and the current branch, and pushDest reads it in place of its own call. push.default is read only for a branch whose upstream has another name.
+		- 20261119: TestPushArgs [df52f]'s 'upstream by another name' case now expects a refusal, where it expected HEAD:refs/heads/up. The rest of the test is as it was.
+
+- Code Review 20261119 item 2: With status.showUntrackedFiles=no, untracked files are committed and pushed past every guard
+	- ID: 2026111910223277
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-102232
+	- Opened by:
+	- Steps to reproduce [Bug]: On dev, set status.showUntrackedFiles=no, add an untracked file, and run gitsby -q sync.
+	- Incorrect behavior [Bug]: The plan says working tree clean, then the file is committed and pushed to origin's dev, exit 0. Without the setting sync refuses.
+	- Expected behavior [Bug]: Untracked files count as work in every check and in the plan.
+	- Reproduced [Bug]: 2026-11-19 on b23, sync and br switch. Confirmed.
+	- Possible cause [Bug]: treeDirty and the plan's git status follow the setting. git add --all doesn't.
+	- Origin: Go port. 8dfe5ff (nov18) moved the check into treeDirty without it. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: git status follows status.showUntrackedFiles, but git add --all doesn't. treeDirty, the plan's status block and repo connect's has-work check read status as configured, so with the setting at no they saw a clean tree and the commit still took the files.
+	- Actual fix [Bug]: treeDirty, the plan's status block and repo connect's has-work check ask status for untracked files by name, with --untracked-files=normal. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223277
+	- Commit: 8d02ef6
+	- Test case: test.bash [dfh4j] to [dfh4p]. Go tests [dfh4g] TestTreeDirtyUntrackedHidden and [dfh4h] TestStatusNamesUntracked.
+	- Verified: [dfh4j], [dfh4k], [dfh4m], [dfh4n] and [dfh4p] fail on the build before the fix and pass with it. [dfh4g] fails before for no and false, and [dfh4h] names all 3 sites. The quick gate passed with every area: test.bash 2101/0, fuzz 310/0, parity 31/0. gosec reports nothing in the changed files.
+	- Swept: every git status call in src-go. treeDirty covers directPush, releasePreflight, commitPending, br switch's dirty refusal and pr ok's refusal. repo.go's hasWork and show.go's status block got the flag. readTreeSplit and connect's push-mode block already pass --untracked-files=all. [dfh4h] fails on any new git status call without the flag.
+	- Decisions: The plan's status block passes normal, not the user's setting, so a user with status.showUntrackedFiles=all sees an untracked folder as one line there. Honoring all would cost a git config spawn on every command. Submodule handling from 2026111016332293 is unchanged: --ignore-submodules=dirty still applies.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261119-121255
+
+- Code Review 20261119 item 3: A pending am, range pick or resolved merge is finished or left behind by gitsby
+	- ID: 2026111910223262
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-102232
+	- Opened by:
+	- Steps to reproduce [Bug]: Stop a range cherry-pick or a git am partway, then run gitsby -q br switch dev, sync or pullcom.
+	- Incorrect behavior [Bug]: gitsby commits the half-done work under its own message, switches, exits 0, and leaves the sequencer. A later --continue applies the rest onto dev. br merge finishes a resolved merge of the user's.
+	- Expected behavior [Bug]: Refuse before the plan, naming the operation and its --continue or --abort.
+	- Reproduced [Bug]: 2026-11-19 on b23, 5 cases. Confirmed.
+	- Possible cause [Bug]: Nothing checks MERGE_HEAD, CHERRY_PICK_HEAD, REVERT_HEAD, sequencer or rebase-apply. git's own refusal runs only when a pull does.
+	- Origin: 4918b5b, Go port. The bash build had no guard either. No round reached it.
+	- Closed reason: Done
+	- Actual cause [Bug]: Nothing read the files git keeps while an operation is stopped: MERGE_HEAD, CHERRY_PICK_HEAD, REVERT_HEAD, sequencer, rebase-apply, rebase-merge and BISECT_LOG. Only a stopped rebase, or a bisect with checkout, was refused, and as a detached HEAD.
+	- Actual fix [Bug]: The branch commands, pr create, pr ok and release refuse before the fetch and the plan while git has one stopped. The refusal names it and its --continue and --abort, or git bisect reset. The paths come from git rev-parse --git-path in the rev-parse call every run already makes, so no spawn was added. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223262
+	- Commit: d1f0d4e
+	- Test case: test.bash [dfh54] to [dfh5d]. Go test [dfh53] TestPendingOpNamed.
+	- Verified: [dfh54] to [dfh5c] fail on the build before the fix and pass with it, and [dfh5d] passes on both. [dfh53] fails with the guard turned off, and its hand-committed pick and revert cases fail without the sequencer check. The quick gate passed with every area: test.bash 2111/0, fuzz 310/0, parity 31/0, spawn counts unchanged.
+	- Swept: every mutating command. pullcom, sync, br create, br hotfix, br switch, br merge, br prune, pr create, pr ok and release go through the one check in run. status, whoami, br list and pr view only read. git's own refusal on a pull and backOutMerge's MERGE_HEAD check after a merge step are unchanged.
+	- Decisions: A bisect refuses too, with checkout or without, since git status calls it in progress and git bisect reset moves HEAD back. The repo and account commands don't check, since none commits onto existing history or switches. A rebase is named ahead of a merge or pick it stopped on, since the rebase is what has to be finished.
+	- Note: gosec reports 2 new findings in pendingOp, for os.Lstat and os.ReadFile of paths git rev-parse gave. Both are in the user's own repo, the same kind as the earlier false positives. CodeQL wasn't run.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261119-123039
+
+- Code Review 20261119 item 4: In a nested folder, plain git sends the inner account's token to the outer account's host
+	- ID: 2026111910223247
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-102232
+	- Opened by:
+	- Related IDs: 2026111016332429
+	- Steps to reproduce [Bug]: Nest a gitea.com account's folder inside a github.com account's folder, each with a token file, run account apply, then ask git credential fill for github.com in the inner folder.
+	- Incorrect behavior [Bug]: git answers with the inner account's gitea token.
+	- Expected behavior [Bug]: Each host gets only its own account's token.
+	- Reproduced [Bug]: 2026-11-19 on b23. Same at d5e76f2. Confirmed.
+	- Possible cause [Bug]: The outer helper stays in git's list and reads the token file key the inner fragment sets.
+	- Origin: 08e7452, 2026-11-08. Round-20261111 (2026111016332429) kept the helper on purpose but didn't try differing hosts. Same class as Code Review 20261110b item 1.
+	- Actual cause [Bug]: Every matching fragment's helper stays in git's list, and each reads the token file key the innermost fragment sets, which said nothing about its host. The same key let gitsby's own runs hand a Gitea token to github.com through the gitsby.ghTokenFile fallback, when a run named a bare GitHub login in a Gitea account's folder.
+	- Actual fix [Bug]: Each fragment writes gitsby.host, its account's host, and the helper answers only when git asks about that host. The gitsby.ghTokenFile fallback checks it too. Both go through one host check, sameService in githost.go, which every token hand-over now uses.
+	- Decisions:
+		- A host key beside the token file, rather than a token key per host, so gitsby.ghTokenFile keeps its name and meaning, and every account sets it, so the innermost one's wins with nothing put back.
+		- The helper reads gitsby.host from the global scope with includes, where it reads the token file, so a repo's own config can't claim a host.
+		- No gitsby.host means the helper answers nothing, since every apply writes it. The fallback reads an unset key as GitHub's, its meaning before fragments, so a hand-set gitsby.ghTokenFile keeps working.
+		- A fragment from an older apply keeps the old helper until account apply runs again. The changelog says so.
+		- The host is compared in lower case, with the port if git gives one. A remote spelled with another port gets nothing, never the wrong token.
+	- Branch: nov19b-2026111910223247
+	- Commit: 22554f6
+	- Test case: test.bash [dfh5s] and [dfh5t], which walk every path that hands out a token, pointed at another host and then at its own. Go [dfh5x] for the helper's host check.
+	- Verified: on the unfixed build, [dfh5s] fails for 9 of its 10 paths (test.bash 2120/9) and passes after (2129/0). Its glab path passes both ways, and [dfh5t] passes both ways. With the helper's host line taken out, [dfh5x] fails and plain git in the nested folder gives the inner token again. With the fallback's check taken out, raw git with GITSBY_ACCOUNT naming a login gives the Gitea token again. Quick gate passed, all areas: test.bash 2129/0, fuzz 310/0, parity 31/0. Not run on Windows, where the helper's tr and character class run under Git for Windows' sh.
+	- Swept: every path that hands out a token. Plain git's fragment helper, gitsby's own helper (scoped by its key), raw git, tig and lazygit through it, raw gh and gitsby's own gh calls (item 5), raw glab and pr's glab through tokenElsewhere, raw tea (keeps its token on GITEA_INSTANCE_URL), and the gitsby.ghTokenFile fallback. accountServesHost uses sameService too.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed reason: Done
+	- Closed: 20261119-125743
+	- Note: design.md has the class's table, under the credentials decision, with one row per path that hands out a token. A later item in the class names its row.
+
+- Code Review 20261119 item 5: raw gh hands the Enterprise token to any other host
+	- ID: 2026111910223233
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-102232
+	- Opened by:
+	- Related IDs: 2026111016332206
+	- Steps to reproduce [Bug]: With GH_HOST on an Enterprise host whose account has a token, run gitsby raw gh auth token --hostname evil.example.
+	- Incorrect behavior [Bug]: gh prints the account's token. gh applies GH_ENTERPRISE_TOKEN to every host but github.com.
+	- Expected behavior [Bug]: No token for a raw gh that names another host, as glabTokenEnv does for glab.
+	- Reproduced [Bug]: 2026-11-19 on b23, real gh 2.96 and a fake token. Confirmed.
+	- Possible cause [Bug]: tokenEnvVar exports the variable without checking the host gh is pointed at.
+	- Origin: d5d8cfa, nov19 (2026111016332206). Regression: it moved the leak from github.com to other hosts. Same class as Code Review 20261110b item 1.
+	- Actual cause [Bug]: selectAccount put the token in gh's own variable on every run. gh sends GH_ENTERPRISE_TOKEN to every Enterprise host, and GH_TOKEN to github.com, github.localhost and every *.ghe.com host, whatever host a command names. So a github.com token went to a ghe.com tenant the same way.
+	- Actual fix [Bug]: selectAccount puts the token in gh's variable only when tokenElsewhere finds no other host among raw gh's --hostname, -h, -R, URL and repo arguments (ghNamedHosts) and the caller's GH_HOST and GH_REPO. git's helper reads GITSBY_HOST_TOKEN on every host, so git still gets the token. raw gh says when it isn't acting as the account, as raw glab does.
+	- Decisions:
+		- Refuse, with no pin. gh takes remotes only from the host GH_HOST names (checked with gh 2.96), and an Enterprise account's host is always that one. Left alone: a github.com account in a repo with a second remote on a *.ghe.com host gh is logged in to, which gh might pick with no host named.
+		- A caller's GH_HOST on another host counts as pointing gh there, for gitsby's own gh calls too. gh then finds no remote on the account's host anyway, so nothing that worked stops.
+		- The first of 3 parts in a -R is a host, as gh reads it. A bare argument counts only with a dot in it, as for glab, since repo clone takes a folder there.
+		- Too many hosts means no token, never a token sent astray: -h counts as a host everywhere, though only gh's auth commands take it as one.
+	- Against: 2026111016332206's fix, where the helper read gh's variable so git and gh agree. They still get the same token whenever gh gets one. design.md says so.
+	- Branch: nov19b-2026111910223247
+	- Commit: 22554f6
+	- Test case: test.bash [dfh5s] and [dfh5t] (shared with item 4), Go [dfh5v] for the hosts a gh command line names, [dfh5w] for which runs keep the token from gh.
+	- Verified: real gh 2.96 through the built gitsby, with a fake token. With GH_HOST on the Enterprise host, raw gh auth token --hostname evil.example printed the token before, and after prints 'no oauth token found' under the 'not acting as the account' line, while the same with no --hostname still prints it. From a github.com account, --hostname acme.ghe.com and github.localhost printed the token before and don't after. [dfh5s]'s 6 gh paths fail on the unfixed build and pass after. Quick gate passed, all areas: test.bash 2129/0, fuzz 310/0, parity 31/0.
+	- Swept: gh's own variables, set only in selectAccount. raw gh, and gitsby's own gh calls (pr, repo create, repo view, the token check), all after it. glab through the same tokenElsewhere. tea and git are scoped to the host already, per item 4's Swept.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed reason: Done
+	- Closed: 20261119-125820
+	- Progress log:
+		- 2026-11-19: gosec on src-go went from 34 findings to 37, all false positives. G101 on the GITSBY_HOST_TOKEN name, and G703 in readTokenFile and worldReadable, whose taint now comes through the account struct holding raw gh's arguments.
+
+- Code Review 20261119 item 6: On Windows, a folder rule through a junction never matches
+	- ID: 2026111910223218
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261119-102232
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Make a junction to a folder holding a repo, write a path rule that names the junction, and run gitsby account from the repo either way.
+	- Incorrect behavior [Bug]: No account matches. account apply writes the junction path, so plain git gets no identity either. A symlink works.
+	- Expected behavior [Bug]: A junction resolves like a symlink, as the comment in canonPath says and v2.1.0 did.
+	- Reproduced [Bug]: 2026-11-19 on vm925w. GODEBUG=winsymlink=0 makes it match. Confirmed.
+	- Possible cause [Bug]: Go 1.23 and later no longer resolve mount points in EvalSymlinks.
+	- Origin: d476da9, 2026-08-17. No round reached it. No Go test makes a junction.
+	- Closed reason [Closed]: Done
+	- Actual cause [Bug]: Go 1.23 made EvalSymlinks leave mount points as written, and a junction is one. resolveLinks leans on EvalSymlinks, so a rule through a junction kept the junction path while git answered with the real one.
+	- Actual fix [Bug]: go.mod sets winsymlink=0 and winreadlinkvolume=0, the pre-1.23 reading. A junction resolves like a symlink again, in canonPath and in the gitdir rule account apply writes. A comment at resolveLinks names the dependency.
+	- Decisions: The Go setting rather than our own junction walk, since it's the reading the code was written against and Go refuses the build once the setting is dropped. winreadlinkvolume=0 too, so a folder with a volume mounted in it reads by drive letter rather than as a volume GUID path, as before Go 1.23. That half wasn't run on a box.
+	- Swept: every EvalSymlinks, Lstat, ReadDir and Readlink call under src-go. lockBeside now takes one lock for a config file reached through a junction. The others test existence or list names, and read the same either way.
+	- Verified: on vm925w, the Go tests pass on the fixed build. On a build without the go.mod block both new tests fail, and on the fixed build run with GODEBUG=winsymlink=1 the junction test fails. The real gitsby.exe was run the same way: status, account list, and plain git after account apply named the account from both spellings, where the old build named it nowhere. Under Wine the junction test skips, since mklink there makes nothing. Quick gate passed with every area.
+	- Test case: TestAccountForDirThroughJunction [dfh6e] in Go, Windows only, and TestJunctionGodebugBuiltIn [dfh6f] on every platform.
+	- Branch: nov19b-2026111910223218
+	- Commit: 20da070
+	- Acceptance signoff: Self-closed: reproduced, test failed before and passes after on vm925w.
+	- Closed: 20261119-131110
 
 - test.bash stops on macOS and FreeBSD at a GNU-only touch -d '@1'
 	- ID: 2026111907080865
@@ -2010,6 +1989,177 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
+
+- Code Review 20261119 item 7: pr create pushes to one branch and opens the PR on another
+	- ID: 2026111910223203
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102232
+	- Opened by:
+	- Related IDs: 2026111016332392
+	- Steps to reproduce [Bug]: Have feat track origin/feature-x while origin also has an older feat, add a commit, and run gitsby -q pr create T.
+	- Incorrect behavior [Bug]: It pushes to feature-x, then asks gh for a PR from feat, the stale branch, exit 0. An upstream on a second remote does the same.
+	- Expected behavior [Bug]: The PR names the branch the push went to, or pr create refuses.
+	- Reproduced [Bug]: 2026-11-19 on b23, with a fake gh. d5e76f2 refused before gh ran. Confirmed.
+	- Possible cause [Bug]: prCreateArgs passes the current branch name, while pushDest pushes to the upstream.
+	- Origin: 6e3ab95, round-20261111 (Code Review 20261110b item 5). Regression of that fix.
+	- Closed reason: Done
+	- Actual cause [Bug]: prCreateArgs handed gh, tea and glab the current branch's name, while the park push went where pushDest sends it: to an upstream of another name under push.default=upstream or a renaming push refspec, or to another remote.
+	- Actual fix [Bug]: pr create names the branch on origin its push lands on, in the create call and the open-PR check. It refuses before the plan where git would refuse the push, where the push goes to another remote or to a ref that isn't a branch, and where it lands on main, dev or the default branch, whether or not anything is left to push. The way off is 'git branch --unset-upstream'. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223203
+	- Commit: 9b6b16a
+	- Test case: test.bash [dfh71] to [dfh75]; Go TestPrCreateHead [dfh76].
+	- Verified: [dfh71], [dfh72], [dfh74] and [dfh75] fail on the build before the fix and pass with it. [dfh73] passes on both, since the push already went to the right branch. [dfh76] fails 8 of its 12 cases with the head read as the current branch. The quick gate passed with every area: test.bash 2138/0, fuzz 310/0, parity 31/0, spawn counts [df37w] 38 and [df052] 43, unchanged. gosec has no finding in the changed lines.
+	- Swept: every place pr create names its branch: the gh, tea and glab create calls and openPrForBranch. The plan's push line already names the target. pr ok reads its head from the git host. br merge's delete names the current branch too, filed as 2026111913330350. release names no branch after its park push.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-133335
+	- Decisions:
+		- A push to another remote is refused rather than named as owner:branch. The PR opens on origin, gitsby's PR commands act on origin, and gh, tea and glab each name a fork's branch differently. The way off is 'git branch --unset-upstream', as for the other push refusals, so the next push is a first publish to origin. Check: entry filed.
+		- Asked whether or not anything is left to push, since the PR needs a head either way. Under simple with nothing new, it used to open the PR from origin's older branch of the same name.
+		- A push landing on a protected branch gets pr create's own refusal, ahead of refuseParkPush's 'sync --direct' text, since a PR from that branch would propose the branch itself.
+
+- Code Review 20261119 item 8: An account with no email commits as an empty address after account apply
+	- ID: 2026111910223190
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Steps to reproduce [Bug]: With one account that uses a folder-name rule and another path account with no email, run account apply, then git var GIT_AUTHOR_IDENT in the second's folder.
+	- Incorrect behavior [Bug]: git prints the name with <> and exits 0. Before, git refused for want of an email. whoami doesn't flag it.
+	- Expected behavior [Bug]: An account with no email leaves git to refuse, or apply warns.
+	- Reproduced [Bug]: 2026-11-19 on b23, against d5e76f2 too. Confirmed.
+	- Possible cause [Bug]: The fragment now writes email with an empty value. git treats an empty email as given and an empty name as missing.
+	- Origin: 6770e4f, round-20261111 (Code Review 20261110b item 2). Regression of that fix.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. The inner fragment writes user.email empty in place of the outer account's, per 2026111016332429. git takes an empty email as given, unlike an empty name, and no value a fragment can write makes git refuse.
+	- Actual fix [Bug]: account apply warns for each account whose fragment gets an empty email in place of an outer one's. The Author line, in whoami, status and each command's state before its plan, flags an empty address.
+	- Decisions: The empty email stays, since anything else gives the outer account's address. The warning is a status line in the run rather than above the prompt, and -q gets it too, since not applying leaves the outer email in force. Against: 2026111016332429's empty put-back, kept as it is.
+	- Test case: test.bash [dfh7n] to [dfh7r].
+	- Verified: [dfh7n] and [dfh7q] fail on the unfixed build and pass after. [dfh7p] passes both ways, and pins that the outer email still stays out. [dfh7r] fails with the warning taken for any put-back email. Quick gate passed, all areas: test.bash 2145/0, fuzz 310/0, parity 31/0.
+	- Swept: every key put back empty. user.name makes git refuse. gitsby.ghAccount and gitsby.ghTokenFile read as none, and core.sshCommand gets ssh. An empty credential username stops git asking for one, and the fill then fails with no token, so no other account is used (by reading). The Author line is printed only in showIdentity.
+	- Branch: nov19b-2026111910223190
+	- Commit: 410fc24
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261119-135255
+
+- Code Review 20261119 item 9: br create, br hotfix and release push back a branch deleted on origin
+	- ID: 2026111910223176
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Steps to reproduce [Bug]: Push feat, merge it into dev on origin and delete it there, as a merged PR does, then run gitsby br create next.
+	- Incorrect behavior [Bug]: The plan shows origin/feat gone but no warning, and the park push puts feat back on origin, -q too. sync refuses the same case.
+	- Expected behavior [Bug]: The gone-branch warning and -q refusal cover every park push but br merge and pr create.
+	- Reproduced [Bug]: 2026-11-19 on b23 for br create. br hotfix and release by reading. Confirmed.
+	- Possible cause [Bug]: pushesGoneBranch covers only sync and br switch.
+	- Origin: eaaa64c, nov19 (2026111016331930). Missed twin of that fix.
+	- Closed reason: Done
+	- Actual cause [Bug]: pushesGoneBranch answered only for sync and br switch, and only those 2 called refuseGoneBranch, so br create, br hotfix and release parked a gone branch as a first publish.
+	- Actual fix [Bug]: The gone-branch warning and -q refusal cover every park push but br merge's and pr create's: sync, br switch, br create and br hotfix off a branch that isn't protected, and release. The refusal runs in one place for every command, after the park-push refusal. Its way off names the branch the command was headed for. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223203
+	- Commit: 9b6b16a
+	- Test case: test.bash [dfh6x] to [dfh70]; Go TestGoneUpstream [dfgxm] with 4 new cases.
+	- Verified: [dfh6x] to [dfh70] fail on the build before the fix and pass with it. [dfgxq] to [dfgxs] fail there too, since the old br create put the branch back. [dfgxm]'s 3 new parking cases fail with pushesGoneBranch answering nothing for them. The quick gate passed with every area: test.bash 2138/0, fuzz 310/0, parity 31/0, spawn counts unchanged.
+	- Swept: every cmdPush caller: sync, br switch, br create, br hotfix, br merge, pr create and release. br merge and pr create stay out, per 2026111016331930. The hotfix back-merge's push of dev and release's pushes of main and dev don't push the branch the run started on.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-133344
+	- Decisions:
+		- release asks too, from any branch it starts on, since its park push is the same push.
+		- The way off is 'git switch' to where the command goes next: br create's merge target, br hotfix's default branch, and the merge target for release and sync, as before.
+		- sync's and br switch's refusal moved to the shared spot after refuseParkPush. Neither refuses anything new, since a gone upstream always reads as a push under the branch's own name, which refuseParkPush passes.
+
+- Code Review 20261119 item 10: With GIT_DIR set, every command except raw picks the account from the current folder
+	- ID: 2026111910223162
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Steps to reproduce [Bug]: With a repo in an account's folder and the shell in another account's folder, set GIT_DIR to the repo's .git and run gitsby whoami.
+	- Incorrect behavior [Bug]: whoami, status and account list show the other account. raw git shows the repo's.
+	- Expected behavior [Bug]: Every command takes the account from the repo, as item 2026111016332367's decision says.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: enterRepo sets contextDir itself, so the GIT_DIR branch in config.go never runs for those commands.
+	- Origin: 12f1bc2, nov18. Missed sibling of that fix.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. enterRepo filled the contextDir cache from its own rev-parse, whose top with GIT_DIR set is the working directory. Only raw, which skips enterRepo, reached the GIT_DIR rule.
+	- Actual fix [Bug]: contextOf in config.go holds the GIT_DIR rule, and enterRepo and contextDir both go through it.
+	- Decisions: Follows 2026111016332367's rule for every command. It costs one more git call, only when GIT_DIR is set.
+	- Test case: test.bash [dfh7j] to [dfh7m].
+	- Verified: [dfh7j], [dfh7k] and [dfh7m] fail on the unfixed build and pass after. Quick gate passed, all areas: test.bash 2145/0, fuzz 310/0, parity 31/0.
+	- Swept: enterRepo is the only other setter of the contextDir cache. settleAccount, resolveAccount and account list's marker all read contextDir. The other os.Getwd calls show the Current dir line, resolve a relative path, or probe untracked files, and none picks an account.
+	- Branch: nov19b-2026111910223190
+	- Commit: 410fc24
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261119-135255
+
+- Code Review 20261119 item 12: In a single-branch clone, br merge merges into main and passes over origin's dev
+	- ID: 2026111910223133
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Steps to reproduce [Bug]: Clone with --depth 1 from an origin with main and dev, then gitsby -q br create feat, commit, and gitsby -q br merge.
+	- Incorrect behavior [Bug]: feat is branched from main and merged into main, pushed, exit 0. br switch dev says there is no dev on origin.
+	- Expected behavior [Bug]: gitsby finds origin's dev, or refuses and says the fetch is narrowed.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: mergeTarget and branchExistsRemote read only refs/remotes/origin, which a narrowed fetch never fills.
+	- Origin: f9716e4, 2026-10-04. No round saw it.
+	- Actual cause [Bug]: gitsby read origin's branches only from refs/remotes/origin, which a clone that fetches only some of them never fills. With no dev in sight the merge target was main. A clone of dev alone has no origin/HEAD, so dev read as the default branch too.
+	- Actual fix [Bug]: br create, br hotfix, br switch, br merge, br prune, pr create, pr ok and release refuse before the plan when there's no dev here and origin's fetch refspecs don't bring one in, naming 'git remote set-branches origin *' and a fetch. Without origin/HEAD, a default branch not named main, master or trunk refuses the same way. br create, br hotfix and br switch refuse a branch the fetch doesn't cover. pullcom and sync run as before. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223133
+	- Test case: test.bash [dfh8c] to [dfh8h]; Go [dfh89] TestFetchSees, [dfh8a] TestRefuseNarrowFetch.
+	- Swept: every branchExistsRemote caller: mergeTarget, isProtectedBranch, checkoutArgs, settleBranchNames, br switch's and br create's name checks, release's 3, backMergeRef, br prune, and pr ok's head check. All sit behind the refusal on the commands that read them. sync and pullcom ask only about the current branch's push. pr ok's 'here but not on origin' refusal for a head the fetch doesn't cover was left alone, since it refuses.
+	- Decisions:
+		- Refuse, not fetch every branch anyway. That overrides a narrowing that was likely meant, and the next plain git fetch leaves those refs stale. Check: entry filed.
+		- One rule for the listed commands: each refuses while dev can't be seen, br switch to a branch that can be seen included, since isProtectedBranch and the merge target both read dev.
+		- pullcom and sync aren't refused. They push only the branch they're on and read no merge target.
+		- The default-branch check runs only without origin/HEAD and with a default not named main, master or trunk, so a clone of an empty repo pays no extra spawn. Spawn counts are unchanged.
+		- br create and br hotfix read the fetch refspecs on every run, 1 local git config call, since a new name is never on origin yet. No spawn-count measure runs br create.
+	- Closed reason: Done
+	- Commit: d757dc3
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-143654
+	- Verified: [dfh8c] to [dfh8h] fail on the build before the fix and pass with it, run as a block against each build. [dfh89] and [dfh8a] fail with fetchSees always true. The quick gate passed with every area: test.bash 2155/0, fuzz 310/0, parity 31/0, spawn counts unchanged. gosec reports nothing in the changed files.
+
+- Code Review 20261119 item 13: From a linked worktree, br merge, br switch, br create and release push, then fail at a checkout
+	- ID: 2026111910223119
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Steps to reproduce [Bug]: Keep dev checked out in the main worktree, work on w in a linked one with a dirty file, and run gitsby -q br merge.
+	- Incorrect behavior [Bug]: It commits and pushes w, then dies on dev is already used by worktree, exit 1. release ends on dev with nothing tagged.
+	- Expected behavior [Bug]: Refuse before the plan when a branch the run checks out is held by another worktree, as design.md says.
+	- Reproduced [Bug]: 2026-11-19 on b23, all 4 commands. Confirmed.
+	- Possible cause [Bug]: Preflight doesn't read git worktree list. Only br prune knows the case.
+	- Origin: Go port. No round reached it.
+	- Actual cause [Bug]: Nothing before the plan asked whether a branch the run checks out is checked out in another worktree. git refuses that checkout, and it comes after the commit and the park push.
+	- Actual fix [Bug]: br create, br hotfix, br switch, br merge, pr ok and release refuse before the plan when a branch they check out is checked out in another worktree, naming it and its folder. One whose folder was deleted by hand names 'git worktree prune'. The worktree comes from the for-each-ref every run already makes, so no spawn was added. design.md and the changelog say so.
+	- Branch: nov19b-2026111910223133
+	- Test case: test.bash [dfh8j] to [dfh8n]; Go [dfh8b] TestRefuseHeldBranch.
+	- Swept: every checkout: cmdNewBranch for br create and br hotfix, cmdGoBranch, cmdMerge, backMergeToDev for br merge and pr ok of a hotfix, cmdPrAccept, cmdRelease and cutRelease. backOutMerge's and release's checkouts back to the starting branch go to the one this worktree has. repo clone checks dev out in a new clone. br prune already warns per branch.
+	- Decisions:
+		- release asks for main and dev, resumed or not, since it checks out both either way.
+		- pr ok asks for the target only when run from the PR's own branch, which the merge leaves with no upstream. Under --no-fetch it doesn't move, but is refused all the same, since its plan shows the checkout.
+		- Read from for-each-ref's worktreepath, git 2.23 and later, in the call branchRefs already makes, rather than a git worktree list.
+	- Closed reason: Done
+	- Commit: d757dc3
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-143654
+	- Verified: [dfh8j] and [dfh8m] fail on the build before the fix and pass with it, run as a block against each build. [dfh8k] and [dfh8n] pass on both: the old build failed those commands too, only later, and [dfh8m] catches what it left. [dfh8b] fails with the held list emptied. The quick gate passed with every area: test.bash 2155/0, fuzz 310/0, parity 31/0, spawn counts unchanged.
 
 - Code Review 20261110b item 6: br switch from main or dev pushes commits straight to the protected branch without --direct
 	- ID: 2026111016332380
@@ -4116,6 +4266,59 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- Code Review 20261119 item 20: account unset on a dotted key line changes lines the plan doesn't name
+	- ID: 2026111910223016
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: With account.work.email and account.work.name on their own lines, run gitsby account unset work email.
+	- Incorrect behavior [Bug]: The plan names only the email line. The save also writes account: and work: lines.
+	- Expected behavior [Bug]: The plan says the save reshapes more than the key.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: When removedLines can't match, the plan falls back to the old key-only list without saying so.
+	- Origin: 75ec0ec, round-20261111 (Code Review 20261110b item 10). Missed case of that fix.
+	- Closed reason: Done
+	- Actual cause [Bug]: As guessed. The module keeps the account and work blocks a dotted line made, and writes them as lines of their own once the key goes. The plan's match took only lines going, so it failed and fell back to the key line, shown as email: a@x.
+	- Actual fix [Bug]: The plan compares the file with the text the save writes line by line, so it names the lines that go and the lines that come in, each as the file spells it. Lines that come in show as add:, unnumbered, after the removals. A diff too big to compare says so on an also: line rather than naming only the key. accounts.md and the changelog say so.
+	- Decisions: The plan names the added lines rather than a general note, since every line of an unset is already named (2026111016332330). Only the shared tail is trimmed before the table, so of 2 like lines the one above the key is still the one named. The compare gives up past about 2000 by 2000 differing lines.
+	- Test case: Go TestAccountUnsetPlanNamesLinesTheSaveAdds [dfh9q] and TestLineChangesGivesUpOnAHugeDiff [dfh9r], test.bash [dfh9s]. [dfg0h] also checks that no other unset adds a line.
+	- Verified: [dfh9s] fails on the build before the fix and passes after. [dfh9q] fails with the old fallback put back, [dfh9r] with the cap lifted. Quick gate, every area: test.bash 2156/0, fuzz 310/0, parity 31/0.
+	- Swept: src-go has one remove of a config key, in accountUnsetPlan. account set on a dotted line is a rewrite and its plan says so. A set that adds a new account block shows it as add: account[name].key, which names the block.
+	- Branch: nov19b-2026111910223016
+	- Commit: 8df1160
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261119-145523
+
+- Code Review 20261119 item 33: install.ps1 can leave no gitsby.exe when its last move fails
+	- ID: 2026111910222830
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Upgrade over an existing install and make the final Move-Item fail, such as with the folder made read-only after the old copy moves aside.
+	- Incorrect behavior [Bug]: The catch removes only the staged file, leaving gitsby.exe.replaced-* and no gitsby.exe.
+	- Expected behavior [Bug]: A failed install leaves the old copy in place.
+	- Reproduced [Bug]: Yes, 2026-11-19, with daa5add's replace block run in pwsh 7 on Linux with its Windows branch on and the last Move-Item refused. No gitsby.exe was left, and no gitsby.exe.replaced-* either, since a copy that isn't running was deleted right after it moved aside. Confirmed.
+	- Possible cause [Bug]: install.ps1 lines 367 to 377 don't move the old copy back.
+	- Origin: The move-aside code. No round saw it.
+	- Actual cause [Bug]: The old copy was deleted as soon as it moved aside, before the new one was in place, and the catch never moved it back. A running copy survived the delete as gitsby.exe.replaced-*, but still wasn't put back.
+	- Decisions: The replace step is its own function, Install-Binary, so the Windows branch can be run off Windows. The staged file's cleanup no longer throws, so a cleanup failure can't hide the real error or stop the old copy going back.
+	- Actual fix [Bug]: install.ps1's Install-Binary deletes the old copy only after the new one is in place. When the last move fails, it moves the old copy back before cleaning up, and if that fails too the error names the old copy's path and says to rename it. changelog.md has a line under vNEXT Fixed.
+	- Branch: nov19b-2026111910222830
+	- Commit: aa54839
+	- Test case: test.bash [dfha2] (a replace over an old gitsby.exe leaves only the new one), [dfha3] (a refused last move puts the old one back) and [dfha4] (a refused move back names where the old one is).
+	- Swept: every move-aside or rename over an installed binary. install.bash and the Go code rename over the target in one step and never move it aside first. legacy/install.ps1 is frozen.
+	- Verified: [dfha3] and [dfha4] fail with the old order put back in Install-Binary, and all 3 fail on daa5add's install.ps1, which has no such function. Quick gate, every area, passed: test.bash 2159/0, fuzz 310/0, parity 31/0. PSScriptAnalyzer clean on install.ps1. On vm925w at 8f259fd, in Windows PowerShell 5.1.26100 and pwsh 7.6.10: the [dfha2] to [dfha4] bodies passed, with Windows paths. A whole upgrade with -Yes over an install whose gitsby.exe was running put the new build in place and left exactly one gitsby.exe.replaced-*, holding the old copy. The next install named the cleanup in its plan and left only gitsby.exe. The release downloads were served locally.
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: [dfha2] to [dfha4] and the running-copy upgrade passed on vm925w in 5.1 and pwsh 7.
+	- Closed: 20261119-151603
 
 - Code Review 20261110b item 20: On GitHub Enterprise, gh never sees the account's token
 	- ID: 2026111016332206

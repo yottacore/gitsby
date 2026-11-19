@@ -274,7 +274,7 @@ func (a *app) settleRepoConnect() error {
 	wantCreate := a.cmd.name == "repo-create"
 	hasWork := false
 	if a.inRepo {
-		hasWork = runOK("git", "rev-parse", "-q", "--verify", "HEAD") || runOut("git", "status", "--porcelain") != ""
+		hasWork = runOK("git", "rev-parse", "-q", "--verify", "HEAD") || runOut("git", "status", "--porcelain", "--untracked-files=normal") != ""
 	} else {
 		hasWork = !dirEmpty(".")
 	}
@@ -412,7 +412,7 @@ func (a *app) cmdConnect() error {
 		// origin already set - make sure everything is published
 		switch {
 		case !a.hasUpstream() || isAhead():
-			return a.step("git", a.pushArgs()...)
+			return a.pushCurrent()
 		default:
 			a.out.status("Nothing to push; already connected and current.")
 		}

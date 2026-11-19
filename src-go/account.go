@@ -202,7 +202,7 @@ func (a *app) accountHost() string {
 // so handing a GitHub token to a Gitea push authenticates nothing - and does it
 // while looking thoroughly configured, which is the part that costs an afternoon.
 func (a *app) accountServesHost(host string) bool {
-	return host != "" && strings.EqualFold(host, a.accountHost())
+	return sameService(host, a.accountHost())
 }
 
 // accountWho is the login this run's account has on a host, or nothing. 'user' wins
@@ -260,14 +260,17 @@ func (a *app) authHost() string {
 	return a.accountHost()
 }
 
-// tokenEnvVar is the variable the credential helper reads the token out of. For a
-// host gh serves it's the one gh reads for that host, since the two have to agree:
-// GH_TOKEN for github.com, GH_ENTERPRISE_TOKEN for an Enterprise Server host, where
-// gh never looks at GH_TOKEN. Anything else gets its own name, so a Gitea token is
-// never exported into every child process under a variable gh will pick up and act on.
+// hostTokenVar is where the credential helper reads the token, on every host. Ours,
+// so git gets the token whether or not gh may have it.
+const hostTokenVar = "GITSBY_HOST_TOKEN"
+
+// tokenEnvVar is the variable gh reads a token from for a host it serves: GH_TOKEN for
+// github.com, GH_ENTERPRISE_TOKEN for an Enterprise Server host, where gh never looks
+// at GH_TOKEN. Anything else gets our own name, so a Gitea token is never exported
+// into every child process under a variable gh will pick up and act on.
 func tokenEnvVar(host string) string {
 	if !isGitHubHost(host) {
-		return "GITSBY_HOST_TOKEN"
+		return hostTokenVar
 	}
 	if ghEnterpriseHost(host) {
 		return "GH_ENTERPRISE_TOKEN"
@@ -349,11 +352,22 @@ func (a *app) accountToken(host string) (string, tokenSource, string) {
 	// GitHub login, and only once the account's own file gave nothing.
 	if a.acct.ghWho != "" {
 		file := a.git.ownTokenFile.get(func() string { return configOwnScope("gitsby.ghTokenFile") })
-		if token := readTokenFile(file); token != "" {
+		if token := readTokenFile(file); token != "" && ownTokenFileServes(host) {
 			return token, tokenFromFile, file
 		}
 	}
 	return "", tokenNone, ""
+}
+
+// ownTokenFileServes: whether the gitsby.ghTokenFile key is for this host. account apply
+// writes it for an account on any host, with gitsby.host beside it, so a run naming a
+// GitHub login in a Gitea account's folder read the Gitea token. Unset is a key set by
+// hand, which only ever meant GitHub. Backlog 2026111910223247.
+func ownTokenFileServes(host string) bool {
+	if tokenHost := configOwnScope("gitsby.host"); tokenHost != "" {
+		return sameService(host, tokenHost)
+	}
+	return isGitHubHost(host)
 }
 
 // worldReadable names a token file other users on this machine can read, or
@@ -449,10 +463,17 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 	onGitHubHost := isGitHubHost(credHost)
 	switch {
 	case token != "":
+		// gh gets the token in its own variable only while it's pointed nowhere else,
+		// since gh hands that to every host its rule covers, whatever host the token
+		// came from. Backlog 2026111910223233.
+		if onGitHubHost {
+			a.acct.ghElsewhere = a.tokenElsewhere(a.ghPointedAt())
+			a.acct.ghToken = a.acct.ghElsewhere == ""
+		}
 		// Asked before the token is exported, or the API answers with that token's
 		// login. Display only, so skipped when no block prints. '?' means gh held no
 		// account.
-		if onGitHubHost && !skipGhProbe {
+		if a.acct.ghToken && !skipGhProbe {
 			if active := a.ghActiveLogin(credHost); active != a.acct.ghWho && active != "?" {
 				a.acct.switchedFrom = active
 			}
@@ -460,17 +481,23 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 		// Export whenever a token was found, not only when it replaces a different
 		// active account: the helper below reads it when git runs it, and the
 		// reset that precedes it has already evicted any credential manager.
-		envVar := tokenEnvVar(credHost)
-		a.acct.tokenEnv = envVar
-		if err := setEnv(envVar, token); err != nil {
+		a.acct.tokenEnv = hostTokenVar
+		if err := setEnv(hostTokenVar, token); err != nil {
 			return err
 		}
+		if a.acct.ghToken {
+			if err := setEnv(tokenEnvVar(credHost), token); err != nil {
+				return err
+			}
+		}
 		switch {
+		case !a.acct.ghToken:
+			// gh acts as whoever it would have, so there is nothing to ask about.
 		case source == tokenFromGh:
 			// gh's own store was asked for this account by name, so there is nothing
 			// left to ask.
 			a.remote.login.set(a.acct.ghWho)
-		case onGitHubHost:
+		default:
 			// A token file says nothing about whose token is in it, so ask GitHub with
 			// it. Only when a block prints it, and started now so it runs beside the
 			// fetch.
@@ -491,7 +518,7 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 			return err
 		}
 		if err := gitConfigEnv(helperKey,
-			`!f(){ test "$1" = get && { echo "username=${`+userEnvVar+`}"; echo "password=${`+envVar+`}"; }; }; f`); err != nil {
+			`!f(){ test "$1" = get && { echo "username=${`+userEnvVar+`}"; echo "password=${`+hostTokenVar+`}"; }; }; f`); err != nil {
 			return err
 		}
 		a.acct.usedHTTPSAuth = true
@@ -537,6 +564,20 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 		}
 	}
 	return nil
+}
+
+// ghPointedAt is every host gh would be sent to other than through the repo's remotes,
+// which GH_HOST already pins: the caller's GH_HOST and GH_REPO, and for raw gh, the
+// hosts its command line names.
+func (a *app) ghPointedAt() []string {
+	hosts := slices.Clone(a.acct.toolHosts)
+	if h := os.Getenv("GH_HOST"); h != "" {
+		hosts = append(hosts, h)
+	}
+	if h := ghRepoHost(os.Getenv("GH_REPO")); h != "" {
+		hosts = append(hosts, h)
+	}
+	return hosts
 }
 
 // localIdentityKeys names which of the two identity keys THIS repo sets for

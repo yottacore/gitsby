@@ -81,10 +81,11 @@ func (a *app) showChanges() {
 	a.out.clean("Local changes:")
 	// connect with origin set commits everything and pushes it, so each file a
 	// folder holds gets its own line. With no origin the plan lists them after.
+	// Otherwise named too, or status.showUntrackedFiles=no leaves out what add takes.
 	if a.tgt.connectMode == "push" {
 		a.showList("git", "status", "--short", "--untracked-files=all")
 	} else {
-		a.showList("git", "status", "--short")
+		a.showList("git", "status", "--short", "--untracked-files=normal")
 	}
 	if a.lastListCount == 0 {
 		a.out.clean("    (working tree clean)")
@@ -141,7 +142,12 @@ func (a *app) showIdentity(remoteURL string) {
 		a.out.clean("Ignored keys .: " + strings.Join(a.cfg.unknown, ", "))
 	}
 	a.showSSHLine(remoteURL)
-	a.out.clean("Author .......: " + commitIdentity())
+	author := commitIdentity()
+	// git refuses an empty name but takes an empty email, so this is the one sign of it.
+	if strings.HasSuffix(author, " <>") {
+		author += "  (no email - commits get an empty address)"
+	}
+	a.out.clean("Author .......: " + author)
 	a.showGhLine()
 	a.showHostLine()
 }

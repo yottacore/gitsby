@@ -49,13 +49,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - After the PowerShell installer adds gitsby to PATH on Windows, a new PowerShell or Command Prompt opened from the Start menu or taskbar finds it. It used to need a sign-out first, since the installer changed PATH without telling Windows.
 
+- When the PowerShell installer can't put the new `gitsby.exe` in place over an old one, it puts the old one back. It used to delete the old copy first, so a failed upgrade left no gitsby at all. If the old copy can't be put back either, the error says where it is.
+
 - `raw glab` and `pr` no longer send the account's GitLab token to some other host. glab sends its token to whatever host it's pointed at, so `raw glab api --hostname gitlab.com user` in a gitlab.gnome.org folder sent the GNOME token to gitlab.com. A run that names another host, with `--hostname`, `-R` or a URL, now gets no token and runs as plain glab would, and says so.
 
 - On a GitHub Enterprise host, `gh` acts as the folder's account. Its token went into `GH_TOKEN`, which `gh` reads only for github.com, so `pr`, `repo create` and `raw gh` acted as `gh`'s own login there while git pushed as the account. The token now goes into `GH_ENTERPRISE_TOKEN` for a host `GH_HOST` names.
 
-- `raw git -C <folder>` acts as the account of the repo git works in. It acted as the account of the folder it was started in, so a commit or push into another account's repo went out with the wrong name, email and token. The same goes for `--git-dir` and `GIT_DIR`, `raw tig -C`, and `raw lazygit -p`, `-w` and `-g`.
+- After `account apply`, a folder inside another account's folder no longer hands its token to the outer account's host. With a gitea.com account's folder inside a github.com one's, plain git and `raw git` there answered github.com with the gitea.com token. Each fragment now names its account's host, and the helper answers only for that host. Run `account apply` again to rewrite the fragments.
 
-- After `account apply`, a folder inside another account's folder no longer takes the outer account's settings that its own account leaves unset. Plain git and `raw git` there answered with the inner account's username and the outer one's token, commits took the outer one's name, and ssh its key. Each such key now gets the value your global git config gives it.
+- `raw gh` and `pr` no longer hand the account's token to some other host. gh reads `GH_ENTERPRISE_TOKEN` for every Enterprise host and `GH_TOKEN` for github.com and every `*.ghe.com` host, so `raw gh auth token --hostname evil.example` printed the Enterprise token. A run that names another host, with `--hostname`, `-R`, a URL, `GH_HOST` or `GH_REPO`, now gets no token in gh's variables, and `raw gh` says so. git still gets the token for the account's own host.
+
+- `raw git -C <folder>` acts as the account of the repo git works in. It acted as the account of the folder it was started in, so a commit or push into another account's repo went out with the wrong name, email and token. The same goes for `--git-dir` and `GIT_DIR`, `raw tig -C`, and `raw lazygit -p`, `-w` and `-g`. With `GIT_DIR` set, every other command now takes its account from that repo too. `whoami`, `status` and the rest went by the folder they were run in.
+
+- After `account apply`, a folder inside another account's folder no longer takes the outer account's settings that its own account leaves unset. Plain git and `raw git` there answered with the inner account's username and the outer one's token, commits took the outer one's name, and ssh its key. Each such key now gets the value your global git config gives it. Where an inner account has no email and your global git config gives none, git there commits with an empty address, since git takes an empty email as given. `account apply` warns about it, and `whoami` flags it.
 
 - A failed `account apply` no longer empties an account's fragment that your global git config already includes. Each fragment is written to a new file beside it, which replaces it only once every key is in. A full disk or a permissions error leaves the old one as it was, and a lock file git left beside it no longer stops the run.
 
@@ -71,11 +77,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `sync`, and every command that pushes the branch it's on, pushes only that branch. Under `push.default=matching`, or a push refspec for every branch, they pushed other branches with it, so a commit on `main` reached origin without `--direct`. On a mirror remote they deleted origin's branches that aren't here. git now refuses that push, and nothing moves.
 
+- A branch made from `origin/main`, as `git switch -c feat origin/main` makes it, tracks `main`. Its push from `sync`, `br switch`, `br create`, `br hotfix`, `br merge` or `pr create` went to origin's `main` and exited 0, though the plan said it pushed `feat`. Under git's default `push.default=simple`, where git refuses that push, Gitsby now refuses before the plan, and `git branch --unset-upstream` lets it publish the branch under its own name. Under `push.default=upstream` the push goes to `main` as git sends it: the plan says so, `sync` and `br switch` ask for `--direct`, and the other commands refuse.
+
+- `pr create` on a branch that tracks one of another name, as `push.default=upstream` pushes it, opens the pull request from the branch it pushed to. It named the current branch, so the pull request came from an older branch of that name on origin, at exit 0. A branch that pushes to a remote other than origin is refused before the plan, since the pull request opens on origin, and `git branch --unset-upstream` lets it publish there under its own name.
+
+- `sync`, `br switch`, `br create`, `br hotfix` and `release` warn before they push a branch back up that origin deleted, most often when its pull request merged, and with `-q` they refuse. Their push put it back on origin as a new branch. `git branch --unset-upstream` first says the push is meant.
+
 - `br switch` from `main` or `dev` with commits origin doesn't have yet warns before it pushes them, the way `sync` does, and with `-q` it refuses unless given `--direct`. It used to push them straight to origin's `main` or `dev` and exit 0.
 
 - `br create` and `br hotfix` off `main` or `dev` stop when the pull's restore of your edits conflicts, list the files, and point at the stash git kept, as `pullcom` does. They used to make the branch and push it over the conflict markers, and say Done.
 
 - A submodule with its own edits or untracked files no longer stops `pullcom`, `sync`, `br switch`, `br merge`, `br create`, `pr ok` or `release`. They tried to commit it, found nothing to commit, and failed. `br switch` off `main` no longer refuses over it, `sync` on `main` no longer calls it a direct push, and `release` no longer counts it as something new.
+
+- With `status.showUntrackedFiles=no` set, untracked files count as work. The plan said the tree was clean, then `sync` on `dev` committed them and pushed them straight to origin at exit 0, past the direct-push refusal. `br switch` off `main` or `dev`, `pr ok`, `release` and `repo connect` read them the same way now.
+
+- `pullcom`, `sync`, `br switch`, `br merge`, `br create`, `br hotfix`, `br prune`, `pr create`, `pr ok` and `release` refuse while a merge, `git am`, cherry-pick, revert, rebase or bisect is stopped partway, and name the commands that finish it and drop it. They used to commit the half-done work under their own message, or switch branches and leave the rest of a cherry-pick range or patch series to apply onto the next branch. A stopped rebase was refused only as a detached HEAD.
 
 - A syntax error from `release` or `raw` that quotes what was typed shows a control character by name, as every other error does, so an escape typed by mistake no longer changes the terminal's colors.
 
@@ -93,6 +109,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Converting an SHCL 2.x accounts file keeps a value holding a byte that isn't UTF-8 the way 2.x read it, as the replacement character U+FFFD. It used to keep the byte, so the value read differently after the conversion, with no word about it.
 
+- In a clone that fetches only some of origin's branches, as `git clone --depth 1` and `--single-branch` make, `br create`, `br hotfix`, `br switch`, `br merge`, `br prune`, `pr create`, `pr ok` and `release` refuse while origin's `dev` can't be seen, and name `git remote set-branches origin '*'`. `br merge` used to go into `main` there and push it, passing over origin's `dev`. `br create`, `br hotfix` and `br switch` also refuse a branch the fetch doesn't bring in. `pullcom` and `sync` work as before.
+
+- `br create`, `br hotfix`, `br switch`, `br merge`, `pr ok` and `release` refuse before anything runs when a branch they check out is checked out in another worktree, and name it. They used to commit and push first, then stop at the checkout. A worktree folder deleted by hand still holds its branch, and the refusal names `git worktree prune` for it.
+
 - An accounts file last written before the first SHCL 3 module Gitsby used, or with no real time, as a Nix store gives, is read as it is rather than re-spelled as that module's. The copy a conversion keeps has the file's own time, so moving it back reads as the file did. Where the folder can't be written, the notice says so rather than blaming a lock.
 
 - `repo clone` ends on the `dev` branch, tracking origin's, when origin also has a tag named `dev`. It used to leave the clone detached at the tag and say Done, and the next command refused.
@@ -102,6 +122,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `account apply` gives each account its own fragment. Two accounts with the same login add their names to it, and that could be a third account's own name, such as `work` beside `jim_work`, so both wrote one file and a repo in one folder took the other account's email. The one named for its own login keeps the name, and the other gets a number on the end, such as `github.com_jim_work_2.gitconfig`. Re-run `gitsby account apply` to get it.
 
 - The `was:` and `becomes:` lines in `account set`'s plan show the line as the file has it, key, quotes and comment included. They used to rebuild it from the key and value, so the plan could show `email: c@d.e` where the file got `Email: "c@d.e"   # work mail`.
+
+- `account unset` on a key written on a dotted line, such as `account.work.email`, shows the `account:` and `work:` lines the save writes in its place. Its plan named only the key's line, and showed it as `email: a@x`.
 
 ## v3.0.0-beta.1 - 2026-11-08
 

@@ -227,7 +227,8 @@ func canonPath(p string) string {
 
 // resolveLinks settles symlink and junction spellings through the nearest ancestor that
 // exists, since a clone target need not exist. Every platform, since rev-parse answers
-// with the real path and a rule typed through a link never matched.
+// with the real path and a rule typed through a link never matched. Junctions only
+// resolve because of the godebug pair in go.mod.
 func resolveLinks(p string) string {
 	head, tail := p, ""
 	for head != "" && strings.Contains(head, "/") {
@@ -918,23 +919,28 @@ func (c *config) loginOf(name string) string {
 // directory when not - which is what a fresh 'repo clone' has to go on.
 func (a *app) contextDir() string {
 	return a.git.contextDir.get(func() string {
-		top := runOut("git", "rev-parse", "--show-toplevel")
-		// With GIT_DIR set, git takes the working directory for the top unless told
-		// a work tree. The repo is where the git dir is, which is also what the
-		// includeIf rules 'account apply' writes go by. A git dir not named .git, as
-		// in a linked worktree, keeps the top.
-		if os.Getenv("GIT_DIR") != "" {
-			if gitDir := runOut("git", "rev-parse", "--absolute-git-dir"); gitDir != "" {
-				if filepath.Base(gitDir) == ".git" {
-					return filepath.Dir(gitDir)
-				}
-				if top == "" { // bare
-					return gitDir
-				}
+		return contextOf(runOut("git", "rev-parse", "--show-toplevel"))
+	})
+}
+
+// contextOf is contextDir for the top git gave. enterRepo sets the cache from its
+// own rev-parse, so both go through here or GIT_DIR counts for raw only.
+func contextOf(top string) string {
+	// With GIT_DIR set, git takes the working directory for the top unless told
+	// a work tree. The repo is where the git dir is, which is also what the
+	// includeIf rules 'account apply' writes go by. A git dir not named .git, as
+	// in a linked worktree, keeps the top.
+	if os.Getenv("GIT_DIR") != "" {
+		if gitDir := runOut("git", "rev-parse", "--absolute-git-dir"); gitDir != "" {
+			if filepath.Base(gitDir) == ".git" {
+				return filepath.Dir(gitDir)
+			}
+			if top == "" { // bare
+				return gitDir
 			}
 		}
-		return topOrWorkingDir(top)
-	})
+	}
+	return topOrWorkingDir(top)
 }
 
 func topOrWorkingDir(top string) string {

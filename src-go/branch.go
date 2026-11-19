@@ -10,6 +10,8 @@ package main
 
 import (
 	"regexp"
+	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -54,24 +56,38 @@ func (a *app) goneUpstream() string {
 
 // branchRefs is every local branch with its upstream, and every branch origin
 // has with git's short name for it. One for-each-ref answers all of the run's
-// existence checks.
+// existence checks, and where each local branch's push and upstream go.
 type branchRefs struct {
 	local  map[string]upstreamRef
 	origin map[string]string
+	push   map[string]pushRefs
+	head   string            // the branch checked out, so a push needs no second call to name it
+	held   map[string]string // a branch checked out in another worktree, to that worktree's path
 }
+
+// pushRefs is what git reads to place a branch's push: the push remote and the
+// ref its push refspecs map the branch to, and the upstream's remote and ref.
+type pushRefs struct{ pushRemote, pushRef, upRemote, upRef string }
 
 func (a *app) branchRefs() branchRefs {
 	return a.git.branches.get(func() branchRefs {
-		refs := branchRefs{local: map[string]upstreamRef{}, origin: map[string]string{}}
-		// A ref name can't hold a space, so an empty field still has its place.
-		lines := runLines("git", "for-each-ref", "--format=%(refname) %(refname:short) %(upstream) %(upstream:short)", "refs/heads/", "refs/remotes/origin/")
+		refs := branchRefs{local: map[string]upstreamRef{}, origin: map[string]string{}, push: map[string]pushRefs{}, held: map[string]string{}}
+		// NUL apart, since a remote can be a URL, which may hold a space. An empty
+		// field still has its place.
+		lines := runLines("git", "for-each-ref", "--format=%(refname)%00%(refname:short)%00%(upstream)%00%(upstream:short)%00%(push:remotename)%00%(push:remoteref)%00%(upstream:remotename)%00%(upstream:remoteref)%00%(HEAD)%00%(worktreepath)", "refs/heads/", "refs/remotes/origin/")
 		for _, line := range lines {
-			fields := strings.Split(line, " ")
-			if len(fields) != 4 {
+			fields := strings.Split(line, "\x00")
+			if len(fields) != 10 {
 				continue
 			}
 			if name, ok := strings.CutPrefix(fields[0], "refs/heads/"); ok {
 				refs.local[name] = upstreamRef{full: fields[2], short: fields[3]}
+				refs.push[name] = pushRefs{pushRemote: fields[4], pushRef: fields[5], upRemote: fields[6], upRef: fields[7]}
+				if fields[8] == "*" {
+					refs.head = name
+				} else if fields[9] != "" {
+					refs.held[name] = fields[9]
+				}
 			} else if name, ok := strings.CutPrefix(fields[0], "refs/remotes/origin/"); ok && name != "HEAD" {
 				// origin/HEAD is a pointer at the default branch, not a branch. Counted as
 				// one, 'br switch HEAD' passed the up-front check and parked work first.
@@ -90,6 +106,97 @@ func (a *app) branchExistsLocal(branch string) bool {
 func (a *app) branchExistsRemote(branch string) bool {
 	_, ok := a.branchRefs().origin[branch]
 	return ok
+}
+
+// fetchSees: whether origin's fetch refspecs bring its branch into
+// refs/remotes/origin, so that no origin/<branch> here means origin has none. A
+// single-branch or shallow clone fetches only the one branch. Read only once some
+// branch a run needs is missing from origin's refs here.
+func (a *app) fetchSees(branch string) bool {
+	seen := false
+	for _, spec := range a.originFetch() {
+		if neg, ok := strings.CutPrefix(spec, "^"); ok {
+			if _, ok := refspecMap(neg, neg, "refs/heads/"+branch); ok {
+				return false
+			}
+			continue
+		}
+		src, dst, ok := strings.Cut(strings.TrimPrefix(spec, "+"), ":")
+		if !ok {
+			continue
+		}
+		if to, ok := refspecMap(src, dst, "refs/heads/"+branch); ok && to == "refs/remotes/origin/"+branch {
+			seen = true
+		}
+	}
+	return seen
+}
+
+// fetchSeesAll: origin's fetch brings in every branch it has, a negative refspec
+// aside, which fetchSees answers for by name.
+func (a *app) fetchSeesAll() bool {
+	for _, spec := range a.originFetch() {
+		if strings.TrimPrefix(spec, "+") == "refs/heads/*:refs/remotes/origin/*" {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *app) originFetch() []string {
+	return a.git.originFetch.get(func() []string { return runLines("git", "config", "--get-all", "remote.origin.fetch") })
+}
+
+// refspecMap is where one side of a refspec maps ref to, git's way: a '*' on each
+// side stands for the same text, slashes included, and a source without one
+// names a single ref, in full or by its branch name.
+func refspecMap(src, dst, ref string) (string, bool) {
+	before, after, glob := strings.Cut(src, "*")
+	if !glob {
+		if src == ref || "refs/heads/"+src == ref {
+			return dst, true
+		}
+		return "", false
+	}
+	if len(ref) < len(before)+len(after) || !strings.HasPrefix(ref, before) || !strings.HasSuffix(ref, after) {
+		return "", false
+	}
+	return strings.Replace(dst, "*", ref[len(before):len(ref)-len(after)], 1), true
+}
+
+// refuseNarrowFetch: with only some of origin's branches fetched, a missing
+// origin/dev doesn't mean origin has none, and the branch commands would take the
+// default branch for the merge target. A new branch the fetch doesn't cover
+// would read as gone after its first push. So these refuse rather than guess.
+// sync and pullcom only push the branch they're on, and run as before.
+func (a *app) refuseNarrowFetch() error {
+	switch a.cmd.name {
+	case "br-create", "br-hotfix", "br-switch", "br-merge", "br-prune", "release":
+	case "pr":
+		if a.pr.sub == "" {
+			return nil
+		}
+	default:
+		return nil
+	}
+	if !a.hasOrigin() {
+		return nil
+	}
+	switch {
+	case !a.branchExistsLocal("dev") && !a.branchExistsRemote("dev") && !a.fetchSees("dev"):
+		return narrowFetchRefusal("whether origin has a 'dev'")
+	case a.originHead() == "" && !slices.Contains(defaultNames, a.defaultBranch()) && !a.fetchSeesAll():
+		// The default branch was then the only local one, which in a clone of dev
+		// alone is dev.
+		return narrowFetchRefusal("which branch is origin's default")
+	}
+	return nil
+}
+
+func narrowFetchRefusal(what string) error {
+	return refusalBlock("This clone fetches only some of origin's branches, so it can't tell "+what+". Nothing was done.", [][]string{
+		noteLines("Fix", "Fetch all of them first:", "  git remote set-branches origin "+typedArg("*", runtime.GOOS), "  git fetch origin"),
+	}, nil)
 }
 
 // localBranchNames in refname order, the order for-each-ref lists them in.
@@ -211,11 +318,15 @@ func (a *app) originHead() string {
 	})
 }
 
+// defaultNames are taken for the default branch, in this order, when origin
+// doesn't say.
+var defaultNames = []string{"main", "master", "trunk"}
+
 func (a *app) resolveDefaultBranch() string {
 	if branch, ok := strings.CutPrefix(a.originHead(), "refs/remotes/origin/"); ok && branch != "" {
 		return branch
 	}
-	for _, name := range []string{"main", "master", "trunk"} {
+	for _, name := range defaultNames {
 		if a.branchExistsLocal(name) {
 			return name
 		}

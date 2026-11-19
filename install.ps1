@@ -356,26 +356,40 @@ function Install-Gitsby {
         New-Item -ItemType Directory -Force -Path $destDir | Out-Null
         # Staged in the destination folder and renamed over the target, since a move from the temp
         # dir isn't atomic across filesystems and left a truncated exe.
-        $staged = Join-Path -Path $destDir -ChildPath ('.gitsby.install.' + [IO.Path]::GetRandomFileName())
-        try {
-            Copy-Item -LiteralPath $tmpFile -Destination $staged -Force
-            # 755 whatever the umask, the same as the Bash installer.
-            if (-not $onWindows) { chmod 755 $staged }
-            # Windows will not delete or overwrite a running executable, but it will rename one:
-            # move the incumbent aside, then put the new one in its place. What it leaves behind
-            # goes at the next install, once nothing is holding it open.
-            if ($onWindows -and (Test-Path -LiteralPath $destPath)) {
-                Get-ChildItem -LiteralPath $destDir -Filter 'gitsby.exe.replaced-*' -ErrorAction SilentlyContinue |
-                    ForEach-Object { Remove-Item -Force -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
-                $retired = "${destPath}.replaced-" + [IO.Path]::GetRandomFileName()
-                Move-Item -Force -LiteralPath $destPath -Destination $retired
-                Remove-Item -Force -LiteralPath $retired -ErrorAction SilentlyContinue
+        function Install-Binary([string]$source, [string]$destPath, [bool]$onWindows) {
+            $destDir = Split-Path -Parent $destPath
+            $staged = Join-Path -Path $destDir -ChildPath ('.gitsby.install.' + [IO.Path]::GetRandomFileName())
+            $retired = ''
+            try {
+                Copy-Item -LiteralPath $source -Destination $staged -Force
+                # 755 whatever the umask, the same as the Bash installer.
+                if (-not $onWindows) { chmod 755 $staged }
+                # Windows will not delete or overwrite a running executable, but it will rename one:
+                # move the incumbent aside, then put the new one in its place. What it leaves behind
+                # goes at the next install, once nothing is holding it open.
+                if ($onWindows -and (Test-Path -LiteralPath $destPath)) {
+                    Get-ChildItem -LiteralPath $destDir -Filter 'gitsby.exe.replaced-*' -ErrorAction SilentlyContinue |
+                        ForEach-Object { Remove-Item -Force -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
+                    $retired = "${destPath}.replaced-" + [IO.Path]::GetRandomFileName()
+                    Move-Item -Force -LiteralPath $destPath -Destination $retired
+                }
+                Move-Item -Force -LiteralPath $staged -Destination $destPath
+            } catch {
+                $failure = $_
+                $stranded = ''
+                # The old copy goes back first, since whatever failed the move may fail the cleanup too.
+                if ($retired -and (Test-Path -LiteralPath $retired) -and -not (Test-Path -LiteralPath $destPath)) {
+                    try { Move-Item -LiteralPath $retired -Destination $destPath }
+                    catch { $stranded = " The old copy couldn't be put back either: rename ${retired} to ${destPath}." }
+                }
+                Remove-Item -Force -LiteralPath $staged -ErrorAction SilentlyContinue
+                if ($stranded) { throw "$($failure.Exception.Message)${stranded}" }
+                throw $failure
             }
-            Move-Item -Force -LiteralPath $staged -Destination $destPath
-        } catch {
-            if (Test-Path -LiteralPath $staged) { Remove-Item -Force -LiteralPath $staged }
-            throw
+            # Only once the new one is in place. One that's running stays, for the next install.
+            if ($retired) { Remove-Item -Force -LiteralPath $retired -ErrorAction SilentlyContinue }
         }
+        Install-Binary -source $tmpFile -destPath $destPath -onWindows $onWindows
 
         Write-Host ''
         Write-Host '[ Verifying ... ]'
@@ -557,3 +571,5 @@ try {
 #   - 20261106 JC: The temp folder is removed only when it's a real folder right under the
 #     temp folder, and otherwise left with a warning.
 #   - 20261107 JC: The build-it-yourself message no longer claims there is nothing for go build to fetch.
+#   - 20261119 JC: An upgrade on Windows that can't put the new gitsby.exe in place puts the old one
+#     back, rather than leaving none. The old copy is deleted only once the new one is in.

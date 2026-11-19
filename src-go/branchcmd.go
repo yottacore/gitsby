@@ -13,6 +13,7 @@ package main
 import (
 	"path"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -29,6 +30,70 @@ func (a *app) checkNewBranchName(name string) error {
 	}
 	if a.branchExistsRemote(name) {
 		return usagef("Branch '%s' already exists on origin; use: %s br switch %s", name, meName, name)
+	}
+	// Origin may have it unfetched, and if not, its first push makes a branch the
+	// fetch never updates, which reads as gone from then on.
+	if a.hasOrigin() && !a.fetchSees(name) {
+		return narrowFetchRefusal("whether origin has a '" + name + "'")
+	}
+	return nil
+}
+
+// checkoutsAhead is every branch this command checks out after the one it's on,
+// as the commands below and cmdRelease and cmdPrAccept do it. A new checkout in
+// one of them goes here too.
+func (a *app) checkoutsAhead() []string {
+	var out []string
+	add := func(branch string) {
+		if branch != "" && branch != a.currentBranch() && !slices.Contains(out, branch) {
+			out = append(out, branch)
+		}
+	}
+	switch a.cmd.name {
+	case "br-create":
+		add(a.mergeTarget())
+	case "br-hotfix":
+		add(a.defaultBranch())
+	case "br-switch":
+		add(a.switchTarget())
+	case "br-merge":
+		add(a.branchTarget(""))
+		if a.isHotfixBranch("") {
+			add(a.mergeTarget()) // the back-merge
+		}
+	case "release":
+		add(a.mergeTarget())
+		add(a.defaultBranch())
+	case "pr":
+		if a.pr.sub != "ok" {
+			break
+		}
+		// The merge deletes the branch's upstream, and the run moves to the target.
+		if a.pr.headBranch == a.currentBranch() {
+			add(a.branchTarget(""))
+		}
+		if a.isHotfixBranch(a.pr.headBranch) {
+			add(a.mergeTarget())
+		}
+	}
+	return out
+}
+
+// refuseHeldBranch: git won't check out a branch another worktree has, and finds
+// that only at the checkout, after the park push.
+func (a *app) refuseHeldBranch() error {
+	for _, branch := range a.checkoutsAhead() {
+		if where, ok := a.branchRefs().held[branch]; ok {
+			fix := "Switch that worktree to another branch, then run this again."
+			if !pathExists(where) {
+				// git keeps the branch for a worktree whose folder was deleted by hand.
+				fix = "That folder is gone, so 'git worktree prune' frees the branch. Then run this again."
+			}
+			return refusalBlock("'"+branch+"' is checked out in another worktree, and this run has to check it out here. Nothing was done.", [][]string{
+				noteLines("File", nativePath(where)),
+				noteLines("Fix", fix),
+			}, nil)
+		}
 	}
 	return nil
 }
@@ -154,7 +219,7 @@ func (a *app) cmdMerge() error {
 			remoteGone = a.atomicMergePush(targetBranch, workBranch, mergedTip)
 		}
 		if !remoteGone {
-			if err := a.step("git", a.pushArgs()...); err != nil {
+			if err := a.pushCurrent(); err != nil {
 				return err
 			}
 		}

@@ -180,8 +180,8 @@ func (a *app) teaCommand() string {
 // hostTokenEnv hands the account's token for this run's host to a git host CLI
 // other than gh, in the variables that CLI reads, with the host beside it. tea keeps
 // the token on that host; glab doesn't, so it goes through glabTokenEnv. A GitHub
-// token is never handed over:
-// that one is gh's, already in the variable gh reads. Says whether there was a token to give.
+// token is never handed over: that one is gh's, which selectAccount puts in the
+// variable gh reads when gh is pointed nowhere else. Says whether there was a token to give.
 func (a *app) hostTokenEnv(tokenVar, hostVar string) (bool, error) {
 	if a.acct.tokenEnv == "" || isGitHubHost(a.acct.credHost) {
 		return false, nil
@@ -205,15 +205,33 @@ func (a *app) glabTokenEnv(args []string) (gave bool, elsewhere string, err erro
 	if api := os.Getenv("GITLAB_API_HOST"); api != "" {
 		named = append(named, api)
 	}
-	for _, x := range named {
-		if !strings.EqualFold(glabHostName(x), serviceHost(host)) {
-			return false, x, nil
-		}
+	if x := a.tokenElsewhere(named); x != "" {
+		return false, x, nil
 	}
 	if gave, err = a.hostTokenEnv("GITLAB_TOKEN", "GITLAB_HOST"); !gave || err != nil {
 		return gave, "", err
 	}
 	return true, "", setEnv("GITLAB_API_HOST", host)
+}
+
+// tokenElsewhere is the first of hosts that isn't the one this run's token is for,
+// or nothing. Every hand-over to a tool that sends its token wherever it's pointed
+// asks this first.
+func (a *app) tokenElsewhere(hosts []string) string {
+	for _, x := range hosts {
+		if !sameService(x, a.acct.credHost) {
+			return x
+		}
+	}
+	return ""
+}
+
+// sameService is the one host check for tokens: a token goes only to the host that
+// issued it. A URL, a trailing slash, 'www.' and the ssh. endpoint all count as the
+// host itself. The helper account apply writes does the same in sh, since git runs
+// it without us.
+func sameService(host, tokenHost string) bool {
+	return host != "" && glabHostName(host) == glabHostName(tokenHost)
 }
 
 // glabNamedHosts is every host a glab command line names: --hostname, a -R that
@@ -222,8 +240,38 @@ func (a *app) glabTokenEnv(args []string) (gave bool, elsewhere string, err erro
 // dotted first part as a host only when it knows that host, which we can't see, so
 // it always counts here. Too many means no token, never a token sent astray.
 func glabNamedHosts(args []string) []string {
+	return cliNamedHosts(args, args[:min(len(args), 1)], glabRepoHost, glabRepoHost)
+}
+
+// ghNamedHosts is the same for gh, which takes a host the same ways: --hostname,
+// -h in the auth commands, -R and a URL. gh reads the first of 3 parts in a -R
+// '[HOST/]OWNER/REPO' as a host whatever it looks like. A bare argument goes by
+// glab's dotted rule instead, since 'repo clone' takes a folder there too. 'issue
+// transfer' takes its target repo that way.
+func ghNamedHosts(args []string) []string {
+	cmd := args[:min(len(args), 1)]
+	if len(args) > 1 && args[0] == "issue" && args[1] == "transfer" {
+		cmd = []string{"repo"}
+	}
+	return cliNamedHosts(args, cmd, ghRepoHost, glabRepoHost)
+}
+
+// ghRepoHost is the host in a repo as gh takes it, or nothing for 'owner/repo'.
+func ghRepoHost(repo string) string {
+	if h := glabURLHost(repo); h != "" {
+		return h
+	}
+	if parts := strings.Split(repo, "/"); len(parts) == 3 && parts[0] != "" {
+		return parts[0]
+	}
+	return ""
+}
+
+// cliNamedHosts reads gh's and glab's shared spellings. cmd is the command word,
+// "repo" for one whose bare arguments are repos.
+func cliNamedHosts(args, cmd []string, flagRepoHost, argRepoHost func(string) string) []string {
 	var hosts []string
-	repoCmd := len(args) > 0 && args[0] == "repo"
+	repoCmd := len(cmd) > 0 && cmd[0] == "repo"
 	for i := 0; i < len(args); i++ {
 		x := args[i]
 		name, val, hasVal := x, x, false
@@ -247,8 +295,10 @@ func glabNamedHosts(args []string) []string {
 		switch {
 		case hostFlag:
 			hosts = append(hosts, val)
-		case repoFlag || (repoCmd && !strings.HasPrefix(x, "-")):
-			h = glabRepoHost(val)
+		case repoFlag:
+			h = flagRepoHost(val)
+		case repoCmd && !strings.HasPrefix(x, "-"):
+			h = argRepoHost(val)
 		default:
 			h = glabURLHost(val)
 		}

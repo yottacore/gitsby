@@ -12,6 +12,8 @@ package main
 
 import (
 	"cmp"
+	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -69,6 +71,79 @@ func (a *app) cmdPull() error {
 		a.out.status("No upstream configured for this branch; nothing to pull.")
 	}
 	return nil
+}
+
+// opFiles are what git keeps in the git dir while an operation is stopped partway,
+// in the order pendingOp checks them. The rebase goes first, so a merge or pick it
+// stopped on is named as the rebase, which is what has to be finished or dropped.
+// The sequencer outlives CHERRY_PICK_HEAD once a pick in a range is committed by
+// hand, and its todo says which command it belongs to.
+var opFiles = []string{"rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer", "BISECT_LOG"}
+
+// stoppedOp is a git operation stopped partway: the command that started it, and the
+// arguments that finish it and that drop it. A bisect has nothing to finish.
+type stoppedOp struct {
+	name, finish, drop string
+}
+
+// pendingOp names the operation git has stopped partway here, if any. paths line up
+// with opFiles.
+func pendingOp(paths []string) (stoppedOp, bool) {
+	exists := func(p string) bool { _, err := os.Lstat(p); return err == nil }
+	for i, p := range paths {
+		if i >= len(opFiles) || !exists(p) {
+			continue
+		}
+		switch opFiles[i] {
+		case "rebase-apply":
+			if exists(filepath.Join(p, "applying")) {
+				return stoppedOp{"am", "--continue", "--abort"}, true
+			}
+			return stoppedOp{"rebase", "--continue", "--abort"}, true
+		case "rebase-merge":
+			return stoppedOp{"rebase", "--continue", "--abort"}, true
+		case "MERGE_HEAD":
+			return stoppedOp{"merge", "--continue", "--abort"}, true
+		case "CHERRY_PICK_HEAD":
+			return stoppedOp{"cherry-pick", "--continue", "--abort"}, true
+		case "REVERT_HEAD":
+			return stoppedOp{"revert", "--continue", "--abort"}, true
+		case "sequencer":
+			todo, _ := os.ReadFile(filepath.Join(p, "todo"))
+			if word, _, _ := strings.Cut(strings.TrimSpace(string(todo)), " "); word == "revert" {
+				return stoppedOp{"revert", "--continue", "--abort"}, true
+			}
+			return stoppedOp{"cherry-pick", "--continue", "--abort"}, true
+		case "BISECT_LOG":
+			return stoppedOp{"bisect", "", "reset"}, true
+		}
+	}
+	return stoppedOp{}, false
+}
+
+// refusePendingOp stops a command that commits, pulls, switches or merges while git
+// has an operation stopped partway. Run over one, a commit takes the half-done work
+// under gitsby's message, and a switch leaves the rest of a range for --continue to
+// apply onto the next branch.
+func (a *app) refusePendingOp() error {
+	// The branch commands, pr and release; repo and account never commit onto history.
+	if !a.inRepo || !a.cmd.mutating || !a.needsConfirmableBranch() {
+		return nil
+	}
+	op, found := pendingOp(a.opPaths)
+	if !found {
+		return nil
+	}
+	why := "git stopped partway through it. A commit, pull or switch now would take in its half-done work, or leave the rest to land on another branch."
+	fix := []string{"Finish it:", "  git " + op.name + " " + op.finish, "Or drop it:", "  git " + op.name + " " + op.drop}
+	if op.finish == "" {
+		why = "A switch or commit now moves HEAD off what it is testing, and 'git bisect reset' moves it back."
+		fix = []string{"End it:", "  git " + op.name + " " + op.drop}
+	}
+	return refusalBlock("A 'git "+op.name+"' is in progress here.", [][]string{
+		noteLines("Why", why),
+		noteLines("Fix", append(fix, "Then run this again.")...),
+	}, nil)
 }
 
 // refuseConflicts stops on any unmerged path, and names the stash git kept.
@@ -148,7 +223,7 @@ func (a *app) pushIfOnline() error {
 	case a.isOffline():
 		a.out.status("WARNING: remote unreachable; skipping the push. The work stays local on '" + a.currentBranch() + "' - '" + meName + " sync' from it publishes it.")
 	default:
-		return a.step("git", a.pushArgs()...)
+		return a.pushCurrent()
 	}
 	return nil
 }
@@ -171,16 +246,18 @@ func (a *app) directPush() (push, committed bool) {
 	default:
 		return false, false
 	}
-	if a.opt.direct || !a.hasOrigin() || !a.isProtectedBranch("") {
+	if a.opt.direct || !a.hasOrigin() {
+		return false, false
+	}
+	// Judged by where the push lands, not the branch's name: a branch made from
+	// origin/main can push there.
+	if target, ok := a.pushTarget(); !ok || !a.isProtectedBranch(target) {
 		return false, false
 	}
 	if a.ownCommitsAhead() {
 		return true, true
 	}
-	if a.opt.staged {
-		return !runOK("git", "diff", "--cached", "--quiet"), false
-	}
-	return treeDirty(), false
+	return a.commitPending(), false
 }
 
 // ownCommitsAhead: commits made on this branch that its upstream doesn't have. A
@@ -191,9 +268,11 @@ func (a *app) ownCommitsAhead() bool {
 
 // treeDirty: whether 'git add --all' has anything to take. A submodule's own edits
 // and untracked files show in status but aren't this repo's to commit, so they
-// don't count. A submodule moved to another commit still does.
+// don't count. A submodule moved to another commit still does. Untracked files are
+// asked for by name, since status.showUntrackedFiles=no hides them from status but
+// not from add.
 func treeDirty() bool {
-	return runOut("git", "status", "--porcelain", "--ignore-submodules=dirty") != ""
+	return runOut("git", "status", "--porcelain", "--ignore-submodules=dirty", "--untracked-files=normal") != ""
 }
 
 // refuseDirectPush: nobody is there to read the warning, so -q refuses instead.
@@ -202,6 +281,9 @@ func (a *app) refuseDirectPush() error {
 		return nil
 	}
 	if push, committed := a.directPush(); push {
+		if !a.isProtectedBranch("") {
+			return usagef("%s Nothing was done. Re-run with --direct if that is intended, or publish it under its own name with %s first.", a.directPushText(), a.keepOffText(committed))
+		}
 		return usagef("%s Nothing was done. Re-run with --direct if that is intended, or move the work to a branch with %s.", a.directPushText(), a.keepOffText(committed))
 	}
 	return nil
@@ -210,34 +292,46 @@ func (a *app) refuseDirectPush() error {
 // keepOffText is the way to move the work off the protected branch instead. br
 // create takes a dirty tree along, but leaves commits behind on the branch, and
 // the next push from there is refused again. So commits go with the tree to a new
-// branch in git's own step, and the branch goes back to its upstream's tip.
+// branch in git's own step, and the branch goes back to its upstream's tip. A
+// branch that isn't protected itself, but tracks one, only has to stop tracking it.
 func (a *app) keepOffText(committed bool) string {
+	if !a.isProtectedBranch("") {
+		return "'git branch --unset-upstream'"
+	}
 	if !committed {
 		return "'" + meName + " br create <branch-name>'"
 	}
 	return "'git checkout -b <branch-name>', then 'git branch -f " + typedArg(a.currentBranch(), runtime.GOOS) + " " + typedArg(a.upstream().short, runtime.GOOS) + "'"
 }
 
+// directPushText names where the push lands, which for a branch tracking another
+// one isn't the branch's own name.
 func (a *app) directPushText() string {
-	return "This pushes your work straight to '" + a.currentBranch() + "'. But the recommended workflow is to push to a branch and merge one level higher through a pull request."
+	return "This pushes your work straight to '" + a.directTarget() + "'. But the recommended workflow is to push to a branch and merge one level higher through a pull request."
 }
 
-// pushesGoneBranch is the gone upstream that sync, or br switch's park push, is
-// about to put back, most often a branch deleted when its pull request merged.
-// Empty when there's none. br merge deletes origin's copy again in the same run,
-// and pr create needs the branch on origin, so neither asks.
+func (a *app) directTarget() string {
+	target, _ := a.pushTarget()
+	return target
+}
+
+// pushesGoneBranch is the gone upstream that a park push is about to put back,
+// most often a branch deleted when its pull request merged. Empty when there's
+// none. br merge deletes origin's copy again in the same run, and pr create needs
+// the branch on origin, so neither asks.
 func (a *app) pushesGoneBranch() string {
 	switch a.cmd.name {
-	case "sync":
-	case "br-switch":
-		if a.currentBranch() == a.switchTarget() || a.isOffline() {
+	case "br-merge", "pr":
+		return ""
+	case "release":
+		// Parks from whatever branch it starts on, protected or not.
+		if !a.hasOrigin() || a.isOffline() {
 			return ""
 		}
 	default:
-		return ""
-	}
-	if !a.hasOrigin() {
-		return ""
+		if !a.parkPushes() {
+			return ""
+		}
 	}
 	return a.goneUpstream()
 }
@@ -246,13 +340,18 @@ func (a *app) goneBranchText(gone string) string {
 	return "'" + gone + "' is gone, most often because its pull request merged and the branch was deleted. This pushes '" + a.currentBranch() + "' back up."
 }
 
-// goneBranchLeave is the way off that leaves it gone. Plain git, since sync and br
-// switch would both push it. Without its upstream setting, the push is an ordinary
-// first publish, which asks nothing.
+// goneBranchLeave is the way off that leaves it gone: plain git to the branch the
+// command was headed for, since the command itself would push it. Without its
+// upstream setting, the push is an ordinary first publish, which asks nothing.
 func (a *app) goneBranchLeave() string {
 	target := a.branchTarget("")
-	if a.cmd.name == "br-switch" {
+	switch a.cmd.name {
+	case "br-switch":
 		target = a.switchTarget()
+	case "br-create":
+		target = a.mergeTarget()
+	case "br-hotfix":
+		target = a.defaultBranch()
 	}
 	return "'git switch " + typedArg(target, runtime.GOOS) + "'"
 }
@@ -272,46 +371,146 @@ func (a *app) refuseGoneBranch() error {
 // push follows push.default and remote.<name>.push and can send every matching
 // branch, or mirror. One with no upstream yet is a first publish: it goes up under
 // its own name and tracks origin's copy from then on.
-func (a *app) pushArgs() []string {
+func (a *app) pushArgs() ([]string, error) {
 	if !a.hasUpstream() {
-		return []string{"push", "-u", "origin", "HEAD"}
+		return []string{"push", "-u", "origin", "HEAD"}, nil
 	}
-	remote, ref := a.pushDest()
-	if strings.HasPrefix(remote, "-") {
+	d := a.pushDest()
+	if err := d.refusal(); err != nil {
+		return nil, err
+	}
+	if strings.HasPrefix(d.remote, "-") {
 		// git takes '--all' as a remote name.
-		return []string{"push", "--", remote, "HEAD:" + ref}
+		return []string{"push", "--", d.remote, "HEAD:" + d.ref}, nil
 	}
-	return []string{"push", remote, "HEAD:" + ref}
+	return []string{"push", d.remote, "HEAD:" + d.ref}, nil
+}
+
+// pushCurrent is the push of the branch HEAD is on.
+func (a *app) pushCurrent() error {
+	args, err := a.pushArgs()
+	if err != nil {
+		return err
+	}
+	return a.step("git", args...)
 }
 
 // pushDest is where a bare push would send the current branch: the push remote,
 // which pushRemote or remote.pushDefault can set apart from the upstream's, and the
-// ref that remote's push refspecs map it to. Where git has no one answer, as under
-// push.default=nothing, it's the upstream, as for the pull.
-func (a *app) pushDest() (remote, ref string) {
-	var branch, pushRemote, pushRef, upRemote, upRef string
-	// %(HEAD) marks the current branch, so naming it costs no second call.
-	for _, line := range runLines("git", "for-each-ref", "--format=%(HEAD)%00%(refname)%00%(push:remotename)%00%(push:remoteref)%00%(upstream:remotename)%00%(upstream:remoteref)", "refs/heads/") {
-		if f := strings.Split(line, "\x00"); len(f) == 6 && f[0] == "*" {
-			branch, pushRemote, pushRef, upRemote, upRef = f[1], f[2], f[3], f[4], f[5]
-			break
-		}
-	}
+// ref that remote's push refspecs map it to. Past those, push.default decides only
+// when the upstream on that same remote has another name, as for a branch made from
+// origin/main. There simple, git's default, refuses rather than pick one, and
+// refused says so. Where git has no one answer, as under push.default=nothing, it's
+// the upstream, as for the pull.
+type pushDest struct{ branch, remote, ref, refused string }
+
+func (a *app) pushDest() pushDest {
+	refs := a.branchRefs()
+	branch := refs.head
 	if branch == "" {
-		branch = "refs/heads/" + a.currentBranch()
+		branch = a.currentBranch()
 	}
-	remote = cmp.Or(pushRemote, upRemote, "origin")
+	p := refs.push[branch]
+	d := pushDest{branch: branch, remote: cmp.Or(p.pushRemote, p.upRemote, "origin")}
+	own := "refs/heads/" + branch
 	switch {
-	case pushRef != "":
-		ref = pushRef
-	case remote == upRemote && upRef != "":
-		ref = upRef
-	default:
+	case p.pushRef != "":
+		d.ref = p.pushRef
+	case d.remote != p.upRemote || p.upRef == "" || p.upRef == own:
 		// Another remote than the upstream's gets the branch under its own name, as
 		// git does it.
-		ref = branch
+		d.ref = own
+	default:
+		switch runOut("git", "config", "--get", "push.default") {
+		case "current", "matching":
+			d.ref = own
+		case "upstream", "tracking", "nothing":
+			d.ref = p.upRef
+		default:
+			d.refused = "'" + branch + "' tracks '" + a.upstream().short + "', a branch of another name, so under push.default=simple git won't push it."
+		}
 	}
-	return remote, ref
+	return d
+}
+
+// pushTarget is the branch a push of the current one lands on, and false where
+// git would refuse the push. Without an upstream it's a first publish under its
+// own name, which is asked last, since most pushes go there anyway.
+func (a *app) pushTarget() (string, bool) {
+	d := a.pushDest()
+	if d.refused == "" && d.ref == "refs/heads/"+d.branch {
+		return d.branch, true
+	}
+	if !a.hasUpstream() {
+		return d.branch, true
+	}
+	if d.refused != "" {
+		return "", false
+	}
+	return strings.TrimPrefix(d.ref, "refs/heads/"), true
+}
+
+// refusal: git would refuse the push, so say why before anything else fails on it.
+func (d pushDest) refusal() error {
+	if d.refused != "" {
+		return usagef("%s Nothing was done. To publish it under its own name, run 'git branch --unset-upstream' first.", d.refused)
+	}
+	return nil
+}
+
+// parkPushes: this command's park push sends the current branch, the way the plan
+// shows it. br create and br hotfix carry a protected branch's tree off instead.
+func (a *app) parkPushes() bool {
+	switch a.cmd.name {
+	case "sync", "br-merge":
+	case "br-switch":
+		if a.currentBranch() == a.switchTarget() {
+			return false
+		}
+	case "br-create", "br-hotfix":
+		if a.isProtectedBranch("") {
+			return false
+		}
+	case "pr":
+		if a.pr.sub != "create" {
+			return false
+		}
+	default:
+		return false
+	}
+	return a.hasOrigin() && !a.isOffline()
+}
+
+// refuseParkPush: the park push would be refused by git, or would land on a
+// protected branch from one that isn't, which only br switch and sync may do,
+// with --direct. Asked only when something would go, since a branch made from
+// origin/main and never touched has nothing to push. Before the plan, under -q
+// or not, since neither can be answered at the prompt.
+func (a *app) refuseParkPush() error {
+	if !a.parkPushes() {
+		return nil
+	}
+	target, ok := a.pushTarget()
+	toProtected := ok && a.cmd.name != "sync" && a.cmd.name != "br-switch" && a.isProtectedBranch(target)
+	if ok && !toProtected {
+		return nil
+	}
+	// With no upstream it's a first publish, under its own name.
+	if !a.hasUpstream() || (!isAhead() && !a.commitPending()) {
+		return nil
+	}
+	if !ok {
+		return a.pushDest().refusal()
+	}
+	return usagef("This pushes '%s' straight to '%s', the branch it tracks. Nothing was done. To publish it under its own name, run 'git branch --unset-upstream' first. To push it to '%s', run '%s sync --direct' first.", a.currentBranch(), target, target, meName)
+}
+
+// commitPending: whether the command's commit step has anything to take.
+func (a *app) commitPending() bool {
+	if a.opt.staged {
+		return !runOK("git", "diff", "--cached", "--quiet")
+	}
+	return treeDirty()
 }
 
 // pushesToRemote: whether this command sends anything to origin, since the identity

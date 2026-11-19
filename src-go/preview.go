@@ -39,7 +39,12 @@ func (a *app) preview(what string) {
 		a.preview("commit")
 	case "sync":
 		a.preview("pullcom")
-		a.out.clean(planPad + "git push (branch '" + a.currentBranch() + "') *")
+		// A branch made from origin/main can push there, under push.default=upstream.
+		if target, ok := a.pushTarget(); ok && target != a.currentBranch() {
+			a.out.clean(planPad + "git push (branch '" + a.currentBranch() + "', to '" + target + "') *")
+		} else {
+			a.out.clean(planPad + "git push (branch '" + a.currentBranch() + "') *")
+		}
 	case "br-create":
 		// From main/dev the dirty tree rides along to the new branch, so there's no
 		// commit here.
@@ -168,14 +173,15 @@ func (a *app) preview(what string) {
 
 // previewUnset lists every line 'account unset' takes out, its comments and the
 // lines under it included. One line puts its number in the header, the way a set
-// does; several number each their own. A rewrite has no numbers to give.
+// does; several number each their own. A rewrite has no numbers to give. Lines
+// the save puts in come last, unnumbered, since their numbers are the new file's.
 func (a *app) previewUnset() {
 	t := a.set
-	numbered := !t.converts && len(t.gone) > 1 && t.gone[0].num > 0
+	numbered := !t.converts && len(t.gone) > 0 && t.gone[0].num > 0 && (len(t.gone) > 1 || len(t.added) > 0)
 	switch {
 	case t.converts:
 		a.out.clean(planPad + "rewrite " + nativePath(t.file) + " in the current layout - it is in the old flat one")
-	case len(t.gone) == 1 && t.gone[0].num > 0:
+	case len(t.gone) == 1 && len(t.added) == 0 && t.gone[0].num > 0:
 		a.out.clean(planPad + "edit " + nativePath(t.file) + ", line " + strconv.Itoa(t.gone[0].num))
 	default:
 		a.out.clean(planPad + "edit " + nativePath(t.file))
@@ -186,6 +192,12 @@ func (a *app) previewUnset() {
 		} else {
 			a.out.clean(planPad + "  remove:  " + g.text)
 		}
+	}
+	for _, g := range t.added {
+		a.out.clean(planPad + "  add:     " + g.text)
+	}
+	if t.unlisted {
+		a.out.clean(planPad + "  also:    the save may change other lines too; too much differs to list them")
 	}
 	if t.reshapes {
 		a.out.clean(planPad + "  also:    the rest of the file comes out in the layout every save writes (tabs, lower-case keys)")
