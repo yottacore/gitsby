@@ -112,7 +112,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - br merge on a branch that tracks one of another name leaves that branch on origin and warns about the wrong one
 	- ID: 2026111913330350
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-133303
@@ -124,6 +124,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, local bare origin, while fixing 2026111910223203. Confirmed.
 	- Possible cause [Bug]: The atomic push, mergeDeleteRemote and the plan name the current branch, while pushDest pushes to the upstream.
 	- Origin: The delete has named the current branch since the Go port, and a push to another name came with push.default=upstream. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: br merge's plan, its atomic push and its leased delete named origin's branch of the current branch's name, while the park push went where pushDest sends it: to an upstream of another name under push.default=upstream, or through a push refspec that renames it.
+	- Actual fix [Bug]: br merge's plan, atomic push, delete and offline note name the branch on origin the park push lands on, read by parkHead, which pr create now shares. br merge refuses before the plan where git would refuse the push, where the push goes to another remote or to a ref that isn't a branch, and where it lands on main, dev or the default branch, whether or not anything is left to push. design.md and the changelog say so.
+	- Branch: nov19c-2026111913330350
+	- Commit: 8f9e019
+	- Test case: test.bash [dfhfw] to [dfhg1]; Go TestMergeHead [dfhg7].
+	- Verified: [dfhfw] to [dfhg1] fail on the build before the fix and pass with it. [dfhg7] fails 4 of its 8 cases with mergeHead reading the current branch. The quick gate passed with every area: test.bash 2170/0, fuzz 310/0, parity 31/0, spawn counts unchanged. gosec has no finding in the changed lines.
+	- Swept: every place br merge names origin's copy: the plan's 2 delete lines, the for-each-ref that asks whether origin has it, the atomic push, mergeDeleteRemote and the offline note. pr create's head goes through the same parkHead. br prune deletes origin's branches by local name, and only ones already merged into the target, so it was left alone. pr ok reads its head from the git host.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-182500
+	- Decisions:
+		- The delete names the branch the push went to, rather than br merge refusing every branch that tracks another name, since under push.default=upstream that push is meant.
+		- Refused where pr create refuses, with the same way off, so the 2 commands that read the park push's head agree. A push to another remote is refused rather than left with no delete, since the merge goes to origin and gitsby's branch commands act on origin. Check: entry filed.
+		- A head on a protected branch is refused with br merge's own text, ahead of refuseParkPush's 'sync --direct', since after that the delete would still take dev.
 
 - Code Review 20261119 item 15: pr ok from another branch pulls that branch while its plan says the target
 	- ID: 2026111910223089
@@ -158,7 +172,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 17: br merge pushes your own commits on dev with no --direct warning
 	- ID: 2026111910223060
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102230
@@ -169,6 +183,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
 	- Possible cause [Bug]: directPush exempts br merge, since it refuses to run from a protected branch. That doesn't cover commits already on the target.
 	- Origin: Sibling of 2026111016332380, nov18.
+	- Closed reason: Done
+	- Actual cause [Bug]: directPush covers only sync and br switch, and br merge's push of its target, or of dev after a hotfix's back-merge, took whatever commits that branch had of its own.
+	- Actual fix [Bug]: br merge warns above the prompt, and -q refuses, when the branch it merges into, or dev for a hotfix's back-merge, has commits of its own that its upstream doesn't. pr ok's back-merge asks too. A merge left on dev doesn't count, as for sync. The ways off are 'git branch <branch-name> dev', then 'git branch -f dev origin/dev', or 'gitsby br switch dev', then 'gitsby sync --direct'. design.md and the changelog say so.
+	- Branch: nov19c-2026111913330350
+	- Commit: 8f9e019
+	- Test case: test.bash [dfhg2] to [dfhg6]; Go TestMergePushesOwn [dfhg8].
+	- Verified: [dfhg2], [dfhg3], [dfhg4] and [dfhg6] fail on the build before the fix and pass with it. [dfhg5] passes on both, since a merge went out before too. [dfhg8] fails 3 of its 9 cases with mergePushesOwn answering nothing. The quick gate passed with every area: test.bash 2170/0, fuzz 310/0, parity 31/0, spawn counts [df37t] and [df37v] unchanged, since a target level with its upstream is read from branchRefs's one for-each-ref.
+	- Swept: every push of a branch other than the one the run started on: br merge's target push, atomic or not, the hotfix back-merge's push of dev from br merge and pr ok, and release's pushes of main and dev. release stays out, per 2026111016332380. pr ok pushes nothing else of its own.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-182500
+	- Decisions:
+		- No --direct for br merge. The ways off name 'sync --direct' from dev, which keeps --direct's command list as 2026111910223293 left it. Check: entry filed.
+		- The way to keep the commits off names 2 plain git commands run from where br merge stands, since dev isn't checked out and 'git branch -f' needs no switch.
+		- Only a target with an upstream counts, as for sync, so a dev never pushed goes up as a first publish without asking.
+		- The target's tip is compared with its upstream's from branchRefs first, so a level target costs no git call.
 
 - Code Review 20261119 item 18: The Incoming list shows a tab as the escape marker
 	- ID: 2026111910223045

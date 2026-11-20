@@ -2769,6 +2769,73 @@ fRunSuite(){
 	fAssert    "[dd5c1] br merge carries on when its branch is already gone from origin"  test "${pnRc}" = 0
 	fAssertOut "[dd5c2] and says so"  'Already gone from origin: vanish'  cat "${work}/$1-pn10.out"
 	fAssert    "[dd5c3] and the merge reached origin"  bash -c "git -C '${pnOrigin}' log -1 --format=%s refs/heads/dev | grep -qx 'merge vanish'"
+	## br merge deletes the branch its park push went to. A branch can track one of another name
+	## while origin still has an older one of its own name, and the delete used to name that one.
+	local mfO="${work}/$1-mfo.git" mfS="${work}/$1-mfs.git" mfA="${work}/$1-mfa"
+	git init --quiet --bare -b main "${mfO}"
+	git init --quiet --bare -b main "${mfS}"
+	git clone --quiet "${mfO}" "${mfA}" 2>/dev/null
+	(
+		cd "${mfA}" || exit 1
+		echo one > f.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git push --quiet origin dev:refs/heads/far dev:refs/heads/far-up dev:refs/heads/far2-up
+		git fetch --quiet && git rev-parse origin/far > "${work}/$1-mffar"
+		git switch --quiet -c far --track origin/far-up && git config push.default upstream
+		echo far > far.txt && git add far.txt && git commit --quiet -m "far work"
+	)
+	( cd "${mfA}" && "${gitsby}" -q br merge "merge far" ) > "${work}/$1-mf1.out" 2>&1 || true
+	fAssert    "[dfhfw] br merge on a branch tracking one of another name deletes that one from origin, once the merge is there" \
+		bash -c "! git -C '${mfO}' show-ref --verify --quiet refs/heads/far-up && git -C '${mfO}' log -1 --format=%s refs/heads/dev | grep -qx 'merge far'"
+	fAssert    "[dfhfx] and leaves origin's older branch of its own name as it was, with no warning about it" \
+		bash -c "[[ \"\$(git -C '${mfO}' rev-parse refs/heads/far)\" == \"\$(cat '${work}/$1-mffar')\" ]] && ! grep -qF \"has commits this merge doesn't\" '${work}/$1-mf1.out'"
+	fAssertOut "[dfhfy] and its plan names the delete of that one"  "^ +git push --atomic \\(the merge, and the leased delete of origin's 'far-up'\\) \\*\$"  cat "${work}/$1-mf1.out"
+	( cd "${mfA}" && git rev-parse origin/dev > "${work}/$1-mfdev" && git switch --quiet -c fard --track origin/dev )
+	fAssert    "[dfhfz] one whose push lands on dev refuses before the plan, with nothing to push, and origin's dev stays" \
+		bash -c "cd '${mfA}' && out=\"\$('${gitsby}' -q br merge 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"would delete origin's 'dev'\" <<< \"\${out}\" && [[ \"\$(git -C '${mfO}' rev-parse refs/heads/dev)\" == \"\$(cat '${work}/$1-mfdev')\" && \"\$(git branch --show-current)\" == fard ]]"
+	( cd "${mfA}" && git config --unset push.default && git switch --quiet -c far2 --track origin/far2-up )
+	fAssert    "[dfhg0] under push.default=simple one refuses, with nothing to push, naming the way to publish it under its own name" \
+		bash -c "cd '${mfA}' && out=\"\$('${gitsby}' -q br merge 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'git branch --unset-upstream' <<< \"\${out}\" && git -C '${mfO}' show-ref --verify --quiet refs/heads/far2-up && [[ \"\$(git branch --show-current)\" == far2 ]]"
+	(
+		cd "${mfA}" || exit 1
+		git checkout --quiet dev && git remote add second "${mfS}" && git switch --quiet -c farsec dev && git push --quiet -u second farsec
+		echo s > s.txt && git add s.txt && git commit --quiet -m "second work"
+	)
+	fAssert    "[dfhg1] an upstream on another remote refuses, with nothing pushed" \
+		bash -c "cd '${mfA}' && out=\"\$('${gitsby}' -q br merge 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"pushes to the remote 'second'\" <<< \"\${out}\" && [[ \"\$(git -C '${mfS}' rev-parse farsec)\" != \"\$(git rev-parse farsec)\" && \"\$(git -C '${mfO}' rev-parse refs/heads/dev)\" == \"\$(cat '${work}/$1-mfdev')\" ]]"
+	## Commits made on dev itself go out with br merge's push of dev. sync there asks for --direct,
+	## so br merge warns above the prompt, and -q refuses. A merge left on dev doesn't count.
+	(
+		cd "${mfA}" || exit 1
+		git checkout --quiet dev && echo direct > direct.txt && git add direct.txt && git commit --quiet -m "direct on dev"
+		git switch --quiet --no-track -c ownf origin/dev && echo own > own.txt && git add own.txt && git commit --quiet -m own && git push --quiet -u origin ownf
+	)
+	fAssert    "[dfhg2] br merge -q refuses while dev has a commit of its own to push, naming both ways off" \
+		bash -c "cd '${mfA}' && out=\"\$('${gitsby}' -q br merge 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'dev' has commits of its own\" <<< \"\${out}\" && grep -qF \"'git branch <branch-name> dev', then 'git branch -f dev origin/dev'\" <<< \"\${out}\" && grep -qF \"br switch dev', then '\" <<< \"\${out}\" && grep -qF \"sync --direct'\" <<< \"\${out}\" && [[ \"\$(git -C '${mfO}' rev-parse refs/heads/dev)\" == \"\$(cat '${work}/$1-mfdev')\" && \"\$(git branch --show-current)\" == ownf ]]"
+	if ((hasPty)); then
+		fAssertOut "[dfhg3] asked in person, br merge warns above the prompt"  "WARNING: 'dev' has commits of its own that origin doesn't" \
+			fAnswerPrompt n "cd '${mfA}' && '${gitsby}' br merge"
+	else
+		fSkipBlock "the br merge warning above the prompt (no pty)"
+	fi
+	fAssert    "[dfhg4] the way off it names keeps the commit on a branch, and br merge then goes through without it" \
+		bash -c "cd '${mfA}' && git branch ownmoved dev && git branch -f dev origin/dev && '${gitsby}' -q br merge 'merge ownf' && git -C '${mfO}' log -1 --format=%s refs/heads/dev | grep -qx 'merge ownf' && ! git -C '${mfO}' merge-base --is-ancestor \"\$(git rev-parse ownmoved)\" refs/heads/dev && git log -1 --format=%s ownmoved | grep -qx 'direct on dev'"
+	(
+		cd "${mfA}" || exit 1
+		git checkout --quiet dev && git switch --quiet -c side && echo side > side.txt && git add side.txt && git commit --quiet -m side
+		git checkout --quiet dev && git merge --quiet --no-ff side -m "merge side"
+		git switch --quiet -c ownf2 && echo own2 > own2.txt && git add own2.txt && git commit --quiet -m own2
+	)
+	fAssert    "[dfhg5] a merge left on dev needs no ask, and goes out with br merge -q" \
+		bash -c "cd '${mfA}' && '${gitsby}' -q br merge 'merge ownf2' && git -C '${mfO}' log --format=%s refs/heads/dev | grep -qx 'merge side'"
+	(
+		cd "${mfA}" || exit 1
+		git checkout --quiet dev && echo again > again.txt && git add again.txt && git commit --quiet -m "direct again"
+		git switch --quiet -c hotfix/mfix main && echo fix > fix.txt && git add fix.txt && git commit --quiet -m fix
+		git rev-parse origin/main > "${work}/$1-mfmain"
+	)
+	fAssert    "[dfhg6] a hotfix's br merge -q refuses too when its back-merge would push dev's own commit, with main kept" \
+		bash -c "cd '${mfA}' && out=\"\$('${gitsby}' -q br merge 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'dev' has commits of its own\" <<< \"\${out}\" && [[ \"\$(git -C '${mfO}' rev-parse refs/heads/main)\" == \"\$(cat '${work}/$1-mfmain')\" && \"\$(git branch --show-current)\" == hotfix/mfix ]]"
 	## Moved while the prompt waits, off anything in dev: the delete-time re-check keeps it, and
 	## keeping it has to hold for origin's copy too.
 	if ((hasPty)); then

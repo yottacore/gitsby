@@ -10,6 +10,7 @@
 package main
 
 import (
+	"cmp"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -147,6 +148,99 @@ func TestPrCreateHead(t *testing.T) { // [dfh76]
 			}
 		})
 	}
+}
+
+// br merge deletes origin's copy of what it merged, which is where the park push
+// went. A head on dev would have it delete dev.
+func TestMergeHead(t *testing.T) { // [dfhg7]
+	origin, clone := gitTestRepo(t)
+	runGit(t, clone, "checkout", "-q", "-b", "feat")
+	runGit(t, clone, "push", "-q", "-u", "origin", "feat")
+	runGit(t, clone, "push", "-q", "origin", "feat:up", "feat:dev")
+	runGit(t, clone, "remote", "add", "second", origin)
+	runGit(t, clone, "fetch", "-q", "second")
+	t.Chdir(clone)
+	tests := []struct {
+		name    string
+		config  [][2]string
+		want    string
+		refusal string
+	}{
+		{"plain", nil, "feat", ""},
+		{"upstream by another name", [][2]string{{"branch.feat.merge", "refs/heads/up"}}, "", "push.default=simple"},
+		{"upstream by another name, upstream", [][2]string{{"branch.feat.merge", "refs/heads/up"}, {"push.default", "upstream"}}, "up", ""},
+		{"refspec that renames", [][2]string{{"remote.origin.push", "refs/heads/feat:refs/heads/other"}}, "other", ""},
+		{"refspec to a ref that isn't a branch", [][2]string{{"remote.origin.push", "refs/heads/feat:refs/for/main"}}, "", "br merge can delete"},
+		{"tracks dev, upstream", [][2]string{{"branch.feat.merge", "refs/heads/dev"}, {"push.default", "upstream"}}, "", "delete origin's 'dev'"},
+		{"upstream on another remote", [][2]string{{"branch.feat.remote", "second"}}, "", "remote 'second'"},
+		{"push remote", [][2]string{{"branch.feat.pushRemote", "second"}}, "", "remote 'second'"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, kv := range tc.config {
+				runGit(t, clone, "config", kv[0], kv[1])
+			}
+			a := newApp(newPrinter())
+			a.cmd.name = "br-merge"
+			got, err := a.parkHead("feat")
+			head := a.mergeHead()
+			for _, kv := range tc.config {
+				runGit(t, clone, "config", "--unset", kv[0])
+			}
+			runGit(t, clone, "config", "branch.feat.remote", "origin")
+			runGit(t, clone, "config", "branch.feat.merge", "refs/heads/feat")
+			if got != tc.want || (err != nil) != (tc.refusal != "") || (err != nil && !strings.Contains(err.Error(), tc.refusal)) {
+				t.Errorf("parkHead() = %q, %v, want %q, %q", got, err, tc.want, tc.refusal)
+			}
+			if want := cmp.Or(tc.want, "feat"); head != want {
+				t.Errorf("mergeHead() = %q, want %q", head, want)
+			}
+		})
+	}
+}
+
+// Commits made on the branch br merge pushes, the target or the hotfix back-merge's
+// dev, are what sync there asks --direct for. A merge isn't one, and neither is a
+// target with no upstream, which goes up as a first publish.
+func TestMergePushesOwn(t *testing.T) { // [dfhg8]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "checkout", "-q", "-b", "dev")
+	runGit(t, clone, "push", "-q", "-u", "origin", "dev")
+	runGit(t, clone, "checkout", "-q", "-b", "feat")
+	runGit(t, clone, "checkout", "-q", "-b", "hotfix/x", "main")
+	t.Chdir(clone)
+	onDev := func(args ...string) {
+		runGit(t, clone, "checkout", "-q", "dev")
+		runGit(t, clone, args...)
+		runGit(t, clone, "checkout", "-q", "feat")
+	}
+	check := func(name, branch, cmd, sub, head, want string) {
+		t.Run(name, func(t *testing.T) {
+			runGit(t, clone, "checkout", "-q", branch)
+			a := newApp(newPrinter())
+			a.cmd.name = cmd
+			a.pr.sub, a.pr.headBranch = sub, head
+			if got := a.mergePushesOwn(); got != want {
+				t.Errorf("mergePushesOwn() = %q, want %q", got, want)
+			}
+		})
+	}
+	check("level", "feat", "br-merge", "", "", "")
+	check("level, pr ok of a hotfix", "feat", "pr", "ok", "hotfix/x", "")
+	onDev("commit", "-q", "--allow-empty", "-m", "direct")
+	check("own commit", "feat", "br-merge", "", "", "dev")
+	check("own commit, back-merge", "hotfix/x", "br-merge", "", "", "dev")
+	check("own commit, pr ok of a hotfix", "feat", "pr", "ok", "hotfix/x", "dev")
+	check("own commit, pr ok of a feature", "feat", "pr", "ok", "feat", "")
+	check("own commit, sync", "feat", "sync", "", "", "")
+	onDev("reset", "-q", "--hard", "origin/dev")
+	runGit(t, clone, "checkout", "-q", "-b", "side", "dev")
+	runGit(t, clone, "commit", "-q", "--allow-empty", "-m", "side")
+	onDev("merge", "-q", "--no-ff", "side", "-m", "merge side")
+	check("merge only", "feat", "br-merge", "", "", "")
+	onDev("branch", "-q", "--unset-upstream")
+	onDev("commit", "-q", "--allow-empty", "-m", "unpublished")
+	check("no upstream", "feat", "br-merge", "", "", "")
 }
 
 // A branch origin deleted, once a fetch prunes its ref, still has its upstream set,

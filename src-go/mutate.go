@@ -450,6 +450,125 @@ func (a *app) pushTarget() (string, bool) {
 	return strings.TrimPrefix(d.ref, "refs/heads/"), true
 }
 
+// parkHead is the branch on origin the park push sends the current branch to.
+// pr create opens its pull request from it, and br merge deletes it once merged.
+// A branch can track one of another name, or push to another remote, so the
+// current branch's name could be an older branch on origin, or none. Asked
+// whether or not anything is left to push, since both need it either way.
+func (a *app) parkHead(branch string) (string, error) {
+	d := a.pushDest()
+	if d.refused == "" && d.remote == "origin" && d.ref == "refs/heads/"+branch {
+		return branch, nil
+	}
+	// Without an upstream the push is a first publish, to origin under its own name.
+	if !a.hasUpstream() {
+		return branch, nil
+	}
+	if err := d.refusal(); err != nil {
+		return "", err
+	}
+	unset := "To publish it to origin under its own name, run 'git branch --unset-upstream' first."
+	merge := a.cmd.name == "br-merge"
+	head, isBranch := strings.CutPrefix(d.ref, "refs/heads/")
+	switch {
+	case d.remote != "origin" && merge:
+		return "", usagef("'%s' pushes to the remote '%s', but br merge deletes the merged branch from origin, which wouldn't have the work. Nothing was done. %s", branch, d.remote, unset)
+	case d.remote != "origin":
+		return "", usagef("'%s' pushes to the remote '%s', but its pull request opens on origin, which wouldn't have the work. Nothing was done. %s", branch, d.remote, unset)
+	case !isBranch && merge:
+		return "", usagef("'%s' pushes to '%s' on origin, which isn't a branch br merge can delete once it's merged. Nothing was done.", branch, d.ref)
+	case !isBranch:
+		return "", usagef("'%s' pushes to '%s' on origin, which isn't a branch a pull request can name. Nothing was done.", branch, d.ref)
+	case a.isProtectedBranch(head) && merge:
+		return "", usagef("'%s' pushes to '%s', so br merge would delete origin's '%s' once it's merged. Nothing was done. %s", branch, head, head, unset)
+	case a.isProtectedBranch(head):
+		return "", usagef("'%s' pushes to '%s', so its pull request would propose '%s' itself. Nothing was done. %s", branch, head, head, unset)
+	}
+	return head, nil
+}
+
+// mergeHead is origin's copy of the branch br merge merges, the one its delete
+// names. preflight refused where parkHead can't say.
+func (a *app) mergeHead() string {
+	if !a.hasOrigin() {
+		return a.currentBranch()
+	}
+	head, err := a.parkHead(a.currentBranch())
+	if err != nil {
+		return a.currentBranch()
+	}
+	return head
+}
+
+// mergePushesOwn is the branch br merge, or pr ok's hotfix back-merge, is about to
+// push with commits made on it directly, which sync there would ask about with
+// --direct. The merge itself isn't one. Empty when there's none.
+func (a *app) mergePushesOwn() string {
+	var targets []string
+	switch a.cmd.name {
+	case "br-merge":
+		targets = append(targets, a.branchTarget(""))
+		if a.isHotfixBranch("") {
+			targets = append(targets, a.mergeTarget()) // the back-merge
+		}
+	case "pr":
+		if a.pr.sub == "ok" && a.isHotfixBranch(a.pr.headBranch) {
+			targets = append(targets, a.mergeTarget())
+		}
+	}
+	if len(targets) == 0 || !a.hasOrigin() || a.isOffline() {
+		return ""
+	}
+	for _, target := range targets {
+		if a.ownCommitsOn(target) {
+			return target
+		}
+	}
+	return ""
+}
+
+// ownCommitsOn is ownCommitsAhead for a branch HEAD isn't on. One without an
+// upstream is a first publish, which sync doesn't ask about either. The tips come
+// from branchRefs, so a branch level with origin's costs no call.
+func (a *app) ownCommitsOn(branch string) bool {
+	refs := a.branchRefs()
+	up := refs.local[branch].full
+	if up == "" {
+		return false
+	}
+	if tip := refs.tip["refs/heads/"+branch]; tip != "" && tip == refs.tip[up] {
+		return false
+	}
+	return runOut("git", "rev-list", "--first-parent", "--no-merges", "-n", "1", up+"..refs/heads/"+branch) != ""
+}
+
+func (a *app) ownPushText(target string) string {
+	return "'" + target + "' has commits of its own that origin doesn't, and this pushes them straight to origin's '" + target + "' with the merge. But the recommended workflow is to push to a branch and merge one level higher through a pull request."
+}
+
+// ownPushOff keeps the commits as a branch of their own and puts the target back
+// on its upstream, from where the run stands, since the target isn't checked out.
+func (a *app) ownPushOff(target string) string {
+	return "'git branch <branch-name> " + typedArg(target, runtime.GOOS) + "', then 'git branch -f " + typedArg(target, runtime.GOOS) + " " + typedArg(a.upstreamOf(target).short, runtime.GOOS) + "'"
+}
+
+// ownPushOn is the way to send them as meant. --direct stays sync's and br
+// switch's, per 2026111910223293.
+func (a *app) ownPushOn(target string) string {
+	return "'" + meName + " br switch " + typedArg(target, runtime.GOOS) + "', then '" + meName + " sync --direct'"
+}
+
+// refuseMergePushesOwn: the -q side of the warning above the prompt.
+func (a *app) refuseMergePushesOwn() error {
+	if !a.opt.quiet {
+		return nil
+	}
+	if target := a.mergePushesOwn(); target != "" {
+		return usagef("%s Nothing was done. To keep them off '%s', move them to a branch with %s. To push them as they are first, run %s.", a.ownPushText(target), target, a.ownPushOff(target), a.ownPushOn(target))
+	}
+	return nil
+}
+
 // refusal: git would refuse the push, so say why before anything else fails on it.
 func (d pushDest) refusal() error {
 	if d.refused != "" {

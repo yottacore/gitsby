@@ -450,32 +450,9 @@ func (a *app) prPreflight() error {
 }
 
 // prCreateHead is the branch on origin the park push sends the work to, which the
-// pull request has to name. A branch can track one of another name, or push to
-// another remote, so the current branch's name could open the PR from an older
-// branch on origin. Asked whether or not anything is left to push.
+// pull request has to name.
 func (a *app) prCreateHead(branch string) (string, error) {
-	d := a.pushDest()
-	if d.refused == "" && d.remote == "origin" && d.ref == "refs/heads/"+branch {
-		return branch, nil
-	}
-	// Without an upstream the push is a first publish, to origin under its own name.
-	if !a.hasUpstream() {
-		return branch, nil
-	}
-	if err := d.refusal(); err != nil {
-		return "", err
-	}
-	unset := "To publish it to origin under its own name, run 'git branch --unset-upstream' first."
-	head, isBranch := strings.CutPrefix(d.ref, "refs/heads/")
-	switch {
-	case d.remote != "origin":
-		return "", usagef("'%s' pushes to the remote '%s', but its pull request opens on origin, which wouldn't have the work. Nothing was done. %s", branch, d.remote, unset)
-	case !isBranch:
-		return "", usagef("'%s' pushes to '%s' on origin, which isn't a branch a pull request can name. Nothing was done.", branch, d.ref)
-	case a.isProtectedBranch(head):
-		return "", usagef("'%s' pushes to '%s', so its pull request would propose '%s' itself. Nothing was done. %s", branch, head, head, unset)
-	}
-	return head, nil
+	return a.parkHead(branch)
 }
 
 // openPrForBranch is the number of the open PR proposing this branch, or nothing -

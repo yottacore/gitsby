@@ -433,6 +433,9 @@ func (a *app) preflight() error {
 	if err := a.refuseGoneBranch(); err != nil {
 		return err
 	}
+	if err := a.refuseMergePushesOwn(); err != nil {
+		return err
+	}
 	return a.stagedPreflight()
 }
 
@@ -459,6 +462,13 @@ func (a *app) preflightBranch() error {
 		// destructive plan was shown.
 		if a.isProtectedBranch("") {
 			return usagef("'%s' is a protected branch; landing it would delete it. Run this from a work branch instead.", a.currentBranch())
+		}
+		// Its delete names the branch the park push goes to. Ahead of refuseParkPush,
+		// since after its 'sync --direct' the delete would still name dev.
+		if a.hasOrigin() {
+			if _, err := a.parkHead(a.currentBranch()); err != nil {
+				return err
+			}
 		}
 	case "br-switch":
 		if a.cmd.arg != "" && !a.branchExistsLocal(a.cmd.arg) && !a.branchExistsRemote(a.cmd.arg) {
@@ -706,6 +716,11 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 			a.out.clean("")
 			a.out.warn("WARNING: " + a.directPushText())
 			a.out.warn("  To keep it off '" + a.directTarget() + "', answer n and run " + a.keepOffText(committed) + ". (The '--direct' flag silences this warning.)")
+		}
+		if target := a.mergePushesOwn(); target != "" {
+			a.out.clean("")
+			a.out.warn("WARNING: " + a.ownPushText(target))
+			a.out.warn("  To keep them off '" + target + "', answer n and run " + a.ownPushOff(target) + ". To push them as they are first, run " + a.ownPushOn(target) + ".")
 		}
 		if gone := a.pushesGoneBranch(); gone != "" {
 			a.out.clean("")

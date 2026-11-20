@@ -164,6 +164,9 @@ func (a *app) cmdMerge() error {
 		mergeMessage = "Merge " + workBranch
 	}
 	wasHotfix := a.isHotfixBranch(workBranch)
+	// Origin's copy is where the park push goes, which for a branch tracking another
+	// name isn't its own. Read before the commit drops the cached refs.
+	remoteBranch := a.mergeHead()
 	if err := a.cmdPush(); err != nil {
 		return err
 	}
@@ -188,12 +191,12 @@ func (a *app) cmdMerge() error {
 	// Read before the push and the local delete: whether origin has a copy, and the tip that was
 	// merged, which is all origin's copy may hold when it goes.
 	mergedTip, tracked := "", false
-	for _, line := range runLines("git", "for-each-ref", "--format=%(objectname) %(refname)", "refs/heads/"+workBranch, "refs/remotes/origin/"+workBranch) {
+	for _, line := range runLines("git", "for-each-ref", "--format=%(objectname) %(refname)", "refs/heads/"+workBranch, "refs/remotes/origin/"+remoteBranch) {
 		object, ref, _ := strings.Cut(line, " ")
 		switch ref {
 		case "refs/heads/" + workBranch:
 			mergedTip = object
-		case "refs/remotes/origin/" + workBranch:
+		case "refs/remotes/origin/" + remoteBranch:
 			tracked = true
 		}
 	}
@@ -216,7 +219,7 @@ func (a *app) cmdMerge() error {
 		// Where origin has the branch and the target pushes to its own name, one atomic
 		// push sends the merge and the leased delete: both go through or neither does.
 		if tracked && a.atomicMergeFits(targetBranch) {
-			remoteGone = a.atomicMergePush(targetBranch, workBranch, mergedTip)
+			remoteGone = a.atomicMergePush(targetBranch, remoteBranch, mergedTip)
 		}
 		if !remoteGone {
 			if err := a.pushCurrent(); err != nil {
@@ -230,13 +233,13 @@ func (a *app) cmdMerge() error {
 		// unpublished, origin's copy of the branch is its only ref to those commits.
 		// The branch stays here too, since br prune looks for what to clear among
 		// local branches.
-		a.out.status("Leaving origin's '" + workBranch + "' alone until the merge is pushed, and the branch here with it; '" + meName + " br prune' deletes both after that.")
+		a.out.status("Leaving origin's '" + remoteBranch + "' alone until the merge is pushed, and the branch here with it; '" + meName + " br prune' deletes both after that.")
 	} else {
 		if err := a.step("git", "branch", "-d", workBranch); err != nil {
 			return err
 		}
 		if tracked && !remoteGone {
-			a.mergeDeleteRemote(workBranch, mergedTip)
+			a.mergeDeleteRemote(remoteBranch, mergedTip)
 		}
 	}
 	if err := a.pullIfOnline(); err != nil {
