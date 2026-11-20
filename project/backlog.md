@@ -49,32 +49,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: The tag scans in src-go/release.go (resolveRelease and the --points-at one), cicd/release.bash, cicd/utility/gen-winres.bash and the demo stamp in cicd/cicd.bash pass only versionsort.suffix=-.
 	- Origin: ed296a4, 2026-09-16, with the dotted suffix the version check admits. Found while fixing 2026111910222928. Plausible for the cut, Confirmed for the sort.
 
-- In a sparse checkout, an edited tracked file outside it is left uncommitted at exit 0
-	- ID: 2026111920000538
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-200005
-	- Opened by:
-	- Steps to reproduce [Bug]: Set a sparse cone, write a tracked file outside it back into the tree and edit it, then run gitsby -q pullcom m.
-	- Incorrect behavior [Bug]: Status lists the file as modified, git add --all stages nothing for it, and gitsby says Nothing to commit and Done, exit 0.
-	- Expected behavior [Bug]: The edit is committed, or the run says why it isn't.
-	- Reproduced [Bug]: 2026-11-19 on b23, git 2.51, found while fixing 2026111910222973. Confirmed.
-	- Possible cause [Bug]: git add --all skips tracked paths outside the sparse patterns without an error, and nothing before the commit compares that with status.
-	- Origin: Go port. No round reached it.
-	- Closed reason: Done
-	- Actual cause [Bug]: git add --all skips a tracked path outside the sparse patterns without an error, even with its skip-worktree bit cleared, and the commit decides from the index after the add. So the edit was left out and the run said Done.
-	- Actual fix [Bug]: refuseSparseAdd also compares git diff with the paths its dry run of git add --all would take. In a sparse checkout, an edited tracked file the dry run leaves out is refused before the plan, in the same list as new files outside it, with the same two fixes. --staged is left alone.
-	- Branch: nov19c-2026111910222973
-	- Commit: 397c85f
-	- Test case: test.bash [dfhkj] to [dfhkm]; Go [dfhkn] TestSkippedEdits.
-	- Verified: [dfhkj] and [dfhkk] fail on be87857 and pass with the fix. [dfhkm], an edit and a delete inside the checkout, passes on both, and fails with the dry run's remove lines not read. A conflicted file in a sparse checkout still gets the conflict advice. The quick gate's lint, unit and suite areas passed: test.bash 2194/0. gosec reports nothing new in the changed files.
-	- Swept: the dry run is the only place gitsby asks what git add --all takes. Submodules are compared with --ignore-submodules=dirty, as treeDirty reads them, since add stages nothing for a dirty one.
-	- Decisions: Refuse, not stage with --sparse, as for 2026111910222973, since the checkout's shape is the user's choice. The comparison runs only when core.sparseCheckout is on, the one case where add skips an edit, so no other repo pays for it or can be refused by it. It is folded into the one dry run rather than a second check.
-	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
-	- Closed: 20261119-200649
-
 - br merge from a branch that shares no history with dev pushes it, switches to dev, then fails
 	- ID: 2026111919473452
 	- Type: Bug
@@ -89,54 +63,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: Refuse before the plan when the branch and its target share no commit, or end back on the branch.
 	- Reproduced [Bug]: 2026-11-19 on b23, local bare origin, while fixing 2026111910222988. Confirmed.
 	- Origin: Go port. No round saw it.
-
-- The Incoming list shows local commits as changes coming in
-	- ID: 2026111919195626
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-191956
-	- Opened by:
-	- Steps to reproduce [Bug]: Commit a new file on a branch that is also behind its upstream, then run gitsby status.
-	- Incorrect behavior [Bug]: Incoming lists the new local file as D, deleted, though a pull leaves it alone.
-	- Expected behavior [Bug]: Only what the upstream's commits change.
-	- Reproduced [Bug]: 2026-11-19 on b23, while working 2026111910223045. Confirmed.
-	- Possible cause [Bug]: showIncoming diffs HEAD..@{u}, which compares the 2 trees. HEAD...@{u} diffs from the merge base.
-	- Origin: show.go showIncoming, there since the port. No round saw it.
-	- Closed reason: Done
-	- Actual cause [Bug]: showIncoming diffed HEAD..@{u}, which compares the 2 trees, so a commit of our own the upstream lacks showed reversed, a new file as deleted.
-	- Actual fix [Bug]: The list diffs HEAD...@{u}, from the merge base, so it shows only the upstream's own changes. A comment at the site says why. The changelog says so.
-	- Branch: nov19c-2026111910223045
-	- Commit: c57abf9
-	- Test case: test.bash [dfhj9].
-	- Verified: [dfhj9] fails with the build at 90f3e83 and passes with the fix, on a branch 1 ahead and 1 behind. The quick gate's lint, unit and suite areas passed: test.bash 2184/0.
-	- Swept: grep for ..@{u} and @{upstream} in src-go and test.bash. showIncoming was the only diff against the upstream. The ahead and behind counts come from rev-list, which counts each side apart.
-	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
-	- Closed: 20261119-192853
-
-- Conflict advice after a --staged run drops --staged
-	- ID: 2026111918550541
-	- Type: Enhancement
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-185505
-	- Opened by:
-	- Requirements [Feature]: When a --staged run stops on unresolved conflicts, the command it says to run again keeps --staged. Without it the rerun commits the whole tree, sweeping in edits left out on purpose.
-	- Notes: rerunText in mutate.go left off every option. With --staged no pull uses --autostash, so only a conflict already in the tree reaches this.
-	- Origin: found while fixing 2026111910223074. Read only.
-	- Closed reason: Done
-	- Done: The rerun advice keeps --staged wherever the run had it, after the command and its target.
-	- Test case: test.bash [dfhh6]; Go [dfhh2] TestRerunNamesTheCommand, with 4 new --staged cases and a check that --staged reads back.
-	- Verified: [dfhh6] fails on the build before the fix, where the advice said 'gitsby sync', and passes with it. [dfhh2] fails its 5 --staged cases before the fix and passes after. lint, unit and suite passed: test.bash 2179/0.
-	- Swept: rerunText is the one place the advice is built, for both refuseConflicts callers.
-	- Decisions: --staged goes last, after the target, where the parser takes it like any option. The other options, such as -q and --no-fetch, stay off: dropping them changes nothing about what is committed.
-	- Branch: nov19c-2026111910223074
-	- Acceptance signoff: Self-closed: its test failed before the fix and passes after.
-	- Closed: 20261119-190622
-	- Commit: cf81f3c
-	- 20261119: [dfhh2]'s case for 'sync --staged' expects 'sync --staged', not 'sync', as this item asks.
 
 - On Windows PowerShell 5.1, a paste line drops a double quote from a branch name
 	- ID: 2026111917564808
@@ -156,315 +82,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: Windows PowerShell 5.1 passes a double quote inside an argument to the program bare, and git reads it as a quote. pwsh 7.3 and later escape it, so no one spelling suits both.
 	- Origin: df38db0, 2026-09-15, typedArg's Windows form. Plausible: the 5.1 passing is documented, not run here.
 
-- Code Review 20261119 item 11: A stalled https remote hangs every command
-	- ID: 2026111910223148
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261119-102231
-	- Opened by:
-	- Steps to reproduce [Bug]: Point origin at a local http listener that accepts and never answers, then run gitsby status.
-	- Incorrect behavior [Bug]: It sits at git fetch until stopped. pullcom, sync and the push of sync --no-fetch do the same. Nothing is left half done after Ctrl-C.
-	- Expected behavior [Bug]: The fetch and probes give up after a while, as the comment at remote.go line 274 says.
-	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
-	- Possible cause [Bug]: remoteEnv sets no http speed limit, only the ssh connect timeout.
-	- Origin: 88ff4ab, 2026-08-19. The comment came in 8c7a856. No round reached it.
-	- Closed reason: Done
-	- Actual cause [Bug]: git sets no time limit on http, and remoteEnv gave it none. Only ssh had a connect timeout.
-	- Actual fix [Bug]: The fetch, origin/HEAD healing, br prune's ls-remote and the repo probe run with GIT_HTTP_LOW_SPEED_LIMIT=1 and GIT_HTTP_LOW_SPEED_TIME=30, unless the caller set either one. gitsby status on a stalled http origin now warns that the fetch failed after 30 s and goes on.
-	- Branch: nov19c-2026111910223148
-	- Commit: 9561f20
-	- Test case: Go test [dfhez] TestRemoteReachesGiveUpOnAStalledHTTPRemote, the fetch, ls-remote and probe against a listener that never answers. Go test [dfhf0] TestRemoteEnvHTTPStallLimit, every return path of remoteEnv, and a caller's own limit kept.
-	- Verified: [dfhez] and [dfhf0] fail with the limit taken out, the fetch still waiting at 30 s, and pass with it. The built binary's status on a stalled http origin ended at 30 s with the offline warning. The quick gate passed with every area.
-	- Verified: git 2.51 and curl 8.14 on b23. The env variables outrank http.lowSpeedLimit and -c. A stalled TLS handshake isn't covered by the low-speed check, and ended at curl's 300 s connect limit.
-	- Swept: every git call that reaches origin outside a step: fetch and set-head in fetchRemote, ls-remote --heads in askOriginHeads, ls-remote in probeRemote. All read remoteEnv. The ssh probe in probeSSHLogin talks only ssh. Push, pull and clone run as steps.
-	- Decisions: Push, pull and clone are left as git runs them. They are steps the plan shows as typed, and the item's expected behavior names only the fetch and probes.
-	- Decisions: 30 s at under 1 byte a second. A server packing sends a keepalive every 5 s by default, so a busy one doesn't trip it, and a false trip only reads as offline.
-	- Decisions: A caller's GIT_HTTP_LOW_SPEED_LIMIT or GIT_HTTP_LOW_SPEED_TIME leaves both alone, like a caller's GIT_SSH_COMMAND. An http.lowSpeedLimit in git config is outranked, like ConnectTimeout in ssh_config, since reading it would cost a spawn per run.
-	- Decisions: A TLS handshake that never finishes is left at curl's 5 minutes. git has no connect timeout setting, and a watchdog on git's process can't tell a stall from a slow fetch.
-	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
-	- Closed: 20261119-174233
-
-- Code Review 20261119 item 14: On Windows, curly single quotes in a branch name break out of a paste line
-	- ID: 2026111910223104
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261119-102231
-	- Opened by:
-	- Target OS: Windows
-	- Steps to reproduce [Bug]: Push a branch named x, a right single quote, then ;hostname;# to origin. Merge it, make origin unreachable, and run gitsby -q br prune.
-	- Incorrect behavior [Bug]: The printed delete line, pasted into PowerShell 7 or 5.1, runs hostname.
-	- Expected behavior [Bug]: A pasted line passes the name as one argument.
-	- Reproduced [Bug]: 2026-11-19 on vm925w. Confirmed.
-	- Possible cause [Bug]: PowerShell reads the 4 curly single quotes as a quote, and typedArg doubles only the ASCII one.
-	- Origin: df38db0, 2026-09-15. No round saw it.
-	- Actual cause [Bug]: As read. typedArg doubled only the ASCII single quote, and PowerShell takes U+2018 to U+201B as single quotes too.
-	- Actual fix [Bug]: On Windows typedArg doubles all 5 of PowerShell's single quotes inside its quotes.
-	- Decisions:
-		- Fixed with item 29 (2026111910222886) as one class, in typedArg, which every paste line goes through.
-		- Off Windows a word that starts with = is quoted too, since zsh, the default shell on macOS, expands it to a command's path. shellWord, which spells the plan's commands, does the same. Same class, found by the new test's zsh leg.
-		- A branch named exactly --% is left alone. pwsh drops an argument whose value is --%, whatever the quoting, so no spelling passes it.
-	- Branch: nov19c-2026111910223104
-	- Commit: 7ca1e1a
-	- Test case: Go [dfhfc] TestPasteLinesReadBack runs each paste line through the real pwsh, sh and zsh, with git rev-parse --sq-quote in the git command's place, and checks that git got each word as named. [dcnmn] and [ddj3f] have new cases.
-	- Verified: [dfhfc], [dcnmn] and [ddj3f] fail on the code before the fix and pass after. Before it, a curly quote closed the quote and hostname ran, @foo reached git as no word, and zsh refused =x. Quick run of every area passed: test.bash 2159/0, fuzz 310/0, parity 31/0. Only pwsh 7.6 on Linux ran here, not Windows PowerShell 5.1 or pwsh's Windows argument passing.
-		- 2026-11-19 on vm925w (Windows 11 build 26200), from a Windows test build of nov19c at fca0441: [dfhfc] and [dcnmn] passed, with pwsh 7 and Windows PowerShell 5.1 both on PATH, so the test read every line back through both. [ddj3f] skipped there, since the box has no sh on PATH.
-	- Swept: every typedArg caller (branch.go, branchcmd.go, pr.go, release.go, mutate.go, and leaseDeleteLine in prune.go) goes through the one function, and no other code spells PowerShell quotes. shellQuote's Fix lines in accountcmd.go and show.go are only given off Windows. preview.go's git config --file plan line single-quotes a Windows path the sh way. It's a plan line rather than a paste line, like the unquoted plan lines beside it, and was left alone.
-	- Closed reason: Done
-	- Acceptance signoff: Self-closed: [dfhfc] passed on vm925w in pwsh 7 and Windows PowerShell 5.1.
-	- Closed: 20261119-210053
-
-- br merge on a branch that tracks one of another name leaves that branch on origin and warns about the wrong one
-	- ID: 2026111913330350
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-133303
-	- Opened by:
-	- Related IDs: 2026111910223203
-	- Steps to reproduce [Bug]: Have feat track origin/feature-x under push.default=upstream while origin also has an older feat, add a commit, and run gitsby -q br merge.
-	- Incorrect behavior [Bug]: It pushes to feature-x, merges into dev, and asks to delete origin's feat. The lease refuses, so it warns that origin's feat has commits the merge doesn't, which is false, and feature-x stays on origin. Exit 0.
-	- Expected behavior [Bug]: The delete names the branch the push went to, as pr create's head does, or br merge refuses before the plan.
-	- Reproduced [Bug]: 2026-11-19 on b23, local bare origin, while fixing 2026111910223203. Confirmed.
-	- Possible cause [Bug]: The atomic push, mergeDeleteRemote and the plan name the current branch, while pushDest pushes to the upstream.
-	- Origin: The delete has named the current branch since the Go port, and a push to another name came with push.default=upstream. No round saw it. Confirmed.
-	- Closed reason: Done
-	- Actual cause [Bug]: br merge's plan, its atomic push and its leased delete named origin's branch of the current branch's name, while the park push went where pushDest sends it: to an upstream of another name under push.default=upstream, or through a push refspec that renames it.
-	- Actual fix [Bug]: br merge's plan, atomic push, delete and offline note name the branch on origin the park push lands on, read by parkHead, which pr create now shares. br merge refuses before the plan where git would refuse the push, where the push goes to another remote or to a ref that isn't a branch, and where it lands on main, dev or the default branch, whether or not anything is left to push. design.md and the changelog say so.
-	- Branch: nov19c-2026111913330350
-	- Commit: 8f9e019
-	- Test case: test.bash [dfhfw] to [dfhg1]; Go TestMergeHead [dfhg7].
-	- Verified: [dfhfw] to [dfhg1] fail on the build before the fix and pass with it. [dfhg7] fails 4 of its 8 cases with mergeHead reading the current branch. The quick gate passed with every area: test.bash 2170/0, fuzz 310/0, parity 31/0, spawn counts unchanged. gosec has no finding in the changed lines.
-	- Swept: every place br merge names origin's copy: the plan's 2 delete lines, the for-each-ref that asks whether origin has it, the atomic push, mergeDeleteRemote and the offline note. pr create's head goes through the same parkHead. br prune deletes origin's branches by local name, and only ones already merged into the target, so it was left alone. pr ok reads its head from the git host.
-	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
-	- Closed: 20261119-182500
-	- Decisions:
-		- The delete names the branch the push went to, rather than br merge refusing every branch that tracks another name, since under push.default=upstream that push is meant.
-		- Refused where pr create refuses, with the same way off, so the 2 commands that read the park push's head agree. A push to another remote is refused rather than left with no delete, since the merge goes to origin and gitsby's branch commands act on origin. Check: entry filed.
-		- A head on a protected branch is refused with br merge's own text, ahead of refuseParkPush's 'sync --direct', since after that the delete would still take dev.
-
-- Code Review 20261119 item 15: pr ok from another branch pulls that branch while its plan says the target
-	- ID: 2026111910223089
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102230
-	- Opened by:
-	- Steps to reproduce [Bug]: Stand on a branch whose upstream moved ahead, then run gitsby pr ok <n> and answer y.
-	- Incorrect behavior [Bug]: The plan says it checks out and pulls dev. The run fast-forwards the current branch instead and leaves dev stale.
-	- Expected behavior [Bug]: The run matches the plan.
-	- Reproduced [Bug]: 2026-11-19 on b23, with a fake gh. Confirmed.
-	- Possible cause [Bug]: cmdPrAccept in pr.go checks out the target only in some cases. The plan line in preview.go always names it.
-	- Origin: 4918b5b and 353f5c9, 2026-08-19. Plan line from c4fa47c. No round saw it.
-	- Closed reason: Done
-	- Actual cause [Bug]: The plan always named a checkout and pull of the merge target. The run checked it out only when the current branch had no upstream once the merge's branch delete was pruned, and otherwise pulled the current branch. The worktree check read a third rule, the current branch being the PR's.
-	- Actual fix [Bug]: prOkMoves in pr.go is the one rule: pr ok moves to the merge target when the current branch has no upstream or tracks origin's copy of the PR's branch. It's read before the merge by the plan, the run and the worktree check. Otherwise the plan shows the pull of the current branch, and no checkout. The checkout line lost its asterisk, since it always runs when shown. The changelog says so.
-	- Branch: nov19c-2026111910223089
-	- Commit: 764fc97
-	- Test case: test.bash [dfhgf] to [dfhgk]. Go [dfh8b] TestRefuseHeldBranch, new case 'pr ok from a branch with no upstream'.
-	- Verified: [dfhgg], [dfhgh] and [dfhgj] fail on the build before the fix and pass with it. [dfhgf] and [dfhgk] pass on both, since the run itself didn't change there. The new [dfh8b] case fails before the fix. The quick gate passed with every area: test.bash 2175/0, fuzz 310/0, parity 31/0, spawn counts OK. gosec reports nothing in the changed files.
-	- Swept: every reader of where pr ok ends: previewPr, cmdPrAccept and checkoutsAhead now share prOkMoves. mergePushesOwn and previewBackMerge read only the hotfix back-merge, which is unchanged. No other site compares the PR's branch with the current one, other than preflight's refusal wording.
-	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
-	- Closed: 20261119-183738
-	- Decisions:
-		- The plan follows the run, not the other way round. Code Review 20260725 item 5 moved pr ok to the merge target only when the branch it stood on went away, so a run from another branch stays there. Moving it to the target every time would switch branches under work the PR has nothing to do with.
-		- The local copy of the merge target stays behind origin's after a run from another branch, as any branch not checked out does. The next br switch to it pulls it. The issue named that as wrong, but its expected behavior asks only that the run match the plan.
-		- The answer is settled before the merge. The run also still moves when the prune took the current branch's upstream, which can only happen when someone deleted it on origin since the first fetch, since pulling it would then fail after the merge.
-		- Under --no-fetch, a run standing on the PR's branch now moves to the merge target, as its plan always said. It used to stay, since nothing was pruned. Unverified: read from the code, not run.
-	- Note: [dfh8b]'s fixture now gives w an upstream, so its 'pr ok of another branch' case still checks nothing out under the new rule. Its asserts are unchanged.
-
-- Code Review 20261119 item 16: After an autostash conflict, sync, br switch and pr create say to run pullcom again
-	- ID: 2026111910223074
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102230
-	- Opened by:
-	- Steps to reproduce [Bug]: Edit a file that origin's branch also changed, then run gitsby -q sync.
-	- Incorrect behavior [Bug]: It says to run gitsby pullcom again. That commits, but doesn't push, switch or open the PR.
-	- Expected behavior [Bug]: It names the command that was run.
-	- Reproduced [Bug]: 2026-11-19 on b23, all 3 commands. Confirmed.
-	- Possible cause [Bug]: cmdCommit passes pullcom by name to refuseConflicts. pullIfOnline already uses typedName.
-	- Origin: 8dfe5ff, nov18. Missed twin of that fix.
-	- Closed reason: Done
-	- Actual cause [Bug]: cmdCommit named pullcom in its conflict advice whatever command ran. Every command that parks reaches it after its autostash pull: sync, br switch, br create and br hotfix off a feature branch, br merge, pr create and release.
-	- Actual fix [Bug]: One helper builds the advice from the command as typed, with its branch, version or remote. cmdCommit and the pull check in pullIfOnline both use it.
-	- Test case: test.bash [dfhh3] to [dfhh5]; Go [dfhh2] TestRerunNamesTheCommand.
-	- Verified: [dfhh4] fails on the build before the fix, where all 5 commands named pullcom, and passes with it. [dfhh2] fails with the helper made to name pullcom. The quick gate passed with every area: test.bash 2178/0, fuzz 310/0, parity 31/0.
-	- Swept: every refuseConflicts caller, by grep: cmdCommit (pullcom, sync, every cmdPush park, repo create and repo connect) and pullIfOnline. Both now take the same helper. release is covered by [dfhh2] only, not by a suite check.
-	- Decisions: The advice keeps the target argument for br create, br hotfix, br switch, release, repo create and repo connect, and --staged where the run had it (2026111918550541). It leaves off a commit message, a PR title and the other options, as pullcom's advice did.
-	- Branch: nov19c-2026111910223074
-	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
-	- Closed: 20261119-185455
-	- Commit: 5c6bdc8
-
-- Code Review 20261119 item 17: br merge pushes your own commits on dev with no --direct warning
-	- ID: 2026111910223060
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102230
-	- Opened by:
-	- Steps to reproduce [Bug]: On dev, commit with gitsby -q pullcom, then switch to a feature branch and run gitsby -q br merge.
-	- Incorrect behavior [Bug]: The direct commit goes to origin's dev with the merge, exit 0. sync on dev refuses the same push.
-	- Expected behavior [Bug]: br merge warns, and refuses under -q, when the target has commits of its own to push.
-	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
-	- Possible cause [Bug]: directPush exempts br merge, since it refuses to run from a protected branch. That doesn't cover commits already on the target.
-	- Origin: Sibling of 2026111016332380, nov18.
-	- Closed reason: Done
-	- Actual cause [Bug]: directPush covers only sync and br switch, and br merge's push of its target, or of dev after a hotfix's back-merge, took whatever commits that branch had of its own.
-	- Actual fix [Bug]: br merge warns above the prompt, and -q refuses, when the branch it merges into, or dev for a hotfix's back-merge, has commits of its own that its upstream doesn't. pr ok's back-merge asks too. A merge left on dev doesn't count, as for sync. The ways off are 'git branch <branch-name> dev', then 'git branch -f dev origin/dev', or 'gitsby br switch dev', then 'gitsby sync --direct'. design.md and the changelog say so.
-	- Branch: nov19c-2026111913330350
-	- Commit: 8f9e019
-	- Test case: test.bash [dfhg2] to [dfhg6]; Go TestMergePushesOwn [dfhg8].
-	- Verified: [dfhg2], [dfhg3], [dfhg4] and [dfhg6] fail on the build before the fix and pass with it. [dfhg5] passes on both, since a merge went out before too. [dfhg8] fails 3 of its 9 cases with mergePushesOwn answering nothing. The quick gate passed with every area: test.bash 2170/0, fuzz 310/0, parity 31/0, spawn counts [df37t] and [df37v] unchanged, since a target level with its upstream is read from branchRefs's one for-each-ref.
-	- Swept: every push of a branch other than the one the run started on: br merge's target push, atomic or not, the hotfix back-merge's push of dev from br merge and pr ok, and release's pushes of main and dev. release stays out, per 2026111016332380. pr ok pushes nothing else of its own.
-	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
-	- Closed: 20261119-182500
-	- Decisions:
-		- No --direct for br merge. The ways off name 'sync --direct' from dev, which keeps --direct's command list as 2026111910223293 left it. Check: entry filed.
-		- The way to keep the commits off names 2 plain git commands run from where br merge stands, since dev isn't checked out and 'git branch -f' needs no switch.
-		- Only a target with an upstream counts, as for sync, so a dev never pushed goes up as a first publish without asking.
-		- The target's tip is compared with its upstream's from branchRefs first, so a level target costs no git call.
-
-- Code Review 20261119 item 18: The Incoming list shows a tab as the escape marker
-	- ID: 2026111910223045
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102230
-	- Opened by:
-	- Steps to reproduce [Bug]: Have a branch behind its upstream and run gitsby status.
-	- Incorrect behavior [Bug]: Incoming lines read M, the tab escape marker, then the file name. A rename shows two.
-	- Expected behavior [Bug]: Readable columns.
-	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
-	- Possible cause [Bug]: git diff --name-status output goes through printable, which escapes the tab. [da9v4] checks only the word Incoming.
-	- Origin: 2be7d35, 2026-10-06, then 320e15d. No round saw it.
-	- Closed reason: Done
-	- Actual cause [Bug]: git diff --name-status splits its fields with tabs, and the list printed each line through printable, which shows a tab as an escape.
-	- Actual fix [Bug]: The Incoming list splits each line on its tabs and prints the status padded to the widest one, then the name. A rename or copy reads old -> new, as git status --short has it. git quotes a name with a tab in it, so the split can't cut one. The changelog says so.
-	- Branch: nov19c-2026111910223045
-	- Commit: 62f3b17
-	- Test case: test.bash [dfhj0], [dfhj1] and [dfhj2]. Go [dfhhz] TestNameStatusColumns.
-	- Verified: [dfhj0] to [dfhj2] fail with the build before the fix and pass with it. [dfhhz] fails with the split taken out. The quick gate passed with every area: test.bash 2183/0, fuzz 310/0, parity 31/0.
-	- Swept: every list printed through showList and showLines. git status --short, ls-files and diff --name-only have no tabs in their output. pr list goes straight to the terminal. The diff in showIncoming was the only tab-split output.
-	- Decisions: The similarity score stays on a rename, as git prints it, and the status column is padded so the names line up.
-	- Note: The list also shows local commits as incoming, filed as 2026111919195626.
-	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
-	- Closed: 20261119-192011
-
-- Code Review 20261119 item 19: -m given twice keeps only the last message
-	- ID: 2026111910223031
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102230
-	- Opened by:
-	- Steps to reproduce [Bug]: Run gitsby -q pullcom -m first -m second.
-	- Incorrect behavior [Bug]: It commits with subject second and exits 0.
-	- Expected behavior [Bug]: Refuse 2 messages, as a typed word beside -m is refused.
-	- Reproduced [Bug]: 2026-11-19 on b23, also pr create. Confirmed.
-	- Possible cause [Bug]: The -m setter in args.go overwrites.
-	- Origin: Missed sibling of 2026111016332070, round-20261111.
-	- Closed reason: Done
-	- Actual cause [Bug]: The -m setter in optSpecs overwrote the value, so only the last -m was kept.
-	- Actual fix [Bug]: Every -m is kept as typed, and checkOptionsUsed refuses more than one with all of them quoted, on every command that takes -m. A command that takes no -m still gets that refusal first. The changelog says so.
-	- Branch: nov19c-2026111910223045
-	- Commit: 36604e8
-	- Test case: test.bash [dfhj3]. Go [dfhhy] TestRepeatedMessageRefused.
-	- Verified: [dfhj3] fails with the build before the fix, which committed with subject second at exit 0, and passes with it. [dfhhy] fails with the check turned off. The quick gate passed with every area.
-	- Swept: every command that takes -m: pullcom, sync, br create, br hotfix, br switch, br merge, pr create, release, repo create and repo connect all go through checkOptionsUsed. A -m after raw's tool name is the tool's and is passed on, pinned in [dfhhy]. --config is the only other option with a value, and it was left as last one wins, as a setting usually is.
-	- Decisions: Refused, as the item asks, rather than joined as paragraphs as git commit does, since each gitsby -m is a whole message or title.
-	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
-	- Closed: 20261119-192011
-
-- Code Review 20261119 item 21: When a 2.x file can't be converted, its notice says two opposite things
-	- ID: 2026111910223002
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102230
-	- Opened by:
-	- Steps to reproduce [Bug]: Write a 2.x accounts file with a value holding a lone double quote before a #, then run gitsby account list.
-	- Incorrect behavior [Bug]: The head says this run read it the old way, and the Why line says it read it the new way.
-	- Expected behavior [Bug]: One account of how the file was read.
-	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
-	- Possible cause [Bug]: The head and the Why line are written apart in config.go and cfgformat.go.
-	- Origin: ca74ed4, nov18. Regression of item 2026111016332218's notice.
-	- Closed reason: Done
-	- Actual cause [Bug]: The head said the run read the file in the old format, which holds only when no line reads differently. For a line no quote fits, the run reads the converted text, and the Why line said so on its own.
-	- Actual fix [Bug]: The head alone says how the run read the file, from a readNew field set with the Why line in config.go's load. It says the new format for a line no quote fits, and that format otherwise. The Why line names the line and no longer says how it was read, so the refusal in 'account set', which repeats it, doesn't either.
-	- Decisions: The head was changed rather than the reading, since reading the file the 2.x way needs the 2.x module, which stays out of the binary per design.md. The head says the new format rather than naming the line, since more than one line can read differently and the Why line names only the first.
-	- Branch: nov19c-2026111910223002
-	- Test case: Go `[dfhjk]` TestOld2xNoticeOneReading: a line no quote fits reads the new way and the head says so, a file kept for an unwritable folder reads the 2.x way and the head says that, and neither the notice nor the refusal says otherwise. test.bash `[dfhjm]` the steps' file through the binary.
-	- Verified: `[dfhjk]` fails on the previous config.go and cfgformat.go, and `[dfhjm]`'s check fails on the binary built from them. Both pass with the fix. Quick gate, every area: test.bash 2185/0, fuzz 310/0, parity 31/0.
-	- Swept: every other place that sets the migration's why is replaceOldFormat's write path, and none of them says how the file was read. The flat and old-pin notices read the file in that format when not converted, so the head holds for them.
-	- Acceptance signoff: Self-closed: reproduced, and its tests fail before the fix and pass after.
-	- Closed: 20261119-193639
-	- Commit: 33d0ae7
-
-- Code Review 20261119 item 22: On an unborn branch with an origin, br create renames the branch, then fails
-	- ID: 2026111910222988
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102229
-	- Opened by:
-	- Steps to reproduce [Bug]: git init, add files, add an empty bare origin, then run gitsby -q br create nb.
-	- Incorrect behavior [Bug]: HEAD moves to the unborn nb, then the push fails with src refspec HEAD does not match any, exit 1.
-	- Expected behavior [Bug]: Refuse up front, saying there are no commits yet.
-	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
-	- Possible cause [Bug]: Preflight doesn't check that HEAD has a commit.
-	- Origin: Go port. No round reached it.
-	- Closed reason: Done
-	- Actual cause [Bug]: br create and br hotfix ran 'checkout -b' from the branch they start from without checking it had a commit. Standing on an unborn base, that only renames the branch, and the push of HEAD then fails.
-	- Actual fix [Bug]: Both refuse in preflight when the base has no commit here and the run stands on it, naming pullcom with no origin and repo connect with one. When origin has the base, the refusal says so and leaves getting it to raw git. A base that is another branch existing only on origin still works, as before.
-	- Test case: Go TestUnbornBase [dfhjw]; test.bash [dfhjx] and [dfhjy].
-	- Verified: [dfhjw] fails 4 of its 5 cases with the refusal stubbed out, and [dfhjx] and [dfhjy] fail on the build before the fix. All pass with it. The quick gate passed with every area: test.bash 2187/0, fuzz 310/0, parity 31/0.
-	- Swept: br create and br hotfix are the only commands that 'checkout -b' from where they stand, by grep. The other 2 start from an origin ref. On an unborn main, br switch, br merge, sync and pr create already refuse before the plan, pullcom makes the first commit, and br prune finds nothing. On an unborn feature branch beside origin's main and dev, br create, br hotfix and br switch work, since the park push makes the first commit. br merge there is 2026111919473452.
-	- Decisions: Refused with no origin too, since there 'checkout -b' renames the unborn branch and exits 0, leaving no branch of the base's name. The advice names repo connect with an origin, since it publishes a repo with no commits, and pullcom without one.
-	- Branch: nov19c-2026111910222988
-	- Commit: 860c967
-	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
-	- Closed: 20261119-194717
-
-- Code Review 20261119 item 23: In a sparse checkout, a failed git add leaves the index half staged
-	- ID: 2026111910222973
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102229
-	- Opened by:
-	- Steps to reproduce [Bug]: Set a sparse cone, add a file inside and outside it, edit one outside, then run gitsby -q sync.
-	- Incorrect behavior [Bug]: git add --all fails after the plan, with one file staged and one not, exit 1 with only git's advice.
-	- Expected behavior [Bug]: Refuse before the plan, or say the index was left partly staged.
-	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
-	- Possible cause [Bug]: cmdCommit doesn't know about sparse checkout.
-	- Origin: Go port. No round reached it.
-	- Closed reason: Done
-	- Actual cause [Bug]: In a sparse checkout, git add --all stages what is inside it, then exits 1 over a new file outside it. Nothing before the plan asked, so the run stopped after the pull with the index half staged.
-	- Actual fix [Bug]: Every command whose commit stages the whole tree runs the same add as a dry run before the plan. When git names files outside the sparse checkout, the run refuses, lists them, and says how to take them in or use --staged.
-	- Branch: nov19c-2026111910222973
-	- Commit: be87857
-	- Test case: test.bash [dfhk8] to [dfhkb]; Go [dfhkc] TestSparseAddPaths.
-	- Verified: [dfhk8] and [dfhk9] fail on the build before the fix and pass with it. [dfhka] (--staged) and [dfhkb] (br create off dev) pass on both, as guards. The fixture turns advice.updateSparsePath off, since git still lists the files then. The quick gate passed with every area: test.bash 2191/0, fuzz 310/0, parity 31/0. gosec reports nothing new in the changed files.
-	- Swept: git add runs only in cmdCommit, by grep for "git", "add" in src-go. Its callers are pullcom, sync, br switch, br merge, br create and br hotfix off a feature branch, pr create, release, repo create and repo connect; stagesTree names each. --staged never stages, so it isn't checked.
-	- Decisions: Refuse rather than stage with --sparse, since the sparse checkout is a choice the run shouldn't undo, and the expected behavior asks for a refusal. Only git's sparse-path failure is refused; any other dry-run failure, such as a held index lock, is left to the real add. LC_ALL=C keeps git's lead in English; no git translation is installed here, so that part isn't pinned. An edited tracked file outside the checkout is a separate case, filed and fixed as 2026111920000538.
-	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
-	- Closed: 20261119-200016
-
 - Code Review 20261119 item 24: [daf7x] passes with the code it checks taken out
 	- ID: 2026111910222957
 	- Type: Bug
@@ -479,61 +96,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, by mutation in a copy. Confirmed.
 	- Possible cause [Bug]: It greps all output rather than the refusal's own line, as [dfg1f] does.
 	- Origin: 9630f8f, 2026-07-27. No round saw it.
-
-- Code Review 20261119 item 25: safe-rm.ps1 doesn't refuse cmd's other separators
-	- ID: 2026111910222942
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102229
-	- Opened by:
-	- Target OS: Windows
-	- Steps to reproduce [Bug]: Set TEMP to a folder whose name holds a comma, semicolon or equals sign, then let the guard remove a test folder under it.
-	- Incorrect behavior [Bug]: The guard passes it, and cmd's rmdir splits the path into two.
-	- Expected behavior [Bug]: The guard refuses those characters too, or anything outside a short safe set.
-	- Reproduced [Bug]: 2026-11-19 on b23, under pwsh 7.6 with a stand-in cmd.exe. A TEMP holding a comma reached rmdir. No Windows box has one.
-	- Possible cause [Bug]: The refused set at safe-rm.ps1 line 28 stops at &|<>^%"().
-	- Origin: f7e1c0b, round-20261111. Missed twin of that class fix.
-	- Actual cause [Bug]: As read. The guard refused a list of cmd's characters, and the list missed , ; and =, which cmd splits at.
-	- Actual fix [Bug]: safe-rm.ps1 refuses a full path with any character outside letters, digits, space and _.:~\/-, before rmdir runs. The refusal text stays the same.
-	- Decisions: An allowed set rather than a longer refused list, as the expected behavior offers, so a character nobody listed is refused too. Letters and digits are Unicode ones, so a user folder with an accented name still passes. ~ stays for 8.3 short names, space because 5.1 quotes it, and / because pwsh off Windows spells paths with it. A folder with any other character, such as an apostrophe or a plus, is now left behind with a note.
-	- Branch: nov19c-2026111910222942
-	- Commit: f829287
-	- Test case: test.bash [dfhks] runs the guard under pwsh with TEMP holding each of 20 other characters, then one with only safe ones, a space, a ~ and an accented letter among them, which is removed as usual. [df50j] and [dez5g] still pass.
-	- Verified: [dfhks] fails on the previous safe-rm.ps1 (the comma folder went) and passes after. It also goes red with ~, space or Unicode letters taken out of the set. Quick run of every area passed: test.bash 2195/0, fuzz 310/0, parity 31/0. Not run on Windows.
-		- 2026-11-19 on vm925w, with nov19c's safe-rm.ps1 at fca0441: a win-bash-run.bash run, and the Go test run's cleanup, each removed its test_gitsby folder under C:\Users\collierjr\AppData\Local\Temp, so the box's real %TEMP% passes the safe set.
-	- Swept: safe-rm.ps1 is the only script that calls cmd.exe with a path, by grep of cicd, install.ps1 and src-go. config_windows_test.go's mklink takes a Go temp path through Go's own quoting, a test only, left alone.
-	- Closed reason: Done
-	- Acceptance signoff: Self-closed: the guard removed a test folder under vm925w's real %TEMP%.
-	- Closed: 20261119-210053
-
-- Code Review 20261119 item 26: release.bash publishes a dot-suffixed version as a full release
-	- ID: 2026111910222928
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102229
-	- Opened by:
-	- Steps to reproduce [Bug]: Cut v3.0.0.rc1 with release.bash.
-	- Incorrect behavior [Bug]: The version passes the check, but the pre-release test only looks for a dash, so no --prerelease, and installers take it as the newest full release.
-	- Expected behavior [Bug]: Any suffix the version check admits, dot or dash, makes a pre-release, as gitsby's nextVersion reads it.
-	- Reproduced [Bug]: 2026-11-19 on b23, fIsReleaseVersion v3.0.0.rc1. Confirmed.
-	- Possible cause [Bug]: release.bash lines 325 and 349 test only for a dash.
-	- Origin: ed296a4, 2026-09-16. No round saw it.
-	- Closed reason: Done
-	- Actual cause [Bug]: As the possible cause says. Phase 3's check of which release the install line takes also called a tag full by its lack of a dash.
-	- Actual fix [Bug]: release.bash calls a version a candidate when the shared version pattern finds anything past X.Y.Z, after a dash or a dot. That one test makes the pre-release, promotes the last tag to its plain version, and reads the install line's tag. design.md's release policy names the dot form.
-	- Decisions: The pre-release message says a suffix, not a semver suffix, since a dot suffix isn't semver. A dotted suffix is still taken rather than refused, since 'gitsby release' takes it and its nextVersion reads it as a candidate.
-	- Against: 2026111016332132's Decisions row, which left a dotted suffix publishing as a full release, unchanged. This item asks for the change, and the standing rule calls any suffixed tag a candidate.
-	- Swept: every dash test on a version in release.bash: the bump (was line 325), the pre-release flag (349) and phase 3's install line check (619). The asset name split at 235 is a file name, not a version. Go's nextVersion already reads any suffix. Installers go by GitHub's pre-release flag, not the tag. The tag sort is the same class and is filed as 2026111920273377.
-	- Branch: nov19c-2026111910222928
-	- Test case: test.bash [dfhm3] [dfhm4], and [dd5es] for the dash form.
-	- Verified: [dfhm3] and [dfhm4] fail against the old release.bash and pass after. Quick gate passed, every area: test.bash 2197/0, fuzz 310/0, parity 31/0.
-	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
-	- Closed: 20261119-202747
-	- 2026-11-19: [dd5es] now looks for 'has a suffix', was 'has a semver suffix', for the message this item changed. The rest of the check is as it was.
 
 - Code Review 20261119 item 27: release.bash finds the default branch with symbolic-ref --short
 	- ID: 2026111910222914
@@ -564,90 +126,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, with dash. Confirmed.
 	- Possible cause [Bug]: A pipe into awk at Dockerfile line 132.
 	- Origin: 1c16940, round-20261111. Regression, a check that passes on nothing.
-
-- Code Review 20261119 item 29: On Windows, a paste line leaves a branch name starting with @ unquoted
-	- ID: 2026111910222886
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102228
-	- Opened by:
-	- Target OS: Windows
-	- Steps to reproduce [Bug]: Make a branch @foo and get a line that names it, such as from br prune.
-	- Incorrect behavior [Bug]: The line has git switch @foo, which PowerShell reads as splatting, so git gets no branch.
-	- Expected behavior [Bug]: typedArg quotes a word that starts with @ on Windows.
-	- Reproduced [Bug]: 2026-11-19 on vm925w, in pwsh 7 and 5.1. Confirmed.
-	- Possible cause [Bug]: typedArg in prune.go quotes only on its listed characters.
-	- Origin: df38db0, 2026-09-15. No round saw it.
-	- Actual cause [Bug]: As read. @ is in typedArg's plain set, and PowerShell reads a word that starts with it as splatting.
-	- Actual fix [Bug]: On Windows typedArg quotes a word that starts with @.
-	- Decisions: Fixed with item 14 (2026111910223104) as one class. Its Decisions and Swept rows cover both.
-	- Branch: nov19c-2026111910223104
-	- Commit: 7ca1e1a
-	- Test case: Go [dfhfc] TestPasteLinesReadBack, with git switch @foo and git switch @ among its lines, and [dcnmn].
-	- Verified: [dfhfc] and [dcnmn] fail on the code before the fix (git got no word for @foo) and pass after. Only pwsh 7.6 on Linux ran here.
-		- 2026-11-19 on vm925w (Windows 11 build 26200), from a Windows test build of nov19c at fca0441: [dfhfc] and [dcnmn] passed, with pwsh 7 and Windows PowerShell 5.1 both on PATH.
-	- Closed reason: Done
-	- Acceptance signoff: Self-closed: [dfhfc] passed on vm925w in pwsh 7 and Windows PowerShell 5.1.
-	- Closed: 20261119-210053
-
-- Code Review 20261119 item 30: On Windows, a git.bat or git.cmd on PATH re-reads gitsby's arguments through cmd
-	- ID: 2026111910222873
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102228
-	- Opened by:
-	- Target OS: Windows
-	- Steps to reproduce [Bug]: Put a git.bat that calls git.exe ahead of git.exe on PATH, with a branch named x&ver, then run gitsby -q br switch x&ver --no-fetch.
-	- Incorrect behavior [Bug]: cmd runs ver, and gitsby exits 0 still on main. raw git exits 0 where git would exit 128.
-	- Expected behavior [Bug]: gitsby skips or refuses a batch file match, and names it.
-	- Reproduced [Bug]: 2026-11-19 on vm925w, also with git.cmd and a name holding %PATH%. Confirmed.
-	- Possible cause [Bug]: walkTool in exec.go accepts .bat and .cmd, and Go doesn't quote for cmd.
-	- Origin: c14672e, 2026-10-21. exec.LookPath did the same before it. No round saw it.
-	- Actual cause [Bug]: As guessed. Windows runs a .bat or .cmd file through cmd, which reads the command line again, so an `&` in an argument runs what follows and `%NAME%` expands. Go quotes only for the program's own parser.
-	- Actual fix [Bug]: On Windows the PATH walk that every spawn and `raw` use passes over a .bat or .cmd file and takes the next program. With none left, the "Not found in path" refusal names the batch file. A program named by its path is refused when it is a batch file, PATHEXT included.
-	- Decisions: Pass over rather than refuse, as with gitsby's own entry, since a batch file can't be run safely at all. The batch file is named only in the refusal when nothing else is found. A warning on each pass-over would have to be a refusal under `-q`, per the UI style guide, so skip and refuse would differ only interactively. This departs from "names it" when another program is found. The tool cache key now holds PATHEXT too, since the look reads it.
-	- Test case: Go `[dfhmh]` (batch names, refusal text), and Windows-only `[dfhmj]` (the walk passes over .bat and .cmd, the refusal names them, a given path is refused) and `[dfhmk]` (a real run: an `&` and a `%NAME%` argument never reach cmd).
-	- Verified: the quick gate, every area, on the fix (test.bash 2197/0, fuzz 310/0, parity 31/0). Under wine, `[dfhmk]` fails on the build before, with cmd running the text after the `&` and expanding the name, and passes after. `[dfhmj]` fails with the path check taken out. gosec gives the same 37 findings before and after.
-		- 2026-11-19 on vm925w (Windows 11 build 26200), from a Windows test build of nov19c at fca0441: [dfhmj], [dfhmk] and [dfhmh] passed.
-	- Swept: every spawn goes through toolPath (`TestOneSpawnSite`): the findTool callers, `raw`'s own walkTool and its handover, and the ssh probe, whose program can be a path. install.ps1 runs no tool by bare name. The test-only `cmd /c mklink` runs cmd.exe itself.
-	- Branch: nov19c-2026111910222873
-	- Commit: 3058008
-	- Closed reason: Done
-	- Acceptance signoff: Self-closed: [dfhmj] and [dfhmk] passed on vm925w.
-	- Closed: 20261119-210053
-
-- Code Review 20261119 item 31: On Windows, a held accounts file gives the wrong Fix and mixed slashes
-	- ID: 2026111910222859
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102228
-	- Opened by:
-	- Target OS: Windows
-	- Steps to reproduce [Bug]: Open config.shcl from another program without share-delete, then run gitsby -q account set <account> email x@y.
-	- Incorrect behavior [Bug]: It refuses with the file intact, but the Why line shows AppData\Roaming/gitsby/config.shcl and the Fix says to make the folder writable.
-	- Expected behavior [Bug]: Backslashes, and a Fix that says another program may have the file open.
-	- Reproduced [Bug]: 2026-11-19 on vm925w. Confirmed.
-	- Possible cause [Bug]: The candidate path is built with a slash, and the Fix reasons from POSIX only.
-	- Origin: b64bc2e, 2026-10-03. No round saw it.
-	- Actual cause [Bug]: `configCandidatesFor` joined the Windows path with `/`, and shcl quotes the path as given in its save error. The Fix took a refused rename to mean the folder's permissions, but Windows also refuses a rename over a file another program holds without delete sharing, and shcl files both as permission denied.
-	- Actual fix [Bug]: The candidates use the platform's separator. On Windows, a refused replace of the accounts file, an account fragment or the global git config says another program may have it open, then names the permissions. `causeText` drops a rename error's paths, as it does a path error's, since the File line has the path.
-	- Decisions: On Windows the Fix names both causes, the held file first, since Windows and shcl report a held file and a folder ACL with the same code. The Why line keeps shcl's own message, which names the file, now with backslashes.
-	- Test case: Go `TestAccountSetSaveOverAHeldFile` [dfhmz] (Windows only), `TestReplaceFixNamesAHeldFileOnWindows` [dfhmx], `TestCauseTextDropsTheRenamePaths` [dfhmy], and the Windows cases of `TestConfigCandidatesKeepDotConfig` [df05s] and `TestConfigCandidatesFor` [dbjjn].
-		- 2026-11-19: [df05s] and [dbjjn] now want the Windows candidates with backslashes, `C:\App\gitsby\config.shcl` and `C:\Users\jc\.config\gitsby\config.shcl`, where they wanted `C:\App/gitsby/config.shcl` and `C:\Users\jc/.config/gitsby/config.shcl`. The [dbjjn] case "falls back to the Unix spelling" is now "falls back to dot-config".
-	- Verified: under wine, [dfhmz] fails on the build before, with `\002/gitsby/config.shcl` in the Why lines and a Fix naming only the folder, and passes after. [dfhmx], [dfhmy] and the candidate cases fail before and pass after on Linux too. The whole Windows test binary under wine fails the same 5 other tests before and after. The quick gate, every area, passed (test.bash 2197/0, fuzz 310/0, parity 31/0). gosec gives 37 findings, none on a changed line.
-		- 2026-11-19 on vm925w (Windows 11 build 26200), from a Windows test build of nov19c at fca0441: [dfhmz], [dfhmx], [dfhmy], [df05s] and [dbjjn] passed. Only those tests ran there, not the whole Windows test binary.
-	- Swept: every candidate in `configCandidatesFor`, and every `writeRefusal` whose step renames over a file: the accounts file save, the fragment replace and the global git config replace. The lock and the new-file creates replace nothing and keep their Fix. `includeDir` still writes `/` into git config, by design.
-	- Branch: nov19c-2026111910222859
-	- Commit: e96699f
-	- Closed reason: Done
-	- Acceptance signoff: Self-closed: [dfhmz] passed on vm925w.
-	- Closed: 20261119-210053
 
 - Code Review 20261119 item 32: design.md says the suites run on Windows under Git Bash
 	- ID: 2026111910222845
@@ -2309,6 +1787,67 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
+
+- Code Review 20261119 item 11: A stalled https remote hangs every command
+	- ID: 2026111910223148
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Steps to reproduce [Bug]: Point origin at a local http listener that accepts and never answers, then run gitsby status.
+	- Incorrect behavior [Bug]: It sits at git fetch until stopped. pullcom, sync and the push of sync --no-fetch do the same. Nothing is left half done after Ctrl-C.
+	- Expected behavior [Bug]: The fetch and probes give up after a while, as the comment at remote.go line 274 says.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: remoteEnv sets no http speed limit, only the ssh connect timeout.
+	- Origin: 88ff4ab, 2026-08-19. The comment came in 8c7a856. No round reached it.
+	- Closed reason: Done
+	- Actual cause [Bug]: git sets no time limit on http, and remoteEnv gave it none. Only ssh had a connect timeout.
+	- Actual fix [Bug]: The fetch, origin/HEAD healing, br prune's ls-remote and the repo probe run with GIT_HTTP_LOW_SPEED_LIMIT=1 and GIT_HTTP_LOW_SPEED_TIME=30, unless the caller set either one. gitsby status on a stalled http origin now warns that the fetch failed after 30 s and goes on.
+	- Branch: nov19c-2026111910223148
+	- Commit: 9561f20
+	- Test case: Go test [dfhez] TestRemoteReachesGiveUpOnAStalledHTTPRemote, the fetch, ls-remote and probe against a listener that never answers. Go test [dfhf0] TestRemoteEnvHTTPStallLimit, every return path of remoteEnv, and a caller's own limit kept.
+	- Verified: [dfhez] and [dfhf0] fail with the limit taken out, the fetch still waiting at 30 s, and pass with it. The built binary's status on a stalled http origin ended at 30 s with the offline warning. The quick gate passed with every area.
+	- Verified: git 2.51 and curl 8.14 on b23. The env variables outrank http.lowSpeedLimit and -c. A stalled TLS handshake isn't covered by the low-speed check, and ended at curl's 300 s connect limit.
+	- Swept: every git call that reaches origin outside a step: fetch and set-head in fetchRemote, ls-remote --heads in askOriginHeads, ls-remote in probeRemote. All read remoteEnv. The ssh probe in probeSSHLogin talks only ssh. Push, pull and clone run as steps.
+	- Decisions: Push, pull and clone are left as git runs them. They are steps the plan shows as typed, and the item's expected behavior names only the fetch and probes.
+	- Decisions: 30 s at under 1 byte a second. A server packing sends a keepalive every 5 s by default, so a busy one doesn't trip it, and a false trip only reads as offline.
+	- Decisions: A caller's GIT_HTTP_LOW_SPEED_LIMIT or GIT_HTTP_LOW_SPEED_TIME leaves both alone, like a caller's GIT_SSH_COMMAND. An http.lowSpeedLimit in git config is outranked, like ConnectTimeout in ssh_config, since reading it would cost a spawn per run.
+	- Decisions: A TLS handshake that never finishes is left at curl's 5 minutes. git has no connect timeout setting, and a watchdog on git's process can't tell a stall from a slow fetch.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261119-174233
+
+- Code Review 20261119 item 14: On Windows, curly single quotes in a branch name break out of a paste line
+	- ID: 2026111910223104
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261119-102231
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Push a branch named x, a right single quote, then ;hostname;# to origin. Merge it, make origin unreachable, and run gitsby -q br prune.
+	- Incorrect behavior [Bug]: The printed delete line, pasted into PowerShell 7 or 5.1, runs hostname.
+	- Expected behavior [Bug]: A pasted line passes the name as one argument.
+	- Reproduced [Bug]: 2026-11-19 on vm925w. Confirmed.
+	- Possible cause [Bug]: PowerShell reads the 4 curly single quotes as a quote, and typedArg doubles only the ASCII one.
+	- Origin: df38db0, 2026-09-15. No round saw it.
+	- Actual cause [Bug]: As read. typedArg doubled only the ASCII single quote, and PowerShell takes U+2018 to U+201B as single quotes too.
+	- Actual fix [Bug]: On Windows typedArg doubles all 5 of PowerShell's single quotes inside its quotes.
+	- Decisions:
+		- Fixed with item 29 (2026111910222886) as one class, in typedArg, which every paste line goes through.
+		- Off Windows a word that starts with = is quoted too, since zsh, the default shell on macOS, expands it to a command's path. shellWord, which spells the plan's commands, does the same. Same class, found by the new test's zsh leg.
+		- A branch named exactly --% is left alone. pwsh drops an argument whose value is --%, whatever the quoting, so no spelling passes it.
+	- Branch: nov19c-2026111910223104
+	- Commit: 7ca1e1a
+	- Test case: Go [dfhfc] TestPasteLinesReadBack runs each paste line through the real pwsh, sh and zsh, with git rev-parse --sq-quote in the git command's place, and checks that git got each word as named. [dcnmn] and [ddj3f] have new cases.
+	- Verified: [dfhfc], [dcnmn] and [ddj3f] fail on the code before the fix and pass after. Before it, a curly quote closed the quote and hostname ran, @foo reached git as no word, and zsh refused =x. Quick run of every area passed: test.bash 2159/0, fuzz 310/0, parity 31/0. Only pwsh 7.6 on Linux ran here, not Windows PowerShell 5.1 or pwsh's Windows argument passing.
+		- 2026-11-19 on vm925w (Windows 11 build 26200), from a Windows test build of nov19c at fca0441: [dfhfc] and [dcnmn] passed, with pwsh 7 and Windows PowerShell 5.1 both on PATH, so the test read every line back through both. [ddj3f] skipped there, since the box has no sh on PATH.
+	- Swept: every typedArg caller (branch.go, branchcmd.go, pr.go, release.go, mutate.go, and leaseDeleteLine in prune.go) goes through the one function, and no other code spells PowerShell quotes. shellQuote's Fix lines in accountcmd.go and show.go are only given off Windows. preview.go's git config --file plan line single-quotes a Windows path the sh way. It's a plan line rather than a paste line, like the unquoted plan lines beside it, and was left alone.
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: [dfhfc] passed on vm925w in pwsh 7 and Windows PowerShell 5.1.
+	- Closed: 20261119-210053
 
 - Code Review 20261119 item 7: pr create pushes to one branch and opens the PR on another
 	- ID: 2026111910223203
@@ -4586,6 +4125,444 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- In a sparse checkout, an edited tracked file outside it is left uncommitted at exit 0
+	- ID: 2026111920000538
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-200005
+	- Opened by:
+	- Steps to reproduce [Bug]: Set a sparse cone, write a tracked file outside it back into the tree and edit it, then run gitsby -q pullcom m.
+	- Incorrect behavior [Bug]: Status lists the file as modified, git add --all stages nothing for it, and gitsby says Nothing to commit and Done, exit 0.
+	- Expected behavior [Bug]: The edit is committed, or the run says why it isn't.
+	- Reproduced [Bug]: 2026-11-19 on b23, git 2.51, found while fixing 2026111910222973. Confirmed.
+	- Possible cause [Bug]: git add --all skips tracked paths outside the sparse patterns without an error, and nothing before the commit compares that with status.
+	- Origin: Go port. No round reached it.
+	- Closed reason: Done
+	- Actual cause [Bug]: git add --all skips a tracked path outside the sparse patterns without an error, even with its skip-worktree bit cleared, and the commit decides from the index after the add. So the edit was left out and the run said Done.
+	- Actual fix [Bug]: refuseSparseAdd also compares git diff with the paths its dry run of git add --all would take. In a sparse checkout, an edited tracked file the dry run leaves out is refused before the plan, in the same list as new files outside it, with the same two fixes. --staged is left alone.
+	- Branch: nov19c-2026111910222973
+	- Commit: 397c85f
+	- Test case: test.bash [dfhkj] to [dfhkm]; Go [dfhkn] TestSkippedEdits.
+	- Verified: [dfhkj] and [dfhkk] fail on be87857 and pass with the fix. [dfhkm], an edit and a delete inside the checkout, passes on both, and fails with the dry run's remove lines not read. A conflicted file in a sparse checkout still gets the conflict advice. The quick gate's lint, unit and suite areas passed: test.bash 2194/0. gosec reports nothing new in the changed files.
+	- Swept: the dry run is the only place gitsby asks what git add --all takes. Submodules are compared with --ignore-submodules=dirty, as treeDirty reads them, since add stages nothing for a dirty one.
+	- Decisions: Refuse, not stage with --sparse, as for 2026111910222973, since the checkout's shape is the user's choice. The comparison runs only when core.sparseCheckout is on, the one case where add skips an edit, so no other repo pays for it or can be refused by it. It is folded into the one dry run rather than a second check.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
+	- Closed: 20261119-200649
+
+- The Incoming list shows local commits as changes coming in
+	- ID: 2026111919195626
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-191956
+	- Opened by:
+	- Steps to reproduce [Bug]: Commit a new file on a branch that is also behind its upstream, then run gitsby status.
+	- Incorrect behavior [Bug]: Incoming lists the new local file as D, deleted, though a pull leaves it alone.
+	- Expected behavior [Bug]: Only what the upstream's commits change.
+	- Reproduced [Bug]: 2026-11-19 on b23, while working 2026111910223045. Confirmed.
+	- Possible cause [Bug]: showIncoming diffs HEAD..@{u}, which compares the 2 trees. HEAD...@{u} diffs from the merge base.
+	- Origin: show.go showIncoming, there since the port. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: showIncoming diffed HEAD..@{u}, which compares the 2 trees, so a commit of our own the upstream lacks showed reversed, a new file as deleted.
+	- Actual fix [Bug]: The list diffs HEAD...@{u}, from the merge base, so it shows only the upstream's own changes. A comment at the site says why. The changelog says so.
+	- Branch: nov19c-2026111910223045
+	- Commit: c57abf9
+	- Test case: test.bash [dfhj9].
+	- Verified: [dfhj9] fails with the build at 90f3e83 and passes with the fix, on a branch 1 ahead and 1 behind. The quick gate's lint, unit and suite areas passed: test.bash 2184/0.
+	- Swept: grep for ..@{u} and @{upstream} in src-go and test.bash. showIncoming was the only diff against the upstream. The ahead and behind counts come from rev-list, which counts each side apart.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
+	- Closed: 20261119-192853
+
+- br merge on a branch that tracks one of another name leaves that branch on origin and warns about the wrong one
+	- ID: 2026111913330350
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-133303
+	- Opened by:
+	- Related IDs: 2026111910223203
+	- Steps to reproduce [Bug]: Have feat track origin/feature-x under push.default=upstream while origin also has an older feat, add a commit, and run gitsby -q br merge.
+	- Incorrect behavior [Bug]: It pushes to feature-x, merges into dev, and asks to delete origin's feat. The lease refuses, so it warns that origin's feat has commits the merge doesn't, which is false, and feature-x stays on origin. Exit 0.
+	- Expected behavior [Bug]: The delete names the branch the push went to, as pr create's head does, or br merge refuses before the plan.
+	- Reproduced [Bug]: 2026-11-19 on b23, local bare origin, while fixing 2026111910223203. Confirmed.
+	- Possible cause [Bug]: The atomic push, mergeDeleteRemote and the plan name the current branch, while pushDest pushes to the upstream.
+	- Origin: The delete has named the current branch since the Go port, and a push to another name came with push.default=upstream. No round saw it. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: br merge's plan, its atomic push and its leased delete named origin's branch of the current branch's name, while the park push went where pushDest sends it: to an upstream of another name under push.default=upstream, or through a push refspec that renames it.
+	- Actual fix [Bug]: br merge's plan, atomic push, delete and offline note name the branch on origin the park push lands on, read by parkHead, which pr create now shares. br merge refuses before the plan where git would refuse the push, where the push goes to another remote or to a ref that isn't a branch, and where it lands on main, dev or the default branch, whether or not anything is left to push. design.md and the changelog say so.
+	- Branch: nov19c-2026111913330350
+	- Commit: 8f9e019
+	- Test case: test.bash [dfhfw] to [dfhg1]; Go TestMergeHead [dfhg7].
+	- Verified: [dfhfw] to [dfhg1] fail on the build before the fix and pass with it. [dfhg7] fails 4 of its 8 cases with mergeHead reading the current branch. The quick gate passed with every area: test.bash 2170/0, fuzz 310/0, parity 31/0, spawn counts unchanged. gosec has no finding in the changed lines.
+	- Swept: every place br merge names origin's copy: the plan's 2 delete lines, the for-each-ref that asks whether origin has it, the atomic push, mergeDeleteRemote and the offline note. pr create's head goes through the same parkHead. br prune deletes origin's branches by local name, and only ones already merged into the target, so it was left alone. pr ok reads its head from the git host.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-182500
+	- Decisions:
+		- The delete names the branch the push went to, rather than br merge refusing every branch that tracks another name, since under push.default=upstream that push is meant.
+		- Refused where pr create refuses, with the same way off, so the 2 commands that read the park push's head agree. A push to another remote is refused rather than left with no delete, since the merge goes to origin and gitsby's branch commands act on origin. Check: entry filed.
+		- A head on a protected branch is refused with br merge's own text, ahead of refuseParkPush's 'sync --direct', since after that the delete would still take dev.
+
+- Code Review 20261119 item 15: pr ok from another branch pulls that branch while its plan says the target
+	- ID: 2026111910223089
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: Stand on a branch whose upstream moved ahead, then run gitsby pr ok <n> and answer y.
+	- Incorrect behavior [Bug]: The plan says it checks out and pulls dev. The run fast-forwards the current branch instead and leaves dev stale.
+	- Expected behavior [Bug]: The run matches the plan.
+	- Reproduced [Bug]: 2026-11-19 on b23, with a fake gh. Confirmed.
+	- Possible cause [Bug]: cmdPrAccept in pr.go checks out the target only in some cases. The plan line in preview.go always names it.
+	- Origin: 4918b5b and 353f5c9, 2026-08-19. Plan line from c4fa47c. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: The plan always named a checkout and pull of the merge target. The run checked it out only when the current branch had no upstream once the merge's branch delete was pruned, and otherwise pulled the current branch. The worktree check read a third rule, the current branch being the PR's.
+	- Actual fix [Bug]: prOkMoves in pr.go is the one rule: pr ok moves to the merge target when the current branch has no upstream or tracks origin's copy of the PR's branch. It's read before the merge by the plan, the run and the worktree check. Otherwise the plan shows the pull of the current branch, and no checkout. The checkout line lost its asterisk, since it always runs when shown. The changelog says so.
+	- Branch: nov19c-2026111910223089
+	- Commit: 764fc97
+	- Test case: test.bash [dfhgf] to [dfhgk]. Go [dfh8b] TestRefuseHeldBranch, new case 'pr ok from a branch with no upstream'.
+	- Verified: [dfhgg], [dfhgh] and [dfhgj] fail on the build before the fix and pass with it. [dfhgf] and [dfhgk] pass on both, since the run itself didn't change there. The new [dfh8b] case fails before the fix. The quick gate passed with every area: test.bash 2175/0, fuzz 310/0, parity 31/0, spawn counts OK. gosec reports nothing in the changed files.
+	- Swept: every reader of where pr ok ends: previewPr, cmdPrAccept and checkoutsAhead now share prOkMoves. mergePushesOwn and previewBackMerge read only the hotfix back-merge, which is unchanged. No other site compares the PR's branch with the current one, other than preflight's refusal wording.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-183738
+	- Decisions:
+		- The plan follows the run, not the other way round. Code Review 20260725 item 5 moved pr ok to the merge target only when the branch it stood on went away, so a run from another branch stays there. Moving it to the target every time would switch branches under work the PR has nothing to do with.
+		- The local copy of the merge target stays behind origin's after a run from another branch, as any branch not checked out does. The next br switch to it pulls it. The issue named that as wrong, but its expected behavior asks only that the run match the plan.
+		- The answer is settled before the merge. The run also still moves when the prune took the current branch's upstream, which can only happen when someone deleted it on origin since the first fetch, since pulling it would then fail after the merge.
+		- Under --no-fetch, a run standing on the PR's branch now moves to the merge target, as its plan always said. It used to stay, since nothing was pruned. Unverified: read from the code, not run.
+	- Note: [dfh8b]'s fixture now gives w an upstream, so its 'pr ok of another branch' case still checks nothing out under the new rule. Its asserts are unchanged.
+
+- Code Review 20261119 item 16: After an autostash conflict, sync, br switch and pr create say to run pullcom again
+	- ID: 2026111910223074
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: Edit a file that origin's branch also changed, then run gitsby -q sync.
+	- Incorrect behavior [Bug]: It says to run gitsby pullcom again. That commits, but doesn't push, switch or open the PR.
+	- Expected behavior [Bug]: It names the command that was run.
+	- Reproduced [Bug]: 2026-11-19 on b23, all 3 commands. Confirmed.
+	- Possible cause [Bug]: cmdCommit passes pullcom by name to refuseConflicts. pullIfOnline already uses typedName.
+	- Origin: 8dfe5ff, nov18. Missed twin of that fix.
+	- Closed reason: Done
+	- Actual cause [Bug]: cmdCommit named pullcom in its conflict advice whatever command ran. Every command that parks reaches it after its autostash pull: sync, br switch, br create and br hotfix off a feature branch, br merge, pr create and release.
+	- Actual fix [Bug]: One helper builds the advice from the command as typed, with its branch, version or remote. cmdCommit and the pull check in pullIfOnline both use it.
+	- Test case: test.bash [dfhh3] to [dfhh5]; Go [dfhh2] TestRerunNamesTheCommand.
+	- Verified: [dfhh4] fails on the build before the fix, where all 5 commands named pullcom, and passes with it. [dfhh2] fails with the helper made to name pullcom. The quick gate passed with every area: test.bash 2178/0, fuzz 310/0, parity 31/0.
+	- Swept: every refuseConflicts caller, by grep: cmdCommit (pullcom, sync, every cmdPush park, repo create and repo connect) and pullIfOnline. Both now take the same helper. release is covered by [dfhh2] only, not by a suite check.
+	- Decisions: The advice keeps the target argument for br create, br hotfix, br switch, release, repo create and repo connect, and --staged where the run had it (2026111918550541). It leaves off a commit message, a PR title and the other options, as pullcom's advice did.
+	- Branch: nov19c-2026111910223074
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261119-185455
+	- Commit: 5c6bdc8
+
+- Code Review 20261119 item 17: br merge pushes your own commits on dev with no --direct warning
+	- ID: 2026111910223060
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: On dev, commit with gitsby -q pullcom, then switch to a feature branch and run gitsby -q br merge.
+	- Incorrect behavior [Bug]: The direct commit goes to origin's dev with the merge, exit 0. sync on dev refuses the same push.
+	- Expected behavior [Bug]: br merge warns, and refuses under -q, when the target has commits of its own to push.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: directPush exempts br merge, since it refuses to run from a protected branch. That doesn't cover commits already on the target.
+	- Origin: Sibling of 2026111016332380, nov18.
+	- Closed reason: Done
+	- Actual cause [Bug]: directPush covers only sync and br switch, and br merge's push of its target, or of dev after a hotfix's back-merge, took whatever commits that branch had of its own.
+	- Actual fix [Bug]: br merge warns above the prompt, and -q refuses, when the branch it merges into, or dev for a hotfix's back-merge, has commits of its own that its upstream doesn't. pr ok's back-merge asks too. A merge left on dev doesn't count, as for sync. The ways off are 'git branch <branch-name> dev', then 'git branch -f dev origin/dev', or 'gitsby br switch dev', then 'gitsby sync --direct'. design.md and the changelog say so.
+	- Branch: nov19c-2026111913330350
+	- Commit: 8f9e019
+	- Test case: test.bash [dfhg2] to [dfhg6]; Go TestMergePushesOwn [dfhg8].
+	- Verified: [dfhg2], [dfhg3], [dfhg4] and [dfhg6] fail on the build before the fix and pass with it. [dfhg5] passes on both, since a merge went out before too. [dfhg8] fails 3 of its 9 cases with mergePushesOwn answering nothing. The quick gate passed with every area: test.bash 2170/0, fuzz 310/0, parity 31/0, spawn counts [df37t] and [df37v] unchanged, since a target level with its upstream is read from branchRefs's one for-each-ref.
+	- Swept: every push of a branch other than the one the run started on: br merge's target push, atomic or not, the hotfix back-merge's push of dev from br merge and pr ok, and release's pushes of main and dev. release stays out, per 2026111016332380. pr ok pushes nothing else of its own.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-182500
+	- Decisions:
+		- No --direct for br merge. The ways off name 'sync --direct' from dev, which keeps --direct's command list as 2026111910223293 left it. Check: entry filed.
+		- The way to keep the commits off names 2 plain git commands run from where br merge stands, since dev isn't checked out and 'git branch -f' needs no switch.
+		- Only a target with an upstream counts, as for sync, so a dev never pushed goes up as a first publish without asking.
+		- The target's tip is compared with its upstream's from branchRefs first, so a level target costs no git call.
+
+- Code Review 20261119 item 18: The Incoming list shows a tab as the escape marker
+	- ID: 2026111910223045
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: Have a branch behind its upstream and run gitsby status.
+	- Incorrect behavior [Bug]: Incoming lines read M, the tab escape marker, then the file name. A rename shows two.
+	- Expected behavior [Bug]: Readable columns.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: git diff --name-status output goes through printable, which escapes the tab. [da9v4] checks only the word Incoming.
+	- Origin: 2be7d35, 2026-10-06, then 320e15d. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: git diff --name-status splits its fields with tabs, and the list printed each line through printable, which shows a tab as an escape.
+	- Actual fix [Bug]: The Incoming list splits each line on its tabs and prints the status padded to the widest one, then the name. A rename or copy reads old -> new, as git status --short has it. git quotes a name with a tab in it, so the split can't cut one. The changelog says so.
+	- Branch: nov19c-2026111910223045
+	- Commit: 62f3b17
+	- Test case: test.bash [dfhj0], [dfhj1] and [dfhj2]. Go [dfhhz] TestNameStatusColumns.
+	- Verified: [dfhj0] to [dfhj2] fail with the build before the fix and pass with it. [dfhhz] fails with the split taken out. The quick gate passed with every area: test.bash 2183/0, fuzz 310/0, parity 31/0.
+	- Swept: every list printed through showList and showLines. git status --short, ls-files and diff --name-only have no tabs in their output. pr list goes straight to the terminal. The diff in showIncoming was the only tab-split output.
+	- Decisions: The similarity score stays on a rename, as git prints it, and the status column is padded so the names line up.
+	- Note: The list also shows local commits as incoming, filed as 2026111919195626.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261119-192011
+
+- Code Review 20261119 item 19: -m given twice keeps only the last message
+	- ID: 2026111910223031
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: Run gitsby -q pullcom -m first -m second.
+	- Incorrect behavior [Bug]: It commits with subject second and exits 0.
+	- Expected behavior [Bug]: Refuse 2 messages, as a typed word beside -m is refused.
+	- Reproduced [Bug]: 2026-11-19 on b23, also pr create. Confirmed.
+	- Possible cause [Bug]: The -m setter in args.go overwrites.
+	- Origin: Missed sibling of 2026111016332070, round-20261111.
+	- Closed reason: Done
+	- Actual cause [Bug]: The -m setter in optSpecs overwrote the value, so only the last -m was kept.
+	- Actual fix [Bug]: Every -m is kept as typed, and checkOptionsUsed refuses more than one with all of them quoted, on every command that takes -m. A command that takes no -m still gets that refusal first. The changelog says so.
+	- Branch: nov19c-2026111910223045
+	- Commit: 36604e8
+	- Test case: test.bash [dfhj3]. Go [dfhhy] TestRepeatedMessageRefused.
+	- Verified: [dfhj3] fails with the build before the fix, which committed with subject second at exit 0, and passes with it. [dfhhy] fails with the check turned off. The quick gate passed with every area.
+	- Swept: every command that takes -m: pullcom, sync, br create, br hotfix, br switch, br merge, pr create, release, repo create and repo connect all go through checkOptionsUsed. A -m after raw's tool name is the tool's and is passed on, pinned in [dfhhy]. --config is the only other option with a value, and it was left as last one wins, as a setting usually is.
+	- Decisions: Refused, as the item asks, rather than joined as paragraphs as git commit does, since each gitsby -m is a whole message or title.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261119-192011
+
+- Code Review 20261119 item 21: When a 2.x file can't be converted, its notice says two opposite things
+	- ID: 2026111910223002
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102230
+	- Opened by:
+	- Steps to reproduce [Bug]: Write a 2.x accounts file with a value holding a lone double quote before a #, then run gitsby account list.
+	- Incorrect behavior [Bug]: The head says this run read it the old way, and the Why line says it read it the new way.
+	- Expected behavior [Bug]: One account of how the file was read.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: The head and the Why line are written apart in config.go and cfgformat.go.
+	- Origin: ca74ed4, nov18. Regression of item 2026111016332218's notice.
+	- Closed reason: Done
+	- Actual cause [Bug]: The head said the run read the file in the old format, which holds only when no line reads differently. For a line no quote fits, the run reads the converted text, and the Why line said so on its own.
+	- Actual fix [Bug]: The head alone says how the run read the file, from a readNew field set with the Why line in config.go's load. It says the new format for a line no quote fits, and that format otherwise. The Why line names the line and no longer says how it was read, so the refusal in 'account set', which repeats it, doesn't either.
+	- Decisions: The head was changed rather than the reading, since reading the file the 2.x way needs the 2.x module, which stays out of the binary per design.md. The head says the new format rather than naming the line, since more than one line can read differently and the Why line names only the first.
+	- Branch: nov19c-2026111910223002
+	- Test case: Go `[dfhjk]` TestOld2xNoticeOneReading: a line no quote fits reads the new way and the head says so, a file kept for an unwritable folder reads the 2.x way and the head says that, and neither the notice nor the refusal says otherwise. test.bash `[dfhjm]` the steps' file through the binary.
+	- Verified: `[dfhjk]` fails on the previous config.go and cfgformat.go, and `[dfhjm]`'s check fails on the binary built from them. Both pass with the fix. Quick gate, every area: test.bash 2185/0, fuzz 310/0, parity 31/0.
+	- Swept: every other place that sets the migration's why is replaceOldFormat's write path, and none of them says how the file was read. The flat and old-pin notices read the file in that format when not converted, so the head holds for them.
+	- Acceptance signoff: Self-closed: reproduced, and its tests fail before the fix and pass after.
+	- Closed: 20261119-193639
+	- Commit: 33d0ae7
+
+- Code Review 20261119 item 22: On an unborn branch with an origin, br create renames the branch, then fails
+	- ID: 2026111910222988
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Steps to reproduce [Bug]: git init, add files, add an empty bare origin, then run gitsby -q br create nb.
+	- Incorrect behavior [Bug]: HEAD moves to the unborn nb, then the push fails with src refspec HEAD does not match any, exit 1.
+	- Expected behavior [Bug]: Refuse up front, saying there are no commits yet.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: Preflight doesn't check that HEAD has a commit.
+	- Origin: Go port. No round reached it.
+	- Closed reason: Done
+	- Actual cause [Bug]: br create and br hotfix ran 'checkout -b' from the branch they start from without checking it had a commit. Standing on an unborn base, that only renames the branch, and the push of HEAD then fails.
+	- Actual fix [Bug]: Both refuse in preflight when the base has no commit here and the run stands on it, naming pullcom with no origin and repo connect with one. When origin has the base, the refusal says so and leaves getting it to raw git. A base that is another branch existing only on origin still works, as before.
+	- Test case: Go TestUnbornBase [dfhjw]; test.bash [dfhjx] and [dfhjy].
+	- Verified: [dfhjw] fails 4 of its 5 cases with the refusal stubbed out, and [dfhjx] and [dfhjy] fail on the build before the fix. All pass with it. The quick gate passed with every area: test.bash 2187/0, fuzz 310/0, parity 31/0.
+	- Swept: br create and br hotfix are the only commands that 'checkout -b' from where they stand, by grep. The other 2 start from an origin ref. On an unborn main, br switch, br merge, sync and pr create already refuse before the plan, pullcom makes the first commit, and br prune finds nothing. On an unborn feature branch beside origin's main and dev, br create, br hotfix and br switch work, since the park push makes the first commit. br merge there is 2026111919473452.
+	- Decisions: Refused with no origin too, since there 'checkout -b' renames the unborn branch and exits 0, leaving no branch of the base's name. The advice names repo connect with an origin, since it publishes a repo with no commits, and pullcom without one.
+	- Branch: nov19c-2026111910222988
+	- Commit: 860c967
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-194717
+
+- Code Review 20261119 item 23: In a sparse checkout, a failed git add leaves the index half staged
+	- ID: 2026111910222973
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Steps to reproduce [Bug]: Set a sparse cone, add a file inside and outside it, edit one outside, then run gitsby -q sync.
+	- Incorrect behavior [Bug]: git add --all fails after the plan, with one file staged and one not, exit 1 with only git's advice.
+	- Expected behavior [Bug]: Refuse before the plan, or say the index was left partly staged.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: cmdCommit doesn't know about sparse checkout.
+	- Origin: Go port. No round reached it.
+	- Closed reason: Done
+	- Actual cause [Bug]: In a sparse checkout, git add --all stages what is inside it, then exits 1 over a new file outside it. Nothing before the plan asked, so the run stopped after the pull with the index half staged.
+	- Actual fix [Bug]: Every command whose commit stages the whole tree runs the same add as a dry run before the plan. When git names files outside the sparse checkout, the run refuses, lists them, and says how to take them in or use --staged.
+	- Branch: nov19c-2026111910222973
+	- Commit: be87857
+	- Test case: test.bash [dfhk8] to [dfhkb]; Go [dfhkc] TestSparseAddPaths.
+	- Verified: [dfhk8] and [dfhk9] fail on the build before the fix and pass with it. [dfhka] (--staged) and [dfhkb] (br create off dev) pass on both, as guards. The fixture turns advice.updateSparsePath off, since git still lists the files then. The quick gate passed with every area: test.bash 2191/0, fuzz 310/0, parity 31/0. gosec reports nothing new in the changed files.
+	- Swept: git add runs only in cmdCommit, by grep for "git", "add" in src-go. Its callers are pullcom, sync, br switch, br merge, br create and br hotfix off a feature branch, pr create, release, repo create and repo connect; stagesTree names each. --staged never stages, so it isn't checked.
+	- Decisions: Refuse rather than stage with --sparse, since the sparse checkout is a choice the run shouldn't undo, and the expected behavior asks for a refusal. Only git's sparse-path failure is refused; any other dry-run failure, such as a held index lock, is left to the real add. LC_ALL=C keeps git's lead in English; no git translation is installed here, so that part isn't pinned. An edited tracked file outside the checkout is a separate case, filed and fixed as 2026111920000538.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261119-200016
+
+- Code Review 20261119 item 25: safe-rm.ps1 doesn't refuse cmd's other separators
+	- ID: 2026111910222942
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Set TEMP to a folder whose name holds a comma, semicolon or equals sign, then let the guard remove a test folder under it.
+	- Incorrect behavior [Bug]: The guard passes it, and cmd's rmdir splits the path into two.
+	- Expected behavior [Bug]: The guard refuses those characters too, or anything outside a short safe set.
+	- Reproduced [Bug]: 2026-11-19 on b23, under pwsh 7.6 with a stand-in cmd.exe. A TEMP holding a comma reached rmdir. No Windows box has one.
+	- Possible cause [Bug]: The refused set at safe-rm.ps1 line 28 stops at &|<>^%"().
+	- Origin: f7e1c0b, round-20261111. Missed twin of that class fix.
+	- Actual cause [Bug]: As read. The guard refused a list of cmd's characters, and the list missed , ; and =, which cmd splits at.
+	- Actual fix [Bug]: safe-rm.ps1 refuses a full path with any character outside letters, digits, space and _.:~\/-, before rmdir runs. The refusal text stays the same.
+	- Decisions: An allowed set rather than a longer refused list, as the expected behavior offers, so a character nobody listed is refused too. Letters and digits are Unicode ones, so a user folder with an accented name still passes. ~ stays for 8.3 short names, space because 5.1 quotes it, and / because pwsh off Windows spells paths with it. A folder with any other character, such as an apostrophe or a plus, is now left behind with a note.
+	- Branch: nov19c-2026111910222942
+	- Commit: f829287
+	- Test case: test.bash [dfhks] runs the guard under pwsh with TEMP holding each of 20 other characters, then one with only safe ones, a space, a ~ and an accented letter among them, which is removed as usual. [df50j] and [dez5g] still pass.
+	- Verified: [dfhks] fails on the previous safe-rm.ps1 (the comma folder went) and passes after. It also goes red with ~, space or Unicode letters taken out of the set. Quick run of every area passed: test.bash 2195/0, fuzz 310/0, parity 31/0. Not run on Windows.
+		- 2026-11-19 on vm925w, with nov19c's safe-rm.ps1 at fca0441: a win-bash-run.bash run, and the Go test run's cleanup, each removed its test_gitsby folder under C:\Users\collierjr\AppData\Local\Temp, so the box's real %TEMP% passes the safe set.
+	- Swept: safe-rm.ps1 is the only script that calls cmd.exe with a path, by grep of cicd, install.ps1 and src-go. config_windows_test.go's mklink takes a Go temp path through Go's own quoting, a test only, left alone.
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: the guard removed a test folder under vm925w's real %TEMP%.
+	- Closed: 20261119-210053
+
+- Code Review 20261119 item 26: release.bash publishes a dot-suffixed version as a full release
+	- ID: 2026111910222928
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Steps to reproduce [Bug]: Cut v3.0.0.rc1 with release.bash.
+	- Incorrect behavior [Bug]: The version passes the check, but the pre-release test only looks for a dash, so no --prerelease, and installers take it as the newest full release.
+	- Expected behavior [Bug]: Any suffix the version check admits, dot or dash, makes a pre-release, as gitsby's nextVersion reads it.
+	- Reproduced [Bug]: 2026-11-19 on b23, fIsReleaseVersion v3.0.0.rc1. Confirmed.
+	- Possible cause [Bug]: release.bash lines 325 and 349 test only for a dash.
+	- Origin: ed296a4, 2026-09-16. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: As the possible cause says. Phase 3's check of which release the install line takes also called a tag full by its lack of a dash.
+	- Actual fix [Bug]: release.bash calls a version a candidate when the shared version pattern finds anything past X.Y.Z, after a dash or a dot. That one test makes the pre-release, promotes the last tag to its plain version, and reads the install line's tag. design.md's release policy names the dot form.
+	- Decisions: The pre-release message says a suffix, not a semver suffix, since a dot suffix isn't semver. A dotted suffix is still taken rather than refused, since 'gitsby release' takes it and its nextVersion reads it as a candidate.
+	- Against: 2026111016332132's Decisions row, which left a dotted suffix publishing as a full release, unchanged. This item asks for the change, and the standing rule calls any suffixed tag a candidate.
+	- Swept: every dash test on a version in release.bash: the bump (was line 325), the pre-release flag (349) and phase 3's install line check (619). The asset name split at 235 is a file name, not a version. Go's nextVersion already reads any suffix. Installers go by GitHub's pre-release flag, not the tag. The tag sort is the same class and is filed as 2026111920273377.
+	- Branch: nov19c-2026111910222928
+	- Test case: test.bash [dfhm3] [dfhm4], and [dd5es] for the dash form.
+	- Verified: [dfhm3] and [dfhm4] fail against the old release.bash and pass after. Quick gate passed, every area: test.bash 2197/0, fuzz 310/0, parity 31/0.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261119-202747
+	- 2026-11-19: [dd5es] now looks for 'has a suffix', was 'has a semver suffix', for the message this item changed. The rest of the check is as it was.
+
+- Code Review 20261119 item 29: On Windows, a paste line leaves a branch name starting with @ unquoted
+	- ID: 2026111910222886
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Make a branch @foo and get a line that names it, such as from br prune.
+	- Incorrect behavior [Bug]: The line has git switch @foo, which PowerShell reads as splatting, so git gets no branch.
+	- Expected behavior [Bug]: typedArg quotes a word that starts with @ on Windows.
+	- Reproduced [Bug]: 2026-11-19 on vm925w, in pwsh 7 and 5.1. Confirmed.
+	- Possible cause [Bug]: typedArg in prune.go quotes only on its listed characters.
+	- Origin: df38db0, 2026-09-15. No round saw it.
+	- Actual cause [Bug]: As read. @ is in typedArg's plain set, and PowerShell reads a word that starts with it as splatting.
+	- Actual fix [Bug]: On Windows typedArg quotes a word that starts with @.
+	- Decisions: Fixed with item 14 (2026111910223104) as one class. Its Decisions and Swept rows cover both.
+	- Branch: nov19c-2026111910223104
+	- Commit: 7ca1e1a
+	- Test case: Go [dfhfc] TestPasteLinesReadBack, with git switch @foo and git switch @ among its lines, and [dcnmn].
+	- Verified: [dfhfc] and [dcnmn] fail on the code before the fix (git got no word for @foo) and pass after. Only pwsh 7.6 on Linux ran here.
+		- 2026-11-19 on vm925w (Windows 11 build 26200), from a Windows test build of nov19c at fca0441: [dfhfc] and [dcnmn] passed, with pwsh 7 and Windows PowerShell 5.1 both on PATH.
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: [dfhfc] passed on vm925w in pwsh 7 and Windows PowerShell 5.1.
+	- Closed: 20261119-210053
+
+- Code Review 20261119 item 30: On Windows, a git.bat or git.cmd on PATH re-reads gitsby's arguments through cmd
+	- ID: 2026111910222873
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Put a git.bat that calls git.exe ahead of git.exe on PATH, with a branch named x&ver, then run gitsby -q br switch x&ver --no-fetch.
+	- Incorrect behavior [Bug]: cmd runs ver, and gitsby exits 0 still on main. raw git exits 0 where git would exit 128.
+	- Expected behavior [Bug]: gitsby skips or refuses a batch file match, and names it.
+	- Reproduced [Bug]: 2026-11-19 on vm925w, also with git.cmd and a name holding %PATH%. Confirmed.
+	- Possible cause [Bug]: walkTool in exec.go accepts .bat and .cmd, and Go doesn't quote for cmd.
+	- Origin: c14672e, 2026-10-21. exec.LookPath did the same before it. No round saw it.
+	- Actual cause [Bug]: As guessed. Windows runs a .bat or .cmd file through cmd, which reads the command line again, so an `&` in an argument runs what follows and `%NAME%` expands. Go quotes only for the program's own parser.
+	- Actual fix [Bug]: On Windows the PATH walk that every spawn and `raw` use passes over a .bat or .cmd file and takes the next program. With none left, the "Not found in path" refusal names the batch file. A program named by its path is refused when it is a batch file, PATHEXT included.
+	- Decisions: Pass over rather than refuse, as with gitsby's own entry, since a batch file can't be run safely at all. The batch file is named only in the refusal when nothing else is found. A warning on each pass-over would have to be a refusal under `-q`, per the UI style guide, so skip and refuse would differ only interactively. This departs from "names it" when another program is found. The tool cache key now holds PATHEXT too, since the look reads it.
+	- Test case: Go `[dfhmh]` (batch names, refusal text), and Windows-only `[dfhmj]` (the walk passes over .bat and .cmd, the refusal names them, a given path is refused) and `[dfhmk]` (a real run: an `&` and a `%NAME%` argument never reach cmd).
+	- Verified: the quick gate, every area, on the fix (test.bash 2197/0, fuzz 310/0, parity 31/0). Under wine, `[dfhmk]` fails on the build before, with cmd running the text after the `&` and expanding the name, and passes after. `[dfhmj]` fails with the path check taken out. gosec gives the same 37 findings before and after.
+		- 2026-11-19 on vm925w (Windows 11 build 26200), from a Windows test build of nov19c at fca0441: [dfhmj], [dfhmk] and [dfhmh] passed.
+	- Swept: every spawn goes through toolPath (`TestOneSpawnSite`): the findTool callers, `raw`'s own walkTool and its handover, and the ssh probe, whose program can be a path. install.ps1 runs no tool by bare name. The test-only `cmd /c mklink` runs cmd.exe itself.
+	- Branch: nov19c-2026111910222873
+	- Commit: 3058008
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: [dfhmj] and [dfhmk] passed on vm925w.
+	- Closed: 20261119-210053
+
+- Code Review 20261119 item 31: On Windows, a held accounts file gives the wrong Fix and mixed slashes
+	- ID: 2026111910222859
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Open config.shcl from another program without share-delete, then run gitsby -q account set <account> email x@y.
+	- Incorrect behavior [Bug]: It refuses with the file intact, but the Why line shows AppData\Roaming/gitsby/config.shcl and the Fix says to make the folder writable.
+	- Expected behavior [Bug]: Backslashes, and a Fix that says another program may have the file open.
+	- Reproduced [Bug]: 2026-11-19 on vm925w. Confirmed.
+	- Possible cause [Bug]: The candidate path is built with a slash, and the Fix reasons from POSIX only.
+	- Origin: b64bc2e, 2026-10-03. No round saw it.
+	- Actual cause [Bug]: `configCandidatesFor` joined the Windows path with `/`, and shcl quotes the path as given in its save error. The Fix took a refused rename to mean the folder's permissions, but Windows also refuses a rename over a file another program holds without delete sharing, and shcl files both as permission denied.
+	- Actual fix [Bug]: The candidates use the platform's separator. On Windows, a refused replace of the accounts file, an account fragment or the global git config says another program may have it open, then names the permissions. `causeText` drops a rename error's paths, as it does a path error's, since the File line has the path.
+	- Decisions: On Windows the Fix names both causes, the held file first, since Windows and shcl report a held file and a folder ACL with the same code. The Why line keeps shcl's own message, which names the file, now with backslashes.
+	- Test case: Go `TestAccountSetSaveOverAHeldFile` [dfhmz] (Windows only), `TestReplaceFixNamesAHeldFileOnWindows` [dfhmx], `TestCauseTextDropsTheRenamePaths` [dfhmy], and the Windows cases of `TestConfigCandidatesKeepDotConfig` [df05s] and `TestConfigCandidatesFor` [dbjjn].
+		- 2026-11-19: [df05s] and [dbjjn] now want the Windows candidates with backslashes, `C:\App\gitsby\config.shcl` and `C:\Users\jc\.config\gitsby\config.shcl`, where they wanted `C:\App/gitsby/config.shcl` and `C:\Users\jc/.config/gitsby/config.shcl`. The [dbjjn] case "falls back to the Unix spelling" is now "falls back to dot-config".
+	- Verified: under wine, [dfhmz] fails on the build before, with `\002/gitsby/config.shcl` in the Why lines and a Fix naming only the folder, and passes after. [dfhmx], [dfhmy] and the candidate cases fail before and pass after on Linux too. The whole Windows test binary under wine fails the same 5 other tests before and after. The quick gate, every area, passed (test.bash 2197/0, fuzz 310/0, parity 31/0). gosec gives 37 findings, none on a changed line.
+		- 2026-11-19 on vm925w (Windows 11 build 26200), from a Windows test build of nov19c at fca0441: [dfhmz], [dfhmx], [dfhmy], [df05s] and [dbjjn] passed. Only those tests ran there, not the whole Windows test binary.
+	- Swept: every candidate in `configCandidatesFor`, and every `writeRefusal` whose step renames over a file: the accounts file save, the fragment replace and the global git config replace. The lock and the new-file creates replace nothing and keep their Fix. `includeDir` still writes `/` into git config, by design.
+	- Branch: nov19c-2026111910222859
+	- Commit: e96699f
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: [dfhmz] passed on vm925w.
+	- Closed: 20261119-210053
 
 - Code Review 20261119 item 20: account unset on a dotted key line changes lines the plan doesn't name
 	- ID: 2026111910223016
@@ -6904,6 +6881,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddf4q] and [ddf4r] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- Conflict advice after a --staged run drops --staged
+	- ID: 2026111918550541
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-185505
+	- Opened by:
+	- Requirements [Feature]: When a --staged run stops on unresolved conflicts, the command it says to run again keeps --staged. Without it the rerun commits the whole tree, sweeping in edits left out on purpose.
+	- Notes: rerunText in mutate.go left off every option. With --staged no pull uses --autostash, so only a conflict already in the tree reaches this.
+	- Origin: found while fixing 2026111910223074. Read only.
+	- Closed reason: Done
+	- Done: The rerun advice keeps --staged wherever the run had it, after the command and its target.
+	- Test case: test.bash [dfhh6]; Go [dfhh2] TestRerunNamesTheCommand, with 4 new --staged cases and a check that --staged reads back.
+	- Verified: [dfhh6] fails on the build before the fix, where the advice said 'gitsby sync', and passes with it. [dfhh2] fails its 5 --staged cases before the fix and passes after. lint, unit and suite passed: test.bash 2179/0.
+	- Swept: rerunText is the one place the advice is built, for both refuseConflicts callers.
+	- Decisions: --staged goes last, after the target, where the parser takes it like any option. The other options, such as -q and --no-fetch, stay off: dropping them changes nothing about what is committed.
+	- Branch: nov19c-2026111910223074
+	- Acceptance signoff: Self-closed: its test failed before the fix and passes after.
+	- Closed: 20261119-190622
+	- Commit: cf81f3c
+	- 20261119: [dfhh2]'s case for 'sync --staged' expects 'sync --staged', not 'sync', as this item asks.
 
 - Code Review 20261110b enhancement 1: sync re-creates a branch on origin that was deleted after its PR merged
 	- ID: 2026111016331930
