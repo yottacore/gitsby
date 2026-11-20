@@ -47,93 +47,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: Refuse before the plan, as br merge does for the same branch, if every git host refuses it. GitLab and Gitea may not, which needs checking first.
 	- Origin: Go port. Found while sweeping 2026111919473452. Plausible.
 
-- A candidate suffixed after a dot sorts above its own release in every tag scan
-	- ID: 2026111920273377
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-202733
-	- Opened by:
-	- Related IDs: 2026111910222928
-	- Steps to reproduce [Bug]: Tag v3.0.0.rc1, then v3.0.0, then run 'gitsby release' or release.bash with no version.
-	- Incorrect behavior [Bug]: git's version sort with versionsort.suffix=- ranks v3.0.0.rc1 above v3.0.0, so the newest tag reads as the candidate, the next version comes out as v3.0.0 again, and the cut stops on a tag that exists. gen-winres.bash and the demo stamp take the candidate's version too.
-	- Expected behavior [Bug]: A candidate sorts below its own release whether its suffix follows a dash or a dot.
-	- Reproduced [Bug]: 2026-11-19 on b23, the sort only, in a temp repo with tags v3.0.0, v3.0.0.rc1 and v3.0.0-rc.2. Adding versionsort.suffix=. puts v3.0.0 first. The cut that follows is read, not run.
-	- Possible cause [Bug]: The tag scans in src-go/release.go (resolveRelease and the --points-at one), cicd/release.bash, cicd/utility/gen-winres.bash and the demo stamp in cicd/cicd.bash pass only versionsort.suffix=-.
-	- Origin: ed296a4, 2026-09-16, with the dotted suffix the version check admits. Found while fixing 2026111910222928. Plausible for the cut, Confirmed for the sort.
-	- Closed reason: Done
-	- Actual cause [Bug]: As the possible cause says. git calls a suffix a pre-release only after the separator it's given, and every scan gave it only a dash. gitsby's newestReleaseTag took git's first v tag as it came.
-	- Actual fix [Bug]: gitsby's newestReleaseTag weighs every tag by number, then a release over its own candidate, and git's order only breaks a tie. The three scripts share fReleaseTags in cicd/config.bash, which gives git a dot as well as a dash. changelog.md has a line under vNEXT.
-	- Decisions: gitsby weighs the tags itself rather than giving git a dot suffix, since it runs on any repo, and a dot suffix ranks v1.2 above v1.2.1. The scripts give git the dot, since they run only here, where every tag cut is X.Y.Z. A tag with a fourth number, such as v1.2.3.4, counts as a candidate of v1.2.3 in both, as the version check and nextVersion already read it.
-	- Swept: every tag scan that sorts: resolveRelease and unpushedRelease's --points-at scan in release.go, release.bash, gen-winres.bash, and the demo stamp in cicd.bash. branchcmd.go's call to newestReleaseTag only asks whether any tag exists. The installers go by GitHub's pre-release flag. legacy/bin/gitsby.ps1 has the same scan and is frozen at v2.1.0.
-	- Branch: nov20-2026111920273377
-	- Test case: Go [dfj8g], test.bash [dfj8h] [dfj8j] [dfj8k] [dfj8m] [dfj8n]
-	- Verified: each fails against the old code and passes after. [dfj8h] runs the cut the item read only: 'gitsby release' stopped on the existing v3.0.0. Quick gate passed, every area: test.bash 2204/0, fuzz 310/0, parity 31/0. gosec 37, as before.
-	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
-	- Closed: 20261120-072915
-
-- br merge from a branch that shares no history with dev pushes it, switches to dev, then fails
-	- ID: 2026111919473452
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-194734
-	- Opened by:
-	- Related IDs: 2026111910222988
-	- Steps to reproduce [Bug]: git init -b feat, add origin with main and dev, fetch, stage a file, then run gitsby -q br merge.
-	- Incorrect behavior [Bug]: The park push commits and pushes feat, checks out dev, then git refuses to merge unrelated histories. It ends on dev, exit 1.
-	- Expected behavior [Bug]: Refuse before the plan when the branch and its target share no commit, or end back on the branch.
-	- Reproduced [Bug]: 2026-11-19 on b23, local bare origin, while fixing 2026111910222988. Confirmed.
-	- Origin: Go port. No round saw it.
-	- Closed reason: Done
-	- Actual cause [Bug]: Nothing before the plan asked whether the branch shares a commit with its target. git refuses to merge unrelated histories only at the merge, after the park push and the checkout, and that failure isn't a conflict, so backOutMerge left the run on the target.
-	- Actual fix [Bug]: br merge refuses before the plan when the branch has no commits yet, or shares no commit with its target, the local one or else origin's. The unborn case names git switch to the target, then br create, which takes the work along. The other names git merge --allow-unrelated-histories as raw-git territory, and a shallow clone names git fetch --unshallow. The changelog says so.
-	- Test case: test.bash [dfj98] to [dfj9c]; [dcnqy] updated.
-	- Verified: [dfj98] to [dfj9c] fail with the refusal stubbed out and pass with it. The repro from the item and an orphan branch both refuse with nothing pushed, still on the branch; the unborn way off was run and merged. The quick gate passed with every area: test.bash 2209/0, fuzz 310/0, parity 31/0. gosec reports the same 37 hits.
-	- Swept: every local merge: br merge's, which this covers for hotfix branches too through branchTarget; the hotfix back-merge of main into dev and release's merges of dev and main, which join 2 branches gitsby made from each other, left alone. pr create's merge happens on the git host, filed as 2026112007483630.
-	- Branch: nov20-2026111919473452
-	- Commit: fb7a6d6
-	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
-	- Closed: 20261120-074856
-	- Decisions:
-		- Refused before the plan rather than ending back on the branch, since the push and the commit would already have happened, and git refuses the merge either way.
-		- A shallow clone gets its own text, since there origin may have the shared commit but the clone not. Read only on the refusal path, so a normal run spawns 1 more git, the merge-base.
-		- 20261120: test.bash [dcnqy] made its hotfix uncomparable with an orphan branch, which now refuses up front. Its pattern changed from the 'couldn't tell whether this hotfix' note to the refusal's 'shares no history with main'. That note can now only show when the target is missing.
-
-- On Windows PowerShell 5.1, a paste line drops a double quote from a branch name
-	- ID: 2026111917564808
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-175648
-	- Opened by:
-	- Related IDs: 2026111910223104
-	- Target OS: Windows
-	- Steps to reproduce [Bug]: Make a branch a"b, and get a line that names it, such as from br prune with origin unreachable. Paste it into Windows PowerShell 5.1.
-	- Incorrect behavior [Bug]: git gets ab, so it names another branch or none.
-	- Expected behavior [Bug]: git gets a"b, or gitsby gives no command for such a name.
-	- Reproduced [Bug]: 2026-11-20 on vm925w (Windows 11 build 26200). Confirmed. In Windows PowerShell 5.1 git got ab for a"b, and an empty word for a lone double quote. pwsh 7 passed it right. pwsh set to Legacy argument passing failed the same way, on Windows and on Linux.
-	- Possible cause [Bug]: Windows PowerShell 5.1 passes a double quote inside an argument to the program bare, and git reads it as a quote. pwsh 7.3 and later escape it, so no one spelling suits both.
-	- Origin: df38db0, 2026-09-15, typedArg's Windows form. Plausible: the 5.1 passing is documented, not run here.
-	- Actual cause [Bug]: As read. Windows PowerShell 5.1, and pwsh in Legacy argument passing, put the double quote on git's command line bare, and git's command-line parsing reads it as a quote. pwsh 7.3 and later escape it.
-	- Actual fix [Bug]: On Windows typedArg gives a word with a double quote both spellings, and the line picks one when it runs: as is under pwsh's Standard or Windows passing, and with each double quote backslashed under anything else, 5.1 included.
-	- Branch: nov20-2026111917564808
-	- Commit: 7ab6156
-	- Test case: Go [dfhfc] TestPasteLinesReadBack, with 10 words that hold a double quote and a new pwsh Legacy leg, and [dcnmn] TestTypedArg.
-	- Verified: [dfhfc] fails on the code before the fix and passes after, on b23 (pwsh 7.6 Legacy leg) and on vm925w (Windows PowerShell 5.1 and the pwsh Legacy leg, 20 lines each before the fix). Quick run of every area passed: test.bash 2209/0, fuzz 310/0, parity 31/0. gosec 37, as before.
-	- Swept: every typedArg caller (branch.go, branchcmd.go, main.go, mutate.go, pr.go, release.go, and leaseDeleteLine in prune.go) goes through the one function. No other code in src-go, cicd or the docs spells a PowerShell argument.
-	- Closed reason: Done
-	- Acceptance signoff: Self-closed: reproduced on vm925w, its test failed before the fix and passes after there.
-	- Closed: 20261120-080834
-	- Decisions:
-		- Both spellings in the line, picked by $PSNativeCommandArgumentPassing when it runs, rather than no command for such a name. Every caller keeps its command, and only a name with a double quote gets the longer line. A Check: entry in questions.md asks about it.
-		- The pick reads Standard and Windows as escaping. Under Windows passing pwsh still passes .cmd and .bat files the Legacy way, and git and gitsby are .exe files.
-		- The Legacy spelling leaves out the quotes 5.1 adds around a word with a space, since no ref name holds one.
-		- [dfhfc]'s Windows PowerShell 5.1 leg exited 1 partway once on vm925w, the first run after a start from off, with no stderr kept. It passed in the 3 runs after. psRun now prints the shell's stderr when it fails.
-
 - Code Review 20261119 item 24: [daf7x] passes with the code it checks taken out
 	- ID: 2026111910222957
 	- Type: Bug
@@ -148,30 +61,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, by mutation in a copy. Confirmed.
 	- Possible cause [Bug]: It greps all output rather than the refusal's own line, as [dfg1f] does.
 	- Origin: 9630f8f, 2026-07-27. No round saw it.
-
-- Code Review 20261119 item 27: release.bash finds the default branch with symbolic-ref --short
-	- ID: 2026111910222914
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102229
-	- Opened by:
-	- Steps to reproduce [Bug]: In a clone, make a tag named origin/main, then run the default branch lookup.
-	- Incorrect behavior [Bug]: It reads remotes/origin/main, the show-ref fails, and the check for untested commits on main is skipped.
-	- Expected behavior [Bug]: Read the full ref and strip refs/remotes/origin/, as branch.go's originHead does.
-	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
-	- Possible cause [Bug]: fpDefaultBranch at release.bash line 203.
-	- Origin: dc94879, round-20261111. Sibling of originHead's rule, Never --short.
-	- Closed reason: Done
-	- Actual cause [Bug]: As the possible cause says. With a tag named origin/main, --short can't shorten origin/HEAD's target to origin/main, so it gives remotes/origin/main. The current branch had the same flaw: rev-parse --abbrev-ref HEAD gives heads/dev beside a tag named dev, so release.bash refused to cut from dev.
-	- Actual fix [Bug]: fpDefaultBranch reads the full ref and strips refs/remotes/origin/, and goes on to main, master or trunk when origin/HEAD points anywhere else, as originHead does. The current branch comes from git branch --show-current, with HEAD when detached.
-	- Swept: every symbolic-ref and abbrev-ref in cicd/ and src-go/. release.bash had two more, both reading the current branch, now fpCurrentBranch. cicd.bash's rev-parse --abbrev-ref @{u} only asks whether an upstream exists. branch.go strips full refs throughout.
-	- Branch: nov20-2026111920273377
-	- Test case: test.bash [dfj8p] for origin/main, [dfj8q] for a tag named dev
-	- Verified: both fail against the old release.bash and pass after. Quick gate passed, every area: test.bash 2204/0, fuzz 310/0, parity 31/0.
-	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
-	- Closed: 20261120-072915
 
 - Code Review 20261119 item 28: The image's markdownlint version check passes when markdownlint prints nothing
 	- ID: 2026111910222900
@@ -202,33 +91,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19, by reading. Confirmed.
 	- Possible cause [Bug]: The line dates from the bash era.
 	- Origin: 4f9ef7b, 2026-08-08. No round saw it.
-
-- Code Review 20261119 item 34: install.ps1 can add PATH twice and says Added when it was already there
-	- ID: 2026111910222815
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102228
-	- Opened by:
-	- Target OS: Windows
-	- Steps to reproduce [Bug]: Have the user PATH hold the install folder as %LOCALAPPDATA%\Programs\gitsby or with a trailing backslash, then run install.ps1.
-	- Incorrect behavior [Bug]: The check compares the stored PATH entries against the expanded folder, so it adds a second entry and says Added. The plan says account where the result says User.
-	- Expected behavior [Bug]: Compare expanded, trimmed entries, and say already on PATH when it is. Use one word for the scope.
-	- Reproduced [Bug]: 2026-11-20 on b23 under pwsh 7, by calling the PATH check on stored lists: the old check had no way to match %LOCALAPPDATA%\Programs\gitsby, a trailing backslash, or a / where the folder has a \. Not run on Windows.
-	- Possible cause [Bug]: The PATH test at install.ps1 line 416 uses the raw stored list.
-	- Origin: The PATH code predates the round. The scope wording predates it too. No round saw it.
-	- Actual cause [Bug]: As read. All 3 PATH checks, in the plan, against the session PATH and against the stored one, compared raw entries with -contains, so an entry written another way didn't match. The result said Added whether or not the registry was written, and named the scope User or Machine where the plan said account or system.
-	- Actual fix [Bug]: install.ps1 has one Test-OnPath, used by all 3 checks. It expands %VAR% entries, trims spaces, quotes and trailing slashes, and on Windows turns / into \ and ignores case. When the stored PATH already has the folder, nothing is written and the result says it's already on your account PATH. The result uses the plan's words, account and system. install.bash's PATH note takes an entry with a trailing slash too. changelog.md has 2 lines under vNEXT Fixed.
-	- Decisions: The plan's words, account and system, for both lines, since [db5xm] pins the plan's and Windows' own settings page says 'for your account'. The plan still says Add when only the stored PATH has the folder, since reading the registry before the plan would add a second copy of that code for a line the result corrects. The broadcast is still sent in that case, per 2026111016332008.
-	- Branch: nov20-2026111910222815
-	- Commit: 808235d, 2856951, fb6ae4c
-	- Test case: test.bash [dfjab] pulls Test-OnPath out of install.ps1 and asks it about 8 PATHs: %LOCALAPPDATA%, trailing backslash, other case, quoted, a near miss, empty, and 2 POSIX ones. [dfjac] no -contains against $destDir is left, and Test-OnPath is called at least 3 times. [dfjah] install.bash with its folder on PATH with a trailing slash gives no not-on-PATH note, and [dfjaj] gives it when PATH lacks the folder. On Windows, whole installs with stubbed downloads, under PowerShell 5.1 and 7, with the account PATH holding the folder as %LOCALAPPDATA%\Programs\gitsby, with a trailing backslash, as both, and not at all.
-	- Verified: [dfjab] and [dfjac] fail on the previous install.ps1 (no Test-OnPath, 3 raw checks) and pass after. [dfjab] goes red with the expansion, the / swap, the backslash trim or the quote trim taken out. The previous install.bash printed the note with a trailing-slash entry, which [dfjah] refuses. Quick run of every area passed on 2856951's tree: test.bash 2213/0, fuzz 310/0, parity 31/0. PSScriptAnalyzer clean on install.ps1. The Windows branch didn't run here. It ran on vm925w on 2026-11-20, in PowerShell 5.1.26100 and 7.6.10, at nov20 e8870e8: each of the 3 spellings left one entry, wrote nothing and said it was already on your account PATH. The install from a PATH without it said Added and appended one entry. 62 of 62 checks passed. The install.ps1 before 808235d failed the same cases: a second entry and Added for each spelling, and User in place of account.
-	- Swept: every PATH test in both installers. install.ps1 has the 3 named above. install.bash only checks for a note, and missed a trailing slash, fixed here. legacy/install.ps1 has the same raw checks and is frozen. No Go or cicd code reads the Windows PATH this way.
-	- Closed reason: Done
-	- Closed: 20261120-083446
-	- Acceptance signoff: Self-closed: whole installs passed on vm925w in Windows PowerShell 5.1 and pwsh 7.
 
 - Code Review 20261119 item 35: lockFix is production code that only tests call
 	- ID: 2026111910222801
@@ -4196,6 +4058,144 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- A candidate suffixed after a dot sorts above its own release in every tag scan
+	- ID: 2026111920273377
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-202733
+	- Opened by:
+	- Related IDs: 2026111910222928
+	- Steps to reproduce [Bug]: Tag v3.0.0.rc1, then v3.0.0, then run 'gitsby release' or release.bash with no version.
+	- Incorrect behavior [Bug]: git's version sort with versionsort.suffix=- ranks v3.0.0.rc1 above v3.0.0, so the newest tag reads as the candidate, the next version comes out as v3.0.0 again, and the cut stops on a tag that exists. gen-winres.bash and the demo stamp take the candidate's version too.
+	- Expected behavior [Bug]: A candidate sorts below its own release whether its suffix follows a dash or a dot.
+	- Reproduced [Bug]: 2026-11-19 on b23, the sort only, in a temp repo with tags v3.0.0, v3.0.0.rc1 and v3.0.0-rc.2. Adding versionsort.suffix=. puts v3.0.0 first. The cut that follows is read, not run.
+	- Possible cause [Bug]: The tag scans in src-go/release.go (resolveRelease and the --points-at one), cicd/release.bash, cicd/utility/gen-winres.bash and the demo stamp in cicd/cicd.bash pass only versionsort.suffix=-.
+	- Origin: ed296a4, 2026-09-16, with the dotted suffix the version check admits. Found while fixing 2026111910222928. Plausible for the cut, Confirmed for the sort.
+	- Closed reason: Done
+	- Actual cause [Bug]: As the possible cause says. git calls a suffix a pre-release only after the separator it's given, and every scan gave it only a dash. gitsby's newestReleaseTag took git's first v tag as it came.
+	- Actual fix [Bug]: gitsby's newestReleaseTag weighs every tag by number, then a release over its own candidate, and git's order only breaks a tie. The three scripts share fReleaseTags in cicd/config.bash, which gives git a dot as well as a dash. changelog.md has a line under vNEXT.
+	- Decisions: gitsby weighs the tags itself rather than giving git a dot suffix, since it runs on any repo, and a dot suffix ranks v1.2 above v1.2.1. The scripts give git the dot, since they run only here, where every tag cut is X.Y.Z. A tag with a fourth number, such as v1.2.3.4, counts as a candidate of v1.2.3 in both, as the version check and nextVersion already read it.
+	- Swept: every tag scan that sorts: resolveRelease and unpushedRelease's --points-at scan in release.go, release.bash, gen-winres.bash, and the demo stamp in cicd.bash. branchcmd.go's call to newestReleaseTag only asks whether any tag exists. The installers go by GitHub's pre-release flag. legacy/bin/gitsby.ps1 has the same scan and is frozen at v2.1.0.
+	- Branch: nov20-2026111920273377
+	- Test case: Go [dfj8g], test.bash [dfj8h] [dfj8j] [dfj8k] [dfj8m] [dfj8n]
+	- Verified: each fails against the old code and passes after. [dfj8h] runs the cut the item read only: 'gitsby release' stopped on the existing v3.0.0. Quick gate passed, every area: test.bash 2204/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261120-072915
+
+- br merge from a branch that shares no history with dev pushes it, switches to dev, then fails
+	- ID: 2026111919473452
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-194734
+	- Opened by:
+	- Related IDs: 2026111910222988
+	- Steps to reproduce [Bug]: git init -b feat, add origin with main and dev, fetch, stage a file, then run gitsby -q br merge.
+	- Incorrect behavior [Bug]: The park push commits and pushes feat, checks out dev, then git refuses to merge unrelated histories. It ends on dev, exit 1.
+	- Expected behavior [Bug]: Refuse before the plan when the branch and its target share no commit, or end back on the branch.
+	- Reproduced [Bug]: 2026-11-19 on b23, local bare origin, while fixing 2026111910222988. Confirmed.
+	- Origin: Go port. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: Nothing before the plan asked whether the branch shares a commit with its target. git refuses to merge unrelated histories only at the merge, after the park push and the checkout, and that failure isn't a conflict, so backOutMerge left the run on the target.
+	- Actual fix [Bug]: br merge refuses before the plan when the branch has no commits yet, or shares no commit with its target, the local one or else origin's. The unborn case names git switch to the target, then br create, which takes the work along. The other names git merge --allow-unrelated-histories as raw-git territory, and a shallow clone names git fetch --unshallow. The changelog says so.
+	- Test case: test.bash [dfj98] to [dfj9c]; [dcnqy] updated.
+	- Verified: [dfj98] to [dfj9c] fail with the refusal stubbed out and pass with it. The repro from the item and an orphan branch both refuse with nothing pushed, still on the branch; the unborn way off was run and merged. The quick gate passed with every area: test.bash 2209/0, fuzz 310/0, parity 31/0. gosec reports the same 37 hits.
+	- Swept: every local merge: br merge's, which this covers for hotfix branches too through branchTarget; the hotfix back-merge of main into dev and release's merges of dev and main, which join 2 branches gitsby made from each other, left alone. pr create's merge happens on the git host, filed as 2026112007483630.
+	- Branch: nov20-2026111919473452
+	- Commit: fb7a6d6
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-074856
+	- Decisions:
+		- Refused before the plan rather than ending back on the branch, since the push and the commit would already have happened, and git refuses the merge either way.
+		- A shallow clone gets its own text, since there origin may have the shared commit but the clone not. Read only on the refusal path, so a normal run spawns 1 more git, the merge-base.
+		- 20261120: test.bash [dcnqy] made its hotfix uncomparable with an orphan branch, which now refuses up front. Its pattern changed from the 'couldn't tell whether this hotfix' note to the refusal's 'shares no history with main'. That note can now only show when the target is missing.
+
+- On Windows PowerShell 5.1, a paste line drops a double quote from a branch name
+	- ID: 2026111917564808
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-175648
+	- Opened by:
+	- Related IDs: 2026111910223104
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Make a branch a"b, and get a line that names it, such as from br prune with origin unreachable. Paste it into Windows PowerShell 5.1.
+	- Incorrect behavior [Bug]: git gets ab, so it names another branch or none.
+	- Expected behavior [Bug]: git gets a"b, or gitsby gives no command for such a name.
+	- Reproduced [Bug]: 2026-11-20 on vm925w (Windows 11 build 26200). Confirmed. In Windows PowerShell 5.1 git got ab for a"b, and an empty word for a lone double quote. pwsh 7 passed it right. pwsh set to Legacy argument passing failed the same way, on Windows and on Linux.
+	- Possible cause [Bug]: Windows PowerShell 5.1 passes a double quote inside an argument to the program bare, and git reads it as a quote. pwsh 7.3 and later escape it, so no one spelling suits both.
+	- Origin: df38db0, 2026-09-15, typedArg's Windows form. Plausible: the 5.1 passing is documented, not run here.
+	- Actual cause [Bug]: As read. Windows PowerShell 5.1, and pwsh in Legacy argument passing, put the double quote on git's command line bare, and git's command-line parsing reads it as a quote. pwsh 7.3 and later escape it.
+	- Actual fix [Bug]: On Windows typedArg gives a word with a double quote both spellings, and the line picks one when it runs: as is under pwsh's Standard or Windows passing, and with each double quote backslashed under anything else, 5.1 included.
+	- Branch: nov20-2026111917564808
+	- Commit: 7ab6156
+	- Test case: Go [dfhfc] TestPasteLinesReadBack, with 10 words that hold a double quote and a new pwsh Legacy leg, and [dcnmn] TestTypedArg.
+	- Verified: [dfhfc] fails on the code before the fix and passes after, on b23 (pwsh 7.6 Legacy leg) and on vm925w (Windows PowerShell 5.1 and the pwsh Legacy leg, 20 lines each before the fix). Quick run of every area passed: test.bash 2209/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Swept: every typedArg caller (branch.go, branchcmd.go, main.go, mutate.go, pr.go, release.go, and leaseDeleteLine in prune.go) goes through the one function. No other code in src-go, cicd or the docs spells a PowerShell argument.
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: reproduced on vm925w, its test failed before the fix and passes after there.
+	- Closed: 20261120-080834
+	- Decisions:
+		- Both spellings in the line, picked by $PSNativeCommandArgumentPassing when it runs, rather than no command for such a name. Every caller keeps its command, and only a name with a double quote gets the longer line. A Check: entry in questions.md asks about it.
+		- The pick reads Standard and Windows as escaping. Under Windows passing pwsh still passes .cmd and .bat files the Legacy way, and git and gitsby are .exe files.
+		- The Legacy spelling leaves out the quotes 5.1 adds around a word with a space, since no ref name holds one.
+		- [dfhfc]'s Windows PowerShell 5.1 leg exited 1 partway once on vm925w, the first run after a start from off, with no stderr kept. It passed in the 3 runs after. psRun now prints the shell's stderr when it fails.
+
+- Code Review 20261119 item 27: release.bash finds the default branch with symbolic-ref --short
+	- ID: 2026111910222914
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Steps to reproduce [Bug]: In a clone, make a tag named origin/main, then run the default branch lookup.
+	- Incorrect behavior [Bug]: It reads remotes/origin/main, the show-ref fails, and the check for untested commits on main is skipped.
+	- Expected behavior [Bug]: Read the full ref and strip refs/remotes/origin/, as branch.go's originHead does.
+	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
+	- Possible cause [Bug]: fpDefaultBranch at release.bash line 203.
+	- Origin: dc94879, round-20261111. Sibling of originHead's rule, Never --short.
+	- Closed reason: Done
+	- Actual cause [Bug]: As the possible cause says. With a tag named origin/main, --short can't shorten origin/HEAD's target to origin/main, so it gives remotes/origin/main. The current branch had the same flaw: rev-parse --abbrev-ref HEAD gives heads/dev beside a tag named dev, so release.bash refused to cut from dev.
+	- Actual fix [Bug]: fpDefaultBranch reads the full ref and strips refs/remotes/origin/, and goes on to main, master or trunk when origin/HEAD points anywhere else, as originHead does. The current branch comes from git branch --show-current, with HEAD when detached.
+	- Swept: every symbolic-ref and abbrev-ref in cicd/ and src-go/. release.bash had two more, both reading the current branch, now fpCurrentBranch. cicd.bash's rev-parse --abbrev-ref @{u} only asks whether an upstream exists. branch.go strips full refs throughout.
+	- Branch: nov20-2026111920273377
+	- Test case: test.bash [dfj8p] for origin/main, [dfj8q] for a tag named dev
+	- Verified: both fail against the old release.bash and pass after. Quick gate passed, every area: test.bash 2204/0, fuzz 310/0, parity 31/0.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261120-072915
+
+- Code Review 20261119 item 34: install.ps1 can add PATH twice and says Added when it was already there
+	- ID: 2026111910222815
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Have the user PATH hold the install folder as %LOCALAPPDATA%\Programs\gitsby or with a trailing backslash, then run install.ps1.
+	- Incorrect behavior [Bug]: The check compares the stored PATH entries against the expanded folder, so it adds a second entry and says Added. The plan says account where the result says User.
+	- Expected behavior [Bug]: Compare expanded, trimmed entries, and say already on PATH when it is. Use one word for the scope.
+	- Reproduced [Bug]: 2026-11-20 on b23 under pwsh 7, by calling the PATH check on stored lists: the old check had no way to match %LOCALAPPDATA%\Programs\gitsby, a trailing backslash, or a / where the folder has a \. Not run on Windows.
+	- Possible cause [Bug]: The PATH test at install.ps1 line 416 uses the raw stored list.
+	- Origin: The PATH code predates the round. The scope wording predates it too. No round saw it.
+	- Actual cause [Bug]: As read. All 3 PATH checks, in the plan, against the session PATH and against the stored one, compared raw entries with -contains, so an entry written another way didn't match. The result said Added whether or not the registry was written, and named the scope User or Machine where the plan said account or system.
+	- Actual fix [Bug]: install.ps1 has one Test-OnPath, used by all 3 checks. It expands %VAR% entries, trims spaces, quotes and trailing slashes, and on Windows turns / into \ and ignores case. When the stored PATH already has the folder, nothing is written and the result says it's already on your account PATH. The result uses the plan's words, account and system. install.bash's PATH note takes an entry with a trailing slash too. changelog.md has 2 lines under vNEXT Fixed.
+	- Decisions: The plan's words, account and system, for both lines, since [db5xm] pins the plan's and Windows' own settings page says 'for your account'. The plan still says Add when only the stored PATH has the folder, since reading the registry before the plan would add a second copy of that code for a line the result corrects. The broadcast is still sent in that case, per 2026111016332008.
+	- Branch: nov20-2026111910222815
+	- Commit: 808235d, 2856951, fb6ae4c
+	- Test case: test.bash [dfjab] pulls Test-OnPath out of install.ps1 and asks it about 8 PATHs: %LOCALAPPDATA%, trailing backslash, other case, quoted, a near miss, empty, and 2 POSIX ones. [dfjac] no -contains against $destDir is left, and Test-OnPath is called at least 3 times. [dfjah] install.bash with its folder on PATH with a trailing slash gives no not-on-PATH note, and [dfjaj] gives it when PATH lacks the folder. On Windows, whole installs with stubbed downloads, under PowerShell 5.1 and 7, with the account PATH holding the folder as %LOCALAPPDATA%\Programs\gitsby, with a trailing backslash, as both, and not at all.
+	- Verified: [dfjab] and [dfjac] fail on the previous install.ps1 (no Test-OnPath, 3 raw checks) and pass after. [dfjab] goes red with the expansion, the / swap, the backslash trim or the quote trim taken out. The previous install.bash printed the note with a trailing-slash entry, which [dfjah] refuses. Quick run of every area passed on 2856951's tree: test.bash 2213/0, fuzz 310/0, parity 31/0. PSScriptAnalyzer clean on install.ps1. The Windows branch didn't run here. It ran on vm925w on 2026-11-20, in PowerShell 5.1.26100 and 7.6.10, at nov20 e8870e8: each of the 3 spellings left one entry, wrote nothing and said it was already on your account PATH. The install from a PATH without it said Added and appended one entry. 62 of 62 checks passed. The install.ps1 before 808235d failed the same cases: a second entry and Added for each spelling, and User in place of account.
+	- Swept: every PATH test in both installers. install.ps1 has the 3 named above. install.bash only checks for a note, and missed a trailing slash, fixed here. legacy/install.ps1 has the same raw checks and is frozen. No Go or cicd code reads the Windows PATH this way.
+	- Closed reason: Done
+	- Closed: 20261120-083446
+	- Acceptance signoff: Self-closed: whole installs passed on vm925w in Windows PowerShell 5.1 and pwsh 7.
 
 - In a sparse checkout, an edited tracked file outside it is left uncommitted at exit 0
 	- ID: 2026111920000538
