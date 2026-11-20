@@ -447,7 +447,10 @@ func (a *app) preflightBranch() error {
 		if a.cmd.arg == "" {
 			return usageOf("br create").refuse("No branch name given.")
 		}
-		return a.checkNewBranchName(a.cmd.arg)
+		if err := a.checkNewBranchName(a.cmd.arg); err != nil {
+			return err
+		}
+		return a.refuseUnbornBase(a.mergeTarget())
 	case "br-hotfix":
 		if a.cmd.arg == "" {
 			return usageOf("br hotfix").refuse("No name given.")
@@ -455,7 +458,10 @@ func (a *app) preflightBranch() error {
 		// The prefix is the marker, so put it on ourselves - and accept it if the user
 		// typed it.
 		a.cmd.arg = "hotfix/" + strings.TrimPrefix(a.cmd.arg, "hotfix/")
-		return a.checkNewBranchName(a.cmd.arg)
+		if err := a.checkNewBranchName(a.cmd.arg); err != nil {
+			return err
+		}
+		return a.refuseUnbornBase(a.defaultBranch())
 	case "br-merge":
 		// Merging ends in 'git branch -d', so a leftover main/master must be refused
 		// here for the same reason br prune never lists one - and up front, not after a
@@ -494,6 +500,29 @@ func (a *app) preflightBranch() error {
 		return a.refuseDirectPush()
 	}
 	return nil
+}
+
+// refuseUnbornBase: br create and br hotfix start the new branch at the base's
+// commit. When the run stands on the base and it has no commit yet, 'checkout -b'
+// only renames the unborn branch, and the push of HEAD then fails. Origin having
+// one doesn't help, since standing on the base skips the checkout.
+func (a *app) refuseUnbornBase(base string) error {
+	if base == "" || a.branchExistsLocal(base) {
+		return nil
+	}
+	if base != a.currentBranch() {
+		if a.branchExistsRemote(base) {
+			return nil
+		}
+		return usagef("No branch '%s' locally or on origin, so there is nothing to start '%s' from.", base, a.cmd.arg)
+	}
+	switch {
+	case a.branchExistsRemote(base):
+		return usagef("'%s' has no commits here yet, so there is nothing to start '%s' from. Origin has one; bringing it here is raw-git territory.", base, a.cmd.arg)
+	case a.hasOrigin():
+		return usagef("'%s' has no commits yet, so there is nothing to start '%s' from. Publish the first commit with: %s repo connect", base, a.cmd.arg, meName)
+	}
+	return usagef("'%s' has no commits yet, so there is nothing to start '%s' from. Make the first commit with: %s pullcom", base, a.cmd.arg, meName)
 }
 
 // settleTarget resolves what each remaining command is about to act on, before

@@ -33,6 +33,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- br merge from a branch that shares no history with dev pushes it, switches to dev, then fails
+	- ID: 2026111919473452
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-194734
+	- Opened by:
+	- Related IDs: 2026111910222988
+	- Steps to reproduce [Bug]: git init -b feat, add origin with main and dev, fetch, stage a file, then run gitsby -q br merge.
+	- Incorrect behavior [Bug]: The park push commits and pushes feat, checks out dev, then git refuses to merge unrelated histories. It ends on dev, exit 1.
+	- Expected behavior [Bug]: Refuse before the plan when the branch and its target share no commit, or end back on the branch.
+	- Reproduced [Bug]: 2026-11-19 on b23, local bare origin, while fixing 2026111910222988. Confirmed.
+	- Origin: Go port. No round saw it.
+
 - The Incoming list shows local commits as changes coming in
 	- ID: 2026111919195626
 	- Type: Bug
@@ -356,7 +371,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 22: On an unborn branch with an origin, br create renames the branch, then fails
 	- ID: 2026111910222988
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102229
@@ -367,6 +382,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
 	- Possible cause [Bug]: Preflight doesn't check that HEAD has a commit.
 	- Origin: Go port. No round reached it.
+	- Closed reason: Done
+	- Actual cause [Bug]: br create and br hotfix ran 'checkout -b' from the branch they start from without checking it had a commit. Standing on an unborn base, that only renames the branch, and the push of HEAD then fails.
+	- Actual fix [Bug]: Both refuse in preflight when the base has no commit here and the run stands on it, naming pullcom with no origin and repo connect with one. When origin has the base, the refusal says so and leaves getting it to raw git. A base that is another branch existing only on origin still works, as before.
+	- Test case: Go TestUnbornBase [dfhjw]; test.bash [dfhjx] and [dfhjy].
+	- Verified: [dfhjw] fails 4 of its 5 cases with the refusal stubbed out, and [dfhjx] and [dfhjy] fail on the build before the fix. All pass with it. The quick gate passed with every area: test.bash 2187/0, fuzz 310/0, parity 31/0.
+	- Swept: br create and br hotfix are the only commands that 'checkout -b' from where they stand, by grep. The other 2 start from an origin ref. On an unborn main, br switch, br merge, sync and pr create already refuse before the plan, pullcom makes the first commit, and br prune finds nothing. On an unborn feature branch beside origin's main and dev, br create, br hotfix and br switch work, since the park push makes the first commit. br merge there is 2026111919473452.
+	- Decisions: Refused with no origin too, since there 'checkout -b' renames the unborn branch and exits 0, leaving no branch of the base's name. The advice names repo connect with an origin, since it publishes a repo with no commits, and pullcom without one.
+	- Branch: nov19c-2026111910222988
+	- Commit: 860c967
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-194717
 
 - Code Review 20261119 item 23: In a sparse checkout, a failed git add leaves the index half staged
 	- ID: 2026111910222973

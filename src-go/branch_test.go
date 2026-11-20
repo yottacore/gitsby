@@ -9,6 +9,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -168,6 +169,55 @@ func TestSwitchTargetWithLeadingDash(t *testing.T) { // [df520]
 			t.Errorf("%q: got %v, want %q", target, err, want)
 		case want != "" && strings.Contains(err.Error(), "br create"):
 			t.Errorf("%q: suggests a br create line: %v", target, err)
+		}
+	}
+}
+
+// Before the first commit, br create and br hotfix off the branch HEAD names would
+// only rename it, then fail the push. They refuse up front, unless the base is
+// another branch that exists.
+func TestUnbornBase(t *testing.T) { // [dfhjw]
+	seeded, _ := gitTestRepo(t)
+	root := t.TempDir()
+	empty := filepath.Join(root, "empty.git")
+	runGit(t, root, "init", "-q", "--bare", "-b", "main", empty)
+	withDev := filepath.Join(root, "dev.git")
+	runGit(t, root, "clone", "-q", "--bare", seeded, withDev)
+	runGit(t, withDev, "branch", "dev", "main")
+	tests := []struct {
+		name, origin string
+		args         []string
+		want         string
+	}{
+		{"no origin", "", []string{"br", "create", "nb"}, "Make the first commit with: gitsby pullcom"},
+		{"empty origin", empty, []string{"br", "create", "nb"}, "Publish the first commit with: gitsby repo connect"},
+		{"hotfix, empty origin", empty, []string{"br", "hotfix", "hb"}, "nothing to start 'hotfix/hb' from"},
+		{"origin has main", seeded, []string{"br", "hotfix", "hb"}, "no commits here yet, so there is nothing to start 'hotfix/hb' from. Origin has one"},
+		{"origin has dev", withDev, []string{"br", "create", "nb"}, ""},
+	}
+	for i, tt := range tests {
+		repo := filepath.Join(root, fmt.Sprint("r", i))
+		runGit(t, root, "init", "-q", "-b", "main", repo)
+		if tt.origin != "" {
+			runGit(t, repo, "remote", "add", "origin", tt.origin)
+			runGit(t, repo, "fetch", "-q", "origin")
+		}
+		t.Chdir(repo)
+		_, cmd, _, err := parseArgs(tt.args)
+		if err == nil {
+			cmd, err = collapseCommand(cmd)
+		}
+		if err != nil {
+			t.Fatalf("%s: parse: %v", tt.name, err)
+		}
+		a := newApp(newPrinter())
+		a.cmd = cmd
+		err = a.preflightBranch()
+		switch {
+		case tt.want == "" && err != nil:
+			t.Errorf("%s: refused: %v", tt.name, err)
+		case tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)):
+			t.Errorf("%s: got %v, want %q", tt.name, err, tt.want)
 		}
 	}
 }

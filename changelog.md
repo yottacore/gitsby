@@ -107,6 +107,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `br create` refuses `@{-1}` and other names git reads as another branch, before anything runs. It used to commit, push and check out `dev` first, then fail.
 
+- `br create` and `br hotfix` refuse before anything runs when the branch they start from has no commits yet, and name the command that makes the first one. They renamed the empty branch to the new name, then failed to push it.
+
 - The plan for `br merge` in a clone with no local `dev` yet shows the 1 atomic push the run makes. It listed a push and a separate delete.
 
 - An accounts file stamped with a newer SHCL format than this build reads says so, and `account set` and `account unset` refuse before their plan. It used to be read with no word, and `account set` showed its plan, then failed to save.

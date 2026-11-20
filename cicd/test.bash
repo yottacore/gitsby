@@ -3959,6 +3959,12 @@ GHEOF
 	fAssertOut "[dd5cm] a lone local branch is the default branch"  '^Default branch: mainline$'  bash -c "cd '${lone}/one' && '${gitsby}' -q status 2>&1"
 	fAssert    "[dd5cn] and br create works off it"  bash -c "cd '${lone}/one' && '${gitsby}' -q br create lonefeat && [[ \"\$(git branch --show-current)\" == lonefeat ]]"
 	fAssertOut "[dd5cp] an unborn branch is the default branch"  '^Default branch: trunkish$'  bash -c "cd '${lone}/unborn' && '${gitsby}' -q status 2>&1"
+	## Before the first commit, br create only renamed the unborn branch, then failed to push HEAD.
+	git init --quiet -b main "${lone}/fresh"; git init --quiet --bare -b main "${lone}/fresh.git"
+	( cd "${lone}/fresh" || exit 1; git remote add origin "${lone}/fresh.git"; echo f > f.txt; git add f.txt )
+	fAssertOut "[dfhjx] br create before the first commit refuses up front"  "^gitsby: 'main' has no commits yet, so there is nothing to start 'nb' from\\. Publish the first commit with: gitsby repo connect$" \
+		bash -c "cd '${lone}/fresh' && '${gitsby}' -q br create nb 2>&1"
+	fAssert    "[dfhjy] and exits 1, still on main, with nothing pushed"  bash -c "cd '${lone}/fresh' && { '${gitsby}' -q br create nb >/dev/null 2>&1; [[ \$? == 1 ]]; } && [[ \"\$(git symbolic-ref --short HEAD)\" == main && -z \"\$(git -C '${lone}/fresh.git' for-each-ref)\" ]]"
 
 	## gh writes act as gh's own account, not the ssh key git pushes with. A difference BOTH sides
 	## know about is refused unattended; unknown (no agent, https remote, deploy key) never blocks,
