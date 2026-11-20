@@ -119,6 +119,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `br merge` refuses before anything runs when the branch shares no commit with the one it merges into, as a branch with no commits yet or one made with `git checkout --orphan` does. It used to commit, push and check out `dev`, then stop there when git refused to merge unrelated histories. In a shallow clone that cuts off the shared commit, it names `git fetch --unshallow`.
 
+- `pr create` refuses before anything runs on GitHub and Gitea when the branch shares no commit with the one the pull request goes into. It used to push the branch, then the git host refused the pull request. GitLab opens one, so a GitLab repo goes on as before.
+
 - The plan for `br merge` in a clone with no local `dev` yet shows the 1 atomic push the run makes. It listed a push and a separate delete.
 
 - An accounts file stamped with a newer SHCL format than this build reads says so, and `account set` and `account unset` refuse before their plan. It used to be read with no word, and `account set` showed its plan, then failed to save.

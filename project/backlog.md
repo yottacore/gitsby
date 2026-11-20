@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - pr create from a branch that shares no history with dev pushes it, then the git host refuses the pull request
 	- ID: 2026112007483630
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-074836
@@ -46,6 +46,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: The plan and park push run and publish feat, then gh fails, since GitHub won't open a pull request between unrelated histories. By reading; not run.
 	- Expected behavior [Bug]: Refuse before the plan, as br merge does for the same branch, if every git host refuses it. GitLab and Gitea may not, which needs checking first.
 	- Origin: Go port. Found while sweeping 2026111919473452. Plausible.
+	- Closed reason: Done
+	- Reproduced [Bug]: 2026-11-20 on b23, with a fake gh and a fake tea: an orphan branch passed every check before the plan, so the park push would publish it. GitHub refuses a pull request between unrelated histories, and Gitea does since 1.26.2 (go-gitea/gitea PR 37472), by their docs and source; no real git host was run. Confirmed.
+	- Actual cause [Bug]: Nothing before the plan asked whether the branch shares a commit with the base the pull request goes into. The git host answered that only after the park push.
+	- Actual fix [Bug]: pr create refuses before the plan through gh and tea when the branch shares no commit with its base, origin's or else the local one. The refusal names git merge --allow-unrelated-histories as raw-git territory. glab and a shallow clone go on as before. design.md and the changelog say so.
+	- Test case: test.bash [dfjg8] to [dfjgc].
+	- Verified: [dfjg8], [dfjg9] and [dfjgc] fail with the refusal call removed and pass with it. [dfjga] and [dfjgb] fail with the shallow and glab skips removed and pass with them. The quick gate passed with every area: test.bash 2218/0, fuzz 310/0, parity 31/0. gosec reports the same 37 hits, none in pr.go.
+	- Swept: every place a merge happens on the git host: pr create's create call, through gh, tea and glab. pr ok merges a PR the git host already opened, so it can't meet this. br merge's local merge has its own refusal (2026111919473452).
+	- Branch: nov20b-2026112007483630
+	- Commit: ca1848e
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-113528
+	- Decisions: Refused on GitHub and Gitea only. GitLab opens and merges a request between unrelated histories: Gitaly added an option to allow them after refusing them broke merge requests in production (gitlab-org/gitaly MR 5385). Refusing there would block a request the git host takes.
+		- Gitea is judged by tea, so a Forgejo host reached through tea is refused too. Forgejo's behavior wasn't checked. Gitea before 1.26.2 failed its compare page on such a pair, so no release of it is known to open one.
+		- A shallow clone goes on, since the shared commit can be cut off here while the git host has it. br merge refuses there, since git merges locally.
+		- The base is origin's, which the git host compares against, and the local one only when origin has none. The paste line names that ref, such as origin/dev.
+		- One more git spawn for a pr create through gh or tea, the merge-base. The shallow check runs only on the refusal path. spawn-count [df052] measured 46 against 43 expected, within its headroom; [df37x] for glab measured 33 against 31, which this change doesn't touch.
 
 - Code Review 20261119 item 24: [daf7x] passes with the code it checks taken out
 	- ID: 2026111910222957

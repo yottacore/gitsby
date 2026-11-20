@@ -3655,6 +3655,20 @@ GHEOF
 	fAssert "[dfh74] an upstream on another remote refuses, with nothing pushed and no PR" \
 		bash -c "cd '${pnf}' && out=\"\$(PATH='${ghp}' FAKE_GH_LOG='${gh}/prfar4.log' '${gitsby}' -q pr create 'Second' 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"pushes to the remote 'second'\" <<< \"\${out}\" && { [[ ! -f '${gh}/prfar4.log' ]] || ! grep -q '^pr create' '${gh}/prfar4.log'; } && [[ \"\$(git -C '${gh}/prnew/second.git' rev-parse pny)\" != \"\$(git rev-parse pny)\" && \"\$(git ls-remote origin refs/heads/pny | cut -f1)\" == \"\$(git rev-parse origin/dev)\" ]]"
 
+	## GitHub won't open a pull request from a branch that shares no commit with its base, and
+	## said so only after the park push had published the branch.
+	local pno="${gh}/prnew/orph"
+	git clone --quiet "${gh}/prnew/origin.git" "${pno}" 2>/dev/null
+	( cd "${pno}" || exit 1; git switch --quiet --orphan pnorph; echo o > o.txt; git add o.txt; git commit --quiet -m "Own history" )
+	fAssertOut "[dfjg8] pr create on a branch whose history is its own refuses up front"  "^gitsby: 'pnorph' shares no history with 'dev', so origin won't open a pull request for it\\. Nothing was done\\. Joining unrelated histories is raw-git territory: git merge --allow-unrelated-histories origin/dev$" \
+		bash -c "cd '${pno}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prorph.log' '${gitsby}' -q pr create 'Orphan' 2>&1"
+	fAssert    "[dfjg9] and exits 1, with nothing pushed and no PR"  bash -c "cd '${pno}' && { PATH='${ghp}' FAKE_GH_LOG='${gh}/prorph.log' '${gitsby}' -q pr create 'Orphan' >/dev/null 2>&1; [[ \$? == 1 ]]; } && [[ -z \"\$(git ls-remote --heads origin pnorph)\" ]] && { [[ ! -f '${gh}/prorph.log' ]] || ! grep -q '^pr create' '${gh}/prorph.log'; }"
+	## A shallow clone can cut off the shared commit, and the git host has the whole history.
+	git clone --quiet --depth 1 --no-single-branch "file://${gh}/prnew/origin.git" "${gh}/prnew/shallow"
+	( cd "${gh}/prnew/shallow" || exit 1; git switch --quiet pnfeat )
+	fAssertOut "[dfjga] in a shallow clone that cuts off the shared commit, it is left to the git host"  'PR #99 is already open' \
+		bash -c "cd '${gh}/prnew/shallow' && PATH='${ghp}' FAKE_GH_EXISTING=99 '${gitsby}' -q --no-fetch pr create 2>&1 || true"
+
 	## A branch whose name starts with a dash comes from a clone or raw git, or is typed after '--',
 	## and git reads it as options: 'git checkout -evil' answers "unknown switch". There is no
 	## separator that rescues it in that position, so it is refused once, up front.
@@ -9481,6 +9495,20 @@ GLEOF
 		bash -c "cd '${fgGl}' && env -u GITLAB_TOKEN -u GITLAB_HOST -u GITLAB_API_HOST PATH='${fgGlPath}' FAKE_GLAB_LOG='${fg}/glab.log' '${gitsby}' -q -NoFetch --config '${fg}/gl-acct.shcl' raw glab mr list -R gitlab.com/someone/else >/dev/null && grep -qx 'mr list -R gitlab.com/someone/else api= host= token=' '${fg}/glab.log'"
 	fAssertOut "[dea19] pr create refuses a branch that already has an open merge request" 'PR #3 is already open' \
 		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_EXISTING=3 '${gitsby}' -q -NoFetch pr create 2>&1 || true"
+	## GitLab opens and merges a request from a branch with no history in common with its base, so
+	## glab is left to it. Gitea refuses one, so tea's is refused up front, as gh's is.
+	local fgUn="${fg}/unrel"
+	git init --quiet -b main "${fgUn}/gl"; git init --quiet -b main "${fgUn}/tea"
+	git -C "${fgUn}/gl" remote add origin git@ssh.gitlab.example.test:grp/sub/proj.git
+	git -C "${fgUn}/tea" remote add origin https://git.example.test/acme/proj.git
+	for h in gl tea; do
+		( cd "${fgUn}/${h}" || exit 1; echo a > a.txt; git add a.txt; git commit --quiet -m init; git update-ref refs/remotes/origin/main HEAD
+			git switch --quiet --orphan glown; echo o > o.txt; git add o.txt; git commit --quiet -m own )
+	done
+	fAssertOut "[dfjgb] pr create through glab on a branch whose history is its own is left to GitLab"  'PR #3 is already open' \
+		bash -c "cd '${fgUn}/gl' && PATH='${fgGlPath}' FAKE_GLAB_EXISTING=3 '${gitsby}' -q -NoFetch pr create 2>&1 || true"
+	fAssertOut "[dfjgc] and through tea it refuses up front"  "^gitsby: 'glown' shares no history with 'main', so git\\.example\\.test won't open a pull request for it\\." \
+		bash -c "cd '${fgUn}/tea' && PATH='${fgPath}' FAKE_TEA_EXISTING=5 FAKE_TEA_HEAD=glown '${gitsby}' -q -NoFetch pr create 2>&1 || true"
 	fAssertOut "[dea1a] pr ok reads glab's 'merged' as not open" 'PR #7 is merged, not open' \
 		bash -c "cd '${fgGl}' && PATH='${fgGlPath}' FAKE_GLAB_STATE=merged '${gitsby}' -q -NoFetch pr ok 7 2>&1 || true"
 	## glab's JSON is read by hand. The author's own state comes first and must not count, and the
@@ -10236,3 +10264,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261118 JC: A 2.x value with a byte that isn't UTF-8 reads as 2.x read it after the conversion, [dfg5c].
 ##		- 20261119 JC: account apply warns about a nested account with no email, and whoami flags an empty address, [dfh7n] to [dfh7r]. With GIT_DIR set, every command takes the account from that repo, [dfh7j] to [dfh7m].
 ##		- 20261119 JC: release.bash makes a pre-release of a version suffixed after a dot, and promotes one to its plain version, [dfhm3] [dfhm4].
+##		- 20261120 JC: pr create refuses a branch that shares no history with its base through gh and tea, and leaves it to the git host through glab and in a shallow clone, [dfjg8] to [dfjgc].

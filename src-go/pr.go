@@ -441,12 +441,40 @@ func (a *app) prPreflight() error {
 	if a.pr.title == "" {
 		return usagef("No commits on '%s' yet; nothing to propose.", prBranch)
 	}
+	if err := a.refuseUnrelatedPr(prBranch); err != nil {
+		return err
+	}
 	// An open PR for this branch already is the answer to 'pr create' - say so
 	// instead of letting the git host error.
 	if existing := a.openPrForBranch(head); existing != "" {
 		return usagef("PR #%s is already open for '%s'. View it: %s pr %s", existing, head, meName, existing)
 	}
 	return nil
+}
+
+// refuseUnrelatedPr: GitHub and Gitea won't open a pull request from a branch that
+// shares no commit with its base, and they say so only after the park push has
+// published it. GitLab opens and merges one, so glab is left to it. The base is
+// origin's, which is what the git host compares against. A shallow clone can't tell,
+// and the git host has the whole history, so it's left to the git host too.
+func (a *app) refuseUnrelatedPr(branch string) error {
+	if a.pr.tool == toolGlab {
+		return nil
+	}
+	base := a.branchTarget(branch)
+	refs := a.branchRefs()
+	baseRef := "refs/remotes/origin/" + base
+	if refs.tip[baseRef] == "" {
+		baseRef = "refs/heads/" + base
+	}
+	if refs.tip[baseRef] == "" || refs.tip["refs/heads/"+branch] == "" {
+		return nil
+	}
+	if runOK("git", "merge-base", "refs/heads/"+branch, baseRef) || runOut("git", "rev-parse", "--is-shallow-repository") == "true" {
+		return nil
+	}
+	return usagef("'%s' shares no history with '%s', so %s won't open a pull request for it. Nothing was done. Joining unrelated histories is raw-git territory: git merge --allow-unrelated-histories %s",
+		branch, base, a.hostName(), typedArg(strings.TrimPrefix(strings.TrimPrefix(baseRef, "refs/heads/"), "refs/remotes/"), runtime.GOOS))
 }
 
 // prCreateHead is the branch on origin the park push sends the work to, which the
