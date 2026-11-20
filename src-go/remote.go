@@ -275,7 +275,7 @@ func probeSSHLogin(ctx context.Context, env []string, url string, sshCmd []strin
 	if target == "" || !inPath("ssh") || len(sshCmd) == 0 || !sshTakesOptions(sshCmd[0]) {
 		return "?"
 	}
-	// A copy: probes for other urls run at the same time, from the same words.
+	// A copy, since this runs on a look-ahead goroutine and append could write into the caller's array.
 	args := slices.Concat(sshCmd[1:], []string{"-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "--", target})
 	// Both streams: ssh writes host-key and missing-identity warnings ahead of the
 	// greeting, so it is not reliably the first line - anchoring to the whole output
