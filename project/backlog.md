@@ -61,6 +61,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [dfjme], [dfjmf] and [dfjmg].
 	- Acceptance signoff: Self-closed: all 3 failed against the old cicd.bash and publisher, and pass now.
 	- Closed: 20261120-135440
+	- Commit: 0633cc1
 
 - CICD process gaps: stage 0 stops on any branch that diverged from origin
 	- ID: 2026112013542571
@@ -77,6 +78,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [dfjmb], [dfjmc], [dd5g3] (now the conflict case) and [dfjmd].
 	- Acceptance signoff: Self-closed: each check failed against the old stage 0 or a planted fault, and passes now.
 	- Closed: 20261120-135440
+	- Commit: 0633cc1
 
 - Code Review 20261119 item 24: [daf7x] passes with the code it checks taken out
 	- ID: 2026111910222957
