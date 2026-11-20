@@ -10,10 +10,13 @@
 package main
 
 import (
+	"net"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestRemoteOwner(t *testing.T) { // [dbfrn]
@@ -263,6 +266,119 @@ func TestRemoteEnvKeepsTheConnectTimeoutOnOurOwnSSHCommand(t *testing.T) { // [d
 		if strings.HasPrefix(entry, "GIT_SSH_COMMAND=") && strings.Contains(entry, "ConnectTimeout") {
 			t.Errorf("remoteEnv() rewrote a caller's own GIT_SSH_COMMAND: %q", entry)
 		}
+	}
+}
+
+// An http remote that takes the connection and never answers held the fetch, and
+// every command behind it, until stopped: remoteEnv gave ssh a connect timeout and
+// http nothing. Each way the run reaches origin unseen has to give up on its own.
+func TestRemoteReachesGiveUpOnAStalledHTTPRemote(t *testing.T) { // [dfhez]
+	_, clone := gitTestRepo(t)
+	for _, name := range []string{"GIT_HTTP_LOW_SPEED_LIMIT", "GIT_HTTP_LOW_SPEED_TIME", "http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skip("no loopback listener:", err)
+	}
+	var mu sync.Mutex
+	var held []net.Conn
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			held = append(held, conn)
+			mu.Unlock()
+		}
+	}()
+	// Closing lets a git that never gave up see the end, so a failure ends too.
+	release := func() {
+		_ = listener.Close()
+		mu.Lock()
+		for _, conn := range held {
+			_ = conn.Close()
+		}
+		mu.Unlock()
+	}
+	t.Cleanup(release)
+
+	url := "http://" + listener.Addr().String() + "/stalled.git"
+	runGit(t, clone, "remote", "set-url", "origin", url)
+	saved := httpStallSeconds
+	httpStallSeconds = 2
+	t.Cleanup(func() { httpStallSeconds = saved })
+	t.Chdir(clone)
+	p, _, _ := testPrinter()
+	a := newApp(p)
+
+	for _, reach := range []struct {
+		name string
+		run  func()
+	}{
+		{"fetch", func() {
+			a.fetchRemote()
+			if !a.isOffline() {
+				t.Error("the fetch of a stalled remote didn't read as offline")
+			}
+		}},
+		{"ls-remote --heads", func() {
+			if _, asked := a.askOriginHeads(); asked {
+				t.Error("askOriginHeads() answered from a stalled remote")
+			}
+		}},
+		{"probe", func() {
+			if got, _ := a.probeRemote(url); got != repoUnknown {
+				t.Errorf("probeRemote() = %v on a stalled remote, want unknown", got)
+			}
+		}},
+	} {
+		done := make(chan struct{})
+		go func() {
+			reach.run()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(30 * time.Second):
+			t.Errorf("the %s was still waiting on a stalled remote after 30 s", reach.name)
+			release()
+			<-done
+			return
+		}
+	}
+}
+
+// The low-speed limit rides every way out of remoteEnv, the ssh early returns
+// included, and a limit the caller set is left exactly as it was.
+func TestRemoteEnvHTTPStallLimit(t *testing.T) { // [dfhf0]
+	for _, name := range []string{"GIT_HTTP_LOW_SPEED_LIMIT", "GIT_HTTP_LOW_SPEED_TIME"} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("GIT_SSH_COMMAND", "ssh -i /keys/work")
+	limit, wait := "GIT_HTTP_LOW_SPEED_LIMIT=1", "GIT_HTTP_LOW_SPEED_TIME=30"
+	for _, a := range []*app{{}, {userSSHCommand: true}} {
+		if env := a.remoteEnv(); !hasEnv(env, limit) || !hasEnv(env, wait) {
+			t.Errorf("remoteEnv() with userSSHCommand=%v has no http low-speed limit", a.userSSHCommand)
+		}
+	}
+	for _, name := range []string{"GIT_HTTP_LOW_SPEED_LIMIT", "GIT_HTTP_LOW_SPEED_TIME"} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(name, "600")
+			for _, entry := range (&app{}).remoteEnv() {
+				if entry == limit || entry == wait {
+					t.Errorf("remoteEnv() added %q over the caller's own %s", entry, name)
+				}
+			}
+		})
 	}
 }
 

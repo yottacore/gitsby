@@ -125,6 +125,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `account unset` on a key written on a dotted line, such as `account.work.email`, shows the `account:` and `work:` lines the save writes in its place. Its plan named only the key's line, and showed it as `email: a@x`.
 
+- The fetch before a command, and the other checks that reach origin, give up on an http or https remote that takes the connection and then sends nothing for 30 seconds. They used to wait until stopped. One that never finishes its TLS handshake still takes curl's 5 minutes. A push, pull or clone is left to git, as is a limit set in `GIT_HTTP_LOW_SPEED_LIMIT` or `GIT_HTTP_LOW_SPEED_TIME`.
+
 ## v3.0.0-beta.1 - 2026-11-08
 
 ### Notes

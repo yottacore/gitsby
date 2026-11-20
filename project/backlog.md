@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 11: A stalled https remote hangs every command
 	- ID: 2026111910223148
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261119-102231
@@ -47,6 +47,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
 	- Possible cause [Bug]: remoteEnv sets no http speed limit, only the ssh connect timeout.
 	- Origin: 88ff4ab, 2026-08-19. The comment came in 8c7a856. No round reached it.
+	- Closed reason: Done
+	- Actual cause [Bug]: git sets no time limit on http, and remoteEnv gave it none. Only ssh had a connect timeout.
+	- Actual fix [Bug]: The fetch, origin/HEAD healing, br prune's ls-remote and the repo probe run with GIT_HTTP_LOW_SPEED_LIMIT=1 and GIT_HTTP_LOW_SPEED_TIME=30, unless the caller set either one. gitsby status on a stalled http origin now warns that the fetch failed after 30 s and goes on.
+	- Branch: nov19c-2026111910223148
+	- Commit: 9561f20
+	- Test case: Go test [dfhez] TestRemoteReachesGiveUpOnAStalledHTTPRemote, the fetch, ls-remote and probe against a listener that never answers. Go test [dfhf0] TestRemoteEnvHTTPStallLimit, every return path of remoteEnv, and a caller's own limit kept.
+	- Verified: [dfhez] and [dfhf0] fail with the limit taken out, the fetch still waiting at 30 s, and pass with it. The built binary's status on a stalled http origin ended at 30 s with the offline warning. The quick gate passed with every area.
+	- Verified: git 2.51 and curl 8.14 on b23. The env variables outrank http.lowSpeedLimit and -c. A stalled TLS handshake isn't covered by the low-speed check, and ended at curl's 300 s connect limit.
+	- Swept: every git call that reaches origin outside a step: fetch and set-head in fetchRemote, ls-remote --heads in askOriginHeads, ls-remote in probeRemote. All read remoteEnv. The ssh probe in probeSSHLogin talks only ssh. Push, pull and clone run as steps.
+	- Decisions: Push, pull and clone are left as git runs them. They are steps the plan shows as typed, and the item's expected behavior names only the fetch and probes.
+	- Decisions: 30 s at under 1 byte a second. A server packing sends a keepalive every 5 s by default, so a busy one doesn't trip it, and a false trip only reads as offline.
+	- Decisions: A caller's GIT_HTTP_LOW_SPEED_LIMIT or GIT_HTTP_LOW_SPEED_TIME leaves both alone, like a caller's GIT_SSH_COMMAND. An http.lowSpeedLimit in git config is outranked, like ConnectTimeout in ssh_config, since reading it would cost a spawn per run.
+	- Decisions: A TLS handshake that never finishes is left at curl's 5 minutes. git has no connect timeout setting, and a watchdog on git's process can't tell a stall from a slow fetch.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261119-174233
 
 - Code Review 20261119 item 14: On Windows, curly single quotes in a branch name break out of a paste line
 	- ID: 2026111910223104

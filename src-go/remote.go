@@ -13,6 +13,7 @@ import (
 	"context"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -182,12 +183,13 @@ func sshTakesOptions(program string) bool {
 }
 
 // remoteEnv is the environment every command that reaches origin runs under: no auth
-// prompts, and an ssh connect timeout added to whatever ssh command git would use.
-// Whatever can't take the timeout is left for git to run as it stands: a
-// GIT_SSH_COMMAND the caller chose, one only a shell can read, PuTTY's, and GIT_SSH,
-// which any GIT_SSH_COMMAND would outrank.
+// prompts, an http low-speed limit, and an ssh connect timeout added to whatever ssh
+// command git would use. Whatever can't take the timeout is left for git to run as
+// it stands: a GIT_SSH_COMMAND the caller chose, one only a shell can read, PuTTY's,
+// and GIT_SSH, which any GIT_SSH_COMMAND would outrank.
 func (a *app) remoteEnv() []string {
 	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	env = append(env, httpStallEnv()...)
 	if a.userSSHCommand {
 		return env
 	}
@@ -202,6 +204,25 @@ func (a *app) remoteEnv() []string {
 		return env
 	}
 	return append(env, "GIT_SSH_COMMAND="+cmd+" -o ConnectTimeout=3")
+}
+
+// An http(s) remote that takes the connection and never answers holds git with no
+// limit of its own, since git sets none. Less than a byte a second for this long
+// gives up. A server busy packing sends a keepalive every 5 s, so this only trips
+// on one that has gone quiet. curl's own 300 s connect limit is all that bounds a
+// TLS handshake that never finishes: the low-speed check starts after it.
+// A var only so a test can wait less.
+var httpStallSeconds = 30
+
+// httpStallEnv is the low-speed limit for the commands that reach origin unseen.
+// Either variable set by the caller leaves both as they are. git reads them over
+// http.lowSpeedLimit and http.lowSpeedTime, so a config value is outranked, the
+// way ssh's ConnectTimeout outranks one in ssh_config.
+func httpStallEnv() []string {
+	if os.Getenv("GIT_HTTP_LOW_SPEED_LIMIT") != "" || os.Getenv("GIT_HTTP_LOW_SPEED_TIME") != "" {
+		return nil
+	}
+	return []string{"GIT_HTTP_LOW_SPEED_LIMIT=1", "GIT_HTTP_LOW_SPEED_TIME=" + strconv.Itoa(httpStallSeconds)}
 }
 
 // The greeting each git host answers an ssh -T with. GitHub says 'Hi <user>!';
