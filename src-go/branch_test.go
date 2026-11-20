@@ -281,6 +281,9 @@ func TestRefuseHeldBranch(t *testing.T) { // [dfh8b]
 	linked := filepath.Join(filepath.Dir(clone), "linked")
 	runGit(t, clone, "worktree", "add", "-q", "-b", "w", linked, "dev")
 	runGit(t, linked, "branch", "-q", "hotfix/h", "main")
+	// pr ok moves off a branch that tracks the PR's own, or that tracks nothing.
+	runGit(t, linked, "push", "-q", "-u", "origin", "w")
+	runGit(t, linked, "branch", "-q", "solo", "w")
 	t.Chdir(linked)
 	tests := []struct{ name, branch, cmd, sub, arg, head, want string }{
 		{"br merge", "w", "br-merge", "", "", "", "dev"},
@@ -291,6 +294,7 @@ func TestRefuseHeldBranch(t *testing.T) { // [dfh8b]
 		{"release", "w", "release", "", "", "", "dev"},
 		{"pr ok of this branch", "w", "pr", "ok", "", "w", "dev"},
 		{"pr ok of another branch", "w", "pr", "ok", "", "other", ""},
+		{"pr ok from a branch with no upstream", "solo", "pr", "ok", "", "other", "dev"},
 		{"pr create checks nothing out", "w", "pr", "create", "", "", ""},
 		{"sync checks nothing out", "w", "sync", "", "", "", ""},
 		{"a hotfix's back-merge", "hotfix/h", "br-merge", "", "", "", "dev"},

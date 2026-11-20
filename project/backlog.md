@@ -142,7 +142,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 15: pr ok from another branch pulls that branch while its plan says the target
 	- ID: 2026111910223089
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102230
@@ -153,6 +153,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, with a fake gh. Confirmed.
 	- Possible cause [Bug]: cmdPrAccept in pr.go checks out the target only in some cases. The plan line in preview.go always names it.
 	- Origin: 4918b5b and 353f5c9, 2026-08-19. Plan line from c4fa47c. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: The plan always named a checkout and pull of the merge target. The run checked it out only when the current branch had no upstream once the merge's branch delete was pruned, and otherwise pulled the current branch. The worktree check read a third rule, the current branch being the PR's.
+	- Actual fix [Bug]: prOkMoves in pr.go is the one rule: pr ok moves to the merge target when the current branch has no upstream or tracks origin's copy of the PR's branch. It's read before the merge by the plan, the run and the worktree check. Otherwise the plan shows the pull of the current branch, and no checkout. The checkout line lost its asterisk, since it always runs when shown. The changelog says so.
+	- Branch: nov19c-2026111910223089
+	- Commit: 764fc97
+	- Test case: test.bash [dfhgf] to [dfhgk]. Go [dfh8b] TestRefuseHeldBranch, new case 'pr ok from a branch with no upstream'.
+	- Verified: [dfhgg], [dfhgh] and [dfhgj] fail on the build before the fix and pass with it. [dfhgf] and [dfhgk] pass on both, since the run itself didn't change there. The new [dfh8b] case fails before the fix. The quick gate passed with every area: test.bash 2175/0, fuzz 310/0, parity 31/0, spawn counts OK. gosec reports nothing in the changed files.
+	- Swept: every reader of where pr ok ends: previewPr, cmdPrAccept and checkoutsAhead now share prOkMoves. mergePushesOwn and previewBackMerge read only the hotfix back-merge, which is unchanged. No other site compares the PR's branch with the current one, other than preflight's refusal wording.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261119-183738
+	- Decisions:
+		- The plan follows the run, not the other way round. Code Review 20260725 item 5 moved pr ok to the merge target only when the branch it stood on went away, so a run from another branch stays there. Moving it to the target every time would switch branches under work the PR has nothing to do with.
+		- The local copy of the merge target stays behind origin's after a run from another branch, as any branch not checked out does. The next br switch to it pulls it. The issue named that as wrong, but its expected behavior asks only that the run match the plan.
+		- The answer is settled before the merge. The run also still moves when the prune took the current branch's upstream, which can only happen when someone deleted it on origin since the first fetch, since pulling it would then fail after the merge.
+		- Under --no-fetch, a run standing on the PR's branch now moves to the merge target, as its plan always said. It used to stay, since nothing was pruned. Unverified: read from the code, not run.
+	- Note: [dfh8b]'s fixture now gives w an upstream, so its 'pr ok of another branch' case still checks nothing out under the new rule. Its asserts are unchanged.
 
 - Code Review 20261119 item 16: After an autostash conflict, sync, br switch and pr create say to run pullcom again
 	- ID: 2026111910223074

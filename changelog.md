@@ -117,6 +117,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `br create`, `br hotfix`, `br switch`, `br merge`, `pr ok` and `release` refuse before anything runs when a branch they check out is checked out in another worktree, and name it. They used to commit and push first, then stop at the checkout. A worktree folder deleted by hand still holds its branch, and the refusal names `git worktree prune` for it.
 
+- `pr ok` run from a branch other than the PR's, with an upstream of its own, says in its plan that it pulls that branch and stays on it, which is what it does. The plan said it would check out and pull the branch the PR merges into.
+
 - An accounts file last written before the first SHCL 3 module Gitsby used, or with no real time, as a Nix store gives, is read as it is rather than re-spelled as that module's. The copy a conversion keeps has the file's own time, so moving it back reads as the file did. Where the folder can't be written, the notice says so rather than blaming a lock.
 
 - `repo clone` ends on the `dev` branch, tracking origin's, when origin also has a tag named `dev`. It used to leave the clone detached at the tag and say Done, and the next command refused.

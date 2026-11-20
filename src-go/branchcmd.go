@@ -68,9 +68,8 @@ func (a *app) checkoutsAhead() []string {
 		if a.pr.sub != "ok" {
 			break
 		}
-		// The merge deletes the branch's upstream, and the run moves to the target.
-		if a.pr.headBranch == a.currentBranch() {
-			add(a.branchTarget(""))
+		if a.prOkMoves() {
+			add(a.branchTarget(a.pr.headBranch))
 		}
 		if a.isHotfixBranch(a.pr.headBranch) {
 			add(a.mergeTarget())

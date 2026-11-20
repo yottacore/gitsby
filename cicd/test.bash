@@ -3451,6 +3451,28 @@ GHEOF
 	fAssert    "[dacyr] pr ok pulled the merged work"      bash -c "cd '${prc}' && git ls-tree --name-only dev | grep -qx work.txt"
 	fAssert    "[dacys] the merged branch is gone from origin"  bash -c "cd '${prc}' && ! git ls-remote --heads origin prfeat | grep -q prfeat"
 
+	## pr ok from a third branch, whose upstream moved on: the run pulls that branch and stays
+	## there, so the plan has to say so, not promise a checkout and pull of the merge target.
+	mkdir -p "${gh}/proks"
+	git init --quiet --bare -b main "${gh}/proks/origin.git"
+	local pks="${gh}/proks/c"
+	git clone --quiet "${gh}/proks/origin.git" "${pks}" 2>/dev/null
+	(
+		cd "${pks}" || exit 1
+		echo base > base.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b prfeat && echo work > work.txt && git add --all && git commit --quiet -m work
+		git push --quiet -u origin prfeat
+		git checkout --quiet -b side dev && git push --quiet -u origin side
+	)
+	git clone --quiet -b side "${gh}/proks/origin.git" "${gh}/proks/other" 2>/dev/null
+	( cd "${gh}/proks/other" || exit 1; echo moved > side.txt && git add --all && git commit --quiet -m moved && git push --quiet origin side )
+	fAssert        "[dfhgf] pr ok from another branch runs"  bash -c "cd '${pks}' && PATH='${ghp}' FAKE_GH_BASE=dev FAKE_GH_HEAD=prfeat '${gitsby}' -q pr ok 7 > '${gh}/proks.log' 2>&1"
+	fAssertPlan    "[dfhgg] its plan pulls the branch it's on"  '^ +git merge --ff-only origin/side'  cat "${gh}/proks.log"
+	fAssertNotPlan "[dfhgh] and checks nothing out"  'git checkout'  cat "${gh}/proks.log"
+	fAssert        "[dfhgj] the pull it planned is the one that ran"  fPlanRan 'git merge --ff-only'  cat "${gh}/proks.log"
+	fAssert        "[dfhgk] and it ended there, with what origin had"  bash -c "cd '${pks}' && [[ \"\$(git branch --show-current)\" == side ]] && [[ \"\$(git log -1 --pretty=%s)\" == moved ]]"
+
 	## 'pr ok <n>' from dev is the routine case, and gh deletes the PR's branch with 'branch -D'
 	## either way - so unpushed commits on it have to be caught even when we aren't standing there.
 	mkdir -p "${gh}/prx"

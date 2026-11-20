@@ -251,8 +251,13 @@ func (a *app) previewPr() {
 	if a.opt.fetch {
 		a.out.clean(planPad + "git fetch --prune origin")
 	}
-	a.out.clean(planPad + a.checkoutDisp(a.branchTarget(a.pr.headBranch)) + " *")
-	a.out.clean(planPad + a.pullDisp(a.branchTarget(a.pr.headBranch)))
+	if a.prOkMoves() {
+		target := a.branchTarget(a.pr.headBranch)
+		a.out.clean(planPad + a.checkoutDisp(target))
+		a.out.clean(planPad + a.pullDisp(target))
+	} else {
+		a.out.clean(planPad + a.pullDisp(a.currentBranch()))
+	}
 	if a.isHotfixBranch(a.pr.headBranch) {
 		a.previewBackMerge()
 	}
