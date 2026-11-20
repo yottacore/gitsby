@@ -763,6 +763,49 @@ func TestOld2xUnquotableRefuses(t *testing.T) { // [dfg4f]
 	}
 }
 
+// A 2.x file that isn't converted gives one account of how the run read it, and
+// it is the reading the values have. A line no quote fits reads the new way; a
+// file kept only because its folder can't be written reads as 2.x read it.
+func TestOld2xNoticeOneReading(t *testing.T) { // [dfhjk]
+	for _, c := range []struct {
+		value, read, says, not string
+		lock                   bool
+	}{
+		{`it's a"b#c`, `it's a"b`, "This run read it in the new format.", "in that format", false},
+		{`O"Brien#2`, `O"Brien#2`, "This run read it in that format.", "in the new format", true},
+	} {
+		body := "account: w\n\tname: " + c.value + "\n" + shcl2Footer
+		dir := t.TempDir()
+		file := filepath.Join(dir, "config.shcl")
+		if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if c.lock {
+			if err := os.Chmod(dir, 0o500); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+		}
+		var stderr bytes.Buffer
+		p := newPrinter()
+		p.out, p.err = &bytes.Buffer{}, &stderr
+		a := newApp(p)
+		a.opt.configFile, a.opt.configGiven, a.opt.quiet = file, true, true
+		if err := a.resolveAccount(dir, ""); err != nil {
+			t.Fatal(err)
+		}
+		wantValue(t, a.cfg, "w", "name", c.read)
+		out := stderr.String()
+		if !strings.Contains(out, "couldn't be converted. "+c.says) || strings.Contains(out, c.not) || strings.Contains(out, "this run read") {
+			t.Errorf("%s: notice: %q", c.value, out)
+		}
+		a.cmd = command{name: "account-set", arg: "w", arg2: "email", arg3: "e@x", mutating: true}
+		if err := a.cmdAccountSet(); err == nil || strings.Contains(err.Error(), "this run read") {
+			t.Errorf("%s: set: %v", c.value, err)
+		}
+	}
+}
+
 // 2.x read a byte that isn't UTF-8 as U+FFFD, one per byte, and v3 keeps the byte.
 // The converted file holds U+FFFD where 2.x read it, counted as a line re-spelled,
 // and the comments keep their bytes. The kept copy is the file as it was.

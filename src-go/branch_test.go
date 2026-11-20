@@ -9,6 +9,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -172,6 +173,55 @@ func TestSwitchTargetWithLeadingDash(t *testing.T) { // [df520]
 	}
 }
 
+// Before the first commit, br create and br hotfix off the branch HEAD names would
+// only rename it, then fail the push. They refuse up front, unless the base is
+// another branch that exists.
+func TestUnbornBase(t *testing.T) { // [dfhjw]
+	seeded, _ := gitTestRepo(t)
+	root := t.TempDir()
+	empty := filepath.Join(root, "empty.git")
+	runGit(t, root, "init", "-q", "--bare", "-b", "main", empty)
+	withDev := filepath.Join(root, "dev.git")
+	runGit(t, root, "clone", "-q", "--bare", seeded, withDev)
+	runGit(t, withDev, "branch", "dev", "main")
+	tests := []struct {
+		name, origin string
+		args         []string
+		want         string
+	}{
+		{"no origin", "", []string{"br", "create", "nb"}, "Make the first commit with: gitsby pullcom"},
+		{"empty origin", empty, []string{"br", "create", "nb"}, "Publish the first commit with: gitsby repo connect"},
+		{"hotfix, empty origin", empty, []string{"br", "hotfix", "hb"}, "nothing to start 'hotfix/hb' from"},
+		{"origin has main", seeded, []string{"br", "hotfix", "hb"}, "no commits here yet, so there is nothing to start 'hotfix/hb' from. Origin has one"},
+		{"origin has dev", withDev, []string{"br", "create", "nb"}, ""},
+	}
+	for i, tt := range tests {
+		repo := filepath.Join(root, fmt.Sprint("r", i))
+		runGit(t, root, "init", "-q", "-b", "main", repo)
+		if tt.origin != "" {
+			runGit(t, repo, "remote", "add", "origin", tt.origin)
+			runGit(t, repo, "fetch", "-q", "origin")
+		}
+		t.Chdir(repo)
+		_, cmd, _, err := parseArgs(tt.args)
+		if err == nil {
+			cmd, err = collapseCommand(cmd)
+		}
+		if err != nil {
+			t.Fatalf("%s: parse: %v", tt.name, err)
+		}
+		a := newApp(newPrinter())
+		a.cmd = cmd
+		err = a.preflightBranch()
+		switch {
+		case tt.want == "" && err != nil:
+			t.Errorf("%s: refused: %v", tt.name, err)
+		case tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)):
+			t.Errorf("%s: got %v, want %q", tt.name, err, tt.want)
+		}
+	}
+}
+
 // A single-branch or shallow clone fetches only one branch, so a missing origin/dev
 // says nothing about origin. fetchSees reads the fetch refspecs git itself uses.
 func TestFetchSees(t *testing.T) { // [dfh89]
@@ -281,6 +331,9 @@ func TestRefuseHeldBranch(t *testing.T) { // [dfh8b]
 	linked := filepath.Join(filepath.Dir(clone), "linked")
 	runGit(t, clone, "worktree", "add", "-q", "-b", "w", linked, "dev")
 	runGit(t, linked, "branch", "-q", "hotfix/h", "main")
+	// pr ok moves off a branch that tracks the PR's own, or that tracks nothing.
+	runGit(t, linked, "push", "-q", "-u", "origin", "w")
+	runGit(t, linked, "branch", "-q", "solo", "w")
 	t.Chdir(linked)
 	tests := []struct{ name, branch, cmd, sub, arg, head, want string }{
 		{"br merge", "w", "br-merge", "", "", "", "dev"},
@@ -291,6 +344,7 @@ func TestRefuseHeldBranch(t *testing.T) { // [dfh8b]
 		{"release", "w", "release", "", "", "", "dev"},
 		{"pr ok of this branch", "w", "pr", "ok", "", "w", "dev"},
 		{"pr ok of another branch", "w", "pr", "ok", "", "other", ""},
+		{"pr ok from a branch with no upstream", "solo", "pr", "ok", "", "other", "dev"},
 		{"pr create checks nothing out", "w", "pr", "create", "", "", ""},
 		{"sync checks nothing out", "w", "sync", "", "", "", ""},
 		{"a hotfix's back-merge", "hotfix/h", "br-merge", "", "", "", "dev"},

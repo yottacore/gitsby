@@ -67,12 +67,12 @@ func (a *app) preview(what string) {
 		a.out.clean(planPad + a.pullDisp(a.branchTarget("")))
 		a.out.clean(planPad + "git merge --no-ff " + a.currentBranch())
 		if a.atomicMergeFits(a.branchTarget("")) {
-			a.out.clean(planPad + "git push --atomic (the merge, and the leased delete of origin's '" + a.currentBranch() + "') *")
+			a.out.clean(planPad + "git push --atomic (the merge, and the leased delete of origin's '" + a.mergeHead() + "') *")
 			a.out.clean(planPad + "git branch -d " + a.currentBranch() + " *")
 		} else {
 			a.out.clean(planPad + "git push *")
 			a.out.clean(planPad + "git branch -d " + a.currentBranch() + " *")
-			a.out.clean(planPad + "git push --force-with-lease origin --delete " + a.currentBranch() + " *")
+			a.out.clean(planPad + "git push --force-with-lease origin --delete " + a.mergeHead() + " *")
 		}
 		a.out.clean(planPad + a.pullDisp(a.branchTarget("")))
 		// A hotfix owes dev the same change, or the next release undoes it.
@@ -251,8 +251,13 @@ func (a *app) previewPr() {
 	if a.opt.fetch {
 		a.out.clean(planPad + "git fetch --prune origin")
 	}
-	a.out.clean(planPad + a.checkoutDisp(a.branchTarget(a.pr.headBranch)) + " *")
-	a.out.clean(planPad + a.pullDisp(a.branchTarget(a.pr.headBranch)))
+	if a.prOkMoves() {
+		target := a.branchTarget(a.pr.headBranch)
+		a.out.clean(planPad + a.checkoutDisp(target))
+		a.out.clean(planPad + a.pullDisp(target))
+	} else {
+		a.out.clean(planPad + a.pullDisp(a.currentBranch()))
+	}
 	if a.isHotfixBranch(a.pr.headBranch) {
 		a.previewBackMerge()
 	}

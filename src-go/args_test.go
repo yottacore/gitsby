@@ -385,6 +385,53 @@ func TestSortCommandRefusesTwoMessages(t *testing.T) { // [dfgvz]
 	}
 }
 
+// -m twice is refused on every command that takes it, and git's own -m after raw
+// isn't gitsby's to judge.
+func TestRepeatedMessageRefused(t *testing.T) { // [dfhhy]
+	settle := func(argv ...string) error {
+		opt, cmd, _, err := parseArgs(argv)
+		if err == nil {
+			cmd, err = collapseCommand(cmd)
+		}
+		if err == nil {
+			cmd, err = sortCommand(cmd, &opt)
+		}
+		if err == nil {
+			err = checkOptionsUsed(typedName(cmd), opt)
+		}
+		return err
+	}
+	tests := []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"-q", "pullcom", "-m", "first", "-m", "second"}, "-m given 2 times: 'first' and 'second'. Give one commit message."},
+		{[]string{"sync", "--message=a", "--msg", "b"}, "-m given 2 times: 'a' and 'b'. Give one commit message."},
+		{[]string{"br", "create", "x", "-m", "a", "-m", "b", "-m", "c"}, "-m given 3 times: 'a', 'b' and 'c'. Give one commit message."},
+		{[]string{"repo", "create", "-m", "a", "-m", "a"}, "-m given 2 times: 'a' and 'a'."},
+		{[]string{"pr", "create", "-m", "one", "-m", "two"}, "-m given 2 times: 'one' and 'two'. Give one title."},
+		{[]string{"pr", "new", "-m=one", "-m=two"}, "Give one title."},
+		// A command that takes no -m says so first.
+		{[]string{"status", "-m", "a", "-m", "b"}, "-m works with"},
+	}
+	for _, tc := range tests {
+		t.Run(joinArgs(tc.argv), func(t *testing.T) {
+			if err := settle(tc.argv...); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("got %v, want %q", err, tc.want)
+			}
+		})
+	}
+	for _, argv := range [][]string{{"pullcom", "-m", "only"}, {"pr", "create", "-m", "only"}, {"release", "1.2.3", "--message=only"}} {
+		if err := settle(argv...); err != nil {
+			t.Errorf("%v refused: %v", argv, err)
+		}
+	}
+	var opt options
+	if _, args, err := scanPassthrough([]string{"raw", "git", "commit", "-m", "a", "-m", "b"}, &opt); err != nil || len(args) != 5 || len(opt.messages) != 0 {
+		t.Errorf("raw git's -m: args %v, messages %v, err %v", args, opt.messages, err)
+	}
+}
+
 func TestScanPassthrough(t *testing.T) { // [dbfqx]
 	tests := []struct {
 		name     string

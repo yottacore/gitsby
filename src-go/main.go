@@ -433,6 +433,12 @@ func (a *app) preflight() error {
 	if err := a.refuseGoneBranch(); err != nil {
 		return err
 	}
+	if err := a.refuseMergePushesOwn(); err != nil {
+		return err
+	}
+	if err := a.refuseSparseAdd(); err != nil {
+		return err
+	}
 	return a.stagedPreflight()
 }
 
@@ -444,7 +450,10 @@ func (a *app) preflightBranch() error {
 		if a.cmd.arg == "" {
 			return usageOf("br create").refuse("No branch name given.")
 		}
-		return a.checkNewBranchName(a.cmd.arg)
+		if err := a.checkNewBranchName(a.cmd.arg); err != nil {
+			return err
+		}
+		return a.refuseUnbornBase(a.mergeTarget())
 	case "br-hotfix":
 		if a.cmd.arg == "" {
 			return usageOf("br hotfix").refuse("No name given.")
@@ -452,13 +461,23 @@ func (a *app) preflightBranch() error {
 		// The prefix is the marker, so put it on ourselves - and accept it if the user
 		// typed it.
 		a.cmd.arg = "hotfix/" + strings.TrimPrefix(a.cmd.arg, "hotfix/")
-		return a.checkNewBranchName(a.cmd.arg)
+		if err := a.checkNewBranchName(a.cmd.arg); err != nil {
+			return err
+		}
+		return a.refuseUnbornBase(a.defaultBranch())
 	case "br-merge":
 		// Merging ends in 'git branch -d', so a leftover main/master must be refused
 		// here for the same reason br prune never lists one - and up front, not after a
 		// destructive plan was shown.
 		if a.isProtectedBranch("") {
 			return usagef("'%s' is a protected branch; landing it would delete it. Run this from a work branch instead.", a.currentBranch())
+		}
+		// Its delete names the branch the park push goes to. Ahead of refuseParkPush,
+		// since after its 'sync --direct' the delete would still name dev.
+		if a.hasOrigin() {
+			if _, err := a.parkHead(a.currentBranch()); err != nil {
+				return err
+			}
 		}
 	case "br-switch":
 		if a.cmd.arg != "" && !a.branchExistsLocal(a.cmd.arg) && !a.branchExistsRemote(a.cmd.arg) {
@@ -484,6 +503,29 @@ func (a *app) preflightBranch() error {
 		return a.refuseDirectPush()
 	}
 	return nil
+}
+
+// refuseUnbornBase: br create and br hotfix start the new branch at the base's
+// commit. When the run stands on the base and it has no commit yet, 'checkout -b'
+// only renames the unborn branch, and the push of HEAD then fails. Origin having
+// one doesn't help, since standing on the base skips the checkout.
+func (a *app) refuseUnbornBase(base string) error {
+	if base == "" || a.branchExistsLocal(base) {
+		return nil
+	}
+	if base != a.currentBranch() {
+		if a.branchExistsRemote(base) {
+			return nil
+		}
+		return usagef("No branch '%s' locally or on origin, so there is nothing to start '%s' from.", base, a.cmd.arg)
+	}
+	switch {
+	case a.branchExistsRemote(base):
+		return usagef("'%s' has no commits here yet, so there is nothing to start '%s' from. Origin has one; bringing it here is raw-git territory.", base, a.cmd.arg)
+	case a.hasOrigin():
+		return usagef("'%s' has no commits yet, so there is nothing to start '%s' from. Publish the first commit with: %s repo connect", base, a.cmd.arg, meName)
+	}
+	return usagef("'%s' has no commits yet, so there is nothing to start '%s' from. Make the first commit with: %s pullcom", base, a.cmd.arg, meName)
 }
 
 // settleTarget resolves what each remaining command is about to act on, before
@@ -707,6 +749,11 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 			a.out.warn("WARNING: " + a.directPushText())
 			a.out.warn("  To keep it off '" + a.directTarget() + "', answer n and run " + a.keepOffText(committed) + ". (The '--direct' flag silences this warning.)")
 		}
+		if target := a.mergePushesOwn(); target != "" {
+			a.out.clean("")
+			a.out.warn("WARNING: " + a.ownPushText(target))
+			a.out.warn("  To keep them off '" + target + "', answer n and run " + a.ownPushOff(target) + ". To push them as they are first, run " + a.ownPushOn(target) + ".")
+		}
 		if gone := a.pushesGoneBranch(); gone != "" {
 			a.out.clean("")
 			a.out.warn("WARNING: " + a.goneBranchText(gone))
@@ -829,18 +876,19 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	// Not findTool: a tool file whose run is already on the chain is a wrapper that
 	// started us, so the next one on PATH is the tool it wraps.
 	name, path := "", ""
-	var ours, passed []string
+	var ours, batch, passed []string
 	for _, try := range names {
-		found, skipped := walkTool(try, func(cand string) bool {
+		hit := walkTool(try, func(cand string) bool {
 			if rawOnChain(a.rawActive, rawEntry(try, cand, args)) {
 				passed = append(passed, cand)
 				return false
 			}
 			return true
 		})
-		ours = append(ours, skipped...)
-		if found != "" {
-			name, path = try, found
+		ours = append(ours, hit.ours...)
+		batch = append(batch, hit.batch...)
+		if hit.path != "" {
+			name, path = try, hit.path
 			break
 		}
 	}
@@ -848,7 +896,7 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 		return usagef("Looping: '%s' is already running under a 'raw %s' above this one, and there's no other %s after it on PATH. A %s on PATH that calls '%s raw %s' does that.", strings.Join(passed, "', '"), tool, tool, tool, meName, tool)
 	}
 	if path == "" {
-		return notInPath(tool, ours)
+		return notInPath(tool, ours, batch)
 	}
 	chain, err := rawNest(a.rawActive, name, rawEntry(name, path, args))
 	if err != nil {

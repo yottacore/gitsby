@@ -450,32 +450,9 @@ func (a *app) prPreflight() error {
 }
 
 // prCreateHead is the branch on origin the park push sends the work to, which the
-// pull request has to name. A branch can track one of another name, or push to
-// another remote, so the current branch's name could open the PR from an older
-// branch on origin. Asked whether or not anything is left to push.
+// pull request has to name.
 func (a *app) prCreateHead(branch string) (string, error) {
-	d := a.pushDest()
-	if d.refused == "" && d.remote == "origin" && d.ref == "refs/heads/"+branch {
-		return branch, nil
-	}
-	// Without an upstream the push is a first publish, to origin under its own name.
-	if !a.hasUpstream() {
-		return branch, nil
-	}
-	if err := d.refusal(); err != nil {
-		return "", err
-	}
-	unset := "To publish it to origin under its own name, run 'git branch --unset-upstream' first."
-	head, isBranch := strings.CutPrefix(d.ref, "refs/heads/")
-	switch {
-	case d.remote != "origin":
-		return "", usagef("'%s' pushes to the remote '%s', but its pull request opens on origin, which wouldn't have the work. Nothing was done. %s", branch, d.remote, unset)
-	case !isBranch:
-		return "", usagef("'%s' pushes to '%s' on origin, which isn't a branch a pull request can name. Nothing was done.", branch, d.ref)
-	case a.isProtectedBranch(head):
-		return "", usagef("'%s' pushes to '%s', so its pull request would propose '%s' itself. Nothing was done. %s", branch, head, head, unset)
-	}
-	return head, nil
+	return a.parkHead(branch)
 }
 
 // openPrForBranch is the number of the open PR proposing this branch, or nothing -
@@ -625,12 +602,24 @@ func (a *app) prCreateDisp(base string) string {
 	return a.pr.cli + " " + a.prCreateVerb() + " --base " + base + " --title " + shellWord(a.pr.title, true)
 }
 
+// prOkMoves is whether pr ok ends on the PR's merge target rather than on the
+// branch it started from. The merge deletes origin's copy of the PR's branch, so
+// a branch tracking that one has nothing left to pull, and neither has a branch
+// with no upstream. Any other branch stays, and its own upstream is pulled. The
+// plan, the worktree check and the run all read this, and only before the merge,
+// since the merge is what changes the answer.
+func (a *app) prOkMoves() bool {
+	up := a.upstream().full
+	return up == "" || up == "refs/remotes/origin/"+a.pr.headBranch
+}
+
 func (a *app) cmdPrAccept() error {
 	// Resolve both before gh deletes the branch out from under us, and off the PR's
 	// own head branch (resolved up front) rather than the current one - they need not
 	// be the same.
 	targetBranch := a.branchTarget(a.pr.headBranch)
 	wasHotfixPr := a.isHotfixBranch(a.pr.headBranch)
+	moves := a.prOkMoves()
 	a.out.clean("")
 	approve := a.prApproveArgs()
 	a.out.status(a.prDisp(approve) + " ...")
@@ -654,14 +643,17 @@ func (a *app) cmdPrAccept() error {
 		a.out.resetBlank()
 	}
 	// The merge removes the PR's branch on the remote but leaves our origin/* copy
-	// behind, so an upstream still looks present. Prune first; if ours is the branch
-	// that just went away, pulling it can only fail - switch to the merge target instead.
-	// Under --no-fetch origin isn't asked, and the pull below is skipped with it.
+	// behind, so an upstream still looks present. Prune first, so the pull below
+	// reads what origin has now. Under --no-fetch origin isn't asked, and the pull
+	// is skipped with it.
 	if a.opt.fetch {
 		a.out.status("git fetch --prune origin ...")
 		a.fetchRemote()
 	}
-	if !a.hasUpstream() {
+	// The plan's answer, settled before the merge. An upstream the prune took
+	// anyway can only be one somebody else deleted since the first fetch, and
+	// pulling it would fail after the merge went through.
+	if moves || !a.hasUpstream() {
 		if err := a.checkout(targetBranch); err != nil {
 			return err
 		}

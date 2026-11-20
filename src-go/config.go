@@ -345,23 +345,32 @@ func configCandidates() []string {
 // configCandidatesFor takes its inputs rather than reading them, so the two orders
 // this machine can never produce are still testable from it.
 func configCandidatesFor(goos, xdgConfigHome, appData, home string) []string {
+	// The platform's own separator, since the OS quotes the path back in its errors.
+	// A Windows one built with '/' read 'AppData\Roaming/gitsby/config.shcl' there.
+	sep := "/"
+	if goos == "windows" {
+		sep = `\`
+	}
+	under := func(base string, parts ...string) string {
+		return base + sep + strings.Join(parts, sep)
+	}
 	var out []string
 	switch goos {
 	case "windows":
 		if appData != "" {
-			out = append(out, appData+"/gitsby/config.shcl")
+			out = append(out, under(appData, "gitsby", "config.shcl"))
 		}
 	case "darwin":
 		if home != "" {
-			out = append(out, home+"/Library/Application Support/gitsby/config.shcl")
+			out = append(out, under(home, "Library", "Application Support", "gitsby", "config.shcl"))
 		}
 	default:
 		if xdgConfigHome != "" {
-			out = append(out, xdgConfigHome+"/gitsby/config.shcl")
+			out = append(out, under(xdgConfigHome, "gitsby", "config.shcl"))
 		}
 	}
 	if home != "" {
-		out = append(out, home+"/.config/gitsby/config.shcl")
+		out = append(out, under(home, ".config", "gitsby", "config.shcl"))
 	}
 	return out
 }
@@ -558,7 +567,8 @@ func (c *config) load(o options) error {
 		converted, m, bad := convert2x(string(data))
 		c.migration = &formatMigration{kind: oldMajor, from: from, changed: changedLines(string(data), m.Text), lost: m.Lost}
 		if bad > 0 {
-			c.migration.why = fmt.Sprintf("line %d reads one way in the old format and another in the new, and this run read it the new way", bad)
+			c.migration.why = fmt.Sprintf("line %d reads one way in the old format and another in the new", bad)
+			c.migration.readNew = true
 			c.migration.fix = fmt.Sprintf("Put the value on line %d in quotes, then run this again.", bad)
 		} else {
 			replaceOldFormat(file, string(data), converted, c.migration)

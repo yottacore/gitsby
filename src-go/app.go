@@ -65,8 +65,9 @@ func (p *ahead[T]) wait() T {
 // from day one so no spelling is refused now and accepted later.
 type options struct {
 	message     string
-	quiet       bool // -q/--quiet/-y: no prompts, no banner
-	fetch       bool // cleared by --no-fetch
+	messages    []string // each -m as typed, since more than one is refused
+	quiet       bool     // -q/--quiet/-y: no prompts, no banner
+	fetch       bool     // cleared by --no-fetch
 	visibility  string
 	anyIdentity bool // a gh/ssh account mismatch here is intended
 	direct      bool // sync straight to main/master/dev is intended

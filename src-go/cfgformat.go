@@ -61,6 +61,7 @@ type formatMigration struct {
 	lost     int    // lines that set something under the old rules and set nothing now
 	why      string // why the file couldn't be replaced, when it couldn't
 	fix      string // what to do about it, when running again won't
+	readNew  bool   // not done, and read by the new format's rules, unlike the old's
 	done     bool   // the converted text is what the file has now
 	reported bool
 }
@@ -489,7 +490,13 @@ func (a *app) reportMigration() {
 	file := nativePath(a.cfg.file)
 	notes := noteLines("File", file)
 	if !mig.done {
-		a.out.errorf("The accounts file is in the %s and couldn't be converted. This run read it in that format. 'account set' and 'account unset' refuse until it is converted.", mig.formatName())
+		// How the run read the file is said here only, never in why, which the
+		// refusal in 'account set' repeats and which once said the opposite.
+		read := "in that format"
+		if mig.readNew {
+			read = "in the new format"
+		}
+		a.out.errorf("The accounts file is in the %s and couldn't be converted. This run read it %s. 'account set' and 'account unset' refuse until it is converted.", mig.formatName(), read)
 		notes = append(notes, noteLines("Why", mig.why+".")...)
 		if mig.fix != "" {
 			notes = append(notes, noteLines("Fix", mig.fix)...)

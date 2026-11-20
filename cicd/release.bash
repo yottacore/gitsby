@@ -40,7 +40,7 @@
 ##		  must have a real vNEXT section rather than the decoy template heading.
 ##		- Both builds use the Go in the pipeline's image where docker works, and
 ##		  this box's Go, with a warning, where it doesn't.
-##		- A version with a semver suffix - v3.0.0-beta.1 - publishes as a pre-release.
+##		- A version with a suffix - v3.0.0-beta.1 or v3.0.0.rc1 - publishes as a pre-release.
 ##		  The installers take one by default only while no full release publishes a
 ##		  gitsby binary; past that, a pre-release is asked for with --tag.
 
@@ -142,6 +142,11 @@ fpCrossBuild(){
 	done
 	( cd "${assets}" && "${here}/utility/gen-checksums.bash" > SHA256SUMS )
 }
+
+## A candidate: a release version with anything past X.Y.Z, after a '-' or a '.', as nextVersion
+## in src-go/release.go reads it. Testing for a dash alone published v3.0.0.rc1 as a full release.
+## Leaves the three numbers in BASH_REMATCH 1 to 3.
+fpIsCandidate(){ fIsReleaseVersion "$1" && [[ -n "${BASH_REMATCH[4]}" ]] ;}
 
 ## What a target is published as. The Mac build runs on both CPUs, so every Mac asks for it.
 fpAssetName(){
@@ -322,9 +327,9 @@ fi
 ((publishOnly)) && [[ -z "${version}" ]] && fDie "--publish needs the version to publish."
 if [[ -z "${version}" ]]; then
 	[[ -n "${lastTag}" ]] || fDie "no v* tag to bump from; pass a version explicitly."
-	if [[ "${lastTag}" == *-* ]]; then
+	if fpIsCandidate "${lastTag}"; then
 		## A candidate promotes to its own plain version rather than bumping past it.
-		version="${lastTag%%-*}"
+		version="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
 	else
 		## Only digits reach the arithmetic, and 10# keeps a leading zero from reading as octal.
 		[[ "${lastTag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fDie "can't work out the version after ${lastTag}; pass one explicitly."
@@ -346,9 +351,9 @@ fi
 ## A suffixed version is a candidate, and GitHub is told so. The tag decides it, because the tag
 ## is already the only place a version is written. Once a full release publishes a gitsby binary,
 ## that flag is what keeps later candidates off the install line in the README.
-prerelease=0; [[ "${version}" == *-* ]] && prerelease=1
+prerelease=0; fpIsCandidate "${version}" && prerelease=1
 if ((prerelease)); then
-	fEcho_Clean "${version} has a semver suffix, so it publishes as a pre-release."
+	fEcho_Clean "${version} has a suffix, so it publishes as a pre-release."
 fi
 
 ## The history footers are maintained by hand and are missed most rounds, so check rather than
@@ -616,7 +621,7 @@ if ! fWould "verify releases/latest, download and run this platform's published 
 			fEcho_Clean "WARNING: the install line stopped before naming a release: $(printf '%s\n' "${lineOut}" | sed -n 's/^Error: //p' | sed -n '1p')"
 		elif [[ "${lineTag}" == "${version}" ]]; then
 			fEcho_Clean "the install line takes ${version}"
-		elif ((prerelease)) && [[ "${lineTag}" != *-* ]]; then
+		elif ((prerelease)) && ! fpIsCandidate "${lineTag}"; then
 			fEcho_Clean "the install line stays on ${lineTag}, a full release with a binary; ${version} is taken by naming it"
 		elif ((prerelease)); then
 			fEcho_Clean "WARNING: the install line takes ${lineTag}, neither ${version} nor a full release."
@@ -679,3 +684,4 @@ echo
 ##		- 20261108 JC: --publish runs phase 3 alone, for a tag pushed by hand after phase 2 stopped. The v3.0.0-beta.1 cut stopped at the gated push to main.
 ##		- 20261110 JC: Fetches first, and refuses unless HEAD is the branch 'gitsby release' cuts from, level with origin's. It ran the pipeline on whatever was checked out, and phase 2's pulls then tagged origin's commit. Stops before phase 2 when the pipeline left the tree changed, which the version PR took in, or origin's branch moved during the run. Phase 2 checks the new branch, the merged branch and the tag each hold the tested tree.
 ##		- 20261110 JC: The version is checked against RELEASE_VERSION_RE, the shape 'gitsby release' takes. A version it refused, such as v3.0.0-, got the bump merged first. A stop after 'br create' says the branch is pushed, which it is.
+##		- 20261119 JC: A suffix after a dot, as in v3.0.0.rc1, makes a pre-release and promotes to its plain version, as a dash does. Only a dash did, so that one published as a full release.

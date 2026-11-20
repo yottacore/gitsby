@@ -1866,6 +1866,40 @@ func TestAccountApplyFailureKeepsTheFragment(t *testing.T) { // [df35e]
 	})
 }
 
+// A save renames a new file over the old one, and Windows refuses that while
+// another program holds the old file. The Fix there named only the folder.
+func TestReplaceFixNamesAHeldFileOnWindows(t *testing.T) { // [dfhmx]
+	const permFix = "Make the folder it is in writable, then run this again."
+	if got := replaceFix("linux", permFix); got != permFix {
+		t.Errorf("linux: got %q, want %q", got, permFix)
+	}
+	if got := replaceFix("darwin", permFix); got != permFix {
+		t.Errorf("darwin: got %q, want %q", got, permFix)
+	}
+	want := "Another program may have it open. Close that program, or make the folder it is in writable, then run this again."
+	if got := replaceFix("windows", permFix); got != want {
+		t.Errorf("windows: got %q, want %q", got, want)
+	}
+	err := writeRefusal("Couldn't save the accounts file.", replacingIt, &os.LinkError{Op: "rename", Old: "/h/c.shcl.1.tmp", New: "/h/c.shcl", Err: fs.ErrPermission},
+		"Nothing was written.", replaceFix("windows", permFix), noteLines("File", "/h/c.shcl"))
+	if !strings.Contains(err.Error(), "Fix:  Another program may have it open.") {
+		t.Errorf("the held-file fix is missing:\n%s", err)
+	}
+}
+
+// A rename's error names both paths, as the OS spells them, so the Why line
+// repeated the File line and named the temp file as well.
+func TestCauseTextDropsTheRenamePaths(t *testing.T) { // [dfhmy]
+	err := &os.LinkError{Op: "rename", Old: `C:\A\c.shcl.1.tmp`, New: `C:\A/c.shcl`, Err: fs.ErrPermission}
+	if got, want := causeText(err), strings.TrimSuffix(fs.ErrPermission.Error(), "."); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	wrapped := fmt.Errorf("saving: %w", err)
+	if got := causeText(wrapped); strings.Contains(got, "c.shcl") {
+		t.Errorf("wrapped: the path is still in %q", got)
+	}
+}
+
 // A lock name past the filesystem's limit said to check permissions on the folder.
 func TestLockKeepsTheReasonItFailed(t *testing.T) { // [ddf47]
 	if isWindows() {

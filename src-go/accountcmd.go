@@ -381,9 +381,12 @@ func (a *app) replaceGlobalRules(file string, plan []includeRule, kept string) (
 		return 0, nil
 	}
 	refuse := func(doing string, err error) error {
+		fix := "Check permissions on it and on the folder it is in, then run this again."
+		if doing == replacingIt {
+			fix = replaceFix(runtime.GOOS, fix)
+		}
 		return writeRefusal("Couldn't write the folder rules into your global git config.", doing, err,
-			kept, "Check permissions on it and on the folder it is in, then run this again.",
-			noteLines("File", nativePath(file)))
+			kept, fix, noteLines("File", nativePath(file)))
 	}
 	old, err := os.ReadFile(target)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -428,7 +431,7 @@ func (a *app) replaceGlobalRules(file string, plan []includeRule, kept string) (
 		}
 	}
 	if err := os.Rename(newFile, target); err != nil {
-		return 0, refuse("Replacing it", err)
+		return 0, refuse(replacingIt, err)
 	}
 	return len(keys), nil
 }
@@ -832,8 +835,8 @@ func (a *app) writeAccountFragment(dir, file string, keys []fragmentKey) (err er
 		}
 	}
 	if err := os.Rename(newFragment, fragment); err != nil {
-		return writeRefusal("Couldn't write an account fragment.", "Replacing it", err,
-			fragmentKept, "Check permissions on it and on the folder it is in, then run this again.",
+		return writeRefusal("Couldn't write an account fragment.", replacingIt, err,
+			fragmentKept, replaceFix(runtime.GOOS, "Check permissions on it and on the folder it is in, then run this again."),
 			noteLines("File", nativePath(fragment)))
 	}
 	a.out.statusNotes("Wrote an account fragment.", noteLines("File", nativePath(fragment)))
@@ -1181,17 +1184,36 @@ func failedAt(err error, want string) string {
 }
 
 // causeText is the OS's reason alone. The path is already on its own line, and a
-// PathError repeats it.
+// PathError repeats it. So does a LinkError, with the temp file a save renames
+// over it too.
 func causeText(err error) string {
 	if err == nil {
 		return "no reason given"
 	}
 	var pe *fs.PathError
+	var le *os.LinkError
 	text := err.Error()
-	if errors.As(err, &pe) {
+	switch {
+	case errors.As(err, &pe):
 		text = pe.Err.Error()
+	case errors.As(err, &le):
+		text = le.Err.Error()
 	}
 	return strings.TrimSuffix(text, ".")
+}
+
+// replacingIt is the step that renames a new file over the old one.
+const replacingIt = "Replacing it"
+
+// replaceFix is the permissions Fix for a write that renames a new file over the
+// old one. Windows refuses that rename with "Access is denied" while another
+// program has the old file open without delete sharing, which is far more often
+// the cause there than the folder's permissions. Takes goos, so both are testable.
+func replaceFix(goos, permFix string) string {
+	if goos != "windows" || permFix == "" {
+		return permFix
+	}
+	return "Another program may have it open. Close that program, or " + strings.ToLower(permFix[:1]) + permFix[1:]
 }
 
 // unreadableFix is the Fix for a file that can't be read: chmod off Windows, where
@@ -1808,9 +1830,9 @@ func (a *app) cmdAccountSet() error {
 			return newerFormatRefusal(t.file, v)
 		}
 		// The save writes a new file beside it and renames it over, so a permissions
-		// error is the folder's, not the file's.
+		// error is the folder's, or on Windows another program holding the file.
 		return writeRefusal("Couldn't save the accounts file.", "Saving it", err,
-			"Nothing was written.", "Make the folder it is in writable, then run this again.",
+			"Nothing was written.", replaceFix(runtime.GOOS, "Make the folder it is in writable, then run this again."),
 			noteLines("File", nativePath(t.file)))
 	}
 	a.out.statusNotes("Wrote the accounts file.", noteLines("File", nativePath(t.file)))

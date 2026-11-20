@@ -1959,6 +1959,21 @@ fRunSuite(){
 	fAssertOut "[da9v3] behind count on the branch line"  'behind 1'   bash -c "cd '${cloneA}' && '${gitsby}' -q status"
 	fAssertOut "[da9v4] incoming changes previewed"       'Incoming'   bash -c "cd '${cloneA}' && '${gitsby}' -q status"
 	fAssertOut "[da9v5] incoming file named"              'fileB\.txt' bash -c "cd '${cloneA}' && '${gitsby}' -q status"
+	## git's name-status fields are split by tabs, which printed as an escape between status and name.
+	fAssertOut "[dfhj0] incoming line is the status, spaces, then the name" '^ +[AM] +fileB\.txt$' bash -c "cd '${cloneA}' && '${gitsby}' -q status"
+	fAssertNotOut "[dfhj1] and no tab escape in it"        'TAB'        bash -c "cd '${cloneA}' && '${gitsby}' -q status"
+	local renO="${work}/$1-reno.git" renA="${work}/$1-rena" renB="${work}/$1-renb"
+	git init --quiet --bare -b main "${renO}"
+	git clone --quiet "${renO}" "${renA}" 2>/dev/null
+	( cd "${renA}" && printf 'one\ntwo\nthree\n' > 'old name.txt' && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main )
+	git clone --quiet "${renO}" "${renB}" 2>/dev/null
+	( cd "${renB}" && git mv 'old name.txt' 'new name.txt' && git commit --quiet -m "rename" && git push --quiet )
+	( cd "${renA}" && git fetch --quiet )
+	fAssertOut "[dfhj2] an incoming rename reads old -> new" '^ +R100 +old name\.txt -> new name\.txt$' bash -c "cd '${renA}' && '${gitsby}' -q --no-fetch status"
+	## The list diffed HEAD against the upstream's tree, so a commit of our own showed as a delete.
+	( cd "${renA}" && echo mine > mine.txt && git add mine.txt && git commit --quiet -m "mine" )
+	fAssert "[dfhj9] ahead and behind, Incoming lists only the upstream's changes" \
+		bash -c "cd '${renA}' && out=\"\$('${gitsby}' -q --no-fetch status 2>&1)\"; grep -qF 'ahead 1, behind 1' <<< \"\${out}\" && grep -qE '^ +R100 +old name\\.txt -> new name\\.txt\$' <<< \"\${out}\" && ! grep -qF 'mine.txt' <<< \"\${out}\""
 	fAssert "[da8ma] update with dirty tree + remote ahead"  bash -c "cd '${cloneA}' && '${gitsby}' -q update 'local edit'"
 	fAssert "[da8mb] remote commit arrived"                  bash -c "cd '${cloneA}' && [[ -f fileB.txt ]]"
 	fAssert "[da8mc] local edit survived, committed"         bash -c "cd '${cloneA}' && grep -q dirty file1.txt && [[ -z \"\$(git status --porcelain)\" ]]"
@@ -2169,6 +2184,11 @@ fRunSuite(){
 	fAssert "[dfgw0] a typed message beside -m is refused, and nothing is committed" \
 		bash -c "cd '${cloneA}' && h=\"\$(git rev-parse HEAD)\"; out=\"\$('${gitsby}' -q pullcom 'first message' -m second 2>&1)\"; [[ \$? == 1 ]] && grep -qF \"Two commit messages given: 'first message', and -m 'second'.\" <<< \"\${out}\" && [[ \"\$(git rev-parse HEAD)\" == \"\${h}\" ]]"
 	rm -f "${cloneA:?}/m5.txt"
+	## A second -m was taken over the first, at exit 0.
+	( cd "${cloneA}" && echo m6 > m6.txt )
+	fAssert "[dfhj3] -m given twice is refused, and nothing is committed" \
+		bash -c "cd '${cloneA}' && h=\"\$(git rev-parse HEAD)\"; out=\"\$('${gitsby}' -q pullcom -m first -m second 2>&1)\"; [[ \$? == 1 ]] && grep -qF -- \"-m given 2 times: 'first' and 'second'. Give one commit message.\" <<< \"\${out}\" && [[ \"\$(git rev-parse HEAD)\" == \"\${h}\" ]]"
+	rm -f "${cloneA:?}/m6.txt"
 
 	## Non-tty: mutating commands fail closed without -q; read-only ones go quiet
 	( cd "${cloneA}" && echo nt > nt.txt )
@@ -2769,6 +2789,73 @@ fRunSuite(){
 	fAssert    "[dd5c1] br merge carries on when its branch is already gone from origin"  test "${pnRc}" = 0
 	fAssertOut "[dd5c2] and says so"  'Already gone from origin: vanish'  cat "${work}/$1-pn10.out"
 	fAssert    "[dd5c3] and the merge reached origin"  bash -c "git -C '${pnOrigin}' log -1 --format=%s refs/heads/dev | grep -qx 'merge vanish'"
+	## br merge deletes the branch its park push went to. A branch can track one of another name
+	## while origin still has an older one of its own name, and the delete used to name that one.
+	local mfO="${work}/$1-mfo.git" mfS="${work}/$1-mfs.git" mfA="${work}/$1-mfa"
+	git init --quiet --bare -b main "${mfO}"
+	git init --quiet --bare -b main "${mfS}"
+	git clone --quiet "${mfO}" "${mfA}" 2>/dev/null
+	(
+		cd "${mfA}" || exit 1
+		echo one > f.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git push --quiet origin dev:refs/heads/far dev:refs/heads/far-up dev:refs/heads/far2-up
+		git fetch --quiet && git rev-parse origin/far > "${work}/$1-mffar"
+		git switch --quiet -c far --track origin/far-up && git config push.default upstream
+		echo far > far.txt && git add far.txt && git commit --quiet -m "far work"
+	)
+	( cd "${mfA}" && "${gitsby}" -q br merge "merge far" ) > "${work}/$1-mf1.out" 2>&1 || true
+	fAssert    "[dfhfw] br merge on a branch tracking one of another name deletes that one from origin, once the merge is there" \
+		bash -c "! git -C '${mfO}' show-ref --verify --quiet refs/heads/far-up && git -C '${mfO}' log -1 --format=%s refs/heads/dev | grep -qx 'merge far'"
+	fAssert    "[dfhfx] and leaves origin's older branch of its own name as it was, with no warning about it" \
+		bash -c "[[ \"\$(git -C '${mfO}' rev-parse refs/heads/far)\" == \"\$(cat '${work}/$1-mffar')\" ]] && ! grep -qF \"has commits this merge doesn't\" '${work}/$1-mf1.out'"
+	fAssertOut "[dfhfy] and its plan names the delete of that one"  "^ +git push --atomic \\(the merge, and the leased delete of origin's 'far-up'\\) \\*\$"  cat "${work}/$1-mf1.out"
+	( cd "${mfA}" && git rev-parse origin/dev > "${work}/$1-mfdev" && git switch --quiet -c fard --track origin/dev )
+	fAssert    "[dfhfz] one whose push lands on dev refuses before the plan, with nothing to push, and origin's dev stays" \
+		bash -c "cd '${mfA}' && out=\"\$('${gitsby}' -q br merge 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"would delete origin's 'dev'\" <<< \"\${out}\" && [[ \"\$(git -C '${mfO}' rev-parse refs/heads/dev)\" == \"\$(cat '${work}/$1-mfdev')\" && \"\$(git branch --show-current)\" == fard ]]"
+	( cd "${mfA}" && git config --unset push.default && git switch --quiet -c far2 --track origin/far2-up )
+	fAssert    "[dfhg0] under push.default=simple one refuses, with nothing to push, naming the way to publish it under its own name" \
+		bash -c "cd '${mfA}' && out=\"\$('${gitsby}' -q br merge 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'git branch --unset-upstream' <<< \"\${out}\" && git -C '${mfO}' show-ref --verify --quiet refs/heads/far2-up && [[ \"\$(git branch --show-current)\" == far2 ]]"
+	(
+		cd "${mfA}" || exit 1
+		git checkout --quiet dev && git remote add second "${mfS}" && git switch --quiet -c farsec dev && git push --quiet -u second farsec
+		echo s > s.txt && git add s.txt && git commit --quiet -m "second work"
+	)
+	fAssert    "[dfhg1] an upstream on another remote refuses, with nothing pushed" \
+		bash -c "cd '${mfA}' && out=\"\$('${gitsby}' -q br merge 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"pushes to the remote 'second'\" <<< \"\${out}\" && [[ \"\$(git -C '${mfS}' rev-parse farsec)\" != \"\$(git rev-parse farsec)\" && \"\$(git -C '${mfO}' rev-parse refs/heads/dev)\" == \"\$(cat '${work}/$1-mfdev')\" ]]"
+	## Commits made on dev itself go out with br merge's push of dev. sync there asks for --direct,
+	## so br merge warns above the prompt, and -q refuses. A merge left on dev doesn't count.
+	(
+		cd "${mfA}" || exit 1
+		git checkout --quiet dev && echo direct > direct.txt && git add direct.txt && git commit --quiet -m "direct on dev"
+		git switch --quiet --no-track -c ownf origin/dev && echo own > own.txt && git add own.txt && git commit --quiet -m own && git push --quiet -u origin ownf
+	)
+	fAssert    "[dfhg2] br merge -q refuses while dev has a commit of its own to push, naming both ways off" \
+		bash -c "cd '${mfA}' && out=\"\$('${gitsby}' -q br merge 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'dev' has commits of its own\" <<< \"\${out}\" && grep -qF \"'git branch <branch-name> dev', then 'git branch -f dev origin/dev'\" <<< \"\${out}\" && grep -qF \"br switch dev', then '\" <<< \"\${out}\" && grep -qF \"sync --direct'\" <<< \"\${out}\" && [[ \"\$(git -C '${mfO}' rev-parse refs/heads/dev)\" == \"\$(cat '${work}/$1-mfdev')\" && \"\$(git branch --show-current)\" == ownf ]]"
+	if ((hasPty)); then
+		fAssertOut "[dfhg3] asked in person, br merge warns above the prompt"  "WARNING: 'dev' has commits of its own that origin doesn't" \
+			fAnswerPrompt n "cd '${mfA}' && '${gitsby}' br merge"
+	else
+		fSkipBlock "the br merge warning above the prompt (no pty)"
+	fi
+	fAssert    "[dfhg4] the way off it names keeps the commit on a branch, and br merge then goes through without it" \
+		bash -c "cd '${mfA}' && git branch ownmoved dev && git branch -f dev origin/dev && '${gitsby}' -q br merge 'merge ownf' && git -C '${mfO}' log -1 --format=%s refs/heads/dev | grep -qx 'merge ownf' && ! git -C '${mfO}' merge-base --is-ancestor \"\$(git rev-parse ownmoved)\" refs/heads/dev && git log -1 --format=%s ownmoved | grep -qx 'direct on dev'"
+	(
+		cd "${mfA}" || exit 1
+		git checkout --quiet dev && git switch --quiet -c side && echo side > side.txt && git add side.txt && git commit --quiet -m side
+		git checkout --quiet dev && git merge --quiet --no-ff side -m "merge side"
+		git switch --quiet -c ownf2 && echo own2 > own2.txt && git add own2.txt && git commit --quiet -m own2
+	)
+	fAssert    "[dfhg5] a merge left on dev needs no ask, and goes out with br merge -q" \
+		bash -c "cd '${mfA}' && '${gitsby}' -q br merge 'merge ownf2' && git -C '${mfO}' log --format=%s refs/heads/dev | grep -qx 'merge side'"
+	(
+		cd "${mfA}" || exit 1
+		git checkout --quiet dev && echo again > again.txt && git add again.txt && git commit --quiet -m "direct again"
+		git switch --quiet -c hotfix/mfix main && echo fix > fix.txt && git add fix.txt && git commit --quiet -m fix
+		git rev-parse origin/main > "${work}/$1-mfmain"
+	)
+	fAssert    "[dfhg6] a hotfix's br merge -q refuses too when its back-merge would push dev's own commit, with main kept" \
+		bash -c "cd '${mfA}' && out=\"\$('${gitsby}' -q br merge 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'dev' has commits of its own\" <<< \"\${out}\" && [[ \"\$(git -C '${mfO}' rev-parse refs/heads/main)\" == \"\$(cat '${work}/$1-mfmain')\" && \"\$(git branch --show-current)\" == hotfix/mfix ]]"
 	## Moved while the prompt waits, off anything in dev: the delete-time re-check keeps it, and
 	## keeping it has to hold for origin's copy too.
 	if ((hasPty)); then
@@ -3384,6 +3471,28 @@ GHEOF
 	fAssert    "[dacyr] pr ok pulled the merged work"      bash -c "cd '${prc}' && git ls-tree --name-only dev | grep -qx work.txt"
 	fAssert    "[dacys] the merged branch is gone from origin"  bash -c "cd '${prc}' && ! git ls-remote --heads origin prfeat | grep -q prfeat"
 
+	## pr ok from a third branch, whose upstream moved on: the run pulls that branch and stays
+	## there, so the plan has to say so, not promise a checkout and pull of the merge target.
+	mkdir -p "${gh}/proks"
+	git init --quiet --bare -b main "${gh}/proks/origin.git"
+	local pks="${gh}/proks/c"
+	git clone --quiet "${gh}/proks/origin.git" "${pks}" 2>/dev/null
+	(
+		cd "${pks}" || exit 1
+		echo base > base.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b prfeat && echo work > work.txt && git add --all && git commit --quiet -m work
+		git push --quiet -u origin prfeat
+		git checkout --quiet -b side dev && git push --quiet -u origin side
+	)
+	git clone --quiet -b side "${gh}/proks/origin.git" "${gh}/proks/other" 2>/dev/null
+	( cd "${gh}/proks/other" || exit 1; echo moved > side.txt && git add --all && git commit --quiet -m moved && git push --quiet origin side )
+	fAssert        "[dfhgf] pr ok from another branch runs"  bash -c "cd '${pks}' && PATH='${ghp}' FAKE_GH_BASE=dev FAKE_GH_HEAD=prfeat '${gitsby}' -q pr ok 7 > '${gh}/proks.log' 2>&1"
+	fAssertPlan    "[dfhgg] its plan pulls the branch it's on"  '^ +git merge --ff-only origin/side'  cat "${gh}/proks.log"
+	fAssertNotPlan "[dfhgh] and checks nothing out"  'git checkout'  cat "${gh}/proks.log"
+	fAssert        "[dfhgj] the pull it planned is the one that ran"  fPlanRan 'git merge --ff-only'  cat "${gh}/proks.log"
+	fAssert        "[dfhgk] and it ended there, with what origin had"  bash -c "cd '${pks}' && [[ \"\$(git branch --show-current)\" == side ]] && [[ \"\$(git log -1 --pretty=%s)\" == moved ]]"
+
 	## 'pr ok <n>' from dev is the routine case, and gh deletes the PR's branch with 'branch -D'
 	## either way - so unpushed commits on it have to be caught even when we aren't standing there.
 	mkdir -p "${gh}/prx"
@@ -3850,6 +3959,12 @@ GHEOF
 	fAssertOut "[dd5cm] a lone local branch is the default branch"  '^Default branch: mainline$'  bash -c "cd '${lone}/one' && '${gitsby}' -q status 2>&1"
 	fAssert    "[dd5cn] and br create works off it"  bash -c "cd '${lone}/one' && '${gitsby}' -q br create lonefeat && [[ \"\$(git branch --show-current)\" == lonefeat ]]"
 	fAssertOut "[dd5cp] an unborn branch is the default branch"  '^Default branch: trunkish$'  bash -c "cd '${lone}/unborn' && '${gitsby}' -q status 2>&1"
+	## Before the first commit, br create only renamed the unborn branch, then failed to push HEAD.
+	git init --quiet -b main "${lone}/fresh"; git init --quiet --bare -b main "${lone}/fresh.git"
+	( cd "${lone}/fresh" || exit 1; git remote add origin "${lone}/fresh.git"; echo f > f.txt; git add f.txt )
+	fAssertOut "[dfhjx] br create before the first commit refuses up front"  "^gitsby: 'main' has no commits yet, so there is nothing to start 'nb' from\\. Publish the first commit with: gitsby repo connect$" \
+		bash -c "cd '${lone}/fresh' && '${gitsby}' -q br create nb 2>&1"
+	fAssert    "[dfhjy] and exits 1, still on main, with nothing pushed"  bash -c "cd '${lone}/fresh' && { '${gitsby}' -q br create nb >/dev/null 2>&1; [[ \$? == 1 ]]; } && [[ \"\$(git symbolic-ref --short HEAD)\" == main && -z \"\$(git -C '${lone}/fresh.git' for-each-ref)\" ]]"
 
 	## gh writes act as gh's own account, not the ssh key git pushes with. A difference BOTH sides
 	## know about is refused unattended; unknown (no agent, https remote, deploy key) never blocks,
@@ -4948,6 +5063,49 @@ GHEOF
 	fAssert     "[dfg1h] br hotfix refuses it too"  bash -c "[[ \"\$(cat '${cf}/br-hotfix.rc')\" == 1 ]]"
 	fAssert     "[dfg1j] and makes no hotfix branch, leaving the conflict and the stash"  bash -c "cd '${cf}/br-hotfix' && ! git show-ref --quiet refs/heads/hotfix/cfhotfix && [[ -z \"\$(git ls-remote --heads origin hotfix/cfhotfix)\" ]] && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]] && [[ -n \"\$(git stash list)\" ]]"
 
+	## Every command that parks pulls with --autostash and stops in the commit's conflict check.
+	## The advice there named pullcom for all of them, which commits but doesn't push, switch or
+	## open the PR. Each clone stands on a feature branch one commit behind origin's, with an edit
+	## to the line that commit changed.
+	( cd "${cf}/theirs" || exit 1
+	  git checkout --quiet -b cffeat && git push --quiet -u origin cffeat
+	  printf 'line1\nTHEIRS\nFEAT\n' > shared.txt && git commit --quiet -am "their feat edit" && git push --quiet origin cffeat )
+	local cfp cfpRun
+	for cfp in sync switch prcreate create merge; do
+		case "${cfp}" in
+			sync)     cfpRun=(sync) ;;
+			switch)   cfpRun=(br switch main) ;;
+			prcreate) cfpRun=(pr create) ;;
+			create)   cfpRun=(br create cfnew) ;;
+			merge)    cfpRun=(br merge) ;;
+		esac
+		git clone --quiet "${cf}/origin.git" "${cf}/park-${cfp}" 2>/dev/null
+		(
+			cd "${cf}/park-${cfp}" || exit 1
+			git checkout --quiet cffeat && git reset --quiet --keep HEAD~1 && printf 'line1\nTHEIRS\nMINE\n' > shared.txt
+			rc=0; PATH="${ghp}" "${gitsby}" -q "${cfpRun[@]}" > "${cf}/park-${cfp}.out" 2>&1 || rc=$?
+			echo "${rc}" > "${cf}/park-${cfp}.rc"
+		)
+	done
+	fAssert     "[dfhh3] sync, br switch, pr create, br create and br merge refuse a conflicted autostash reapply"  bash -c "for c in sync switch prcreate create merge; do [[ \"\$(cat '${cf}'/park-\${c}.rc)\" == 1 ]] || exit 1; done"
+	fAssert     "[dfhh4] and each names itself to run again, not pullcom"  bash -c "cd '${cf}' && grep -qF \"run 'gitsby sync' again.\" park-sync.out && grep -qF \"run 'gitsby br switch main' again.\" park-switch.out && grep -qF \"run 'gitsby pr create' again.\" park-prcreate.out && grep -qF \"run 'gitsby br create cfnew' again.\" park-create.out && grep -qF \"run 'gitsby br merge' again.\" park-merge.out && ! grep -q 'pullcom' park-*.out"
+	fAssert     "[dfhh5] and stays on the branch with the conflict and the stash, pushing nothing"  bash -c "for c in sync switch prcreate create merge; do cd '${cf}'/park-\${c} && [[ \"\$(git branch --show-current)\" == cffeat ]] && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]] && [[ -n \"\$(git stash list)\" ]] || exit 1; done; [[ -z \"\$(git -C '${cf}/origin.git' branch --list cfnew)\" ]] && [[ \"\$(git -C '${cf}/origin.git' rev-parse main)\" == \"\$(git -C '${cf}/theirs' rev-parse main)\" ]]"
+
+	## A --staged run commits the index only, so advice that dropped the flag led to a rerun that
+	## committed the whole tree. A stash pop left the conflict, and --no-fetch skips the pull,
+	## which git refuses over unmerged files before the commit's check is reached.
+	git clone --quiet "${cf}/origin.git" "${cf}/park-staged" 2>/dev/null
+	(
+		cd "${cf}/park-staged" || exit 1
+		git checkout --quiet cffeat && printf 'line1\nTHEIRS\nSTASHED\n' > shared.txt && git stash --quiet
+		printf 'line1\nTHEIRS\nCOMMITTED\n' > shared.txt && git add shared.txt && git commit --quiet -m "committed here"
+		git stash pop --quiet >/dev/null 2>&1 || true  ## exits 1 on the conflict it leaves
+		echo left > left.txt
+		rc=0; "${gitsby}" -q --no-fetch sync --staged > "${cf}/park-staged.out" 2>&1 || rc=$?
+		echo "${rc}" > "${cf}/park-staged.rc"
+	)
+	fAssert     "[dfhh6] a --staged sync stopped on a conflict names --staged to run again"  bash -c "cd '${cf}' && [[ \"\$(cat park-staged.rc)\" == 1 ]] && grep -qF \"run 'gitsby sync --staged' again.\" park-staged.out"
+
 	## A submodule with its own edits or untracked files shows in status, but 'git add --all'
 	## stages nothing for it. Deciding from status, the commit ran with nothing staged and failed,
 	## and the protected-branch checks refused work that isn't this repo's to commit.
@@ -5000,6 +5158,44 @@ GHEOF
 	fAssertOut  "[dfh4m] the plan lists the hidden untracked file"  '^    \?\? untracked\.txt$'  bash -c "cd '${hu}/work' && '${gitsby}' -q status 2>&1"
 	fAssertOut  "[dfh4n] br switch off dev with only a hidden untracked file refuses"  "Working tree has changes on 'dev'"  bash -c "cd '${hu}/work' && '${gitsby}' -q br switch hufeat 2>&1"
 	fAssert     "[dfh4p] repo connect with no commits and only hidden untracked files publishes them"  bash -c "cd '${hu}/fresh' && '${gitsby}' -q repo connect '${hu}/fresh.git' >/dev/null 2>&1 && git -C '${hu}/fresh.git' ls-tree -r --name-only main | grep -qx f\.txt"
+
+	## In a sparse checkout, 'git add --all' stages what is inside it and then exits 1 over a
+	## file outside it, so the run stopped after the plan and the pull with the index half staged.
+	local sp="${work}/$1-sparse"
+	mkdir -p "${sp}"
+	git init --quiet --bare -b main "${sp}/origin.git"
+	git clone --quiet "${sp}/origin.git" "${sp}/work" 2>/dev/null
+	(
+		cd "${sp}/work" || exit 1
+		mkdir in out && echo a > in/a.txt && echo o > out/o.txt
+		git add in out && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b spfeat && git push --quiet -u origin spfeat
+		git sparse-checkout set --cone in
+		git config advice.updateSparsePath false
+		echo n > in/new.txt && mkdir -p out && echo x > out/new.txt
+	) >/dev/null 2>&1
+	fAssertOut  "[dfhk8] -q sync with a file outside the sparse checkout refuses before the plan, naming it"  'File: out/new\.txt'  bash -c "cd '${sp}/work' && '${gitsby}' -q sync 'sp' 2>&1"
+	fAssert     "[dfhk9] and stages, commits and pushes nothing"  bash -c "cd '${sp}/work' && rc=0 && out=\"\$('${gitsby}' -q sync 'sp' 2>&1)\" || rc=\$?; [[ \${rc} == 1 ]] && [[ \"\${out}\" != *'Going to do'* ]] && git diff --cached --quiet && [[ \"\$(git rev-list --count HEAD)\" == 1 && \"\$(git rev-list --count origin/spfeat)\" == 1 ]]"
+	fAssert     "[dfhka] sync --staged with the file outside still commits what is staged"  bash -c "cd '${sp}/work' && git add in/new.txt && '${gitsby}' -q sync --staged 'sp' >/dev/null 2>&1 && git -C '${sp}/origin.git' ls-tree -r --name-only spfeat | grep -qx in/new\.txt && [[ -n \"\$(git status --porcelain --untracked-files=normal -- out)\" ]]"
+	fAssert     "[dfhkb] br create off a protected branch carries the file along"  bash -c "cd '${sp}/work' && git checkout --quiet dev && '${gitsby}' -q br create spnew >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == spnew && -f out/new.txt ]]"
+
+	## A tracked file outside the sparse checkout, written back and edited, is one 'git add --all'
+	## skips without a word, so the run said Done at exit 0 with the edit left out.
+	git clone --quiet -b spfeat "${sp}/origin.git" "${sp}/edit" 2>/dev/null
+	git clone --quiet -b spfeat "${sp}/origin.git" "${sp}/inside" 2>/dev/null
+	(
+		cd "${sp}/edit" || exit 1
+		git sparse-checkout set --cone in
+		mkdir -p out && echo changed > out/o.txt && echo b >> in/a.txt
+		cd "${sp}/inside" || exit 1
+		echo c > in/c.txt && git add in/c.txt && git commit --quiet -m c && git push --quiet
+		git sparse-checkout set --cone in
+		echo b >> in/a.txt && rm in/c.txt
+	) >/dev/null 2>&1
+	fAssertOut  "[dfhkj] -q sync with an edited tracked file outside the sparse checkout refuses before the plan, naming it"  'File: out/o\.txt'  bash -c "cd '${sp}/edit/in' && '${gitsby}' -q sync 'sp' 2>&1"
+	fAssert     "[dfhkk] and commits and pushes nothing"  bash -c "cd '${sp}/edit' && rc=0 && out=\"\$('${gitsby}' -q sync 'sp' 2>&1)\" || rc=\$?; [[ \${rc} == 1 ]] && [[ \"\${out}\" != *'Going to do'* ]] && [[ \"\$(git diff --name-only | tr '\\n' ' ')\" == 'in/a.txt out/o.txt ' ]] && git diff --cached --quiet"
+	fAssert     "[dfhkm] an edit and a delete inside the sparse checkout still go out"  bash -c "cd '${sp}/inside' && '${gitsby}' -q sync 'sp' >/dev/null 2>&1 && [[ -z \"\$(git status --porcelain)\" ]] && ! git -C '${sp}/origin.git' ls-tree -r --name-only spfeat | grep -qx in/c\.txt"
 
 	## A stopped am, range pick, revert or merge was finished under gitsby's message, or left
 	## for its --continue to apply onto the branch gitsby switched to. src's first commit
@@ -6468,7 +6664,17 @@ LGEOF
 		fAssert "[dd5er] and HEAD, the tags and origin are as they were"  test "${relState}" = "$(fRelState)"
 		fRelRun --dry-run v1.3.0-beta.1
 		fAssert "[dd5es] a suffixed version says it publishes as a pre-release" \
-			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'v1.3.0-beta.1 has a semver suffix, so it publishes as a pre-release.' '${relOut}' && grep -qF 'would: gh release create v1.3.0-beta.1 as a pre-release with ' '${relOut}'"
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'v1.3.0-beta.1 has a suffix, so it publishes as a pre-release.' '${relOut}' && grep -qF 'would: gh release create v1.3.0-beta.1 as a pre-release with ' '${relOut}'"
+		## The version check takes a suffix after a dot, and nextVersion reads one as a candidate, but
+		## only a dash made a pre-release. v3.0.0.rc1 would have published as a full release.
+		fRelRun --dry-run v1.3.0.rc1
+		fAssert "[dfhm3] a version suffixed after a dot publishes as a pre-release too" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'v1.3.0.rc1 has a suffix, so it publishes as a pre-release.' '${relOut}' && grep -qF 'would: gh release create v1.3.0.rc1 as a pre-release with ' '${relOut}'"
+		git -C "${relRepo}" tag v1.3.0.rc1
+		fRelRun --dry-run
+		git -C "${relRepo}" tag -d v1.3.0.rc1 >/dev/null
+		fAssert "[dfhm4] and with no version given, it promotes to its plain version as a full release" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'the next one after v1.3.0.rc1 is v1.3.0' '${relOut}' && grep -qF 'would: gh release create v1.3.0 with ' '${relOut}'"
 		## Each of these passed, and 'gitsby release' refused it after the pipeline and the merge, or
 		## git refused the tag after the release merge.
 		local relBad="" relBadOk=1
@@ -8543,9 +8749,20 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			fAssert "[df50j] the Windows box's guard refuses a folder whose path holds a character cmd acts on, and leaves it" \
 				env PATH="${rtWinBin}:${PATH}" bash -c 'mkdir -p "$1/a&b/test_gitsby_1/sub" && out="$(TEMP="$1/a&b" pwsh -NoProfile -NonInteractive -Command ". \"$2\"; if (fSafeRm \"$1/a&b/test_gitsby_1\") { exit 1 }" 2>&1 </dev/null)" \
 					&& [[ "${out}" == *"safe-rm: refused, a character cmd would act on:"* && -d "$1/a&b/test_gitsby_1/sub" ]]' _ "${rtWinTemp}" "${rtGuard}.fn.ps1"
+			## The same over the class: cmd also splits at , ; and =, so only a short safe set gets by.
+			## Each temp folder holds one other character, and one holds only safe ones, an 8.3 ~ and
+			## a letter past ASCII among them, which goes as usual.
+			# shellcheck disable=SC2016  ## PowerShell reads the variable, not bash.
+			printf '%s\n' '. $env:SR_GUARD' "if (fSafeRm (Join-Path \$env:TEMP 'test_gitsby_1')) { 'gone' } else { 'left' }" > "${rtGuard}.class.ps1"
+			# shellcheck disable=SC2016  ## the inner shell does the expanding.
+			fAssert "[dfhks] the Windows box's guard lets only letters, digits, space and _.:~\\/- through to cmd, whatever else the temp path holds" \
+				env PATH="${rtWinBin}:${PATH}" SR_GUARD="${rtGuard}.fn.ps1" bash -c 'n=0; for c in , ";" = "!" "'"'"'" + "[" "]" "{" "}" @ "#" "\$" "\`" "	" "&" "%" "^" "*" "?"; do n=$((n+1)); t="$1/class-${n}/a${c}b"; mkdir -p "${t}/test_gitsby_1/sub" || exit 1; out="$(TEMP="${t}" pwsh -NoProfile -NonInteractive -File "$2" 2>&1 </dev/null)"; \
+					[[ "${out}" == *"safe-rm: refused, a character cmd would act on:"* && "${out}" == *left* && -d "${t}/test_gitsby_1/sub" ]] || { echo "not refused: [${c}] ${out}"; exit 1; }; done; \
+					t="$1/class-ok/Ab 9~1.é_-x"; mkdir -p "${t}/test_gitsby_1/sub" && out="$(TEMP="${t}" pwsh -NoProfile -NonInteractive -File "$2" 2>&1 </dev/null)" && [[ "${out}" == *gone* && ! -e "${t}/test_gitsby_1" && -d "${t}/test_gitsby_1.gone/sub" ]]' _ "${rtWinTemp}" "${rtGuard}.class.ps1"
 		else
 			fSkip "[dez5g] needs pwsh"
 			fSkip "[df50j] needs pwsh"
+			fSkip "[dfhks] needs pwsh"
 		fi
 		## Handed an image, as stage 7 does, every box's Go tests come from its Go, with the folder
 		## the build goes in mounted at its own path. A docker that writes the -o file stands in.
@@ -9444,6 +9661,12 @@ GLEOF
 	printf 'account: work\n\tname: O"Brien#2\n\tpathcontains: dev/c"#/proj\n\n#\n# This config file format is SHCL.\n# "Simple Hierarchical Config Language"\n#\n' > "${fg}/old2xrun/config.shcl"
 	fAssertOut "[dfg4g] a 2.x value with a quote before a '#' reads whole after the conversion"  '^ok$' \
 		bash -c "cd '${fgRepo}' && out=\$(PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/old2xrun/config.shcl' account list 2>&1); [[ \$out == *'Converted the accounts file from the SHCL 2.x format'* && \$out == *'O\"Brien#2 <'* ]] && grep -qxF \"	pathcontains: 'dev/c\\\"#/proj'\" '${fg}/old2xrun/config.shcl' && echo ok"
+	## A value no quote can keep leaves the file as it is, and the run reads it the new way. The
+	## notice says that once, with no Why line saying the opposite.
+	mkdir -p "${fg}/old2xbad"
+	printf 'account: work\n\tname: it'"'"'s a"b#c\n\n#\n# This config file format is SHCL.\n# "Simple Hierarchical Config Language"\n#\n' > "${fg}/old2xbad/config.shcl"
+	fAssertOut "[dfhjm] a 2.x file that can't be converted says once how this run read it"  '^ok$' \
+		bash -c "cd '${fgRepo}' && out=\$(PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/old2xbad/config.shcl' account list 2>&1); [[ \$out == *'This run read it in the new format.'* && \$out != *'in that format'* && \$out != *'new way'* && \$out == *'commits .: it'\"'\"'s a\"b <'* ]] && echo ok"
 	## 2.x read a byte that isn't UTF-8 as U+FFFD, and v3 keeps the byte, so the converted file has
 	## to hold U+FFFD where 2.x read it.
 	mkdir -p "${fg}/old2xbyte"
@@ -9919,3 +10142,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261118 JC: A hand-typed 2.x value with a quote before a "#" reads whole after the conversion, [dfg4g].
 ##		- 20261118 JC: A 2.x value with a byte that isn't UTF-8 reads as 2.x read it after the conversion, [dfg5c].
 ##		- 20261119 JC: account apply warns about a nested account with no email, and whoami flags an empty address, [dfh7n] to [dfh7r]. With GIT_DIR set, every command takes the account from that repo, [dfh7j] to [dfh7m].
+##		- 20261119 JC: release.bash makes a pre-release of a version suffixed after a dot, and promotes one to its plain version, [dfhm3] [dfhm4].

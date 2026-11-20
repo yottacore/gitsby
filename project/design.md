@@ -124,7 +124,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 - No command shells out through `eval`. Arguments are passed as arrays, so a message or branch name is never re-parsed.
 
-- Every program gitsby runs, git included, is found by one lookup that passes over any PATH entry that is gitsby itself. A link named `gh` to gitsby would otherwise start gitsby with gh's arguments. With nothing else on PATH, the command refuses with "Not found in path" and names that entry. The program still sees its own name as argv[0].
+- Every program gitsby runs, git included, is found by one lookup that passes over any PATH entry that is gitsby itself. A link named `gh` to gitsby would otherwise start gitsby with gh's arguments. With nothing else on PATH, the command refuses with "Not found in path" and names that entry. The program still sees its own name as argv[0]. On Windows it passes over a `.bat` or `.cmd` file the same way, and names it in that refusal too. Windows runs a batch file through cmd, which reads the arguments again by its own rules, so an `&` in a branch name would run what follows it, and no quoting is safe for every argument. A program named by its path is refused when it is a batch file, for the same reason.
 	- Started under the name of a tool `raw` runs, gitsby refuses and points to `gitsby raw <name>`. Acting as that tool would be one more way in, and nothing needs it. Any other name still runs, since the release files are named like `gitsby-linux-amd64`.
 
 - Any command named inside an error message, or in the built-in help, has to be one the parser still accepts. The help is the only documentation most people read, so it drifting is a defect, not a typo.
@@ -206,6 +206,7 @@ The rule for every path that hands out a token. The token goes only to the host 
 	- `push.default` decides only when the upstream, on the remote the push goes to, has another name than the branch, as for a branch made from `origin/main` (2026-11-19). `simple`, git's default, refuses that push, so Gitsby refuses before the plan, naming `git branch --unset-upstream`. `upstream` and `nothing` send it to the upstream, and `current` and `matching` to the branch's own name.
 	- `--direct` is judged by where the push lands, not the branch's name. `sync` and `br switch` warn, and with `-q` refuse without it, as they do on `main` itself. `br create`, `br hotfix` and `br merge` never push a protected branch, so they refuse, naming `sync --direct`. `pr create` refuses too, since its pull request would propose that branch itself.
 	- `pr create` opens the pull request from the branch on origin its push goes to, which for a branch tracking another name isn't its own (2026-11-19). It named the current branch, so the PR came from an older branch of that name on origin, or one that wasn't there. Where the push goes to another remote, or to a ref that isn't a branch, it refuses before the plan, since the pull request opens on origin. That is asked whether or not anything is left to push.
+	- `br merge` deletes the branch on origin its push went to, for the same reason (2026-11-19). It named the current branch, so the branch it pushed to stayed on origin, and the leased delete of an older branch of that name failed with a warning that the branch had commits the merge didn't. It refuses before the plan where the push goes to another remote or to a ref that isn't a branch, as `pr create` does, and where it lands on `main`, `dev` or the default branch, since the delete would take that branch.
 
 - A clone that fetches only some of origin's branches can't show whether origin has a `dev` (2026-11-19). `git clone --depth 1` and `--single-branch` make one, and there `br merge` went into `main`, passing over origin's `dev`.
 	- `br create`, `br hotfix`, `br switch`, `br merge`, `br prune`, `pr create`, `pr ok` and `release` refuse before the plan when there's no `dev` here and the fetch refspecs don't bring origin's in. The fix they name is `git remote set-branches origin '*'`, then a fetch. `pullcom` and `sync` push only the branch they're on, and run as before.
@@ -236,6 +237,7 @@ The rule for every path that hands out a token. The token goes only to the host 
 	- `pullcom` stays quiet. It sends nothing, and the push is what the workflow is about.
 	- The flag is for this one case, not a general `--no-warn`. Flags are permanent, and a general one would also hide whatever warning comes next.
 	- `br switch` parks before it moves, and from `main` or `dev` its park push is the same push, so it gets the same warning, refusal and flag (2026-11-18). `br create` and `br hotfix` carry the tree off a protected branch rather than push it, `br merge` refuses to run from one, and `release` exists to push one.
+	- `br merge` pushes the branch it merges into, and that push takes along any commits made on that branch itself, so it warns the same way and with `-q` refuses (2026-11-19). The hotfix merge back into `dev` counts too, from `br merge` and `pr ok`. `--direct` stays with `sync` and `br switch`, so the way to send them is `br switch dev`, then `sync --direct`. The way to keep them off is `git branch <branch-name> dev`, then `git branch -f dev origin/dev`, which needs no checkout.
 
 - `sync`, `br switch`, `br create`, `br hotfix` and `release` warn before their push puts a branch back up that origin deleted, most often when its pull request merged on the git host (2026-11-19). Once the fetch prunes it, git reads the branch's upstream as none, so the push was a first publish that put the branch back.
 	- The state line shows such a branch as `(origin/<branch> gone)`, and the pull step says it's gone rather than that there's no upstream.
@@ -675,7 +677,7 @@ The first 4 of these output rules came back after 2 sweeps, each time at sites t
 
 ### Release policy
 
-A version whose tag has a semver suffix - `v3.0.0-beta.1` - is published as a pre-release. A plain `vX.Y.Z` is published as a full release. The tag decides it, with no flag to pass and nothing to remember, because the tag is already the only place a version is written.
+A version whose tag has a suffix - `v3.0.0-beta.1`, or `v3.0.0.rc1` after a dot - is published as a pre-release. A plain `vX.Y.Z` is published as a full release. The tag decides it, with no flag to pass and nothing to remember, because the tag is already the only place a version is written.
 
 GitHub's `releases/latest` returns the newest release not flagged as a pre-release. A candidate sits beside the full release without displacing it.
 

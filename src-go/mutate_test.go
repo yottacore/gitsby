@@ -10,6 +10,7 @@
 package main
 
 import (
+	"cmp"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -147,6 +148,99 @@ func TestPrCreateHead(t *testing.T) { // [dfh76]
 			}
 		})
 	}
+}
+
+// br merge deletes origin's copy of what it merged, which is where the park push
+// went. A head on dev would have it delete dev.
+func TestMergeHead(t *testing.T) { // [dfhg7]
+	origin, clone := gitTestRepo(t)
+	runGit(t, clone, "checkout", "-q", "-b", "feat")
+	runGit(t, clone, "push", "-q", "-u", "origin", "feat")
+	runGit(t, clone, "push", "-q", "origin", "feat:up", "feat:dev")
+	runGit(t, clone, "remote", "add", "second", origin)
+	runGit(t, clone, "fetch", "-q", "second")
+	t.Chdir(clone)
+	tests := []struct {
+		name    string
+		config  [][2]string
+		want    string
+		refusal string
+	}{
+		{"plain", nil, "feat", ""},
+		{"upstream by another name", [][2]string{{"branch.feat.merge", "refs/heads/up"}}, "", "push.default=simple"},
+		{"upstream by another name, upstream", [][2]string{{"branch.feat.merge", "refs/heads/up"}, {"push.default", "upstream"}}, "up", ""},
+		{"refspec that renames", [][2]string{{"remote.origin.push", "refs/heads/feat:refs/heads/other"}}, "other", ""},
+		{"refspec to a ref that isn't a branch", [][2]string{{"remote.origin.push", "refs/heads/feat:refs/for/main"}}, "", "br merge can delete"},
+		{"tracks dev, upstream", [][2]string{{"branch.feat.merge", "refs/heads/dev"}, {"push.default", "upstream"}}, "", "delete origin's 'dev'"},
+		{"upstream on another remote", [][2]string{{"branch.feat.remote", "second"}}, "", "remote 'second'"},
+		{"push remote", [][2]string{{"branch.feat.pushRemote", "second"}}, "", "remote 'second'"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, kv := range tc.config {
+				runGit(t, clone, "config", kv[0], kv[1])
+			}
+			a := newApp(newPrinter())
+			a.cmd.name = "br-merge"
+			got, err := a.parkHead("feat")
+			head := a.mergeHead()
+			for _, kv := range tc.config {
+				runGit(t, clone, "config", "--unset", kv[0])
+			}
+			runGit(t, clone, "config", "branch.feat.remote", "origin")
+			runGit(t, clone, "config", "branch.feat.merge", "refs/heads/feat")
+			if got != tc.want || (err != nil) != (tc.refusal != "") || (err != nil && !strings.Contains(err.Error(), tc.refusal)) {
+				t.Errorf("parkHead() = %q, %v, want %q, %q", got, err, tc.want, tc.refusal)
+			}
+			if want := cmp.Or(tc.want, "feat"); head != want {
+				t.Errorf("mergeHead() = %q, want %q", head, want)
+			}
+		})
+	}
+}
+
+// Commits made on the branch br merge pushes, the target or the hotfix back-merge's
+// dev, are what sync there asks --direct for. A merge isn't one, and neither is a
+// target with no upstream, which goes up as a first publish.
+func TestMergePushesOwn(t *testing.T) { // [dfhg8]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "checkout", "-q", "-b", "dev")
+	runGit(t, clone, "push", "-q", "-u", "origin", "dev")
+	runGit(t, clone, "checkout", "-q", "-b", "feat")
+	runGit(t, clone, "checkout", "-q", "-b", "hotfix/x", "main")
+	t.Chdir(clone)
+	onDev := func(args ...string) {
+		runGit(t, clone, "checkout", "-q", "dev")
+		runGit(t, clone, args...)
+		runGit(t, clone, "checkout", "-q", "feat")
+	}
+	check := func(name, branch, cmd, sub, head, want string) {
+		t.Run(name, func(t *testing.T) {
+			runGit(t, clone, "checkout", "-q", branch)
+			a := newApp(newPrinter())
+			a.cmd.name = cmd
+			a.pr.sub, a.pr.headBranch = sub, head
+			if got := a.mergePushesOwn(); got != want {
+				t.Errorf("mergePushesOwn() = %q, want %q", got, want)
+			}
+		})
+	}
+	check("level", "feat", "br-merge", "", "", "")
+	check("level, pr ok of a hotfix", "feat", "pr", "ok", "hotfix/x", "")
+	onDev("commit", "-q", "--allow-empty", "-m", "direct")
+	check("own commit", "feat", "br-merge", "", "", "dev")
+	check("own commit, back-merge", "hotfix/x", "br-merge", "", "", "dev")
+	check("own commit, pr ok of a hotfix", "feat", "pr", "ok", "hotfix/x", "dev")
+	check("own commit, pr ok of a feature", "feat", "pr", "ok", "feat", "")
+	check("own commit, sync", "feat", "sync", "", "", "")
+	onDev("reset", "-q", "--hard", "origin/dev")
+	runGit(t, clone, "checkout", "-q", "-b", "side", "dev")
+	runGit(t, clone, "commit", "-q", "--allow-empty", "-m", "side")
+	onDev("merge", "-q", "--no-ff", "side", "-m", "merge side")
+	check("merge only", "feat", "br-merge", "", "", "")
+	onDev("branch", "-q", "--unset-upstream")
+	onDev("commit", "-q", "--allow-empty", "-m", "unpublished")
+	check("no upstream", "feat", "br-merge", "", "", "")
 }
 
 // A branch origin deleted, once a fetch prunes its ref, still has its upstream set,
@@ -347,5 +441,99 @@ func TestPendingOpNamed(t *testing.T) { // [dfh53]
 		if err := a.refusePendingOp(); err != nil {
 			t.Errorf("%s: status refused: %v", tc.state, err)
 		}
+	}
+}
+
+// A stop's advice names the command that ran, and reads back as that command, for
+// every one that commits or pulls. --staged stays, since a rerun without it commits
+// the whole tree. cmdCommit used to name pullcom for all of them,
+// which commits but doesn't push, switch or open the PR.
+func TestRerunNamesTheCommand(t *testing.T) { // [dfhh2]
+	settle := func(argv ...string) (command, options) {
+		t.Helper()
+		opt, cmd, _, err := parseArgs(argv)
+		if err == nil {
+			cmd, err = collapseCommand(cmd)
+		}
+		if err == nil {
+			cmd, err = sortCommand(cmd, &opt)
+		}
+		if err != nil {
+			t.Fatalf("%v: %v", argv, err)
+		}
+		return cmd, opt
+	}
+	for _, tc := range []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"pullcom", "msg1"}, "pullcom"},
+		{[]string{"update", "-m", "msg1"}, "pullcom"},
+		{[]string{"sync", "msg1"}, "sync"},
+		{[]string{"sync", "--staged"}, "sync --staged"},
+		{[]string{"pullcom", "--staged", "-m", "msg1"}, "pullcom --staged"},
+		{[]string{"br", "switch", "feat1", "--staged"}, "br switch feat1 --staged"},
+		{[]string{"pr", "create", "--staged", "title1"}, "pr create --staged"},
+		{[]string{"release", "--staged", "v1.2.3"}, "release v1.2.3 --staged"},
+		{[]string{"br", "create", "feat1"}, "br create feat1"},
+		{[]string{"branch", "new", "feat1"}, "br create feat1"},
+		{[]string{"br", "hotfix", "hotfix/fix1"}, "br hotfix hotfix/fix1"},
+		{[]string{"br", "switch", "feat1"}, "br switch feat1"},
+		{[]string{"br", "go"}, "br switch"},
+		{[]string{"br", "merge", "msg1"}, "br merge"},
+		{[]string{"br", "land", "-m", "msg1"}, "br merge"},
+		{[]string{"pr", "create", "title1"}, "pr create"},
+		{[]string{"pr", "new", "-m", "title1"}, "pr create"},
+		{[]string{"release", "v1.2.3"}, "release v1.2.3"},
+		{[]string{"release"}, "release"},
+		{[]string{"repo", "connect", "o/n"}, "repo connect o/n"},
+		{[]string{"repo", "create", "o/n"}, "repo create o/n"},
+	} {
+		cmd, opt := settle(tc.argv...)
+		got := (&app{cmd: cmd, opt: opt}).rerunText()
+		if got != meName+" "+tc.want {
+			t.Errorf("%v: rerun is %q, want %q", tc.argv, got, meName+" "+tc.want)
+			continue
+		}
+		back, backOpt := settle(strings.Fields(got)[1:]...)
+		if back.name != cmd.name || backOpt.staged != opt.staged || (cmd.name != "pullcom" && cmd.name != "sync" && cmd.name != "br-merge" && back.arg != cmd.arg) {
+			t.Errorf("%v: %q reads back as %+v, not %+v", tc.argv, got, back, cmd)
+		}
+		if strings.Contains(got, "msg1") || strings.Contains(got, "title1") {
+			t.Errorf("%v: %q carries the message", tc.argv, got)
+		}
+	}
+}
+
+// git's lead, as git 2.51 writes it under LC_ALL=C, with the advice on and off.
+func TestSparseAddPaths(t *testing.T) { // [dfhkc]
+	lead := "The following paths and/or pathspecs matched paths that exist\noutside of your sparse-checkout definition, so will not be\nupdated in the index:\n"
+	cases := []struct {
+		stderr string
+		want   []string
+	}{
+		{lead + "out/new.txt\nout/sub dir/b.txt\nhint: If you intend to update such entries, try one of the following:\nhint: * Use the --sparse option.\n", []string{"out/new.txt", "out/sub dir/b.txt"}},
+		{lead + "out/new.txt\n", []string{"out/new.txt"}},
+		{"warning: adding embedded git repository: sub\n" + lead + "out/a.txt\r\n", []string{"out/a.txt"}},
+		{"fatal: Unable to create '/r/.git/index.lock': File exists.\n", nil},
+		{"", nil},
+	}
+	for _, c := range cases {
+		if got := sparseAddPaths(c.stderr); !slices.Equal(got, c.want) {
+			t.Errorf("sparseAddPaths(%q) = %q, want %q", c.stderr, got, c.want)
+		}
+	}
+}
+
+// A dry run's add and remove lines are what it takes, quotes and spaces in a path
+// included. Anything else 'git diff' had is left out.
+func TestSkippedEdits(t *testing.T) { // [dfhkn]
+	dry := "add 'in/a.txt'\nremove 'in/gone.txt'\r\nadd 'in/it's here.txt'\n"
+	got := skippedEdits([]string{"in/a.txt", "in/gone.txt", "in/it's here.txt", "out/o.txt"}, dry)
+	if want := []string{"out/o.txt"}; !slices.Equal(got, want) {
+		t.Errorf("skippedEdits = %q, want %q", got, want)
+	}
+	if got := skippedEdits(nil, dry); got != nil {
+		t.Errorf("skippedEdits with no edits = %q, want none", got)
 	}
 }

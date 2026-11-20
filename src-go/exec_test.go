@@ -46,13 +46,15 @@ func TestLookToolSkipsSelf(t *testing.T) { // [de89d]
 	sep := string(os.PathListSeparator)
 	t.Setenv("PATH", rel+sep+link+sep+realDir)
 
-	found, ours := lookTool("gh")
+	hit := lookTool("gh")
+	found, ours := hit.path, hit.ours
 	if found != filepath.Join(realDir, "gh") || !slices.Equal(ours, []string{filepath.Join(link, "gh")}) {
 		t.Errorf("found %q, ours %q", found, ours)
 	}
 
 	t.Setenv("PATH", link+sep+link+string(filepath.Separator))
-	found, ours = lookTool("gh")
+	hit = lookTool("gh")
+	found, ours = hit.path, hit.ours
 	if found != "" || len(ours) != 1 {
 		t.Errorf("only ourselves on PATH: found %q, ours %q", found, ours)
 	}
@@ -279,5 +281,32 @@ func TestToolRepoOf(t *testing.T) { // [dffz8]
 		if got := toolRepoOf(c.tool, c.args); got != c.want {
 			t.Errorf("toolRepoOf(%s, %q) = %+v, want %+v", c.tool, c.args, got, c.want)
 		}
+	}
+}
+
+// A batch file is told by its extension alone, in any case, and only on Windows,
+// where cmd runs it. The refusal for a tool found only as one names it.
+func TestBatchFile(t *testing.T) { // [dfhmh]
+	for name, want := range map[string]bool{
+		"git.bat": true, "git.BAT": true, "git.cmd": true, "git.Cmd": true,
+		"git": false, "git.exe": false, "git.batch": false, "git.bat.exe": false, "bat": false, "cmd": false,
+	} {
+		if got := batchName(filepath.Join("dir", name)); got != want {
+			t.Errorf("%s: got %v", name, got)
+		}
+		if got := batchFile(name); got != (want && runtime.GOOS == "windows") {
+			t.Errorf("%s on %s: got %v", name, runtime.GOOS, got)
+		}
+	}
+	err := notInPath("git", nil, []string{"/a/git.bat", "/b/git.cmd"})
+	if err == nil || !strings.Contains(err.Error(), "'/a/git.bat', '/b/git.cmd' are batch files") {
+		t.Errorf("two: %v", err)
+	}
+	err = notInPath("git", []string{"/c/git"}, []string{"/a/git.bat"})
+	if err == nil || !strings.Contains(err.Error(), "'/c/git' is "+meName+" itself. '/a/git.bat' is a batch file") {
+		t.Errorf("with ours: %v", err)
+	}
+	if err = notInPath("git", nil, nil); err == nil || err.Error() != "Not found in path: git" {
+		t.Errorf("neither: %v", err)
 	}
 }

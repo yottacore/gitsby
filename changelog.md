@@ -81,17 +81,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `pr create` on a branch that tracks one of another name, as `push.default=upstream` pushes it, opens the pull request from the branch it pushed to. It named the current branch, so the pull request came from an older branch of that name on origin, at exit 0. A branch that pushes to a remote other than origin is refused before the plan, since the pull request opens on origin, and `git branch --unset-upstream` lets it publish there under its own name.
 
+- `br merge` on a branch that tracks one of another name deletes that branch from origin once it's merged. It named the current branch, so the branch it pushed to stayed on origin, and the leased delete of an older branch of that name warned that it had commits the merge didn't, which wasn't so. Where its push goes to another remote, to a ref that isn't a branch, or to `main` or `dev`, it's refused before the plan.
+
+- `br merge` warns before its push of `dev` sends commits made on `dev` itself, the way `sync` there does, and with `-q` it refuses. So does a hotfix's merge back into `dev`, from `br merge` and `pr ok`. They used to go to origin's `dev` with the merge, at exit 0.
+
 - `sync`, `br switch`, `br create`, `br hotfix` and `release` warn before they push a branch back up that origin deleted, most often when its pull request merged, and with `-q` they refuse. Their push put it back on origin as a new branch. `git branch --unset-upstream` first says the push is meant.
 
 - `br switch` from `main` or `dev` with commits origin doesn't have yet warns before it pushes them, the way `sync` does, and with `-q` it refuses unless given `--direct`. It used to push them straight to origin's `main` or `dev` and exit 0.
 
 - `br create` and `br hotfix` off `main` or `dev` stop when the pull's restore of your edits conflicts, list the files, and point at the stash git kept, as `pullcom` does. They used to make the branch and push it over the conflict markers, and say Done.
 
+- When the pull's restore of your edits conflicts, `sync`, `br switch`, `br create`, `br hotfix`, `br merge`, `pr create` and `release` say to run themselves again once it's resolved, with `--staged` when it was given. They said to run `pullcom`, which commits but doesn't push, switch branches or open the pull request.
+
 - A submodule with its own edits or untracked files no longer stops `pullcom`, `sync`, `br switch`, `br merge`, `br create`, `pr ok` or `release`. They tried to commit it, found nothing to commit, and failed. `br switch` off `main` no longer refuses over it, `sync` on `main` no longer calls it a direct push, and `release` no longer counts it as something new.
 
 - With `status.showUntrackedFiles=no` set, untracked files count as work. The plan said the tree was clean, then `sync` on `dev` committed them and pushed them straight to origin at exit 0, past the direct-push refusal. `br switch` off `main` or `dev`, `pr ok`, `release` and `repo connect` read them the same way now.
 
 - `pullcom`, `sync`, `br switch`, `br merge`, `br create`, `br hotfix`, `br prune`, `pr create`, `pr ok` and `release` refuse while a merge, `git am`, cherry-pick, revert, rebase or bisect is stopped partway, and name the commands that finish it and drop it. They used to commit the half-done work under their own message, or switch branches and leave the rest of a cherry-pick range or patch series to apply onto the next branch. A stopped rebase was refused only as a detached HEAD.
+
+- In a sparse checkout, a command that commits the whole tree refuses before its plan when a new or edited file sits outside the checkout, and names the file. `git add --all` used to stage the rest and then fail over a new file, after the pull, with the index left half staged. An edited one was left out without a word, and the command said Done.
 
 - A syntax error from `release` or `raw` that quotes what was typed shows a control character by name, as every other error does, so an escape typed by mistake no longer changes the terminal's colors.
 
@@ -100,6 +108,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A token typed in a URL no longer shows in an error. `gitsby repo create https://user:TOKEN@example.com/o/n.git` printed it twice, and so did any refusal that quotes back what was typed, such as `br switch` and an unknown `repo` word. An origin URL with a newline in it, or a password with an `@` in it, also showed its token in `status` and `repo url`. Each shows `***` in its place now.
 
 - `br create` refuses `@{-1}` and other names git reads as another branch, before anything runs. It used to commit, push and check out `dev` first, then fail.
+
+- `br create` and `br hotfix` refuse before anything runs when the branch they start from has no commits yet, and name the command that makes the first one. They renamed the empty branch to the new name, then failed to push it.
 
 - The plan for `br merge` in a clone with no local `dev` yet shows the 1 atomic push the run makes. It listed a push and a separate delete.
 
@@ -113,17 +123,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `br create`, `br hotfix`, `br switch`, `br merge`, `pr ok` and `release` refuse before anything runs when a branch they check out is checked out in another worktree, and name it. They used to commit and push first, then stop at the checkout. A worktree folder deleted by hand still holds its branch, and the refusal names `git worktree prune` for it.
 
+- `pr ok` run from a branch other than the PR's, with an upstream of its own, says in its plan that it pulls that branch and stays on it, which is what it does. The plan said it would check out and pull the branch the PR merges into.
+
 - An accounts file last written before the first SHCL 3 module Gitsby used, or with no real time, as a Nix store gives, is read as it is rather than re-spelled as that module's. The copy a conversion keeps has the file's own time, so moving it back reads as the file did. Where the folder can't be written, the notice says so rather than blaming a lock.
 
 - `repo clone` ends on the `dev` branch, tracking origin's, when origin also has a tag named `dev`. It used to leave the clone detached at the tag and say Done, and the next command refused.
 
 - A message typed as a word beside `-m`, as in `gitsby pullcom 'first message' -m second`, is refused. It used to commit with the `-m` one and drop the other without a word. A `pr create` title typed beside `-m` is refused the same way.
 
+- `-m` given twice, as in `gitsby pullcom -m first -m second`, is refused. It used to commit with the last one and drop the rest without a word. A `pr create` title given twice is refused the same way.
+
+- The Incoming list in `status` and the plans shows the change and the file name in columns, and a rename as `old -> new`. It used to show an escape for the tab between them.
+
+- The Incoming list shows only what the upstream's commits change. On a branch both ahead and behind, it used to list your own unpushed commits too, a new file as deleted.
+
 - `account apply` gives each account its own fragment. Two accounts with the same login add their names to it, and that could be a third account's own name, such as `work` beside `jim_work`, so both wrote one file and a repo in one folder took the other account's email. The one named for its own login keeps the name, and the other gets a number on the end, such as `github.com_jim_work_2.gitconfig`. Re-run `gitsby account apply` to get it.
 
 - The `was:` and `becomes:` lines in `account set`'s plan show the line as the file has it, key, quotes and comment included. They used to rebuild it from the key and value, so the plan could show `email: c@d.e` where the file got `Email: "c@d.e"   # work mail`.
 
 - `account unset` on a key written on a dotted line, such as `account.work.email`, shows the `account:` and `work:` lines the save writes in its place. Its plan named only the key's line, and showed it as `email: a@x`.
+
+- The fetch before a command, and the other checks that reach origin, give up on an http or https remote that takes the connection and then sends nothing for 30 seconds. They used to wait until stopped. One that never finishes its TLS handshake still takes curl's 5 minutes. A push, pull or clone is left to git, as is a limit set in `GIT_HTTP_LOW_SPEED_LIMIT` or `GIT_HTTP_LOW_SPEED_TIME`.
+
+- On Windows, Gitsby no longer runs a `git.bat` or `git.cmd` that comes ahead of `git.exe` on PATH, nor any other batch file for a tool it runs. Windows hands a batch file to cmd, which reads the arguments again by its own rules, so `br switch` to a branch named `x&ver` ran `ver`, and a `%NAME%` in an argument was replaced. Gitsby now passes over a batch file and takes the next one on PATH, and when there is no other, the "Not found in path" error names the batch file.
 
 ## v3.0.0-beta.1 - 2026-11-08
 
