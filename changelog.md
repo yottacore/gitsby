@@ -127,6 +127,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A message typed as a word beside `-m`, as in `gitsby pullcom 'first message' -m second`, is refused. It used to commit with the `-m` one and drop the other without a word. A `pr create` title typed beside `-m` is refused the same way.
 
+- `-m` given twice, as in `gitsby pullcom -m first -m second`, is refused. It used to commit with the last one and drop the rest without a word. A `pr create` title given twice is refused the same way.
+
+- The Incoming list in `status` and the plans shows the change and the file name in columns, and a rename as `old -> new`. It used to show an escape for the tab between them.
+
+- The Incoming list shows only what the upstream's commits change. On a branch both ahead and behind, it used to list your own unpushed commits too, a new file as deleted.
+
 - `account apply` gives each account its own fragment. Two accounts with the same login add their names to it, and that could be a third account's own name, such as `work` beside `jim_work`, so both wrote one file and a repo in one folder took the other account's email. The one named for its own login keeps the name, and the other gets a number on the end, such as `github.com_jim_work_2.gitconfig`. Re-run `gitsby account apply` to get it.
 
 - The `was:` and `becomes:` lines in `account set`'s plan show the line as the file has it, key, quotes and comment included. They used to rebuild it from the key and value, so the plan could show `email: c@d.e` where the file got `Email: "c@d.e"   # work mail`.

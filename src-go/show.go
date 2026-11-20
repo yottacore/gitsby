@@ -10,6 +10,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -104,7 +105,39 @@ func (a *app) showIncoming() {
 	}
 	a.out.clean("")
 	a.out.cleanf("Incoming (%d commit(s) to pull):", behind)
-	a.showList("git", "diff", "--name-status", "HEAD..@{u}")
+	var lines []string
+	// Three dots diff from the merge base, so commits of our own that the upstream
+	// lacks don't show up reversed, as if the pull would undo them.
+	if out, _ := toolCmd("git", "diff", "--name-status", "HEAD...@{u}").Output(); len(out) > 0 {
+		lines = nameStatusColumns(string(out))
+	}
+	a.showLines(lines)
+}
+
+// nameStatusColumns lays out git diff --name-status, whose fields are split by
+// tabs, which printable would show as escapes. The status is padded to the widest
+// one, and a rename or copy reads 'old -> new' as git status --short has it. git
+// quotes a name with a tab in it, so splitting on tabs can't cut one.
+func nameStatusColumns(out string) []string {
+	var rows [][]string
+	width := 0
+	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		f := strings.Split(line, "\t")
+		rows = append(rows, f)
+		width = max(width, len(f[0]))
+	}
+	lines := make([]string, len(rows))
+	for i, f := range rows {
+		switch len(f) {
+		case 1:
+			lines[i] = f[0]
+		case 2:
+			lines[i] = fmt.Sprintf("%-*s  %s", width, f[0], f[1])
+		default:
+			lines[i] = fmt.Sprintf("%-*s  %s -> %s", width, f[0], f[1], strings.Join(f[2:], " "))
+		}
+	}
+	return lines
 }
 
 // writesAccounts: account apply, set and unset write config files and touch no

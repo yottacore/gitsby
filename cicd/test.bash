@@ -1959,6 +1959,21 @@ fRunSuite(){
 	fAssertOut "[da9v3] behind count on the branch line"  'behind 1'   bash -c "cd '${cloneA}' && '${gitsby}' -q status"
 	fAssertOut "[da9v4] incoming changes previewed"       'Incoming'   bash -c "cd '${cloneA}' && '${gitsby}' -q status"
 	fAssertOut "[da9v5] incoming file named"              'fileB\.txt' bash -c "cd '${cloneA}' && '${gitsby}' -q status"
+	## git's name-status fields are split by tabs, which printed as an escape between status and name.
+	fAssertOut "[dfhj0] incoming line is the status, spaces, then the name" '^ +[AM] +fileB\.txt$' bash -c "cd '${cloneA}' && '${gitsby}' -q status"
+	fAssertNotOut "[dfhj1] and no tab escape in it"        'TAB'        bash -c "cd '${cloneA}' && '${gitsby}' -q status"
+	local renO="${work}/$1-reno.git" renA="${work}/$1-rena" renB="${work}/$1-renb"
+	git init --quiet --bare -b main "${renO}"
+	git clone --quiet "${renO}" "${renA}" 2>/dev/null
+	( cd "${renA}" && printf 'one\ntwo\nthree\n' > 'old name.txt' && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main )
+	git clone --quiet "${renO}" "${renB}" 2>/dev/null
+	( cd "${renB}" && git mv 'old name.txt' 'new name.txt' && git commit --quiet -m "rename" && git push --quiet )
+	( cd "${renA}" && git fetch --quiet )
+	fAssertOut "[dfhj2] an incoming rename reads old -> new" '^ +R100 +old name\.txt -> new name\.txt$' bash -c "cd '${renA}' && '${gitsby}' -q --no-fetch status"
+	## The list diffed HEAD against the upstream's tree, so a commit of our own showed as a delete.
+	( cd "${renA}" && echo mine > mine.txt && git add mine.txt && git commit --quiet -m "mine" )
+	fAssert "[dfhj9] ahead and behind, Incoming lists only the upstream's changes" \
+		bash -c "cd '${renA}' && out=\"\$('${gitsby}' -q --no-fetch status 2>&1)\"; grep -qF 'ahead 1, behind 1' <<< \"\${out}\" && grep -qE '^ +R100 +old name\\.txt -> new name\\.txt\$' <<< \"\${out}\" && ! grep -qF 'mine.txt' <<< \"\${out}\""
 	fAssert "[da8ma] update with dirty tree + remote ahead"  bash -c "cd '${cloneA}' && '${gitsby}' -q update 'local edit'"
 	fAssert "[da8mb] remote commit arrived"                  bash -c "cd '${cloneA}' && [[ -f fileB.txt ]]"
 	fAssert "[da8mc] local edit survived, committed"         bash -c "cd '${cloneA}' && grep -q dirty file1.txt && [[ -z \"\$(git status --porcelain)\" ]]"
@@ -2169,6 +2184,11 @@ fRunSuite(){
 	fAssert "[dfgw0] a typed message beside -m is refused, and nothing is committed" \
 		bash -c "cd '${cloneA}' && h=\"\$(git rev-parse HEAD)\"; out=\"\$('${gitsby}' -q pullcom 'first message' -m second 2>&1)\"; [[ \$? == 1 ]] && grep -qF \"Two commit messages given: 'first message', and -m 'second'.\" <<< \"\${out}\" && [[ \"\$(git rev-parse HEAD)\" == \"\${h}\" ]]"
 	rm -f "${cloneA:?}/m5.txt"
+	## A second -m was taken over the first, at exit 0.
+	( cd "${cloneA}" && echo m6 > m6.txt )
+	fAssert "[dfhj3] -m given twice is refused, and nothing is committed" \
+		bash -c "cd '${cloneA}' && h=\"\$(git rev-parse HEAD)\"; out=\"\$('${gitsby}' -q pullcom -m first -m second 2>&1)\"; [[ \$? == 1 ]] && grep -qF -- \"-m given 2 times: 'first' and 'second'. Give one commit message.\" <<< \"\${out}\" && [[ \"\$(git rev-parse HEAD)\" == \"\${h}\" ]]"
+	rm -f "${cloneA:?}/m6.txt"
 
 	## Non-tty: mutating commands fail closed without -q; read-only ones go quiet
 	( cd "${cloneA}" && echo nt > nt.txt )

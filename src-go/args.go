@@ -45,7 +45,7 @@ var optSpecs = []optSpec{
 	// The commands that commit, which is the --staged list plus the 2 that publish a
 	// directory.
 	{shown: "-m", spellings: []string{"m", "message", "msg"}, value: true, cmds: append(slices.Clone(stagedCmds), "repo create", "repo connect"),
-		set: func(o *options, v string) { o.message = v }},
+		set: func(o *options, v string) { o.message, o.messages = v, append(o.messages, v) }},
 }
 
 // lookupOption finds the option a lowercased, dash-stripped argument names, and
@@ -82,6 +82,20 @@ func checkOptionsUsed(cmd string, opt options) error {
 			continue
 		}
 		return usagef("%s works with %s.", spec.shown, andList(spec.cmds))
+	}
+	// Checked after the loop, so -m on a command that takes none gets that answer.
+	// git joins repeated -m as paragraphs, but here each one is a whole message or
+	// title, so all but the last would be dropped.
+	if n := len(opt.messages); n > 1 {
+		what := "commit message"
+		if cmd == "pr create" {
+			what = "title"
+		}
+		quoted := make([]string, n)
+		for i, m := range opt.messages {
+			quoted[i] = "'" + m + "'"
+		}
+		return usagef("-m given %d times: %s. Give one %s.", n, andList(quoted), what)
 	}
 	return nil
 }

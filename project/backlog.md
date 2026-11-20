@@ -33,6 +33,31 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- The Incoming list shows local commits as changes coming in
+	- ID: 2026111919195626
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-191956
+	- Opened by:
+	- Steps to reproduce [Bug]: Commit a new file on a branch that is also behind its upstream, then run gitsby status.
+	- Incorrect behavior [Bug]: Incoming lists the new local file as D, deleted, though a pull leaves it alone.
+	- Expected behavior [Bug]: Only what the upstream's commits change.
+	- Reproduced [Bug]: 2026-11-19 on b23, while working 2026111910223045. Confirmed.
+	- Possible cause [Bug]: showIncoming diffs HEAD..@{u}, which compares the 2 trees. HEAD...@{u} diffs from the merge base.
+	- Origin: show.go showIncoming, there since the port. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: showIncoming diffed HEAD..@{u}, which compares the 2 trees, so a commit of our own the upstream lacks showed reversed, a new file as deleted.
+	- Actual fix [Bug]: The list diffs HEAD...@{u}, from the merge base, so it shows only the upstream's own changes. A comment at the site says why. The changelog says so.
+	- Branch: nov19c-2026111910223045
+	- Commit: c57abf9
+	- Test case: test.bash [dfhj9].
+	- Verified: [dfhj9] fails with the build at 90f3e83 and passes with the fix, on a branch 1 ahead and 1 behind. The quick gate's lint, unit and suite areas passed: test.bash 2184/0.
+	- Swept: grep for ..@{u} and @{upstream} in src-go and test.bash. showIncoming was the only diff against the upstream. The ahead and behind counts come from rev-list, which counts each side apart.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
+	- Closed: 20261119-192853
+
 - Conflict advice after a --staged run drops --staged
 	- ID: 2026111918550541
 	- Type: Enhancement
@@ -252,7 +277,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 18: The Incoming list shows a tab as the escape marker
 	- ID: 2026111910223045
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102230
@@ -263,11 +288,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
 	- Possible cause [Bug]: git diff --name-status output goes through printable, which escapes the tab. [da9v4] checks only the word Incoming.
 	- Origin: 2be7d35, 2026-10-06, then 320e15d. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: git diff --name-status splits its fields with tabs, and the list printed each line through printable, which shows a tab as an escape.
+	- Actual fix [Bug]: The Incoming list splits each line on its tabs and prints the status padded to the widest one, then the name. A rename or copy reads old -> new, as git status --short has it. git quotes a name with a tab in it, so the split can't cut one. The changelog says so.
+	- Branch: nov19c-2026111910223045
+	- Commit: 62f3b17
+	- Test case: test.bash [dfhj0], [dfhj1] and [dfhj2]. Go [dfhhz] TestNameStatusColumns.
+	- Verified: [dfhj0] to [dfhj2] fail with the build before the fix and pass with it. [dfhhz] fails with the split taken out. The quick gate passed with every area: test.bash 2183/0, fuzz 310/0, parity 31/0.
+	- Swept: every list printed through showList and showLines. git status --short, ls-files and diff --name-only have no tabs in their output. pr list goes straight to the terminal. The diff in showIncoming was the only tab-split output.
+	- Decisions: The similarity score stays on a rename, as git prints it, and the status column is padded so the names line up.
+	- Note: The list also shows local commits as incoming, filed as 2026111919195626.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261119-192011
 
 - Code Review 20261119 item 19: -m given twice keeps only the last message
 	- ID: 2026111910223031
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102230
@@ -278,6 +315,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, also pr create. Confirmed.
 	- Possible cause [Bug]: The -m setter in args.go overwrites.
 	- Origin: Missed sibling of 2026111016332070, round-20261111.
+	- Closed reason: Done
+	- Actual cause [Bug]: The -m setter in optSpecs overwrote the value, so only the last -m was kept.
+	- Actual fix [Bug]: Every -m is kept as typed, and checkOptionsUsed refuses more than one with all of them quoted, on every command that takes -m. A command that takes no -m still gets that refusal first. The changelog says so.
+	- Branch: nov19c-2026111910223045
+	- Commit: 36604e8
+	- Test case: test.bash [dfhj3]. Go [dfhhy] TestRepeatedMessageRefused.
+	- Verified: [dfhj3] fails with the build before the fix, which committed with subject second at exit 0, and passes with it. [dfhhy] fails with the check turned off. The quick gate passed with every area.
+	- Swept: every command that takes -m: pullcom, sync, br create, br hotfix, br switch, br merge, pr create, release, repo create and repo connect all go through checkOptionsUsed. A -m after raw's tool name is the tool's and is passed on, pinned in [dfhhy]. --config is the only other option with a value, and it was left as last one wins, as a setting usually is.
+	- Decisions: Refused, as the item asks, rather than joined as paragraphs as git commit does, since each gitsby -m is a whole message or title.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261119-192011
 
 - Code Review 20261119 item 21: When a 2.x file can't be converted, its notice says two opposite things
 	- ID: 2026111910223002
