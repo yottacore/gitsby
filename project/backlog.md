@@ -189,9 +189,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 14: On Windows, curly single quotes in a branch name break out of a paste line
 	- ID: 2026111910223104
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w: Go [dfhfc] from the Windows test build, in pwsh 7 and in Windows PowerShell 5.1, with the tools folder's win-go-test-run.bash.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261119-102231
 	- Opened by:
@@ -212,7 +211,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 7ca1e1a
 	- Test case: Go [dfhfc] TestPasteLinesReadBack runs each paste line through the real pwsh, sh and zsh, with git rev-parse --sq-quote in the git command's place, and checks that git got each word as named. [dcnmn] and [ddj3f] have new cases.
 	- Verified: [dfhfc], [dcnmn] and [ddj3f] fail on the code before the fix and pass after. Before it, a curly quote closed the quote and hostname ran, @foo reached git as no word, and zsh refused =x. Quick run of every area passed: test.bash 2159/0, fuzz 310/0, parity 31/0. Only pwsh 7.6 on Linux ran here, not Windows PowerShell 5.1 or pwsh's Windows argument passing.
+		- 2026-11-19 on vm925w (Windows 11 build 26200), from a Windows test build of nov19c at fca0441: [dfhfc] and [dcnmn] passed, with pwsh 7 and Windows PowerShell 5.1 both on PATH, so the test read every line back through both. [ddj3f] skipped there, since the box has no sh on PATH.
 	- Swept: every typedArg caller (branch.go, branchcmd.go, pr.go, release.go, mutate.go, and leaseDeleteLine in prune.go) goes through the one function, and no other code spells PowerShell quotes. shellQuote's Fix lines in accountcmd.go and show.go are only given off Windows. preview.go's git config --file plan line single-quotes a Windows path the sh way. It's a plan line rather than a paste line, like the unquoted plan lines beside it, and was left alone.
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: [dfhfc] passed on vm925w in pwsh 7 and Windows PowerShell 5.1.
+	- Closed: 20261119-210053
 
 - br merge on a branch that tracks one of another name leaves that branch on origin and warns about the wrong one
 	- ID: 2026111913330350
@@ -480,9 +483,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 25: safe-rm.ps1 doesn't refuse cmd's other separators
 	- ID: 2026111910222942
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w: one run of the tools folder's win-bash-run.bash with any script, which removes its folder through safe-rm.ps1. It shows the box's real %TEMP% still passes the safe set. The refusal itself runs before cmd, so it's pinned here.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102229
 	- Opened by:
@@ -500,7 +502,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: f829287
 	- Test case: test.bash [dfhks] runs the guard under pwsh with TEMP holding each of 20 other characters, then one with only safe ones, a space, a ~ and an accented letter among them, which is removed as usual. [df50j] and [dez5g] still pass.
 	- Verified: [dfhks] fails on the previous safe-rm.ps1 (the comma folder went) and passes after. It also goes red with ~, space or Unicode letters taken out of the set. Quick run of every area passed: test.bash 2195/0, fuzz 310/0, parity 31/0. Not run on Windows.
+		- 2026-11-19 on vm925w, with nov19c's safe-rm.ps1 at fca0441: a win-bash-run.bash run, and the Go test run's cleanup, each removed its test_gitsby folder under C:\Users\collierjr\AppData\Local\Temp, so the box's real %TEMP% passes the safe set.
 	- Swept: safe-rm.ps1 is the only script that calls cmd.exe with a path, by grep of cicd, install.ps1 and src-go. config_windows_test.go's mklink takes a Go temp path through Go's own quoting, a test only, left alone.
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: the guard removed a test folder under vm925w's real %TEMP%.
+	- Closed: 20261119-210053
 
 - Code Review 20261119 item 26: release.bash publishes a dot-suffixed version as a full release
 	- ID: 2026111910222928
@@ -562,9 +568,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 29: On Windows, a paste line leaves a branch name starting with @ unquoted
 	- ID: 2026111910222886
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w: Go [dfhfc] from the Windows test build, in pwsh 7 and in Windows PowerShell 5.1, with the tools folder's win-go-test-run.bash.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102228
 	- Opened by:
@@ -582,13 +587,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 7ca1e1a
 	- Test case: Go [dfhfc] TestPasteLinesReadBack, with git switch @foo and git switch @ among its lines, and [dcnmn].
 	- Verified: [dfhfc] and [dcnmn] fail on the code before the fix (git got no word for @foo) and pass after. Only pwsh 7.6 on Linux ran here.
+		- 2026-11-19 on vm925w (Windows 11 build 26200), from a Windows test build of nov19c at fca0441: [dfhfc] and [dcnmn] passed, with pwsh 7 and Windows PowerShell 5.1 both on PATH.
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: [dfhfc] passed on vm925w in pwsh 7 and Windows PowerShell 5.1.
+	- Closed: 20261119-210053
 
 - Code Review 20261119 item 30: On Windows, a git.bat or git.cmd on PATH re-reads gitsby's arguments through cmd
 	- ID: 2026111910222873
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w, the Windows Go tests `[dfhmj]` and `[dfhmk]`, which stage 7 runs there. Both pass under wine, which is only a stand-in.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102228
 	- Opened by:
@@ -604,16 +612,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions: Pass over rather than refuse, as with gitsby's own entry, since a batch file can't be run safely at all. The batch file is named only in the refusal when nothing else is found. A warning on each pass-over would have to be a refusal under `-q`, per the UI style guide, so skip and refuse would differ only interactively. This departs from "names it" when another program is found. The tool cache key now holds PATHEXT too, since the look reads it.
 	- Test case: Go `[dfhmh]` (batch names, refusal text), and Windows-only `[dfhmj]` (the walk passes over .bat and .cmd, the refusal names them, a given path is refused) and `[dfhmk]` (a real run: an `&` and a `%NAME%` argument never reach cmd).
 	- Verified: the quick gate, every area, on the fix (test.bash 2197/0, fuzz 310/0, parity 31/0). Under wine, `[dfhmk]` fails on the build before, with cmd running the text after the `&` and expanding the name, and passes after. `[dfhmj]` fails with the path check taken out. gosec gives the same 37 findings before and after.
+		- 2026-11-19 on vm925w (Windows 11 build 26200), from a Windows test build of nov19c at fca0441: [dfhmj], [dfhmk] and [dfhmh] passed.
 	- Swept: every spawn goes through toolPath (`TestOneSpawnSite`): the findTool callers, `raw`'s own walkTool and its handover, and the ssh probe, whose program can be a path. install.ps1 runs no tool by bare name. The test-only `cmd /c mklink` runs cmd.exe itself.
 	- Branch: nov19c-2026111910222873
 	- Commit: 3058008
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: [dfhmj] and [dfhmk] passed on vm925w.
+	- Closed: 20261119-210053
 
 - Code Review 20261119 item 31: On Windows, a held accounts file gives the wrong Fix and mixed slashes
 	- ID: 2026111910222859
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w, the Windows Go tests in stage 7, `[dfhmz]` among them. Only wine has run it.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102228
 	- Opened by:
@@ -630,9 +641,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: Go `TestAccountSetSaveOverAHeldFile` [dfhmz] (Windows only), `TestReplaceFixNamesAHeldFileOnWindows` [dfhmx], `TestCauseTextDropsTheRenamePaths` [dfhmy], and the Windows cases of `TestConfigCandidatesKeepDotConfig` [df05s] and `TestConfigCandidatesFor` [dbjjn].
 		- 2026-11-19: [df05s] and [dbjjn] now want the Windows candidates with backslashes, `C:\App\gitsby\config.shcl` and `C:\Users\jc\.config\gitsby\config.shcl`, where they wanted `C:\App/gitsby/config.shcl` and `C:\Users\jc/.config/gitsby/config.shcl`. The [dbjjn] case "falls back to the Unix spelling" is now "falls back to dot-config".
 	- Verified: under wine, [dfhmz] fails on the build before, with `\002/gitsby/config.shcl` in the Why lines and a Fix naming only the folder, and passes after. [dfhmx], [dfhmy] and the candidate cases fail before and pass after on Linux too. The whole Windows test binary under wine fails the same 5 other tests before and after. The quick gate, every area, passed (test.bash 2197/0, fuzz 310/0, parity 31/0). gosec gives 37 findings, none on a changed line.
+		- 2026-11-19 on vm925w (Windows 11 build 26200), from a Windows test build of nov19c at fca0441: [dfhmz], [dfhmx], [dfhmy], [df05s] and [dbjjn] passed. Only those tests ran there, not the whole Windows test binary.
 	- Swept: every candidate in `configCandidatesFor`, and every `writeRefusal` whose step renames over a file: the accounts file save, the fragment replace and the global git config replace. The lock and the new-file creates replace nothing and keep their Fix. `includeDir` still writes `/` into git config, by design.
 	- Branch: nov19c-2026111910222859
 	- Commit: e96699f
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: [dfhmz] passed on vm925w.
+	- Closed: 20261119-210053
 
 - Code Review 20261119 item 32: design.md says the suites run on Windows under Git Bash
 	- ID: 2026111910222845
