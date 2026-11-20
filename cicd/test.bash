@@ -269,6 +269,23 @@ fPsReplace(){ mkdir -p "$2"; PS_FILE="$1" PS_DIR="$2" PS_MODE="$3" POWERSHELL_TE
 	try { Install-Binary -source $src -destPath $dest -onWindows $true } catch { $err = $_.Exception.Message }
 	$have = if (Test-Path -LiteralPath $dest) { Get-Content -LiteralPath $dest -Raw } else { "none" }
 	"dest=$have left=$(@(Get-ChildItem -LiteralPath $env:PS_DIR -Force -Name | Where-Object { $_ -ne "new.bin" }) -join ",") err=$err"' </dev/null 2>&1 ;}
+## Succeeds when an installer's version answer, from the command given, is "gitsby installer <date>"
+## with the date of the newest entry in the installer's History.
+fInstallerDated(){ local inst="$1" newest="" out=""; shift
+	newest="$(sed -n 's/^[#[:space:]]*- \([0-9]\{8\}\) JC:.*/\1/p' "${inst}" | sort | tail -n 1)"
+	[[ -n "${newest}" ]] || return 1
+	out="$("$@")" || return 1
+	[[ "${out}" == "gitsby installer ${newest:0:4}-${newest:4:2}-${newest:6:2}" ]] || { echo "got '${out}', History says ${newest}"; return 1; }
+}
+## Succeeds when every tracked PowerShell file outside legacy/ is plain ASCII. 5.1 reads a file
+## with no BOM in the ANSI code page, and a BOM breaks the shebang and survives irm into iex.
+fPsAllAscii(){ local f="" n=0
+	while IFS= read -r f; do
+		n=$((n + 1))
+		[[ -z "$(LC_ALL=C tr -d '\000-\177' < "${root}/${f}")" ]] || { echo "not ASCII: ${f}"; return 1; }
+	done < <(cd "${root}" && git ls-files -- '*.ps1' '*.psm1' '*.psd1' ':!legacy/')
+	((n > 0))
+}
 ## Succeeds when install.bash's --help names every option its argument loop takes.
 fBashHelpNamesAll(){ local inst="$1" help="" opts="" opt=""
 	help="$(bash "${inst}" --help)"
@@ -4396,6 +4413,9 @@ GHEOF
 	fAssertOut  "[dbfk8] and documents --tag"                         '--tag TAG'                 bash -c "bash '${goInst}' --help"
 	## The header says --help lists every option the parser takes, and --ref was left out.
 	fAssert     "[dcntn] and names every option the parser takes"     fBashHelpNamesAll "${goInst}"
+	fAssert     "[dfjqe] go installer --version is dated by its newest History entry" \
+		fInstallerDated "${goInst}" bash "${goInst}" --version
+	fAssert     "[dfjqf] every PowerShell file outside legacy/ is plain ASCII"  fPsAllAscii
 	fAssertOut  "[dbfk9] go installer refuses a bad --target"         "--target takes"            bash -c "bash '${goInst}' --target bogus"
 	fAssertOut  "[dbfka] go installer refuses a valueless --target"   "--target needs a value"    bash -c "bash '${goInst}' --target"
 	## --arch names the asset now rather than being accepted and ignored, so the two spellings
@@ -4830,6 +4850,10 @@ GHEOF
 		fAssertOut "[dbfst] and -Help too"                   'Usage: install\.ps1' \
 			bash -c "pwsh -NoProfile -File '${goInstPs}' -Help 2>&1"
 		fAssert    "[dcnv1] and -Help names every option"    fPsHelpNamesAll "${goInstPs}" -Help
+		fAssert    "[dfjqg] go ps installer -Version is dated by its newest History entry" \
+			fInstallerDated "${goInstPs}" pwsh -NoProfile -File "${goInstPs}" -Version
+		fAssert    "[dfjqh] and --version gives the same answer" \
+			fInstallerDated "${goInstPs}" pwsh -NoProfile -File "${goInstPs}" --version
 		fAssertOut "[dcnv2] go ps installer refuses any other -Release"  "takes only 'stable'" \
 			bash -c "pwsh -NoProfile -File '${goInstPs}' -Release beta 2>&1"
 		fAssert    "[dcnv3] and frames the refusal with blank lines"  fFramed pwsh -NoProfile -File "${goInstPs}" -Release beta
@@ -10312,3 +10336,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261119 JC: account apply warns about a nested account with no email, and whoami flags an empty address, [dfh7n] to [dfh7r]. With GIT_DIR set, every command takes the account from that repo, [dfh7j] to [dfh7m].
 ##		- 20261119 JC: release.bash makes a pre-release of a version suffixed after a dot, and promotes one to its plain version, [dfhm3] [dfhm4].
 ##		- 20261120 JC: pr create refuses a branch that shares no history with its base through gh and tea, and leaves it to the git host through glab and in a shallow clone, [dfjg8] to [dfjgc].
+##		- 20261120 JC: Each installer's --version is the date of its newest History entry, and every PowerShell file outside legacy/ is plain ASCII, [dfjqe] to [dfjqh].

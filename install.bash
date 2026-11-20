@@ -37,6 +37,7 @@ fSyntax(){
 	  -r, --ref TAG          The older name for --tag.
 	  -y, --yes              Don't ask for confirmation.
 	  -h, --help             This.
+	  --version              The installer's own version.
 	  --release stable       The older name for the default. '--release dev' is gone.
 	EOF
 	echo
@@ -47,6 +48,8 @@ fSyntax(){
 ## and runs nothing. The call stays bare: behind '||' or 'if', 'set -e' is off inside it.
 fMain(){
 	repo="yottacore/gitsby"
+	## The date of the newest History entry below. test.bash holds the two together.
+	installerVersion="2026-11-20"
 	doSystem=0; doYes=0; tag=""
 	releaseChannel=""; targetScope=""; arch=""
 
@@ -66,6 +69,7 @@ fMain(){
 			-t|--tag|-r|--ref) [[ $# -ge 2 ]] || fErr "--tag needs a value."; tag="$2"; shift ;;
 			--tag=*|--ref=*)   tag="${1#*=}" ;;
 			-h|--help)   fSyntax; exit 0 ;;
+			--version)   echo "gitsby installer ${installerVersion}"; exit 0 ;;
 			*)           fErr "Unknown option: '$1' (try --help)." ;;
 		esac
 		shift
@@ -346,5 +350,6 @@ fMain(){
 ##		- 20261107 JC: The build-it-yourself message no longer claims there is nothing for go build to fetch.
 ##		- 20261119 JC: Everything runs from one function called on the last line, so a download cut short runs nothing. One such cut said the checksum was verified and exited 0 with nothing installed.
 ##		- 20261120 JC: A PATH entry with a trailing slash counts as having the install folder, so it no longer gets the not-on-PATH note.
+##		- 20261120 JC: --version prints the installer's own version, the date of its newest change.
 
 fMain "${@}"

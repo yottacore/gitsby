@@ -23,13 +23,12 @@
 .PARAMETER Arguments
     Everything, verbatim, to the launched gitsby.
 .NOTES
-    Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+    Copyright (C) 2026 Jim Collier
     Licensed under The MIT License (MIT). Full text at: https://mit-license.org/
     SPDX-License-Identifier: MIT
     History: at bottom of script.
 #>
 
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseBOMForUnicodeEncodedFile', '', Justification = 'A BOM breaks the shebang; file is UTF-8 without BOM.')]
 [CmdletBinding()]
 param(
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -90,3 +89,4 @@ exit $LASTEXITCODE
 #     week-long age-out, args forwarded.
 #   - 20261107 JC: The history entries start with a dash, the form the release check reads.
 #   - 20261107 JC: The copy's name is formatted in the invariant culture. No dead exit after Write-Error.
+#   - 20261120 JC: The copyright line is plain ASCII, like the rest of the file.

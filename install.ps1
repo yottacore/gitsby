@@ -17,6 +17,7 @@
         -Ref TAG              The older name for -Tag.
         -Yes                  Don't ask for confirmation.
         -Help                 Show the options and exit. '--help' works too.
+        -Version              The installer's own version. '--version' works too.
         -Release stable       The older name for the default. -Release dev is gone.
     The Bash installer's spellings work as well, such as --target=system and --yes.
 
@@ -27,20 +28,19 @@
 .EXAMPLE
     & ([scriptblock]::Create((irm https://raw.githubusercontent.com/yottacore/gitsby/main/install.ps1))) -System -Yes
 .NOTES
-    Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+    Copyright (C) 2026 Jim Collier
     Licensed under The MIT License (MIT). Full text at: https://mit-license.org/
     SPDX-License-Identifier: MIT
     History: at bottom of script.
 #>
 
 
-# The blank line under the shebang and the two above this are load-bearing: without them the
-# comment help binds to the first function rather than the script, and Get-Help on the file
-# shows an auto-generated stub instead.
+# Keep the blank line under the shebang and the two above this. Without them the comment help
+# binds to the first function rather than the script, and Get-Help on the file shows an
+# auto-generated stub instead.
 function Install-Gitsby {
     # Attribute lives inside the function, not at file scope: the file is also read as text
     # and evaluated (iex / scriptblock), where a top-level attribute is a parse error.
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseBOMForUnicodeEncodedFile', '', Justification = 'A BOM breaks the shebang, and survives irm into iex; file is UTF-8 without BOM.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Interactive installer; console text is the point.')]
     [CmdletBinding()]
     param(
@@ -54,7 +54,8 @@ function Install-Gitsby {
         # Took 'dev' or 'stable' when a branch could be installed from its tree. Bound rather
         # than dropped, so a familiar flag gets an explanation instead of a binder error.
         [string]$Release,
-        [switch]$Help
+        [switch]$Help,
+        [switch]$Version
     )
 
     Set-StrictMode -Version Latest
@@ -84,8 +85,15 @@ function Install-Gitsby {
         Write-Host '  -Ref TAG              The older name for -Tag.'
         Write-Host '  -Yes                  Do not ask for confirmation.'
         Write-Host '  -Help                 This.'
+        Write-Host "  -Version              The installer's own version."
         Write-Host "  -Release stable       The older name for the default. '-Release dev' is gone."
         Write-Host ''
+        return
+    }
+    # The date of the newest History entry below. test.bash holds the two together.
+    $installerVersion = '2026-11-20'
+    if ($Version) {
+        Write-Output "gitsby installer ${installerVersion}"
         return
     }
 
@@ -511,7 +519,7 @@ try {
                     if ($Matches[2]) { $named[$name] = $Matches[3] }
                     elseif ($i + 1 -lt $args.Count) { $i++; $named[$name] = [string]$args[$i] }
                     else { throw "--${name} needs a value." }
-                } elseif ($word -is [string] -and $word -match '^--(system|yes)$') {
+                } elseif ($word -is [string] -and $word -match '^--(system|yes|version)$') {
                     $named[$Matches[1]] = $true
                 } else {
                     $rest += $word
@@ -597,3 +605,5 @@ try {
 #   - 20261120 JC: A PATH that already names the folder as %LOCALAPPDATA%\..., or with a trailing
 #     slash, is seen as having it, so no second entry goes in and the result says it was already
 #     there. The plan and the result both call the scopes account and system.
+#   - 20261120 JC: -Version prints the installer's own version, the date of its newest change.
+#     The copyright line is plain ASCII, like the rest of the file.
