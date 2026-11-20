@@ -75,6 +75,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The plan for `release` started on `main` no longer ends with `git checkout main`. The run ends on `dev`, as it always has, and the plan's last step now says so.
 
+- `release` with no version counts on from a release, not from its candidate, when the candidate's suffix follows a dot, as in `v3.0.0.rc1`. git sorts that tag above `v3.0.0`, so the next version came out as `v3.0.0` again and the run stopped on a tag that exists. Finishing a refused push takes the release's tag over its candidate's the same way.
+
 - `sync`, and every command that pushes the branch it's on, pushes only that branch. Under `push.default=matching`, or a push refspec for every branch, they pushed other branches with it, so a commit on `main` reached origin without `--direct`. On a mirror remote they deleted origin's branches that aren't here. git now refuses that push, and nothing moves.
 
 - A branch made from `origin/main`, as `git switch -c feat origin/main` makes it, tracks `main`. Its push from `sync`, `br switch`, `br create`, `br hotfix`, `br merge` or `pr create` went to origin's `main` and exited 0, though the plan said it pushed `feat`. Under git's default `push.default=simple`, where git refuses that push, Gitsby now refuses before the plan, and `git branch --unset-upstream` lets it publish the branch under its own name. Under `push.default=upstream` the push goes to `main` as git sends it: the plan says so, `sync` and `br switch` ask for `--direct`, and the other commands refuse.

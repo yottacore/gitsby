@@ -2132,6 +2132,15 @@ fRunSuite(){
 	fAssert     "[dcnqn] a typed version is tagged as typed"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release 2.0.0 && git rev-parse -q --verify refs/tags/2.0.0 >/dev/null && ! git rev-parse -q --verify refs/tags/v2.0.0 >/dev/null"
 	( cd "${bt}/c" && echo e > e.txt )
 	fAssert     "[dfgx4] with no dev, a release from main: the plan's last checkout is where it ends"  fPlanEnds "${bt}/c"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release 2.0.1 && [[ \"\$(git branch --show-current)\" == main ]]"
+	## git's tag sort put v3.0.0.rc1 above v3.0.0, so the next version came out as v3.0.0 again and
+	## the run stopped on a tag that exists. A failed push was finished on the candidate's tag.
+	local dt="${work}/$1-dottag"
+	git init --quiet --bare -b main "${dt}/origin.git"
+	git clone --quiet "${dt}/origin.git" "${dt}/c" 2>/dev/null
+	( cd "${dt}/c" || exit 1; echo a > a.txt && git add --all && git commit --quiet -m init && git tag -a v3.0.0.rc1 -m rc1 && echo b > b.txt && git add --all && git commit --quiet -m rel && git tag -a v3.0.0 -m rel && git push --quiet -u origin main --tags && echo c > c.txt )
+	fAssert     "[dfj8h] release after a candidate suffixed after a dot bumps past its release"  bash -c "cd '${dt}/c' && '${gitsby}' -q -NoFetch release && git rev-parse -q --verify refs/tags/v3.0.1 >/dev/null"
+	( cd "${dt}/c" || exit 1; echo d > d.txt && git add --all && git commit --quiet -m next && git tag -a v3.1.0.rc1 -m rc1 && git tag -a v3.1.0 -m rel )
+	fAssert     "[dfj8j] finishing a release whose commit also holds its candidate pushes the release's tag"  bash -c "cd '${dt}/c' && '${gitsby}' -q -NoFetch release && git -C '${dt}/origin.git' rev-parse -q --verify refs/tags/v3.1.0 >/dev/null && ! git -C '${dt}/origin.git' rev-parse -q --verify refs/tags/v3.1.0.rc1 >/dev/null"
 	## git merge reads a tag ahead of a branch with the same name, so a tag called 'dev' on an
 	## older commit would be released in dev's place.
 	local rtag="${work}/$1-reltag"
@@ -6675,6 +6684,13 @@ LGEOF
 		git -C "${relRepo}" tag -d v1.3.0.rc1 >/dev/null
 		fAssert "[dfhm4] and with no version given, it promotes to its plain version as a full release" \
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'the next one after v1.3.0.rc1 is v1.3.0' '${relOut}' && grep -qF 'would: gh release create v1.3.0 with ' '${relOut}'"
+		## git's tag sort put v1.3.0.rc1 above v1.3.0, so the next version came out as v1.3.0 again.
+		git -C "${relRepo}" tag v1.3.0.rc1
+		git -C "${relRepo}" tag v1.3.0
+		fRelRun --dry-run
+		git -C "${relRepo}" tag -d v1.3.0.rc1 v1.3.0 >/dev/null
+		fAssert "[dfj8k] and once that release is tagged, the next one bumps past it" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'the next one after v1.3.0 is v1.3.1' '${relOut}'"
 		## Each of these passed, and 'gitsby release' refused it after the pipeline and the merge, or
 		## git refused the tag after the release merge.
 		local relBad="" relBadOk=1
@@ -6723,6 +6739,12 @@ LGEOF
 		fRelRun --dry-run
 		fAssert "[df4y1] release.bash cuts from dev where the repo has one" \
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Dry run done: v1.2.4 was not released' '${relOut}'"
+		## rev-parse --abbrev-ref HEAD said heads/dev beside a tag named dev, so the run refused to cut from dev.
+		git -C "${relRepo}" tag dev
+		fRelRun --dry-run
+		git -C "${relRepo}" tag -d dev >/dev/null
+		fAssert "[dfj8q] and the same with a tag named dev" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Dry run done: v1.2.4 was not released' '${relOut}'"
 		git -C "${rel}/other" pull --quiet --ff-only 2>/dev/null
 		echo hotfix > "${rel}/other/hotfix.txt"
 		git -C "${rel}/other" add hotfix.txt
@@ -6730,6 +6752,15 @@ LGEOF
 		git -C "${rel}/other" push --quiet 2>/dev/null
 		fRelRun --dry-run
 		fAssert "[df4y2] and refuses when origin's main has commits dev doesn't" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"origin's 'main' has commits 'dev' doesn't, which the release merge would take in untested.\" '${relOut}' && ! grep -qF 'Phase 1 OK' '${relOut}'"
+		## symbolic-ref --short read origin/HEAD as remotes/origin/main beside a tag named origin/main,
+		## so no branch was found and the check above was skipped.
+		git -C "${relRepo}" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+		git -C "${relRepo}" tag origin/main
+		fRelRun --dry-run
+		git -C "${relRepo}" tag -d origin/main >/dev/null
+		git -C "${relRepo}" symbolic-ref --delete refs/remotes/origin/HEAD
+		fAssert "[dfj8p] and the same with a tag named origin/main beside origin/HEAD" \
 			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"origin's 'main' has commits 'dev' doesn't, which the release merge would take in untested.\" '${relOut}' && ! grep -qF 'Phase 1 OK' '${relOut}'"
 		git -C "${relRepo}" checkout --quiet main
 		git -C "${relRepo}" pull --quiet --ff-only 2>/dev/null
@@ -7060,6 +7091,13 @@ LGEOF
 		PATH="${rel}/winbin:${PATH}" bash "${rel}/winres/cicd/utility/gen-winres.bash" -q v1.2.3.beta >/dev/null 2>&1 || true
 		fAssert "[df4yp] and stamps v1.2.3.beta as 1.2.3, with the suffix only in the strings" \
 			bash -c "grep -qF '\"FileVersion\":    { \"Major\": 1, \"Minor\": 2, \"Patch\": 3, \"Build\": 0 }' '${rel}/winres.json' && grep -qF '\"ProductVersion\": \"1.2.3.beta\"' '${rel}/winres.json'"
+		## git's tag sort put v1.2.3.rc1 above v1.2.3, so the candidate stamped the resource.
+		git -C "${rel}/winres" tag v1.2.3.rc1
+		: > "${rel}/winres.json"
+		PATH="${rel}/winbin:${PATH}" bash "${rel}/winres/cicd/utility/gen-winres.bash" -q >/dev/null 2>&1 || true
+		git -C "${rel}/winres" tag -d v1.2.3.rc1 >/dev/null
+		fAssert "[dfj8m] and with no version given, takes the release over its candidate suffixed after a dot" \
+			grep -qF '"ProductVersion": "1.2.3"' "${rel}/winres.json"
 	fi
 
 	## Phase 3 is the build that gets published, and no dry run reaches it. It compiled the working
@@ -8206,6 +8244,11 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		demoBuildLine="$(fGateDemoBuild)"
 		fAssert "[dcmdc] and removes that build afterwards" \
 			bash -c "[[ -n '${demoBuildLine}' && ! -e '${gateDir}/src-go/gitsby-demo' ]]"
+		## git's tag sort put a candidate suffixed after a dot above its release, which stamped the demo.
+		git -C "${gateDir}" tag v9.8.7.rc2 v9.8.7-rc.1
+		fAssert "[dfj8n] and a candidate suffixed after a dot doesn't take its release's place" \
+			fGateDemoStamp "-X main.version=9.8.7 -X main.buildEpoch=${demoEpoch} -o "
+		git -C "${gateDir}" tag -d v9.8.7.rc2 >/dev/null
 		fGateDemoCommit 2026-04-01T00:00:00Z
 		fAssert "[dcmdd] a later commit builds the demo identically, so the gif is left alone"  fGateDemoSame "${demoBuildLine}"
 		fAssert "[dcmde] -q reaches the demo generator"  fGateDemoQuiet -q 1

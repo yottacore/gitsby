@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - A candidate suffixed after a dot sorts above its own release in every tag scan
 	- ID: 2026111920273377
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-202733
@@ -48,6 +48,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, the sort only, in a temp repo with tags v3.0.0, v3.0.0.rc1 and v3.0.0-rc.2. Adding versionsort.suffix=. puts v3.0.0 first. The cut that follows is read, not run.
 	- Possible cause [Bug]: The tag scans in src-go/release.go (resolveRelease and the --points-at one), cicd/release.bash, cicd/utility/gen-winres.bash and the demo stamp in cicd/cicd.bash pass only versionsort.suffix=-.
 	- Origin: ed296a4, 2026-09-16, with the dotted suffix the version check admits. Found while fixing 2026111910222928. Plausible for the cut, Confirmed for the sort.
+	- Closed reason: Done
+	- Actual cause [Bug]: As the possible cause says. git calls a suffix a pre-release only after the separator it's given, and every scan gave it only a dash. gitsby's newestReleaseTag took git's first v tag as it came.
+	- Actual fix [Bug]: gitsby's newestReleaseTag weighs every tag by number, then a release over its own candidate, and git's order only breaks a tie. The three scripts share fReleaseTags in cicd/config.bash, which gives git a dot as well as a dash. changelog.md has a line under vNEXT.
+	- Decisions: gitsby weighs the tags itself rather than giving git a dot suffix, since it runs on any repo, and a dot suffix ranks v1.2 above v1.2.1. The scripts give git the dot, since they run only here, where every tag cut is X.Y.Z. A tag with a fourth number, such as v1.2.3.4, counts as a candidate of v1.2.3 in both, as the version check and nextVersion already read it.
+	- Swept: every tag scan that sorts: resolveRelease and unpushedRelease's --points-at scan in release.go, release.bash, gen-winres.bash, and the demo stamp in cicd.bash. branchcmd.go's call to newestReleaseTag only asks whether any tag exists. The installers go by GitHub's pre-release flag. legacy/bin/gitsby.ps1 has the same scan and is frozen at v2.1.0.
+	- Branch: nov20-2026111920273377
+	- Test case: Go [dfj8g], test.bash [dfj8h] [dfj8j] [dfj8k] [dfj8m] [dfj8n]
+	- Verified: each fails against the old code and passes after. [dfj8h] runs the cut the item read only: 'gitsby release' stopped on the existing v3.0.0. Quick gate passed, every area: test.bash 2204/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261120-072915
 
 - br merge from a branch that shares no history with dev pushes it, switches to dev, then fails
 	- ID: 2026111919473452
@@ -100,7 +110,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 27: release.bash finds the default branch with symbolic-ref --short
 	- ID: 2026111910222914
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102229
@@ -111,6 +121,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
 	- Possible cause [Bug]: fpDefaultBranch at release.bash line 203.
 	- Origin: dc94879, round-20261111. Sibling of originHead's rule, Never --short.
+	- Closed reason: Done
+	- Actual cause [Bug]: As the possible cause says. With a tag named origin/main, --short can't shorten origin/HEAD's target to origin/main, so it gives remotes/origin/main. The current branch had the same flaw: rev-parse --abbrev-ref HEAD gives heads/dev beside a tag named dev, so release.bash refused to cut from dev.
+	- Actual fix [Bug]: fpDefaultBranch reads the full ref and strips refs/remotes/origin/, and goes on to main, master or trunk when origin/HEAD points anywhere else, as originHead does. The current branch comes from git branch --show-current, with HEAD when detached.
+	- Swept: every symbolic-ref and abbrev-ref in cicd/ and src-go/. release.bash had two more, both reading the current branch, now fpCurrentBranch. cicd.bash's rev-parse --abbrev-ref @{u} only asks whether an upstream exists. branch.go strips full refs throughout.
+	- Branch: nov20-2026111920273377
+	- Test case: test.bash [dfj8p] for origin/main, [dfj8q] for a tag named dev
+	- Verified: both fail against the old release.bash and pass after. Quick gate passed, every area: test.bash 2204/0, fuzz 310/0, parity 31/0.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261120-072915
 
 - Code Review 20261119 item 28: The image's markdownlint version check passes when markdownlint prints nothing
 	- ID: 2026111910222900

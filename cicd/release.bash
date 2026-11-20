@@ -203,13 +203,17 @@ fpChangelogVnext(){
 ## else the same branch. Found the way gitsby finds them.
 fpDefaultBranch(){
 	local name
-	name="$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)"
-	if [[ -n "${name}" ]]; then echo "${name#origin/}"; return 0; fi
+	## The full ref, as branch.go's originHead reads it. --short gives remotes/origin/main once a tag
+	## named origin/main is there too.
+	name="$(git symbolic-ref -q refs/remotes/origin/HEAD 2>/dev/null || true)"
+	if [[ "${name}" == refs/remotes/origin/?* ]]; then echo "${name#refs/remotes/origin/}"; return 0; fi
 	for name in main master trunk; do
 		if git show-ref -q --verify "refs/heads/${name}"; then echo "${name}"; return 0; fi
 	done
-	git rev-parse --abbrev-ref HEAD
+	fpCurrentBranch
 }
+## rev-parse --abbrev-ref says heads/dev when a tag is named dev too. HEAD when detached.
+fpCurrentBranch(){ local name; name="$(git branch --show-current)"; echo "${name:-HEAD}" ;}
 fpReleaseSource(){
 	if git show-ref -q --verify refs/heads/dev || git show-ref -q --verify refs/remotes/origin/dev; then echo dev; else fpDefaultBranch; fi
 }
@@ -311,7 +315,7 @@ winres=("${here}/utility/gen-winres.bash"); winresStatus=0
 ## The last release, for the guards below. The version itself comes from the tag this cuts, not
 ## from anything in the tree - there is no longer a string in a source file that can disagree.
 ## Listed whole and then cut, since a 'head' downstream fails git's write once there are enough tags.
-lastTags="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*')" || fDie "couldn't list the v* tags."
+lastTags="$(fReleaseTags)" || fDie "couldn't list the v* tags."
 lastTag="${lastTags%%$'\n'*}"
 
 ## The changelog has to have something to release. 'vNEXT' is this project's convention for
@@ -380,7 +384,7 @@ fi
 [[ -z "$(git status --porcelain)" ]] || fDie "working tree isn't clean."
 relSource="$(fpReleaseSource)"
 if ((! publishOnly)); then
-	branch="$(git rev-parse --abbrev-ref HEAD)"
+	branch="$(fpCurrentBranch)"
 	[[ "${branch}" == "${relSource}" ]] || fDie "on '${branch}', and a release is cut from '${relSource}'. Switch to it, then run again."
 	case "$(fpOriginState)" in
 		level)     ;;
@@ -685,3 +689,4 @@ echo
 ##		- 20261110 JC: Fetches first, and refuses unless HEAD is the branch 'gitsby release' cuts from, level with origin's. It ran the pipeline on whatever was checked out, and phase 2's pulls then tagged origin's commit. Stops before phase 2 when the pipeline left the tree changed, which the version PR took in, or origin's branch moved during the run. Phase 2 checks the new branch, the merged branch and the tag each hold the tested tree.
 ##		- 20261110 JC: The version is checked against RELEASE_VERSION_RE, the shape 'gitsby release' takes. A version it refused, such as v3.0.0-, got the bump merged first. A stop after 'br create' says the branch is pushed, which it is.
 ##		- 20261119 JC: A suffix after a dot, as in v3.0.0.rc1, makes a pre-release and promotes to its plain version, as a dash does. Only a dash did, so that one published as a full release.
+##		- 20261120 JC: The tag scan is fReleaseTags, so v3.0.0.rc1 no longer reads as newer than v3.0.0. The default branch is read from origin/HEAD's full ref; --short read a tag named origin/main as the branch, and the check on origin's main was skipped. The current branch comes from branch --show-current, since a tag named dev made it heads/dev and the run refused.

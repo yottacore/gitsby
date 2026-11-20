@@ -76,8 +76,7 @@ func (a *app) resolveRelease() error {
 		a.rel.tag = a.cmd.arg
 		return nil
 	}
-	// versionsort.suffix=- ranks v2.0.0 above its own v2.0.0-rc1; the default sort
-	// inverts them.
+	// newestReleaseTag weighs every tag itself; git's order only breaks its ties.
 	tags := runLines("git", "-c", "versionsort.suffix=-", "tag", "--list", "v[0-9]*", "[0-9]*", "--sort=-v:refname")
 	a.rel.tag, a.rel.bumped = nextReleaseTag(newestReleaseTag(tags))
 	return nil
@@ -95,27 +94,20 @@ func nextReleaseTag(latest string) (tag string, bumped bool) {
 
 // newestReleaseTag picks the tag to count on from tags git sorted newest first.
 // A tag with no 'v' counts only as a whole X.Y.Z, so a date or a build number
-// can't restart the numbering. The two spellings don't sort against each other,
-// so the newest of each is compared.
+// can't restart the numbering. Every tag goes through tagNewer rather than taking
+// git's first: git ranks v3.0.0.rc1 above v3.0.0, and a versionsort.suffix of '.'
+// would put v1.2 above v1.2.1. A tie keeps git's order, so rc.2 beats rc.1.
 func newestReleaseTag(sorted []string) string {
-	newestV, newestBare := "", ""
+	newest := ""
 	for _, tag := range sorted {
-		switch {
-		case strings.HasPrefix(tag, "v"):
-			if newestV == "" {
-				newestV = tag
-			}
-		case newestBare == "" && releaseVersionOK(tag):
-			newestBare = tag
+		if !strings.HasPrefix(tag, "v") && !releaseVersionOK(tag) {
+			continue
 		}
-		if newestV != "" && newestBare != "" {
-			break
+		if newest == "" || tagNewer(tag, newest) {
+			newest = tag
 		}
 	}
-	if newestV == "" || (newestBare != "" && tagNewer(newestBare, newestV)) {
-		return newestBare
-	}
-	return newestV
+	return newest
 }
 
 // tagNewer: by number, then a full release over a candidate of the same number.

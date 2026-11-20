@@ -104,7 +104,7 @@ fi
 ## Which version the resource claims.
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 if [[ -z "${version}" ]]; then
-	versions="$(git -C "${root}" -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' 2>/dev/null || true)"
+	versions="$(fReleaseTags -C "${root}" 2>/dev/null || true)"
 	version="${versions%%$'\n'*}"
 	[[ -n "${version}" ]] || fDie "no v* tag to take a version from; pass one."
 fi
@@ -224,3 +224,4 @@ exit 0
 ##		- 20261106 JC: Its scratch folders go through fSafeRm.
 ##		- 20261107 JC: Errors go through fUsage and printf.
 ##		- 20261110 JC: The version is checked against RELEASE_VERSION_RE, and the three numbers come from it. A suffix after a dot, as in v3.0.0.beta, went into the patch number.
+##		- 20261120 JC: The tag scan is fReleaseTags, so a candidate suffixed after a dot no longer stamps the resource over its own release.
