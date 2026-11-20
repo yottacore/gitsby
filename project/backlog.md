@@ -105,9 +105,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - On Windows PowerShell 5.1, a paste line drops a double quote from a branch name
 	- ID: 2026111917564808
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-175648
 	- Opened by:
@@ -116,9 +115,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Steps to reproduce [Bug]: Make a branch a"b, and get a line that names it, such as from br prune with origin unreachable. Paste it into Windows PowerShell 5.1.
 	- Incorrect behavior [Bug]: git gets ab, so it names another branch or none.
 	- Expected behavior [Bug]: git gets a"b, or gitsby gives no command for such a name.
-	- Reproduced [Bug]: No.
+	- Reproduced [Bug]: 2026-11-20 on vm925w (Windows 11 build 26200). Confirmed. In Windows PowerShell 5.1 git got ab for a"b, and an empty word for a lone double quote. pwsh 7 passed it right. pwsh set to Legacy argument passing failed the same way, on Windows and on Linux.
 	- Possible cause [Bug]: Windows PowerShell 5.1 passes a double quote inside an argument to the program bare, and git reads it as a quote. pwsh 7.3 and later escape it, so no one spelling suits both.
 	- Origin: df38db0, 2026-09-15, typedArg's Windows form. Plausible: the 5.1 passing is documented, not run here.
+	- Actual cause [Bug]: As read. Windows PowerShell 5.1, and pwsh in Legacy argument passing, put the double quote on git's command line bare, and git's command-line parsing reads it as a quote. pwsh 7.3 and later escape it.
+	- Actual fix [Bug]: On Windows typedArg gives a word with a double quote both spellings, and the line picks one when it runs: as is under pwsh's Standard or Windows passing, and with each double quote backslashed under anything else, 5.1 included.
+	- Branch: nov20-2026111917564808
+	- Commit: 7ab6156
+	- Test case: Go [dfhfc] TestPasteLinesReadBack, with 10 words that hold a double quote and a new pwsh Legacy leg, and [dcnmn] TestTypedArg.
+	- Verified: [dfhfc] fails on the code before the fix and passes after, on b23 (pwsh 7.6 Legacy leg) and on vm925w (Windows PowerShell 5.1 and the pwsh Legacy leg, 20 lines each before the fix). Quick run of every area passed: test.bash 2209/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Swept: every typedArg caller (branch.go, branchcmd.go, main.go, mutate.go, pr.go, release.go, and leaseDeleteLine in prune.go) goes through the one function. No other code in src-go, cicd or the docs spells a PowerShell argument.
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: reproduced on vm925w, its test failed before the fix and passes after there.
+	- Closed: 20261120-080834
+	- Decisions:
+		- Both spellings in the line, picked by $PSNativeCommandArgumentPassing when it runs, rather than no command for such a name. Every caller keeps its command, and only a name with a double quote gets the longer line. A Check: entry in questions.md asks about it.
+		- The pick reads Standard and Windows as escaping. Under Windows passing pwsh still passes .cmd and .bat files the Legacy way, and git and gitsby are .exe files.
+		- The Legacy spelling leaves out the quotes 5.1 adds around a word with a space, since no ref name holds one.
+		- [dfhfc]'s Windows PowerShell 5.1 leg exited 1 partway once on vm925w, the first run after a start from off, with no stderr kept. It passed in the 3 runs after. psRun now prints the shell's stderr when it fails.
 
 - Code Review 20261119 item 24: [daf7x] passes with the code it checks taken out
 	- ID: 2026111910222957

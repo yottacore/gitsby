@@ -203,11 +203,36 @@ func leaseDeleteLine(branch, object, goos string) string {
 // the quote early.
 var psQuotes = strings.NewReplacer("'", "''", "\u2018", "\u2018\u2018", "\u2019", "\u2019\u2019", "\u201a", "\u201a\u201a", "\u201b", "\u201b\u201b")
 
+// legacyQuotes spells a word for Windows PowerShell 5.1, and for pwsh in its Legacy
+// argument passing. Both hand a double quote inside an argument to the program bare,
+// and the program reads it as a quote, so each one gets a backslash, and the
+// backslashes right before it are doubled.
+func legacyQuotes(word string) string {
+	var b strings.Builder
+	slashes := 0
+	for _, r := range word {
+		switch r {
+		case '\\':
+			slashes++
+		case '"':
+			b.WriteString(strings.Repeat(`\`, slashes+1))
+			slashes = 0
+		default:
+			slashes = 0
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // typedArg spells a word for a line someone will paste. A branch name can hold ;
 // or $, and it came from whoever pushed it, so anything a shell reads gets single
 // quotes, in the form this platform's shell takes them. Off Windows a word that
 // starts with = does too, since zsh expands it to a command's path. PowerShell also splits an
 // unquoted dash-led word at a dot, and reads one that starts with @ as splatting.
+// A word with a double quote gets both PowerShell spellings, and the line picks one
+// when it runs. The Legacy one leaves out the quotes 5.1 adds around a word with a
+// space, since no ref name holds one.
 func typedArg(word, goos string) string {
 	shellReads := func(r rune) bool {
 		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && !strings.ContainsRune("-_./:=@+", r)
@@ -217,7 +242,11 @@ func typedArg(word, goos string) string {
 		if plain && !strings.HasPrefix(word, "@") && (!strings.HasPrefix(word, "-") || !strings.Contains(word, ".")) {
 			return word
 		}
-		return "'" + psQuotes.Replace(word) + "'"
+		quoted := "'" + psQuotes.Replace(word) + "'"
+		if !strings.Contains(word, `"`) {
+			return quoted
+		}
+		return "$(if ($PSNativeCommandArgumentPassing -in 'Standard','Windows') {" + quoted + "} else {'" + psQuotes.Replace(legacyQuotes(word)) + "'})"
 	}
 	if plain && !strings.HasPrefix(word, "=") {
 		return word
