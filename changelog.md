@@ -51,6 +51,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - When the PowerShell installer can't put the new `gitsby.exe` in place over an old one, it puts the old one back. It used to delete the old copy first, so a failed upgrade left no gitsby at all. If the old copy can't be put back either, the error says where it is.
 
+- The PowerShell installer no longer adds gitsby's folder to PATH a second time when PATH already names it as `%LOCALAPPDATA%\Programs\gitsby` or with a trailing backslash. It used to add it again and say Added. Now it says the folder is already on PATH, and the plan and the result both call it the account or system PATH.
+
+- The Bash installer no longer says its folder isn't on PATH when PATH names it with a trailing slash.
+
 - `raw glab` and `pr` no longer send the account's GitLab token to some other host. glab sends its token to whatever host it's pointed at, so `raw glab api --hostname gitlab.com user` in a gitlab.gnome.org folder sent the GNOME token to gitlab.com. A run that names another host, with `--hostname`, `-R` or a URL, now gets no token and runs as plain glab would, and says so.
 
 - On a GitHub Enterprise host, `gh` acts as the folder's account. Its token went into `GH_TOKEN`, which `gh` reads only for github.com, so `pr`, `repo create` and `raw gh` acted as `gh`'s own login there while git pushed as the account. The token now goes into `GH_ENTERPRISE_TOKEN` for a host `GH_HOST` names.

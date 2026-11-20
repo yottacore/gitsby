@@ -206,9 +206,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 34: install.ps1 can add PATH twice and says Added when it was already there
 	- ID: 2026111910222815
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w
+	- Needs external testing: vm925w, in Windows PowerShell 5.1 and pwsh 7: a whole install with the user PATH already holding the folder as %LOCALAPPDATA%\Programs\gitsby, then with a trailing backslash. Each should leave one entry and say it's already on your account PATH. Then one from a PATH without it, which should say Added.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102228
 	- Opened by:
@@ -216,9 +216,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Steps to reproduce [Bug]: Have the user PATH hold the install folder as %LOCALAPPDATA%\Programs\gitsby or with a trailing backslash, then run install.ps1.
 	- Incorrect behavior [Bug]: The check compares the stored PATH entries against the expanded folder, so it adds a second entry and says Added. The plan says account where the result says User.
 	- Expected behavior [Bug]: Compare expanded, trimmed entries, and say already on PATH when it is. Use one word for the scope.
-	- Reproduced [Bug]: No. Read on 2026-11-19. Plausible.
+	- Reproduced [Bug]: 2026-11-20 on b23 under pwsh 7, by calling the PATH check on stored lists: the old check had no way to match %LOCALAPPDATA%\Programs\gitsby, a trailing backslash, or a / where the folder has a \. Not run on Windows.
 	- Possible cause [Bug]: The PATH test at install.ps1 line 416 uses the raw stored list.
 	- Origin: The PATH code predates the round. The scope wording predates it too. No round saw it.
+	- Actual cause [Bug]: As read. All 3 PATH checks, in the plan, against the session PATH and against the stored one, compared raw entries with -contains, so an entry written another way didn't match. The result said Added whether or not the registry was written, and named the scope User or Machine where the plan said account or system.
+	- Actual fix [Bug]: install.ps1 has one Test-OnPath, used by all 3 checks. It expands %VAR% entries, trims spaces, quotes and trailing slashes, and on Windows turns / into \ and ignores case. When the stored PATH already has the folder, nothing is written and the result says it's already on your account PATH. The result uses the plan's words, account and system. install.bash's PATH note takes an entry with a trailing slash too. changelog.md has 2 lines under vNEXT Fixed.
+	- Decisions: The plan's words, account and system, for both lines, since [db5xm] pins the plan's and Windows' own settings page says 'for your account'. The plan still says Add when only the stored PATH has the folder, since reading the registry before the plan would add a second copy of that code for a line the result corrects. The broadcast is still sent in that case, per 2026111016332008.
+	- Branch: nov20-2026111910222815
+	- Commit: 808235d, 2856951, fb6ae4c
+	- Test case: test.bash [dfjab] pulls Test-OnPath out of install.ps1 and asks it about 8 PATHs: %LOCALAPPDATA%, trailing backslash, other case, quoted, a near miss, empty, and 2 POSIX ones. [dfjac] no -contains against $destDir is left, and Test-OnPath is called at least 3 times. [dfjah] install.bash with its folder on PATH with a trailing slash gives no not-on-PATH note, and [dfjaj] gives it when PATH lacks the folder.
+	- Verified: [dfjab] and [dfjac] fail on the previous install.ps1 (no Test-OnPath, 3 raw checks) and pass after. [dfjab] goes red with the expansion, the / swap, the backslash trim or the quote trim taken out. The previous install.bash printed the note with a trailing-slash entry, which [dfjah] refuses. Quick run of every area passed on 2856951's tree: test.bash 2213/0, fuzz 310/0, parity 31/0. PSScriptAnalyzer clean on install.ps1. The Windows branch didn't run here.
+	- Swept: every PATH test in both installers. install.ps1 has the 3 named above. install.bash only checks for a note, and missed a trailing slash, fixed here. legacy/install.ps1 has the same raw checks and is frozen. No Go or cicd code reads the Windows PATH this way.
 
 - Code Review 20261119 item 35: lockFix is production code that only tests call
 	- ID: 2026111910222801

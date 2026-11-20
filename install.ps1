@@ -276,6 +276,24 @@ function Install-Gitsby {
         $destPath = Join-Path -Path $destDir -ChildPath 'gitsby'
     }
 
+    # A stored PATH can name the folder as %LOCALAPPDATA%\..., with a trailing slash, or with /
+    # in place of \, so entries are expanded and trimmed before comparing.
+    function Test-OnPath([string]$list, [string]$dir, [bool]$onWindows) {
+        $tidy = {
+            param([string]$entry)
+            $entry = [Environment]::ExpandEnvironmentVariables($entry).Trim().Trim('"')
+            if ($onWindows) { $entry.Replace('/', '\').TrimEnd('\') } else { $entry.TrimEnd('/') }
+        }
+        $want = & $tidy $dir
+        $sep = if ($onWindows) { ';' } else { ':' }
+        foreach ($entry in ($list -split $sep)) {
+            if (-not $entry.Trim()) { continue }
+            $have = & $tidy $entry
+            if (($onWindows -and $have -eq $want) -or $have -ceq $want) { return $true }
+        }
+        $false
+    }
+
     # Found out here rather than at the copy, after the download. Elevating was passed over:
     # the iex and scriptblock forms have no file to start again as administrator.
     function Test-Writable([string]$dir) {
@@ -310,7 +328,7 @@ function Install-Gitsby {
     }
     # Windows puts nothing on PATH for you, so without this the install finishes with a program
     # that cannot be run by name. On *nix the destination is a conventional bin dir already.
-    if ($onWindows -and (($env:PATH -split [IO.Path]::PathSeparator) -notcontains $destDir)) {
+    if ($onWindows -and -not (Test-OnPath -list $env:PATH -dir $destDir -onWindows $onWindows)) {
         $pathScopeLabel = if ($installSystemWide) { 'system' } else { 'account' }
         Write-Host "  - Add ${destDir} to your ${pathScopeLabel} PATH (new shells only; this one is unchanged)"
     }
@@ -417,22 +435,24 @@ function Install-Gitsby {
         }
 
         $pathSep = [IO.Path]::PathSeparator
-        if (($env:PATH -split $pathSep) -notcontains $destDir) {
+        if (-not (Test-OnPath -list $env:PATH -dir $destDir -onWindows $onWindows)) {
             if ($onWindows) {
-                # Persist it, as promised in the plan.
-                $pathScope = if ($installSystemWide) { 'Machine' } else { 'User' }
+                # Persist it, as promised in the plan. Same word as the plan's.
+                $pathScope = if ($installSystemWide) { 'system' } else { 'account' }
+                $added = $false
                 # Straight at the registry, since GetEnvironmentVariable expands PATH and writing
                 # that back bakes in literals. The kind it had is kept.
                 $pathKeyPath = if ($installSystemWide) { 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' } else { 'HKCU:\Environment' }
                 try {
                     $pathKey = Get-Item -LiteralPath $pathKeyPath
                     $stored = [string]$pathKey.GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-                    if (($stored -split $pathSep) -notcontains $destDir) {
+                    if (-not (Test-OnPath -list $stored -dir $destDir -onWindows $true)) {
                         $joined = if ([string]::IsNullOrEmpty($stored)) { $destDir } else { $stored.TrimEnd($pathSep) + $pathSep + $destDir }
                         $storedKind = if ($stored) { $pathKey.GetValueKind('PATH') }
                         elseif ($joined -match '%') { [Microsoft.Win32.RegistryValueKind]::ExpandString }
                         else { [Microsoft.Win32.RegistryValueKind]::String }
                         Set-ItemProperty -LiteralPath $pathKeyPath -Name 'PATH' -Value $joined -Type $storedKind
+                        $added = $true
                     }
                     $env:PATH = $env:PATH.TrimEnd($pathSep) + $pathSep + $destDir
                 } catch {
@@ -444,8 +464,9 @@ function Install-Gitsby {
                     # copy of this script never told Explorer.
                     $told = $true
                     try { Send-EnvironmentChange } catch { $told = $false }
-                    if ($told) { Write-Host "[ Added ${destDir} to your ${pathScope} PATH. Open a new shell to pick it up. ]" }
-                    else { Write-Host "[ Added ${destDir} to your ${pathScope} PATH. Sign out and back in to pick it up. ]" }
+                    $what = if ($added) { "Added ${destDir} to your ${pathScope} PATH." } else { "${destDir} is already on your ${pathScope} PATH." }
+                    $next = if ($told) { 'Open a new shell to pick it up.' } else { 'Sign out and back in to pick it up.' }
+                    Write-Host "[ ${what} ${next} ]"
                 }
             } else {
                 Write-Host "Note: ${destDir} isn't on your PATH; add it in your shell profile."
@@ -573,3 +594,6 @@ try {
 #   - 20261107 JC: The build-it-yourself message no longer claims there is nothing for go build to fetch.
 #   - 20261119 JC: An upgrade on Windows that can't put the new gitsby.exe in place puts the old one
 #     back, rather than leaving none. The old copy is deleted only once the new one is in.
+#   - 20261120 JC: A PATH that already names the folder as %LOCALAPPDATA%\..., or with a trailing
+#     slash, is seen as having it, so no second entry goes in and the result says it was already
+#     there. The plan and the result both call the scopes account and system.
