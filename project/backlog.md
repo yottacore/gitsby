@@ -611,9 +611,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 31: On Windows, a held accounts file gives the wrong Fix and mixed slashes
 	- ID: 2026111910222859
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w
+	- Needs external testing: vm925w, the Windows Go tests in stage 7, `[dfhmz]` among them. Only wine has run it.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102228
 	- Opened by:
@@ -624,6 +624,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on vm925w. Confirmed.
 	- Possible cause [Bug]: The candidate path is built with a slash, and the Fix reasons from POSIX only.
 	- Origin: b64bc2e, 2026-10-03. No round saw it.
+	- Actual cause [Bug]: `configCandidatesFor` joined the Windows path with `/`, and shcl quotes the path as given in its save error. The Fix took a refused rename to mean the folder's permissions, but Windows also refuses a rename over a file another program holds without delete sharing, and shcl files both as permission denied.
+	- Actual fix [Bug]: The candidates use the platform's separator. On Windows, a refused replace of the accounts file, an account fragment or the global git config says another program may have it open, then names the permissions. `causeText` drops a rename error's paths, as it does a path error's, since the File line has the path.
+	- Decisions: On Windows the Fix names both causes, the held file first, since Windows and shcl report a held file and a folder ACL with the same code. The Why line keeps shcl's own message, which names the file, now with backslashes.
+	- Test case: Go `TestAccountSetSaveOverAHeldFile` [dfhmz] (Windows only), `TestReplaceFixNamesAHeldFileOnWindows` [dfhmx], `TestCauseTextDropsTheRenamePaths` [dfhmy], and the Windows cases of `TestConfigCandidatesKeepDotConfig` [df05s] and `TestConfigCandidatesFor` [dbjjn].
+		- 2026-11-19: [df05s] and [dbjjn] now want the Windows candidates with backslashes, `C:\App\gitsby\config.shcl` and `C:\Users\jc\.config\gitsby\config.shcl`, where they wanted `C:\App/gitsby/config.shcl` and `C:\Users\jc/.config/gitsby/config.shcl`. The [dbjjn] case "falls back to the Unix spelling" is now "falls back to dot-config".
+	- Verified: under wine, [dfhmz] fails on the build before, with `\002/gitsby/config.shcl` in the Why lines and a Fix naming only the folder, and passes after. [dfhmx], [dfhmy] and the candidate cases fail before and pass after on Linux too. The whole Windows test binary under wine fails the same 5 other tests before and after. The quick gate, every area, passed (test.bash 2197/0, fuzz 310/0, parity 31/0). gosec gives 37 findings, none on a changed line.
+	- Swept: every candidate in `configCandidatesFor`, and every `writeRefusal` whose step renames over a file: the accounts file save, the fragment replace and the global git config replace. The lock and the new-file creates replace nothing and keep their Fix. `includeDir` still writes `/` into git config, by design.
+	- Branch: nov19c-2026111910222859
+	- Commit: e96699f
 
 - Code Review 20261119 item 32: design.md says the suites run on Windows under Git Bash
 	- ID: 2026111910222845

@@ -486,9 +486,9 @@ func TestConfigCandidatesKeepDotConfig(t *testing.T) { // [df05s]
 		want                     []string
 	}{
 		{"windows is APPDATA, then dot-config", "windows", "", `C:\App`, `C:\Users\jc`,
-			[]string{`C:\App/gitsby/config.shcl`, `C:\Users\jc/.config/gitsby/config.shcl`}},
+			[]string{`C:\App\gitsby\config.shcl`, `C:\Users\jc\.config\gitsby\config.shcl`}},
 		{"windows ignores XDG_CONFIG_HOME an MSYS shell left set", "windows", "/c/msys/home/jc/.config", `C:\App`, `C:\Users\jc`,
-			[]string{`C:\App/gitsby/config.shcl`, `C:\Users\jc/.config/gitsby/config.shcl`}},
+			[]string{`C:\App\gitsby\config.shcl`, `C:\Users\jc\.config\gitsby\config.shcl`}},
 		{"macOS is Application Support, then dot-config", "darwin", "", "", "/Users/jc",
 			[]string{"/Users/jc/Library/Application Support/gitsby/config.shcl", "/Users/jc/.config/gitsby/config.shcl"}},
 		{"macOS ignores XDG_CONFIG_HOME and APPDATA", "darwin", "/x", `C:\App`, "/Users/jc",
@@ -538,9 +538,9 @@ func TestConfigCandidatesFor(t *testing.T) { // [dbjjn]
 		// 	want: []string{`C:\App/gitsby/config.shcl`},
 		// },
 		{
-			name: "windows with no APPDATA falls back to the Unix spelling",
+			name: "windows with no APPDATA falls back to dot-config",
 			goos: "windows", xdg: "/c/msys/home/jc/.config", home: `C:\Users\jc`,
-			want: []string{`C:\Users\jc/.config/gitsby/config.shcl`},
+			want: []string{`C:\Users\jc\.config\gitsby\config.shcl`},
 		},
 		// {
 		// 	name: "macOS is Application Support and nothing else",

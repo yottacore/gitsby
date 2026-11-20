@@ -345,23 +345,32 @@ func configCandidates() []string {
 // configCandidatesFor takes its inputs rather than reading them, so the two orders
 // this machine can never produce are still testable from it.
 func configCandidatesFor(goos, xdgConfigHome, appData, home string) []string {
+	// The platform's own separator, since the OS quotes the path back in its errors.
+	// A Windows one built with '/' read 'AppData\Roaming/gitsby/config.shcl' there.
+	sep := "/"
+	if goos == "windows" {
+		sep = `\`
+	}
+	under := func(base string, parts ...string) string {
+		return base + sep + strings.Join(parts, sep)
+	}
 	var out []string
 	switch goos {
 	case "windows":
 		if appData != "" {
-			out = append(out, appData+"/gitsby/config.shcl")
+			out = append(out, under(appData, "gitsby", "config.shcl"))
 		}
 	case "darwin":
 		if home != "" {
-			out = append(out, home+"/Library/Application Support/gitsby/config.shcl")
+			out = append(out, under(home, "Library", "Application Support", "gitsby", "config.shcl"))
 		}
 	default:
 		if xdgConfigHome != "" {
-			out = append(out, xdgConfigHome+"/gitsby/config.shcl")
+			out = append(out, under(xdgConfigHome, "gitsby", "config.shcl"))
 		}
 	}
 	if home != "" {
-		out = append(out, home+"/.config/gitsby/config.shcl")
+		out = append(out, under(home, ".config", "gitsby", "config.shcl"))
 	}
 	return out
 }
