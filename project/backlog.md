@@ -536,7 +536,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions:
 		- simple refuses before the plan, under -q or not, since git would refuse the push only after the commit. That covers push.default unset, and a value git doesn't know, which git refuses too. The way off is 'git branch --unset-upstream', as for a gone branch, so the next push publishes it under its own name.
 		- A push remote other than the upstream's still gets the branch under its own name, as before.
-		- br create, br hotfix, br merge and pr create refuse a park push that lands on a protected branch, naming 'sync --direct', rather than take --direct. That keeps 2026111016332380's line that they never push a protected branch, and leaves --direct's command list as it is. Check: entry filed.
+		- br create, br hotfix, br merge and pr create refuse a park push that lands on a protected branch, naming 'sync --direct', rather than take --direct. That keeps 2026111016332380's line that they never push a protected branch, and leaves --direct's command list as it is. Check: entry filed. Answered 2026-11-19: the call stands.
 		- The refusals are asked only when something would go, since a branch made from origin/main and never touched has nothing to push.
 		- Spawn counts are unchanged: branchRefs's one for-each-ref also reads the push fields and the current branch, and pushDest reads it in place of its own call. push.default is read only for a branch whose upstream has another name.
 		- 20261119: TestPushArgs [df52f]'s 'upstream by another name' case now expects a refusal, where it expected HEAD:refs/heads/up. The rest of the test is as it was.
@@ -2016,7 +2016,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
 	- Closed: 20261119-133335
 	- Decisions:
-		- A push to another remote is refused rather than named as owner:branch. The PR opens on origin, gitsby's PR commands act on origin, and gh, tea and glab each name a fork's branch differently. The way off is 'git branch --unset-upstream', as for the other push refusals, so the next push is a first publish to origin. Check: entry filed.
+		- A push to another remote is refused rather than named as owner:branch. The PR opens on origin, gitsby's PR commands act on origin, and gh, tea and glab each name a fork's branch differently. The way off is 'git branch --unset-upstream', as for the other push refusals, so the next push is a first publish to origin. Check: entry filed. Answered 2026-11-19: the call stands.
 		- Asked whether or not anything is left to push, since the PR needs a head either way. Under simple with nothing new, it used to open the PR from origin's older branch of the same name.
 		- A push landing on a protected branch gets pr create's own refusal, ahead of refuseParkPush's 'sync --direct' text, since a PR from that branch would propose the branch itself.
 
@@ -2121,7 +2121,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [dfh8c] to [dfh8h]; Go [dfh89] TestFetchSees, [dfh8a] TestRefuseNarrowFetch.
 	- Swept: every branchExistsRemote caller: mergeTarget, isProtectedBranch, checkoutArgs, settleBranchNames, br switch's and br create's name checks, release's 3, backMergeRef, br prune, and pr ok's head check. All sit behind the refusal on the commands that read them. sync and pullcom ask only about the current branch's push. pr ok's 'here but not on origin' refusal for a head the fetch doesn't cover was left alone, since it refuses.
 	- Decisions:
-		- Refuse, not fetch every branch anyway. That overrides a narrowing that was likely meant, and the next plain git fetch leaves those refs stale. Check: entry filed.
+		- Refuse, not fetch every branch anyway. That overrides a narrowing that was likely meant, and the next plain git fetch leaves those refs stale. Check: entry filed. Answered 2026-11-19: the call stands.
 		- One rule for the listed commands: each refuses while dev can't be seen, br switch to a branch that can be seen included, since isProtectedBranch and the merge target both read dev.
 		- pullcom and sync aren't refused. They push only the branch they're on and read no merge target.
 		- The default-branch check runs only without origin/HEAD and with a default not named main, master or trunk, so a clone of an empty repo pays no extra spawn. Spawn counts are unchanged.
