@@ -33,6 +33,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- On Windows PowerShell 5.1, a paste line drops a double quote from a branch name
+	- ID: 2026111917564808
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Needs external testing: vm925w
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-175648
+	- Opened by:
+	- Related IDs: 2026111910223104
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: Make a branch a"b, and get a line that names it, such as from br prune with origin unreachable. Paste it into Windows PowerShell 5.1.
+	- Incorrect behavior [Bug]: git gets ab, so it names another branch or none.
+	- Expected behavior [Bug]: git gets a"b, or gitsby gives no command for such a name.
+	- Reproduced [Bug]: No.
+	- Possible cause [Bug]: Windows PowerShell 5.1 passes a double quote inside an argument to the program bare, and git reads it as a quote. pwsh 7.3 and later escape it, so no one spelling suits both.
+	- Origin: df38db0, 2026-09-15, typedArg's Windows form. Plausible: the 5.1 passing is documented, not run here.
+
 - Code Review 20261119 item 11: A stalled https remote hangs every command
 	- ID: 2026111910223148
 	- Type: Bug
@@ -66,9 +84,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 14: On Windows, curly single quotes in a branch name break out of a paste line
 	- ID: 2026111910223104
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w
+	- Needs external testing: vm925w: Go [dfhfc] from the Windows test build, in pwsh 7 and in Windows PowerShell 5.1, with the tools folder's win-go-test-run.bash.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261119-102231
 	- Opened by:
@@ -79,6 +97,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on vm925w. Confirmed.
 	- Possible cause [Bug]: PowerShell reads the 4 curly single quotes as a quote, and typedArg doubles only the ASCII one.
 	- Origin: df38db0, 2026-09-15. No round saw it.
+	- Actual cause [Bug]: As read. typedArg doubled only the ASCII single quote, and PowerShell takes U+2018 to U+201B as single quotes too.
+	- Actual fix [Bug]: On Windows typedArg doubles all 5 of PowerShell's single quotes inside its quotes.
+	- Decisions:
+		- Fixed with item 29 (2026111910222886) as one class, in typedArg, which every paste line goes through.
+		- Off Windows a word that starts with = is quoted too, since zsh, the default shell on macOS, expands it to a command's path. shellWord, which spells the plan's commands, does the same. Same class, found by the new test's zsh leg.
+		- A branch named exactly --% is left alone. pwsh drops an argument whose value is --%, whatever the quoting, so no spelling passes it.
+	- Branch: nov19c-2026111910223104
+	- Commit: 7ca1e1a
+	- Test case: Go [dfhfc] TestPasteLinesReadBack runs each paste line through the real pwsh, sh and zsh, with git rev-parse --sq-quote in the git command's place, and checks that git got each word as named. [dcnmn] and [ddj3f] have new cases.
+	- Verified: [dfhfc], [dcnmn] and [ddj3f] fail on the code before the fix and pass after. Before it, a curly quote closed the quote and hostname ran, @foo reached git as no word, and zsh refused =x. Quick run of every area passed: test.bash 2159/0, fuzz 310/0, parity 31/0. Only pwsh 7.6 on Linux ran here, not Windows PowerShell 5.1 or pwsh's Windows argument passing.
+	- Swept: every typedArg caller (branch.go, branchcmd.go, pr.go, release.go, mutate.go, and leaseDeleteLine in prune.go) goes through the one function, and no other code spells PowerShell quotes. shellQuote's Fix lines in accountcmd.go and show.go are only given off Windows. preview.go's git config --file plan line single-quotes a Windows path the sh way. It's a plan line rather than a paste line, like the unquoted plan lines beside it, and was left alone.
 
 - br merge on a branch that tracks one of another name leaves that branch on origin and warns about the wrong one
 	- ID: 2026111913330350
@@ -296,9 +325,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 29: On Windows, a paste line leaves a branch name starting with @ unquoted
 	- ID: 2026111910222886
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w
+	- Needs external testing: vm925w: Go [dfhfc] from the Windows test build, in pwsh 7 and in Windows PowerShell 5.1, with the tools folder's win-go-test-run.bash.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102228
 	- Opened by:
@@ -309,6 +338,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on vm925w, in pwsh 7 and 5.1. Confirmed.
 	- Possible cause [Bug]: typedArg in prune.go quotes only on its listed characters.
 	- Origin: df38db0, 2026-09-15. No round saw it.
+	- Actual cause [Bug]: As read. @ is in typedArg's plain set, and PowerShell reads a word that starts with it as splatting.
+	- Actual fix [Bug]: On Windows typedArg quotes a word that starts with @.
+	- Decisions: Fixed with item 14 (2026111910223104) as one class. Its Decisions and Swept rows cover both.
+	- Branch: nov19c-2026111910223104
+	- Commit: 7ca1e1a
+	- Test case: Go [dfhfc] TestPasteLinesReadBack, with git switch @foo and git switch @ among its lines, and [dcnmn].
+	- Verified: [dfhfc] and [dcnmn] fail on the code before the fix (git got no word for @foo) and pass after. Only pwsh 7.6 on Linux ran here.
 
 - Code Review 20261119 item 30: On Windows, a git.bat or git.cmd on PATH re-reads gitsby's arguments through cmd
 	- ID: 2026111910222873

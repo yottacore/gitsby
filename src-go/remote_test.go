@@ -173,6 +173,8 @@ func TestShellWord(t *testing.T) { // [ddj3f]
 		{"two words; here", false, `"two words; here"`},
 		{"it's $HOME", false, `'it'\''s $HOME'`},
 		{"", false, `""`},
+		{"=x", false, `"=x"`},
+		{"a=b", false, "a=b"},
 	}
 	for _, tc := range tests {
 		if got := shellWord(tc.in, tc.always); got != tc.want {

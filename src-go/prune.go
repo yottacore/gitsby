@@ -198,22 +198,28 @@ func leaseDeleteLine(branch, object, goos string) string {
 	return "git push " + typedArg(leaseArg(branch, object), goos) + " origin --delete " + typedArg("refs/heads/"+branch, goos)
 }
 
+// psQuotes: PowerShell takes any of these 5 as a single quote, and inside single
+// quotes reads 2 in a row as one. Doubling only the ASCII one let a curly one close
+// the quote early.
+var psQuotes = strings.NewReplacer("'", "''", "\u2018", "\u2018\u2018", "\u2019", "\u2019\u2019", "\u201a", "\u201a\u201a", "\u201b", "\u201b\u201b")
+
 // typedArg spells a word for a line someone will paste. A branch name can hold ;
 // or $, and it came from whoever pushed it, so anything a shell reads gets single
-// quotes, in the form this platform's shell takes them. PowerShell also splits an
-// unquoted dash-led word at a dot.
+// quotes, in the form this platform's shell takes them. Off Windows a word that
+// starts with = does too, since zsh expands it to a command's path. PowerShell also splits an
+// unquoted dash-led word at a dot, and reads one that starts with @ as splatting.
 func typedArg(word, goos string) string {
 	shellReads := func(r rune) bool {
 		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && !strings.ContainsRune("-_./:=@+", r)
 	}
 	plain := word != "" && !strings.ContainsFunc(word, shellReads)
 	if goos == "windows" {
-		if plain && (!strings.HasPrefix(word, "-") || !strings.Contains(word, ".")) {
+		if plain && !strings.HasPrefix(word, "@") && (!strings.HasPrefix(word, "-") || !strings.Contains(word, ".")) {
 			return word
 		}
-		return "'" + strings.ReplaceAll(word, "'", "''") + "'"
+		return "'" + psQuotes.Replace(word) + "'"
 	}
-	if plain {
+	if plain && !strings.HasPrefix(word, "=") {
 		return word
 	}
 	return shellQuote(word)

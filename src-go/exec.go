@@ -121,9 +121,9 @@ func (a *app) step(name string, args ...string) error {
 // shellWord quotes an argument for display so a pasted line runs as shown.
 // Double quotes where nothing inside them expands, since the plan has always
 // shown a message that way; single quotes otherwise. always quotes a plain
-// word too, for the plan's message.
+// word too, for the plan's message. zsh expands a word that starts with =.
 func shellWord(s string, always bool) string {
-	if !always && s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-") == "" {
+	if !always && s != "" && !strings.HasPrefix(s, "=") && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-") == "" {
 		return s
 	}
 	if !strings.ContainsAny(s, "\"$`\\!") {

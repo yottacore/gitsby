@@ -9,7 +9,11 @@
 package main
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -140,10 +144,172 @@ func TestTypedArg(t *testing.T) { // [dcnmn]
 		{"refs/heads/v1.2", "windows", "refs/heads/v1.2"},
 		{"--force-with-lease=refs/heads/v1.2:0f", "windows", "'--force-with-lease=refs/heads/v1.2:0f'"},
 		{"--force-with-lease=refs/heads/v1.2:0f", "linux", "--force-with-lease=refs/heads/v1.2:0f"},
+		{"x\u2019;y", "windows", "'x\u2019\u2019;y'"},
+		{"\u2018\u201a\u201b", "windows", "'\u2018\u2018\u201a\u201a\u201b\u201b'"},
+		{"@foo", "windows", "'@foo'"},
+		{"a@b", "windows", "a@b"},
+		{"@foo", "linux", "@foo"},
+		{"=x", "darwin", "'=x'"},
+		{"a=b", "darwin", "a=b"},
+		{"=x", "windows", "=x"},
 	} {
 		if got := typedArg(c.word, c.goos); got != c.want {
 			t.Errorf("typedArg(%q, %s) = %s, want %s", c.word, c.goos, got, c.want)
 		}
+	}
+}
+
+// Every paste line reads back as the words it names, in the shell it's printed for:
+// PowerShell on Windows, pwsh and Windows PowerShell where each is there, and sh and
+// zsh elsewhere. 'git rev-parse --sq-quote' takes the git command's place, so each line
+// goes through the real parser and the real argument passing, and git says what it got.
+// PowerShell reads all 5 of its single quotes as quotes, and @ at the start of a word as
+// splatting, and zsh expands a word that starts with =. 2026111910223104, 2026111910222886.
+func TestPasteLinesReadBack(t *testing.T) { // [dfhfc]
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	words := []string{
+		"x\u2019;hostname;#", "a\u2018;b", "c\u201a;d", "e\u201b;f", "g';h", "\u2019", "\u2018\u2019", "it\u2019s",
+		"@foo", "@", "a@b", "@(x)", "=x", "a=b", "-a.b", "feature/v1.2", "1.0", "0x10", "1kb", "+5",
+		"$x", "`x", "a;b", "a,b", "a&b", "(x)", "{x}", "%PATH%", "~x", "a#b", "*", "it's",
+	}
+	type shell struct {
+		name, goos string
+		lines      func(word string) []string
+		run        func(t *testing.T, lines []string) [][]string
+	}
+	gitLines := func(goos string) func(string) []string {
+		return func(word string) []string {
+			return []string{leaseDeleteLine(word, "0f", goos), "git switch " + typedArg(word, goos)}
+		}
+	}
+	var shells []shell
+	if isWindows() {
+		for _, ps := range []string{"pwsh", "powershell"} {
+			if path, err := exec.LookPath(ps); err == nil {
+				shells = append(shells, shell{ps, "windows", gitLines("windows"), psRun(path)})
+			}
+		}
+	} else {
+		if path, err := exec.LookPath("pwsh"); err == nil {
+			shells = append(shells, shell{"pwsh", "windows", gitLines("windows"), psRun(path)})
+		}
+		for _, sh := range []string{"sh", "zsh"} {
+			if path, err := exec.LookPath(sh); err == nil {
+				lines := func(word string) []string {
+					return append(gitLines("linux")(word), "git switch "+shellWord(word, false))
+				}
+				shells = append(shells, shell{sh, "linux", lines, shRun(path)})
+			}
+		}
+	}
+	if len(shells) == 0 {
+		t.Skip("no shell to read the lines back")
+	}
+	for _, sh := range shells {
+		var lines []string
+		var wants [][]string
+		for _, word := range words {
+			for _, line := range sh.lines(word) {
+				lines = append(lines, line)
+				if strings.HasPrefix(line, "git push ") {
+					wants = append(wants, []string{"push", leaseArg(word, "0f"), "origin", "--delete", "refs/heads/" + word})
+				} else {
+					wants = append(wants, []string{"switch", word})
+				}
+			}
+		}
+		got := sh.run(t, lines)
+		for i, line := range lines {
+			if !reflect.DeepEqual(got[i], wants[i]) {
+				t.Errorf("%s reads %s as %q, want %q", sh.name, line, got[i], wants[i])
+			}
+		}
+	}
+}
+
+// probeLine puts 'rev-parse --sq-quote' in the git command's place.
+func probeLine(line string) string {
+	return "git rev-parse --sq-quote" + strings.TrimPrefix(line, "git")
+}
+
+// sqWords reads back what 'git rev-parse --sq-quote' printed, one word per argument.
+func sqWords(out string) []string {
+	var words []string
+	for _, field := range strings.Fields(out) {
+		if word, ok := shWord(field); ok {
+			words = append(words, word)
+		} else {
+			words = append(words, "<unreadable "+field+">")
+		}
+	}
+	return words
+}
+
+// shRun runs each line in its own sh -c, so one that breaks out can't take the next.
+func shRun(path string) func(*testing.T, []string) [][]string {
+	return func(t *testing.T, lines []string) [][]string {
+		got := make([][]string, len(lines))
+		for i, line := range lines {
+			out, err := exec.Command(path, "-c", probeLine(line)).Output()
+			if err != nil {
+				t.Errorf("%s -c %s: %v", path, line, err)
+			}
+			got[i] = sqWords(string(out))
+		}
+		return got
+	}
+}
+
+// psRun hands the lines over in a UTF-8 file with a BOM, since Windows PowerShell reads
+// a file without one in the ANSI code page, and runs each through Invoke-Expression,
+// which parses it as a typed line is parsed. A marker ahead of each splits the output,
+// so a line that breaks out shows as its own extra words.
+func psRun(path string) func(*testing.T, []string) [][]string {
+	return func(t *testing.T, lines []string) [][]string {
+		dir := t.TempDir()
+		var probes strings.Builder
+		probes.WriteString("\xef\xbb\xbf")
+		for _, line := range lines {
+			probes.WriteString(probeLine(line) + "\n")
+		}
+		lineFile, script := filepath.Join(dir, "lines.txt"), filepath.Join(dir, "run.ps1")
+		if err := os.WriteFile(lineFile, []byte(probes.String()), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		const runner = "$utf8 = New-Object Text.UTF8Encoding $false\n" +
+			"[Console]::OutputEncoding = $utf8\n$OutputEncoding = $utf8\n$i = 0\n" +
+			"foreach ($line in Get-Content -LiteralPath $args[0] -Encoding UTF8) {\n" +
+			"\t\"@@probe $i\"; $i++\n" +
+			"\ttry { Invoke-Expression $line 2>&1 | ForEach-Object { \"$_\" } } catch { \"parse: $_\" }\n}\n"
+		if err := os.WriteFile(script, []byte(runner), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(path, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, lineFile)
+		cmd.Env = append(os.Environ(), "POWERSHELL_TELEMETRY_OPTOUT=1")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", path, err, out)
+		}
+		got := make([][]string, len(lines))
+		i := -1
+		for _, row := range strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n") {
+			if n, found := strings.CutPrefix(row, "@@probe "); found {
+				if i, err = strconv.Atoi(n); err != nil || i >= len(lines) {
+					t.Fatalf("%s: stray marker %q", path, row)
+				}
+				continue
+			}
+			if i >= 0 && row != "" {
+				if strings.HasPrefix(row, " '") {
+					got[i] = append(got[i], sqWords(row)...)
+				} else {
+					got[i] = append(got[i], "<output "+row+">")
+				}
+			}
+		}
+		return got
 	}
 }
 
