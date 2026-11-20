@@ -9,6 +9,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,6 +153,9 @@ func TestTypedArg(t *testing.T) { // [dcnmn]
 		{"=x", "darwin", "'=x'"},
 		{"a=b", "darwin", "a=b"},
 		{"=x", "windows", "=x"},
+		{`a"b`, "windows", `$(if ($PSNativeCommandArgumentPassing -in 'Standard','Windows') {'a"b'} else {'a\"b'})`},
+		{`a\"b'`, "windows", `$(if ($PSNativeCommandArgumentPassing -in 'Standard','Windows') {'a\"b'''} else {'a\\\"b'''})`},
+		{`a"b`, "linux", `'a"b'`},
 	} {
 		if got := typedArg(c.word, c.goos); got != c.want {
 			t.Errorf("typedArg(%q, %s) = %s, want %s", c.word, c.goos, got, c.want)
@@ -173,12 +177,17 @@ func TestPasteLinesReadBack(t *testing.T) { // [dfhfc]
 		"x\u2019;hostname;#", "a\u2018;b", "c\u201a;d", "e\u201b;f", "g';h", "\u2019", "\u2018\u2019", "it\u2019s",
 		"@foo", "@", "a@b", "@(x)", "=x", "a=b", "-a.b", "feature/v1.2", "1.0", "0x10", "1kb", "+5",
 		"$x", "`x", "a;b", "a,b", "a&b", "(x)", "{x}", "%PATH%", "~x", "a#b", "*", "it's",
+		`a"b`, `"`, `""`, `"a"`, `x";hostname;#`, `-a".b`, "a\"\u2019;b", `a\"b`, `a\\"b`, `a"b\`,
 	}
 	type shell struct {
 		name, goos string
 		lines      func(word string) []string
 		run        func(t *testing.T, lines []string) [][]string
 	}
+	// pwsh 7.3 and later pass a double quote inside an argument escaped, and Windows
+	// PowerShell 5.1 passes it bare. pwsh set to Legacy passes it bare too, even on Linux,
+	// where .NET splits its command line back the Windows way, so it stands in for 5.1 there.
+	const legacy = "$PSNativeCommandArgumentPassing = 'Legacy'\n"
 	gitLines := func(goos string) func(string) []string {
 		return func(word string) []string {
 			return []string{leaseDeleteLine(word, "0f", goos), "git switch " + typedArg(word, goos)}
@@ -188,12 +197,16 @@ func TestPasteLinesReadBack(t *testing.T) { // [dfhfc]
 	if isWindows() {
 		for _, ps := range []string{"pwsh", "powershell"} {
 			if path, err := exec.LookPath(ps); err == nil {
-				shells = append(shells, shell{ps, "windows", gitLines("windows"), psRun(path)})
+				shells = append(shells, shell{ps, "windows", gitLines("windows"), psRun(path, "")})
+				if ps == "pwsh" {
+					shells = append(shells, shell{"pwsh Legacy", "windows", gitLines("windows"), psRun(path, legacy)})
+				}
 			}
 		}
 	} else {
 		if path, err := exec.LookPath("pwsh"); err == nil {
-			shells = append(shells, shell{"pwsh", "windows", gitLines("windows"), psRun(path)})
+			shells = append(shells, shell{"pwsh", "windows", gitLines("windows"), psRun(path, "")})
+			shells = append(shells, shell{"pwsh Legacy", "windows", gitLines("windows"), psRun(path, legacy)})
 		}
 		for _, sh := range []string{"sh", "zsh"} {
 			if path, err := exec.LookPath(sh); err == nil {
@@ -265,8 +278,8 @@ func shRun(path string) func(*testing.T, []string) [][]string {
 // psRun hands the lines over in a UTF-8 file with a BOM, since Windows PowerShell reads
 // a file without one in the ANSI code page, and runs each through Invoke-Expression,
 // which parses it as a typed line is parsed. A marker ahead of each splits the output,
-// so a line that breaks out shows as its own extra words.
-func psRun(path string) func(*testing.T, []string) [][]string {
+// so a line that breaks out shows as its own extra words. prelude runs first.
+func psRun(path, prelude string) func(*testing.T, []string) [][]string {
 	return func(t *testing.T, lines []string) [][]string {
 		dir := t.TempDir()
 		var probes strings.Builder
@@ -278,7 +291,7 @@ func psRun(path string) func(*testing.T, []string) [][]string {
 		if err := os.WriteFile(lineFile, []byte(probes.String()), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		const runner = "$utf8 = New-Object Text.UTF8Encoding $false\n" +
+		runner := prelude + "$utf8 = New-Object Text.UTF8Encoding $false\n" +
 			"[Console]::OutputEncoding = $utf8\n$OutputEncoding = $utf8\n$i = 0\n" +
 			"foreach ($line in Get-Content -LiteralPath $args[0] -Encoding UTF8) {\n" +
 			"\t\"@@probe $i\"; $i++\n" +
@@ -290,7 +303,11 @@ func psRun(path string) func(*testing.T, []string) [][]string {
 		cmd.Env = append(os.Environ(), "POWERSHELL_TELEMETRY_OPTOUT=1")
 		out, err := cmd.Output()
 		if err != nil {
-			t.Fatalf("%s: %v\n%s", path, err, out)
+			var stderr []byte
+			if exit := (*exec.ExitError)(nil); errors.As(err, &exit) {
+				stderr = exit.Stderr
+			}
+			t.Fatalf("%s: %v\n%s\n%s", path, err, out, stderr)
 		}
 		got := make([][]string, len(lines))
 		i := -1

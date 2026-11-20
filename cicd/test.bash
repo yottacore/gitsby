@@ -232,6 +232,25 @@ fPsPathTold(){ PS_FILE="$1" pwsh -NoProfile -Command '$ast = [Management.Automat
 		if ($t.Extent.StartOffset -le $write[0].Extent.EndOffset) { "told before the write"; exit 1 }
 		if ($inner -and $t.Extent.StartOffset -lt $inner.Extent.EndOffset) { "told inside the write'"'"'s try"; exit 1 }
 	}' </dev/null 2>&1 ;}
+## Defines install.ps1's Test-OnPath from the file and asks it about each PATH below, Windows
+## ones with LOCALAPPDATA set. Prints one y or n per case, in order.
+# shellcheck disable=SC2016  ## pwsh's own variables; pwsh does the expanding.
+fPsOnPath(){ PS_FILE="$1" POWERSHELL_TELEMETRY_OPTOUT=1 pwsh -NoProfile -Command '$ErrorActionPreference = "Stop"
+	$fn = [Management.Automation.Language.Parser]::ParseFile($env:PS_FILE, [ref]$null, [ref]$null).Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq "Test-OnPath" }, $true)
+	if (-not $fn) { "no Test-OnPath"; exit 1 }
+	. ([scriptblock]::Create($fn.Extent.Text))
+	$env:LOCALAPPDATA = "C:\Users\u\AppData\Local"
+	$dir = "C:\Users\u\AppData\Local\Programs/gitsby"
+	$cases = @(
+		@("C:\Windows;%LOCALAPPDATA%\Programs\gitsby", $dir, $true),
+		@("C:\Users\u\AppData\Local\Programs\gitsby\;C:\Windows", $dir, $true),
+		@("c:\users\U\appdata\local\programs\GITSBY", $dir, $true),
+		@("C:\Windows; `"C:\Users\u\AppData\Local\Programs\gitsby`" ", $dir, $true),
+		@("C:\Windows;;C:\Users\u\AppData\Local\Programs\gitsby2", $dir, $false),
+		@("", $dir, $false),
+		@("/usr/bin:/home/u/.local/bin/", "/home/u/.local/bin", $false),
+		@("/usr/bin:/home/U/.local/bin", "/home/u/.local/bin", $false))
+	-join @($cases | ForEach-Object { if (Test-OnPath $_[0] $_[1] $_[2]) { "y" } else { "n" } })' </dev/null 2>&1 ;}
 ## Defines install.ps1's Install-Binary from the file and runs its Windows branch over an old
 ## gitsby.exe in <dir>. <mode> ok lets every move through, fail refuses the move of the staged
 ## file, and fail2 also refuses moving the old copy back. Prints what's left in <dir>.
@@ -2132,6 +2151,15 @@ fRunSuite(){
 	fAssert     "[dcnqn] a typed version is tagged as typed"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release 2.0.0 && git rev-parse -q --verify refs/tags/2.0.0 >/dev/null && ! git rev-parse -q --verify refs/tags/v2.0.0 >/dev/null"
 	( cd "${bt}/c" && echo e > e.txt )
 	fAssert     "[dfgx4] with no dev, a release from main: the plan's last checkout is where it ends"  fPlanEnds "${bt}/c"  bash -c "cd '${bt}/c' && '${gitsby}' -q -NoFetch release 2.0.1 && [[ \"\$(git branch --show-current)\" == main ]]"
+	## git's tag sort put v3.0.0.rc1 above v3.0.0, so the next version came out as v3.0.0 again and
+	## the run stopped on a tag that exists. A failed push was finished on the candidate's tag.
+	local dt="${work}/$1-dottag"
+	git init --quiet --bare -b main "${dt}/origin.git"
+	git clone --quiet "${dt}/origin.git" "${dt}/c" 2>/dev/null
+	( cd "${dt}/c" || exit 1; echo a > a.txt && git add --all && git commit --quiet -m init && git tag -a v3.0.0.rc1 -m rc1 && echo b > b.txt && git add --all && git commit --quiet -m rel && git tag -a v3.0.0 -m rel && git push --quiet -u origin main --tags && echo c > c.txt )
+	fAssert     "[dfj8h] release after a candidate suffixed after a dot bumps past its release"  bash -c "cd '${dt}/c' && '${gitsby}' -q -NoFetch release && git rev-parse -q --verify refs/tags/v3.0.1 >/dev/null"
+	( cd "${dt}/c" || exit 1; echo d > d.txt && git add --all && git commit --quiet -m next && git tag -a v3.1.0.rc1 -m rc1 && git tag -a v3.1.0 -m rel )
+	fAssert     "[dfj8j] finishing a release whose commit also holds its candidate pushes the release's tag"  bash -c "cd '${dt}/c' && '${gitsby}' -q -NoFetch release && git -C '${dt}/origin.git' rev-parse -q --verify refs/tags/v3.1.0 >/dev/null && ! git -C '${dt}/origin.git' rev-parse -q --verify refs/tags/v3.1.0.rc1 >/dev/null"
 	## git merge reads a tag ahead of a branch with the same name, so a tag called 'dev' on an
 	## older commit would be released in dev's place.
 	local rtag="${work}/$1-reltag"
@@ -3858,7 +3886,7 @@ GHEOF
 		bash -c "cd '${hn}/c' && '${gitsby}' -q -NoFetch br hotfix code >/dev/null 2>&1; echo v2 > src-go/main.go; '${gitsby}' -q -NoFetch br land 'Fix' 2>&1"
 	## An empty answer read as nothing changed, when the comparison couldn't run at all.
 	( cd "${hn}/c" || exit 1; git checkout --quiet main && git tag -a v1.0.0 -m v1.0.0 && git checkout --quiet --orphan hotfix/stray && git rm -rfq . && echo x > stray.go && git add stray.go && git commit --quiet -m stray )
-	fAssertOut "[dcnqy] a hotfix that can't be compared says so"  "couldn't tell whether this hotfix" \
+	fAssertOut "[dcnqy] a hotfix that can't be compared says so"  "'hotfix/stray' shares no history with 'main'" \
 		bash -c "cd '${hn}/c' && '${gitsby}' -q -NoFetch br land 'Stray' 2>&1"
 	## A back-merge conflict must leave dev untouched and the tree clean, not half-merged.
 	fAssert    "[daenh] a conflicting back-merge leaves dev alone"  \
@@ -3965,6 +3993,26 @@ GHEOF
 	fAssertOut "[dfhjx] br create before the first commit refuses up front"  "^gitsby: 'main' has no commits yet, so there is nothing to start 'nb' from\\. Publish the first commit with: gitsby repo connect$" \
 		bash -c "cd '${lone}/fresh' && '${gitsby}' -q br create nb 2>&1"
 	fAssert    "[dfhjy] and exits 1, still on main, with nothing pushed"  bash -c "cd '${lone}/fresh' && { '${gitsby}' -q br create nb >/dev/null 2>&1; [[ \$? == 1 ]]; } && [[ \"\$(git symbolic-ref --short HEAD)\" == main && -z \"\$(git -C '${lone}/fresh.git' for-each-ref)\" ]]"
+	## br merge from a branch that shares no commit with dev parked it, checked dev out, then git
+	## refused to merge unrelated histories, leaving the run on dev.
+	git init --quiet --bare -b main "${lone}/rel.git"
+	( cd "${lone}/fresh" || exit 1; git commit --quiet -m init; git branch dev; git switch --quiet -c long
+		for n in 1 2; do echo "${n}" > "l${n}.txt"; git add "l${n}.txt"; git commit --quiet -m "l${n}"; done
+		git switch --quiet dev; echo d > d.txt; git add d.txt; git commit --quiet -m d
+		git push --quiet "${lone}/rel.git" main dev long )
+	git init --quiet -b feat "${lone}/unrel"; git init --quiet -b solo "${lone}/own"
+	( cd "${lone}/unrel" || exit 1; git remote add origin "${lone}/rel.git"; git fetch --quiet origin; echo u > u.txt; git add u.txt )
+	( cd "${lone}/own" || exit 1; git remote add origin "${lone}/rel.git"; git fetch --quiet origin; echo o > o.txt; git add o.txt; git commit --quiet -m o )
+	fAssertOut "[dfj98] br merge on a branch with no commits yet refuses up front"  "^gitsby: 'feat' has no commits yet, so its first would share no history with 'dev', and git won't merge that\\. Nothing was done\\. To start it from 'dev' with the work so far: git switch dev, then gitsby br create feat$" \
+		bash -c "cd '${lone}/unrel' && '${gitsby}' -q br merge 2>&1"
+	fAssert    "[dfj99] and exits 1, still on feat with the file staged, with nothing pushed"  bash -c "cd '${lone}/unrel' && { '${gitsby}' -q br merge >/dev/null 2>&1; [[ \$? == 1 ]]; } && [[ \"\$(git symbolic-ref --short HEAD)\" == feat && \"\$(git diff --cached --name-only)\" == u.txt && -z \"\$(git -C '${lone}/rel.git' for-each-ref refs/heads/feat)\" ]]"
+	fAssertOut "[dfj9a] br merge on a branch whose history is its own refuses up front"  "^gitsby: 'solo' shares no history with 'dev', so git won't merge it\\. Nothing was done\\. Joining unrelated histories is raw-git territory: git merge --allow-unrelated-histories$" \
+		bash -c "cd '${lone}/own' && '${gitsby}' -q br merge 2>&1"
+	fAssert    "[dfj9b] and exits 1, still on solo, with nothing pushed"  bash -c "cd '${lone}/own' && { '${gitsby}' -q br merge >/dev/null 2>&1; [[ \$? == 1 ]]; } && [[ \"\$(git symbolic-ref --short HEAD)\" == solo && -z \"\$(git -C '${lone}/rel.git' for-each-ref refs/heads/solo)\" ]]"
+	git clone --quiet --depth 1 --no-single-branch "file://${lone}/rel.git" "${lone}/shallow"
+	( cd "${lone}/shallow" || exit 1; git switch --quiet long )
+	fAssertOut "[dfj9c] in a shallow clone that cuts off the shared commit, it names the unshallow"  "^gitsby: 'long' shares no history with 'dev' in this shallow clone, so git won't merge it\\. Nothing was done\\. Fetch the rest first: git fetch --unshallow$" \
+		bash -c "cd '${lone}/shallow' && '${gitsby}' -q br merge 2>&1"
 
 	## gh writes act as gh's own account, not the ssh key git pushes with. A difference BOTH sides
 	## know about is refused unattended; unknown (no agent, https remote, deploy key) never blocks,
@@ -4492,6 +4540,11 @@ GHEOF
 		bash -c "env ${eiEnv} bash '${goInst}' -y >/dev/null 2>&1 && '${ei}/home/.local/bin/gitsby' --version | grep -q 'stand-in'"
 	fAssert    "[dbfsq] and leaves no staging file behind" \
 		bash -c "! compgen -G '${ei}/home/.local/bin/.gitsby.install.*' >/dev/null"
+	## A PATH entry with a trailing slash names the same folder, and got the not-on-PATH note.
+	fAssertNotOut "[dfjah] go installer sees its folder on a PATH entry with a trailing slash" "isn't on your PATH" \
+		bash -c "env ${eiEnv} PATH='${ei}/home/.local/bin/:${ei}/bin:${PATH}' bash '${goInst}' -y 2>&1"
+	fAssertOut "[dfjaj] and still notes it when PATH lacks it"  "isn't on your PATH" \
+		bash -c "env ${eiEnv} bash '${goInst}' -y 2>&1"
 	## curl | bash runs each line as it arrives, so a download cut short ran whatever part of the
 	## installer got through. One cut said Checksum verified and exited 0 with nothing installed.
 	fAssert    "[dfgxx] go installer cut short at any line runs nothing"  fBashCutRunsNothing "${goInst}" "${ei}"
@@ -4738,6 +4791,12 @@ GHEOF
 			fPsSettingChange "${goInstPs}"
 		fAssert    "[dfgxd] and is sent after the PATH write, outside its try" \
 			fPsPathTold "${goInstPs}"
+		## A PATH holding the folder as %LOCALAPPDATA%\... or with a trailing slash was read as
+		## lacking it, so a second entry went in and the result said Added.
+		fAssertOut "[dfjab] go install.ps1 finds its folder on PATH however the entry is written" '^yyyynnyn$' \
+			fPsOnPath "${goInstPs}"
+		fAssert    "[dfjac] and every PATH check in it goes through that" \
+			bash -c "! grep -nE 'contains[[:space:]]+\\\$destDir' '${goInstPs}' && [[ \$(grep -c 'Test-OnPath ' '${goInstPs}') -ge 3 ]]"
 		## The old copy was moved aside and deleted before the new one went in, so a failed last
 		## move left no gitsby.exe at all. The Windows branch is only renames, so it runs here.
 		fAssertOut "[dfha2] go install.ps1 replaces an old gitsby.exe and leaves nothing beside it" '^dest=new left=gitsby\.exe err=$' \
@@ -6675,6 +6734,13 @@ LGEOF
 		git -C "${relRepo}" tag -d v1.3.0.rc1 >/dev/null
 		fAssert "[dfhm4] and with no version given, it promotes to its plain version as a full release" \
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'the next one after v1.3.0.rc1 is v1.3.0' '${relOut}' && grep -qF 'would: gh release create v1.3.0 with ' '${relOut}'"
+		## git's tag sort put v1.3.0.rc1 above v1.3.0, so the next version came out as v1.3.0 again.
+		git -C "${relRepo}" tag v1.3.0.rc1
+		git -C "${relRepo}" tag v1.3.0
+		fRelRun --dry-run
+		git -C "${relRepo}" tag -d v1.3.0.rc1 v1.3.0 >/dev/null
+		fAssert "[dfj8k] and once that release is tagged, the next one bumps past it" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'the next one after v1.3.0 is v1.3.1' '${relOut}'"
 		## Each of these passed, and 'gitsby release' refused it after the pipeline and the merge, or
 		## git refused the tag after the release merge.
 		local relBad="" relBadOk=1
@@ -6723,6 +6789,12 @@ LGEOF
 		fRelRun --dry-run
 		fAssert "[df4y1] release.bash cuts from dev where the repo has one" \
 			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Dry run done: v1.2.4 was not released' '${relOut}'"
+		## rev-parse --abbrev-ref HEAD said heads/dev beside a tag named dev, so the run refused to cut from dev.
+		git -C "${relRepo}" tag dev
+		fRelRun --dry-run
+		git -C "${relRepo}" tag -d dev >/dev/null
+		fAssert "[dfj8q] and the same with a tag named dev" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'Dry run done: v1.2.4 was not released' '${relOut}'"
 		git -C "${rel}/other" pull --quiet --ff-only 2>/dev/null
 		echo hotfix > "${rel}/other/hotfix.txt"
 		git -C "${rel}/other" add hotfix.txt
@@ -6730,6 +6802,15 @@ LGEOF
 		git -C "${rel}/other" push --quiet 2>/dev/null
 		fRelRun --dry-run
 		fAssert "[df4y2] and refuses when origin's main has commits dev doesn't" \
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"origin's 'main' has commits 'dev' doesn't, which the release merge would take in untested.\" '${relOut}' && ! grep -qF 'Phase 1 OK' '${relOut}'"
+		## symbolic-ref --short read origin/HEAD as remotes/origin/main beside a tag named origin/main,
+		## so no branch was found and the check above was skipped.
+		git -C "${relRepo}" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+		git -C "${relRepo}" tag origin/main
+		fRelRun --dry-run
+		git -C "${relRepo}" tag -d origin/main >/dev/null
+		git -C "${relRepo}" symbolic-ref --delete refs/remotes/origin/HEAD
+		fAssert "[dfj8p] and the same with a tag named origin/main beside origin/HEAD" \
 			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"origin's 'main' has commits 'dev' doesn't, which the release merge would take in untested.\" '${relOut}' && ! grep -qF 'Phase 1 OK' '${relOut}'"
 		git -C "${relRepo}" checkout --quiet main
 		git -C "${relRepo}" pull --quiet --ff-only 2>/dev/null
@@ -7060,6 +7141,13 @@ LGEOF
 		PATH="${rel}/winbin:${PATH}" bash "${rel}/winres/cicd/utility/gen-winres.bash" -q v1.2.3.beta >/dev/null 2>&1 || true
 		fAssert "[df4yp] and stamps v1.2.3.beta as 1.2.3, with the suffix only in the strings" \
 			bash -c "grep -qF '\"FileVersion\":    { \"Major\": 1, \"Minor\": 2, \"Patch\": 3, \"Build\": 0 }' '${rel}/winres.json' && grep -qF '\"ProductVersion\": \"1.2.3.beta\"' '${rel}/winres.json'"
+		## git's tag sort put v1.2.3.rc1 above v1.2.3, so the candidate stamped the resource.
+		git -C "${rel}/winres" tag v1.2.3.rc1
+		: > "${rel}/winres.json"
+		PATH="${rel}/winbin:${PATH}" bash "${rel}/winres/cicd/utility/gen-winres.bash" -q >/dev/null 2>&1 || true
+		git -C "${rel}/winres" tag -d v1.2.3.rc1 >/dev/null
+		fAssert "[dfj8m] and with no version given, takes the release over its candidate suffixed after a dot" \
+			grep -qF '"ProductVersion": "1.2.3"' "${rel}/winres.json"
 	fi
 
 	## Phase 3 is the build that gets published, and no dry run reaches it. It compiled the working
@@ -8206,6 +8294,11 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		demoBuildLine="$(fGateDemoBuild)"
 		fAssert "[dcmdc] and removes that build afterwards" \
 			bash -c "[[ -n '${demoBuildLine}' && ! -e '${gateDir}/src-go/gitsby-demo' ]]"
+		## git's tag sort put a candidate suffixed after a dot above its release, which stamped the demo.
+		git -C "${gateDir}" tag v9.8.7.rc2 v9.8.7-rc.1
+		fAssert "[dfj8n] and a candidate suffixed after a dot doesn't take its release's place" \
+			fGateDemoStamp "-X main.version=9.8.7 -X main.buildEpoch=${demoEpoch} -o "
+		git -C "${gateDir}" tag -d v9.8.7.rc2 >/dev/null
 		fGateDemoCommit 2026-04-01T00:00:00Z
 		fAssert "[dcmdd] a later commit builds the demo identically, so the gif is left alone"  fGateDemoSame "${demoBuildLine}"
 		fAssert "[dcmde] -q reaches the demo generator"  fGateDemoQuiet -q 1

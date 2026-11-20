@@ -1340,7 +1340,7 @@ else
 	## own build has the newest release instead - the version and build number that release's
 	## published binary prints - so the gif changes only when what it shows does.
 	demoVersion="0.0.0"; demoBuildEpoch=""
-	demoTags="$(git -c versionsort.suffix=- tag --sort=-v:refname --list 'v*' 2>/dev/null || true)"
+	demoTags="$(fReleaseTags 2>/dev/null || true)"
 	demoTag="${demoTags%%$'\n'*}"
 	if fIsReleaseVersion "${demoTag}"; then
 		demoVersion="${demoTag#v}"
@@ -1513,3 +1513,4 @@ fEcho_Clean
 ##		- 2026-11-09 JC: The memory scope's probe passes the same properties as the run, so a systemd that doesn't know one runs as before.
 ##		- 2026-11-09 JC: The run's stamp, which names its log, temp folder, soak and CodeQL folders and archived demo gif, is in UTC, and the rotations read it so. The image named them in UTC and the box in its own time.
 ##		- 2026-11-10 JC: The demo build takes the newest tag's version only in the shape 'gitsby release' takes, through fIsReleaseVersion.
+##		- 2026-11-20 JC: The demo's tag scan is fReleaseTags, so a candidate suffixed after a dot no longer stamps the demo over its own release.

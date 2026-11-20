@@ -319,7 +319,7 @@ fMain(){
 	fEcho "Verifying ..."
 	"${destDir}/gitsby" --version || fErr "Installed ${destDir}/gitsby, but it would not run (exit $?). The download verified against the release checksum, so this is the binary not being runnable on this machine rather than a bad download."
 	case ":${PATH}:" in
-		*":${destDir}:"*) ;;
+		*":${destDir}:"*|*":${destDir}/:"*) ;;
 		*) echo "Note: ${destDir} isn't on your PATH; add it in your shell profile." ;;
 	esac
 	echo
@@ -345,5 +345,6 @@ fMain(){
 ##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.
 ##		- 20261107 JC: The build-it-yourself message no longer claims there is nothing for go build to fetch.
 ##		- 20261119 JC: Everything runs from one function called on the last line, so a download cut short runs nothing. One such cut said the checksum was verified and exited 0 with nothing installed.
+##		- 20261120 JC: A PATH entry with a trailing slash counts as having the install folder, so it no longer gets the not-on-PATH note.
 
 fMain "${@}"

@@ -62,6 +62,30 @@ func TestNewestReleaseTag(t *testing.T) { // [dcnqj]
 	}
 }
 
+// The lists are in the order git's tag scan gives, versionsort.suffix=- and all. It
+// put v3.0.0.rc1 above v3.0.0, so the next version came out as v3.0.0 again, and a
+// failed push was finished on the candidate's tag rather than the release's.
+func TestNewestReleaseTagDotCandidate(t *testing.T) { // [dfj8g]
+	tests := []struct {
+		sorted []string
+		want   string
+	}{
+		{[]string{"v3.0.0.rc1", "v3.0.0", "v3.0.0-rc.2"}, "v3.0.0"},
+		{[]string{"v3.0.0.rc1.2", "v3.0.0.rc1", "v3.0.0"}, "v3.0.0"},
+		{[]string{"3.0.0.rc1", "3.0.0"}, "3.0.0"},
+		{[]string{"v3.0.0.rc1", "3.0.0"}, "3.0.0"},
+		{[]string{"v3.0.0.rc1", "v3.0.0-rc.2"}, "v3.0.0.rc1"}, // a tie keeps git's order
+		{[]string{"v3.0.0-rc.2", "v3.0.0-rc.1"}, "v3.0.0-rc.2"},
+		{[]string{"v3.0.1", "v3.0.0.rc1", "v3.0.0"}, "v3.0.1"},
+		{[]string{"v1.2.1", "v1.2"}, "v1.2.1"},
+	}
+	for _, tc := range tests {
+		if got := newestReleaseTag(tc.sorted); got != tc.want {
+			t.Errorf("newestReleaseTag(%q) = %q, want %q", tc.sorted, got, tc.want)
+		}
+	}
+}
+
 // Every new tag used to gain a 'v', so a repo tagged 1.4.2 went on with v1.4.3.
 func TestNextReleaseTag(t *testing.T) { // [dcnqp]
 	tests := []struct{ latest, want string }{

@@ -51,6 +51,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - When the PowerShell installer can't put the new `gitsby.exe` in place over an old one, it puts the old one back. It used to delete the old copy first, so a failed upgrade left no gitsby at all. If the old copy can't be put back either, the error says where it is.
 
+- The PowerShell installer no longer adds gitsby's folder to PATH a second time when PATH already names it as `%LOCALAPPDATA%\Programs\gitsby` or with a trailing backslash. It used to add it again and say Added. Now it says the folder is already on PATH, and the plan and the result both call it the account or system PATH.
+
+- The Bash installer no longer says its folder isn't on PATH when PATH names it with a trailing slash.
+
 - `raw glab` and `pr` no longer send the account's GitLab token to some other host. glab sends its token to whatever host it's pointed at, so `raw glab api --hostname gitlab.com user` in a gitlab.gnome.org folder sent the GNOME token to gitlab.com. A run that names another host, with `--hostname`, `-R` or a URL, now gets no token and runs as plain glab would, and says so.
 
 - On a GitHub Enterprise host, `gh` acts as the folder's account. Its token went into `GH_TOKEN`, which `gh` reads only for github.com, so `pr`, `repo create` and `raw gh` acted as `gh`'s own login there while git pushed as the account. The token now goes into `GH_ENTERPRISE_TOKEN` for a host `GH_HOST` names.
@@ -74,6 +78,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - After a `release` whose push of the default branch was refused, as by a hook or branch protection, running `release` again finishes it: it pushes the branch and that release's tag, then fast-forwards `dev`. It used to tag the same commit with the next version and push only that, so the first tag never left the machine. Typing the same version again finishes it too.
 
 - The plan for `release` started on `main` no longer ends with `git checkout main`. The run ends on `dev`, as it always has, and the plan's last step now says so.
+
+- `release` with no version counts on from a release, not from its candidate, when the candidate's suffix follows a dot, as in `v3.0.0.rc1`. git sorts that tag above `v3.0.0`, so the next version came out as `v3.0.0` again and the run stopped on a tag that exists. Finishing a refused push takes the release's tag over its candidate's the same way.
 
 - `sync`, and every command that pushes the branch it's on, pushes only that branch. Under `push.default=matching`, or a push refspec for every branch, they pushed other branches with it, so a commit on `main` reached origin without `--direct`. On a mirror remote they deleted origin's branches that aren't here. git now refuses that push, and nothing moves.
 
@@ -110,6 +116,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `br create` refuses `@{-1}` and other names git reads as another branch, before anything runs. It used to commit, push and check out `dev` first, then fail.
 
 - `br create` and `br hotfix` refuse before anything runs when the branch they start from has no commits yet, and name the command that makes the first one. They renamed the empty branch to the new name, then failed to push it.
+
+- `br merge` refuses before anything runs when the branch shares no commit with the one it merges into, as a branch with no commits yet or one made with `git checkout --orphan` does. It used to commit, push and check out `dev`, then stop there when git refused to merge unrelated histories. In a shallow clone that cuts off the shared commit, it names `git fetch --unshallow`.
 
 - The plan for `br merge` in a clone with no local `dev` yet shows the 1 atomic push the run makes. It listed a push and a separate delete.
 

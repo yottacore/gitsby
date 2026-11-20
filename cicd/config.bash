@@ -293,6 +293,11 @@ RELEASE_TARGETS=(
 ## say. fIsReleaseVersion leaves the three numbers in BASH_REMATCH 1 to 3.
 RELEASE_VERSION_RE='^v?([0-9]+)\.([0-9]+)\.([0-9]+)([-.][0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
 fIsReleaseVersion(){ [[ "$1" =~ ${RELEASE_VERSION_RE} && "$1" != *.lock ]] ;}
+## The v* tags, newest first, with a candidate below its own release. A suffix after a dot starts
+## one as much as after a dash, or v3.0.0.rc1 sorts above v3.0.0. That is safe only because every
+## tag cut here is X.Y.Z: a '.' suffix would also put v1.2 above v1.2.1, so release.go weighs its
+## tags itself. Arguments go to git ahead of 'tag', such as -C <dir>.
+fReleaseTags(){ git "$@" -c versionsort.suffix=- -c versionsort.suffix=. tag --sort=-v:refname --list 'v*' ;}
 
 ## Stage 6: demo gif. Seeded, with pinned dates and the newest release's stamp, so a commit that
 ## changes nothing the demo prints gives the same bytes. Skipped by --quick / --no-demogif, or
@@ -392,3 +397,4 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-11-09 JC: fMemCap refuses a CICD_MEM_CAP with no unit, or under 1g.
 ##		- 2026-11-09 JC: The sourced-only guard prints its error to stderr with printf.
 ##		- 2026-11-10 JC: RELEASE_VERSION_RE and fIsReleaseVersion, the release version shape that release.bash, gen-winres.bash and the demo share with 'gitsby release'.
+##		- 2026-11-20 JC: fReleaseTags, the tag scan those three share, which sorts a candidate suffixed after a dot below its release.
