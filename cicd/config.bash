@@ -355,6 +355,9 @@ declare -gA REMOTE_UNIX_WINE=([vmDebARM64]="windows/arm64")
 ## passes --quiet (it already gave the message prompt) and, when it has one,
 ## -m MESSAGE.
 GIT_PUBLISH=(cicd/utility/n8git_backup-and-publish)
+## The tracked files a run may rewrite, as git pathspecs. Publish commits the ones the run changed
+## that matched HEAD when it started, and nothing else, since the tree can hold other edits.
+PUBLISH_PATHS=("${DEMOGIF_OUT}")
 
 ## Set a non-empty commit message to publish hands-off (suppresses the prompt and
 ## supplies the message so `git commit` won't open an editor). Left empty, publish
@@ -397,4 +400,5 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-11-09 JC: fMemCap refuses a CICD_MEM_CAP with no unit, or under 1g.
 ##		- 2026-11-09 JC: The sourced-only guard prints its error to stderr with printf.
 ##		- 2026-11-10 JC: RELEASE_VERSION_RE and fIsReleaseVersion, the release version shape that release.bash, gen-winres.bash and the demo share with 'gitsby release'.
+##		- 2026-11-20 JC: PUBLISH_PATHS, the only tracked files publish commits.
 ##		- 2026-11-20 JC: fReleaseTags, the tag scan those three share, which sorts a candidate suffixed after a dot below its release.

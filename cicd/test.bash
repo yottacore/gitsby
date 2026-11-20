@@ -410,7 +410,8 @@ fMakeGateFixture(){
 	fGateStub "${gateDir}/cicd/utility/demo/demo-repo.bash" demo-repo
 	## Writes the joined file, so stage 7 has a build to remove.
 	fGateStub "${gateDir}/cicd/utility/macho-universal.bash" macho-universal ": > \"\${1:-/dev/null}\""
-	fGateStub "${gateDir}/cicd/utility/n8git_backup-and-publish" n8git_backup-and-publish
+	## Says which files it was told to commit, when it was told.
+	fGateStub "${gateDir}/cicd/utility/n8git_backup-and-publish" n8git_backup-and-publish "[[ ! -v GIT_BACKUP_AND_PUBLISH_PATHS ]] || printf 'paths=[%s]\\n' \"\${GIT_BACKUP_AND_PUBLISH_PATHS}\" >> '${gateCalls}'"
 	for s in markdownlint golangci-lint govulncheck ruff pip-audit; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
 	## Says what GOFLAGS it was handed.
 	fGateStub "${gateDir}/bin/staticcheck" staticcheck "printf 'staticcheck GOFLAGS=%s\\n' \"\${GOFLAGS:-}\" >> '${gateCalls}'"
@@ -8322,6 +8323,40 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dcmdg] a failed demo build warns, renders nothing and the run goes on"  fGateDemoBuildFails
 		rm -f -- "${gateFail:?}/go-build"
 		fAssert "[de5aw] a demo gif that differs, drawn with another Pillow than the recorded one, is left alone with a warning"  fGateDemoDrift
+		## Publish takes only the PUBLISH_PATHS files the run changed, never another edit in the tree.
+		# shellcheck source=/dev/null
+		(cd "${gateDir}" && source cicd/config.bash && printf '%s\n' "${TOOL_VERSIONS[@]}" | sed -n 's/^Pillow=//p') > "${gateFail}/pillow"
+		printf old > "${gateDir}/assets/demo.gif"
+		git -C "${gateDir}" add assets/demo.gif README.md && git -C "${gateDir}" commit --quiet -m gif -- assets/demo.gif README.md
+		echo edit >> "${gateDir}/README.md"
+		fGateOnly "demogif publish" -m 'hands off'
+		fAssert "[dfjme] publish hands the publisher only the tracked files the run changed" \
+			bash -c "[[ '${gateRc}' == 0 ]] && grep -qxF 'paths=[assets/demo.gif]' '${gateCalls}' && grep -qF 'the run changed 1 tracked file(s): assets/demo.gif' '${gateOut}'"
+		printf edited > "${gateDir}/assets/demo.gif"
+		fGateOnly "demogif publish" -m 'hands off'
+		fAssert "[dfjmf] and leaves out one that was already edited when the run started" \
+			bash -c "[[ '${gateRc}' == 0 ]] && grep -qxF 'paths=[]' '${gateCalls}' && grep -qF 'the run changed 0 tracked file(s)' '${gateOut}'"
+		rm -f -- "${gateFail:?}/pillow"
+		## The real publisher, told to commit one of two edited files. Its gitsby runs git, and its
+		## rar is never called with the backup off but has to be there.
+		local pubDir="${work}/pubscope"
+		mkdir -p "${pubDir}/bin"
+		fStub "${pubDir}/bin/gitsby" <<-'EOF'
+			#!/usr/bin/env bash
+			[[ "${1:-} ${2:-}" != "raw git" ]] || shift 2
+			exec git "$@"
+		EOF
+		fStub "${pubDir}/bin/rar" <<< $'#!/usr/bin/env bash\nexit 1'
+		git init --quiet --bare -b main "${pubDir}/origin.git"
+		git init --quiet -b main "${pubDir}/repo"
+		printf 'a\n' > "${pubDir}/repo/a.txt"; printf 'b\n' > "${pubDir}/repo/b.txt"
+		git -C "${pubDir}/repo" add a.txt b.txt && git -C "${pubDir}/repo" commit --quiet -m init
+		git -C "${pubDir}/repo" remote add origin "${pubDir}/origin.git" && git -C "${pubDir}/repo" push --quiet -u origin main 2>/dev/null
+		echo a2 >> "${pubDir}/repo/a.txt"; echo b2 >> "${pubDir}/repo/b.txt"
+		( cd "${pubDir}/repo" || exit 1; GIT_BACKUP_AND_PUBLISH_NOBACKUP=1 GIT_BACKUP_AND_PUBLISH_PATHS=a.txt PATH="${pubDir}/bin:${PATH}" \
+			bash "${root}/cicd/utility/n8git_backup-and-publish" -q -m pub ) </dev/null >/dev/null 2>&1 || true
+		fAssert "[dfjmg] the publisher commits and pushes only the files it's told, and leaves the other edit in the tree" \
+			bash -c "[[ \"\$(git -C '${pubDir}/repo' show --name-only --format= HEAD)\" == a.txt && \"\$(git -C '${pubDir}/repo' diff --name-only)\" == b.txt && \"\$(git -C '${pubDir}/repo' rev-parse HEAD)\" == \"\$(git -C '${pubDir}/origin.git' rev-parse main)\" && -z \"\$(git -C '${pubDir}/repo' stash list)\" ]]"
 		gateDir="${work}/gate"
 
 		## The stages the gate leaves out, on a fixture of their own that becomes a git repo with a
@@ -8505,8 +8540,20 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			bash -c "[[ '${gateRc}' == 0 && \"\$(git -C '${gateDir}' rev-parse HEAD)\" == \"\$(git -C '${gateOther}' rev-parse HEAD)\" && \"\$(head -n 1 '${gateDir}/notes.txt')\" == edited && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == two ]]"
 		git -C "${gateDir}" commit --quiet -m local -- notes.txt
 		fGateUpstream three
+		echo wip >> "${gateDir}/notes.txt"
 		fGateOnly sync
-		fAssert "[dd5g3] a tree that diverged from origin stops the run"  fGateRanSaying 1 'diverged from origin: 1 local, 1 remote'
+		fAssert "[dfjmb] stage 0 merges a diverged origin that merges clean, with a merge commit" \
+			bash -c "[[ '${gateRc}' == 0 && \"\$(git -C '${gateDir}' rev-parse HEAD^2)\" == \"\$(git -C '${gateOther}' rev-parse HEAD)\" ]] && grep -qF 'merging 1 commit(s) from origin into 1 local' '${gateOut}'"
+		fAssert "[dfjmc] and carries an uncommitted edit across the merge" \
+			bash -c "[[ \"\$(tail -n 1 '${gateDir}/notes.txt')\" == wip && -z \"\$(git -C '${gateDir}' stash list)\" ]]"
+		## Both sides add a line at the end of one file, so these two don't merge.
+		echo mine >> "${gateDir}/upstream.txt" && git -C "${gateDir}" commit --quiet -m mine -- upstream.txt
+		fGateUpstream four
+		local syncHead=""; syncHead="$(git -C "${gateDir}" rev-parse HEAD)"
+		fGateOnly sync
+		fAssert "[dd5g3] a tree that diverged from origin and doesn't merge clean stops the run"  fGateRanSaying 1 'diverged from origin: 3 local, 1 remote, and they don.t merge clean'
+		fAssert "[dfjmd] and is left as it was, its uncommitted edit included" \
+			bash -c "[[ \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(git -C '${gateDir}' diff --name-only HEAD -- notes.txt upstream.txt)\" == notes.txt && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == wip && -z \"\$(git -C '${gateDir}' stash list)\" ]] && ! git -C '${gateDir}' rev-parse -q --verify MERGE_HEAD"
 		git -C "${gateDir}" remote set-url origin "${work}/gate-pipe-nowhere.git"
 		fGateOnly sync
 		fAssert "[dd5g4] an origin it can't reach is a warning, not a stop"  fGateRanSaying 0 "WARNING: can't reach origin"
