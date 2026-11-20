@@ -31,6 +31,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The README lists the exit statuses, for scripts that call Gitsby.
 
+- Both installers take `--version` (`-Version` in PowerShell), which prints the installer's own version, the date it last changed.
+
 ### Changed
 
 - The SSH line in `status` and `whoami` names the key file on a `File:` line under it, not inside its parentheses, where a long path wrapped the line. `repo clone` ends with `[ Cloned. ]`, with the folder on a `File:` line. `account apply` and `account set` do the same for each file they write, and for a fragment `account apply` no longer uses.

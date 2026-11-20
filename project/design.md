@@ -461,6 +461,7 @@ The rule for every path that hands out a token. The token goes only to the host 
 	- A system install that can't write its folder is refused before the plan, not found out after the download. Elevating was rejected: the `iex` and script block forms have no file to start again as administrator.
 	- Every route is a release asset, so every route is verified. The unverified branch of the plan no longer exists, and where the checksum can't be fetched or can't be computed the install stops. `SHA256SUMS` is fetched before the plan is printed, because it is what says whether this platform has a binary at all - and it names the ones that do when this one doesn't.
 	- The contributor setup scripts were dropped rather than ported. A Go checkout needs only Go, and the three commands that do it are in the README.
+	- Each installer's `--version` is the date of its newest History entry, and the suite checks that the two match. A version number bumped by hand would drift the way the scripted builds' `thisVersion` did (2026-11-20).
 
 - FreeBSD is a published platform.
 	- The installer had to answer for a platform with no asset either way. Adding one costs a line in the target list - the module is pure stdlib with no cgo, so every target cross-builds from one box - which is cheaper than documenting an exception.
