@@ -3867,7 +3867,7 @@ GHEOF
 		bash -c "cd '${hn}/c' && '${gitsby}' -q -NoFetch br hotfix code >/dev/null 2>&1; echo v2 > src-go/main.go; '${gitsby}' -q -NoFetch br land 'Fix' 2>&1"
 	## An empty answer read as nothing changed, when the comparison couldn't run at all.
 	( cd "${hn}/c" || exit 1; git checkout --quiet main && git tag -a v1.0.0 -m v1.0.0 && git checkout --quiet --orphan hotfix/stray && git rm -rfq . && echo x > stray.go && git add stray.go && git commit --quiet -m stray )
-	fAssertOut "[dcnqy] a hotfix that can't be compared says so"  "couldn't tell whether this hotfix" \
+	fAssertOut "[dcnqy] a hotfix that can't be compared says so"  "'hotfix/stray' shares no history with 'main'" \
 		bash -c "cd '${hn}/c' && '${gitsby}' -q -NoFetch br land 'Stray' 2>&1"
 	## A back-merge conflict must leave dev untouched and the tree clean, not half-merged.
 	fAssert    "[daenh] a conflicting back-merge leaves dev alone"  \
@@ -3974,6 +3974,26 @@ GHEOF
 	fAssertOut "[dfhjx] br create before the first commit refuses up front"  "^gitsby: 'main' has no commits yet, so there is nothing to start 'nb' from\\. Publish the first commit with: gitsby repo connect$" \
 		bash -c "cd '${lone}/fresh' && '${gitsby}' -q br create nb 2>&1"
 	fAssert    "[dfhjy] and exits 1, still on main, with nothing pushed"  bash -c "cd '${lone}/fresh' && { '${gitsby}' -q br create nb >/dev/null 2>&1; [[ \$? == 1 ]]; } && [[ \"\$(git symbolic-ref --short HEAD)\" == main && -z \"\$(git -C '${lone}/fresh.git' for-each-ref)\" ]]"
+	## br merge from a branch that shares no commit with dev parked it, checked dev out, then git
+	## refused to merge unrelated histories, leaving the run on dev.
+	git init --quiet --bare -b main "${lone}/rel.git"
+	( cd "${lone}/fresh" || exit 1; git commit --quiet -m init; git branch dev; git switch --quiet -c long
+		for n in 1 2; do echo "${n}" > "l${n}.txt"; git add "l${n}.txt"; git commit --quiet -m "l${n}"; done
+		git switch --quiet dev; echo d > d.txt; git add d.txt; git commit --quiet -m d
+		git push --quiet "${lone}/rel.git" main dev long )
+	git init --quiet -b feat "${lone}/unrel"; git init --quiet -b solo "${lone}/own"
+	( cd "${lone}/unrel" || exit 1; git remote add origin "${lone}/rel.git"; git fetch --quiet origin; echo u > u.txt; git add u.txt )
+	( cd "${lone}/own" || exit 1; git remote add origin "${lone}/rel.git"; git fetch --quiet origin; echo o > o.txt; git add o.txt; git commit --quiet -m o )
+	fAssertOut "[dfj98] br merge on a branch with no commits yet refuses up front"  "^gitsby: 'feat' has no commits yet, so its first would share no history with 'dev', and git won't merge that\\. Nothing was done\\. To start it from 'dev' with the work so far: git switch dev, then gitsby br create feat$" \
+		bash -c "cd '${lone}/unrel' && '${gitsby}' -q br merge 2>&1"
+	fAssert    "[dfj99] and exits 1, still on feat with the file staged, with nothing pushed"  bash -c "cd '${lone}/unrel' && { '${gitsby}' -q br merge >/dev/null 2>&1; [[ \$? == 1 ]]; } && [[ \"\$(git symbolic-ref --short HEAD)\" == feat && \"\$(git diff --cached --name-only)\" == u.txt && -z \"\$(git -C '${lone}/rel.git' for-each-ref refs/heads/feat)\" ]]"
+	fAssertOut "[dfj9a] br merge on a branch whose history is its own refuses up front"  "^gitsby: 'solo' shares no history with 'dev', so git won't merge it\\. Nothing was done\\. Joining unrelated histories is raw-git territory: git merge --allow-unrelated-histories$" \
+		bash -c "cd '${lone}/own' && '${gitsby}' -q br merge 2>&1"
+	fAssert    "[dfj9b] and exits 1, still on solo, with nothing pushed"  bash -c "cd '${lone}/own' && { '${gitsby}' -q br merge >/dev/null 2>&1; [[ \$? == 1 ]]; } && [[ \"\$(git symbolic-ref --short HEAD)\" == solo && -z \"\$(git -C '${lone}/rel.git' for-each-ref refs/heads/solo)\" ]]"
+	git clone --quiet --depth 1 --no-single-branch "file://${lone}/rel.git" "${lone}/shallow"
+	( cd "${lone}/shallow" || exit 1; git switch --quiet long )
+	fAssertOut "[dfj9c] in a shallow clone that cuts off the shared commit, it names the unshallow"  "^gitsby: 'long' shares no history with 'dev' in this shallow clone, so git won't merge it\\. Nothing was done\\. Fetch the rest first: git fetch --unshallow$" \
+		bash -c "cd '${lone}/shallow' && '${gitsby}' -q br merge 2>&1"
 
 	## gh writes act as gh's own account, not the ssh key git pushes with. A difference BOTH sides
 	## know about is refused unattended; unknown (no agent, https remote, deploy key) never blocks,

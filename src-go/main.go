@@ -13,6 +13,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -472,6 +473,9 @@ func (a *app) preflightBranch() error {
 		if a.isProtectedBranch("") {
 			return usagef("'%s' is a protected branch; landing it would delete it. Run this from a work branch instead.", a.currentBranch())
 		}
+		if err := a.refuseUnrelatedMerge(); err != nil {
+			return err
+		}
 		// Its delete names the branch the park push goes to. Ahead of refuseParkPush,
 		// since after its 'sync --direct' the delete would still name dev.
 		if a.hasOrigin() {
@@ -526,6 +530,40 @@ func (a *app) refuseUnbornBase(base string) error {
 		return usagef("'%s' has no commits yet, so there is nothing to start '%s' from. Publish the first commit with: %s repo connect", base, a.cmd.arg, meName)
 	}
 	return usagef("'%s' has no commits yet, so there is nothing to start '%s' from. Make the first commit with: %s pullcom", base, a.cmd.arg, meName)
+}
+
+// refuseUnrelatedMerge: git won't merge a branch that shares no commit with its
+// target, and it says so only after the park push and the checkout, which leaves
+// the run on the target. An unborn branch's first commit starts a history of its
+// own. The target is read where the merge will find it: the local branch, else
+// origin's, which the checkout tracks. With neither, the checkout's own error says so.
+func (a *app) refuseUnrelatedMerge() error {
+	branch := a.currentBranch()
+	if branch == "" { // detached, refused once the state is shown
+		return nil
+	}
+	target := a.branchTarget(branch)
+	refs := a.branchRefs()
+	targetRef := "refs/heads/" + target
+	if refs.tip[targetRef] == "" {
+		targetRef = "refs/remotes/origin/" + target
+	}
+	if refs.tip[targetRef] == "" {
+		return nil
+	}
+	if refs.tip["refs/heads/"+branch] == "" {
+		return usagef("'%s' has no commits yet, so its first would share no history with '%s', and git won't merge that. Nothing was done. To start it from '%s' with the work so far: git switch %s, then %s br create %s",
+			branch, target, target, typedArg(target, runtime.GOOS), meName, typedArg(branch, runtime.GOOS))
+	}
+	if runOK("git", "merge-base", "refs/heads/"+branch, targetRef) {
+		return nil
+	}
+	// A shallow clone can cut off the commit they share, and git refuses the same way.
+	if runOut("git", "rev-parse", "--is-shallow-repository") == "true" {
+		return usagef("'%s' shares no history with '%s' in this shallow clone, so git won't merge it. Nothing was done. Fetch the rest first: git fetch --unshallow", branch, target)
+	}
+	return usagef("'%s' shares no history with '%s', so git won't merge it. Nothing was done. Joining unrelated histories is raw-git territory: git merge --allow-unrelated-histories",
+		branch, target)
 }
 
 // settleTarget resolves what each remaining command is about to act on, before

@@ -33,6 +33,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- pr create from a branch that shares no history with dev pushes it, then the git host refuses the pull request
+	- ID: 2026112007483630
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-074836
+	- Opened by:
+	- Related IDs: 2026111919473452
+	- Steps to reproduce [Bug]: In a clone of a GitHub repo with main and dev, git checkout --orphan feat, commit a file, then run gitsby -q pr create T.
+	- Incorrect behavior [Bug]: The plan and park push run and publish feat, then gh fails, since GitHub won't open a pull request between unrelated histories. By reading; not run.
+	- Expected behavior [Bug]: Refuse before the plan, as br merge does for the same branch, if every git host refuses it. GitLab and Gitea may not, which needs checking first.
+	- Origin: Go port. Found while sweeping 2026111919473452. Plausible.
+
 - A candidate suffixed after a dot sorts above its own release in every tag scan
 	- ID: 2026111920273377
 	- Type: Bug
@@ -62,7 +76,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - br merge from a branch that shares no history with dev pushes it, switches to dev, then fails
 	- ID: 2026111919473452
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-194734
@@ -73,6 +87,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: Refuse before the plan when the branch and its target share no commit, or end back on the branch.
 	- Reproduced [Bug]: 2026-11-19 on b23, local bare origin, while fixing 2026111910222988. Confirmed.
 	- Origin: Go port. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: Nothing before the plan asked whether the branch shares a commit with its target. git refuses to merge unrelated histories only at the merge, after the park push and the checkout, and that failure isn't a conflict, so backOutMerge left the run on the target.
+	- Actual fix [Bug]: br merge refuses before the plan when the branch has no commits yet, or shares no commit with its target, the local one or else origin's. The unborn case names git switch to the target, then br create, which takes the work along. The other names git merge --allow-unrelated-histories as raw-git territory, and a shallow clone names git fetch --unshallow. The changelog says so.
+	- Test case: test.bash [dfj98] to [dfj9c]; [dcnqy] updated.
+	- Verified: [dfj98] to [dfj9c] fail with the refusal stubbed out and pass with it. The repro from the item and an orphan branch both refuse with nothing pushed, still on the branch; the unborn way off was run and merged. The quick gate passed with every area: test.bash 2209/0, fuzz 310/0, parity 31/0. gosec reports the same 37 hits.
+	- Swept: every local merge: br merge's, which this covers for hotfix branches too through branchTarget; the hotfix back-merge of main into dev and release's merges of dev and main, which join 2 branches gitsby made from each other, left alone. pr create's merge happens on the git host, filed as 2026112007483630.
+	- Branch: nov20-2026111919473452
+	- Commit: fb7a6d6
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-074856
+	- Decisions:
+		- Refused before the plan rather than ending back on the branch, since the push and the commit would already have happened, and git refuses the merge either way.
+		- A shallow clone gets its own text, since there origin may have the shared commit but the clone not. Read only on the refusal path, so a normal run spawns 1 more git, the merge-base.
+		- 20261120: test.bash [dcnqy] made its hotfix uncomparable with an orphan branch, which now refuses up front. Its pattern changed from the 'couldn't tell whether this hotfix' note to the refusal's 'shares no history with main'. That note can now only show when the target is missing.
 
 - On Windows PowerShell 5.1, a paste line drops a double quote from a branch name
 	- ID: 2026111917564808
