@@ -12,10 +12,12 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"hash/fnv"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -152,41 +154,55 @@ func (a *app) stepAs(announce, label, name string, args ...string) error {
 }
 
 func mustBeInPath(name string) error {
-	if path, ours := findTool(name); path == "" {
-		return notInPath(name, ours)
+	if hit := findTool(name); hit.path == "" {
+		return notInPath(name, hit.ours, hit.batch)
 	}
 	return nil
 }
 
 func inPath(name string) bool {
-	path, _ := findTool(name)
-	return path != ""
+	return findTool(name).path != ""
 }
 
 // notInPath is the refusal for a tool not found, naming any entry passed over
-// for being this binary, since that is the only reason a user can see it there.
-func notInPath(tool string, ours []string) error {
+// for being this binary or a batch file, since that is the only reason a user
+// can see it there.
+func notInPath(tool string, ours, batch []string) error {
+	msg := "Not found in path: " + tool
 	switch len(ours) {
 	case 0:
-		return usagef("Not found in path: %s", tool)
 	case 1:
-		return usagef("Not found in path: %s. '%s' is %s itself.", tool, ours[0], meName)
+		msg += fmt.Sprintf(". '%s' is %s itself", ours[0], meName)
+	default:
+		msg += fmt.Sprintf(". '%s' are %s itself", strings.Join(ours, "', '"), meName)
 	}
-	return usagef("Not found in path: %s. '%s' are %s itself.", tool, strings.Join(ours, "', '"), meName)
+	switch len(batch) {
+	case 0:
+	case 1:
+		msg += fmt.Sprintf(". '%s' is a batch file, which %s doesn't run, since cmd would read the arguments again", batch[0], meName)
+	default:
+		msg += fmt.Sprintf(". '%s' are batch files, which %s doesn't run, since cmd would read the arguments again", strings.Join(batch, "', '"), meName)
+	}
+	if len(ours)+len(batch) > 0 {
+		msg += "."
+	}
+	return usagef("%s", msg)
 }
 
 // shadowed is notInPath for the first of names when any of them was passed over
-// as this binary, and nil otherwise, for a caller with its own not-installed text.
+// as this binary or a batch file, and nil otherwise, for a caller with its own
+// not-installed text.
 func shadowed(names ...string) error {
-	var ours []string
+	var ours, batch []string
 	for _, name := range names {
-		_, skipped := findTool(name)
-		ours = append(ours, skipped...)
+		hit := findTool(name)
+		ours = append(ours, hit.ours...)
+		batch = append(batch, hit.batch...)
 	}
-	if len(ours) == 0 {
+	if len(ours)+len(batch) == 0 {
 		return nil
 	}
-	return notInPath(names[0], ours)
+	return notInPath(names[0], ours, batch)
 }
 
 // toolCmd is exec.Command with the program found by findTool, so nothing gitsby
@@ -206,13 +222,17 @@ func toolCmdContext(ctx context.Context, name string, args ...string) *exec.Cmd 
 // toolPath is what toolCmd runs for name, or name itself and why not.
 func toolPath(name string) (string, error) {
 	if filepath.Base(name) != name {
+		// exec.Command's own look still adds PATHEXT to a path.
+		if found, err := exec.LookPath(name); err == nil && batchFile(found) {
+			return name, usagef("'%s' is a batch file, which %s doesn't run, since cmd would read the arguments again.", found, meName)
+		}
 		return name, nil
 	}
-	found, ours := findTool(name)
-	if found == "" {
-		return name, notInPath(name, ours)
+	hit := findTool(name)
+	if hit.path == "" {
+		return name, notInPath(name, hit.ours, hit.batch)
 	}
-	return found, nil
+	return hit.path, nil
 }
 
 func named(cmd *exec.Cmd, name string, missing error) *exec.Cmd {
@@ -231,22 +251,25 @@ var toolCache = struct {
 	found map[[2]string]toolFound
 }{found: map[[2]string]toolFound{}}
 
+// toolFound is a PATH walk's answer: the program, and the entries passed over as
+// this binary and as batch files.
 type toolFound struct {
-	path string
-	ours []string
+	path  string
+	ours  []string
+	batch []string
 }
 
 // findTool is lookTool asked once per name, for every program gitsby runs.
-func findTool(name string) (string, []string) {
-	key := [2]string{name, os.Getenv("PATH")}
+func findTool(name string) toolFound {
+	key := [2]string{name, os.Getenv("PATH") + "\x00" + os.Getenv("PATHEXT")}
 	toolCache.Lock()
 	defer toolCache.Unlock()
 	hit, ok := toolCache.found[key]
 	if !ok {
-		hit.path, hit.ours = lookTool(name)
+		hit = lookTool(name)
 		toolCache.found[key] = hit
 	}
-	return hit.path, hit.ours
+	return hit
 }
 
 // rawActiveVar has the chain of 'raw' runs above this one, for everything 'raw'
@@ -322,13 +345,13 @@ func rawNest(chain, name, entry string) (string, error) {
 }
 
 // lookTool is exec.LookPath that skips any PATH entry leading back to this binary, by
-// link or hardlink, and relative entries. Also returns the entries skipped as ours.
-func lookTool(name string) (found string, ours []string) {
+// link or hardlink, any batch file, and relative entries. Also says what it skipped.
+func lookTool(name string) toolFound {
 	return walkTool(name, nil)
 }
 
 // walkTool is lookTool taking only a candidate take accepts, when take isn't nil.
-func walkTool(name string, take func(string) bool) (found string, ours []string) {
+func walkTool(name string, take func(string) bool) (hit toolFound) {
 	var self os.FileInfo
 	if exe, err := os.Executable(); err == nil {
 		self, _ = os.Stat(exe) // couldn't tell is not "it's us"
@@ -341,10 +364,16 @@ func walkTool(name string, take func(string) bool) (found string, ours []string)
 		if err != nil {
 			continue
 		}
+		if batchFile(path) {
+			if !slices.Contains(hit.batch, path) {
+				hit.batch = append(hit.batch, path)
+			}
+			continue
+		}
 		if self != nil {
 			if fi, err := os.Stat(path); err == nil && os.SameFile(self, fi) {
-				if !slices.Contains(ours, path) {
-					ours = append(ours, path)
+				if !slices.Contains(hit.ours, path) {
+					hit.ours = append(hit.ours, path)
 				}
 				continue
 			}
@@ -352,9 +381,24 @@ func walkTool(name string, take func(string) bool) (found string, ours []string)
 		if take != nil && !take(path) {
 			continue
 		}
-		return path, ours
+		hit.path = path
+		return hit
 	}
-	return "", ours
+	return hit
+}
+
+// batchFile says whether Windows would run path through cmd, which reads the
+// command line again by its own rules: an argument holding & runs what follows,
+// and %NAME% expands. Go quotes only for the program's own parser, and cmd has no
+// quoting that is safe for every argument, so a batch file is passed over like
+// gitsby itself (2026111910222873).
+func batchFile(path string) bool {
+	return runtime.GOOS == "windows" && batchName(path)
+}
+
+func batchName(path string) bool {
+	ext := filepath.Ext(path)
+	return strings.EqualFold(ext, ".bat") || strings.EqualFold(ext, ".cmd")
 }
 
 // handover runs the tool with our stdio and leaves with its exit code - the

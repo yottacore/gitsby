@@ -145,6 +145,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The fetch before a command, and the other checks that reach origin, give up on an http or https remote that takes the connection and then sends nothing for 30 seconds. They used to wait until stopped. One that never finishes its TLS handshake still takes curl's 5 minutes. A push, pull or clone is left to git, as is a limit set in `GIT_HTTP_LOW_SPEED_LIMIT` or `GIT_HTTP_LOW_SPEED_TIME`.
 
+- On Windows, Gitsby no longer runs a `git.bat` or `git.cmd` that comes ahead of `git.exe` on PATH, nor any other batch file for a tool it runs. Windows hands a batch file to cmd, which reads the arguments again by its own rules, so `br switch` to a branch named `x&ver` ran `ver`, and a `%NAME%` in an argument was replaced. Gitsby now passes over a batch file and takes the next one on PATH, and when there is no other, the "Not found in path" error names the batch file.
+
 ## v3.0.0-beta.1 - 2026-11-08
 
 ### Notes

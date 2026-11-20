@@ -876,18 +876,19 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 	// Not findTool: a tool file whose run is already on the chain is a wrapper that
 	// started us, so the next one on PATH is the tool it wraps.
 	name, path := "", ""
-	var ours, passed []string
+	var ours, batch, passed []string
 	for _, try := range names {
-		found, skipped := walkTool(try, func(cand string) bool {
+		hit := walkTool(try, func(cand string) bool {
 			if rawOnChain(a.rawActive, rawEntry(try, cand, args)) {
 				passed = append(passed, cand)
 				return false
 			}
 			return true
 		})
-		ours = append(ours, skipped...)
-		if found != "" {
-			name, path = try, found
+		ours = append(ours, hit.ours...)
+		batch = append(batch, hit.batch...)
+		if hit.path != "" {
+			name, path = try, hit.path
 			break
 		}
 	}
@@ -895,7 +896,7 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 		return usagef("Looping: '%s' is already running under a 'raw %s' above this one, and there's no other %s after it on PATH. A %s on PATH that calls '%s raw %s' does that.", strings.Join(passed, "', '"), tool, tool, tool, meName, tool)
 	}
 	if path == "" {
-		return notInPath(tool, ours)
+		return notInPath(tool, ours, batch)
 	}
 	chain, err := rawNest(a.rawActive, name, rawEntry(name, path, args))
 	if err != nil {

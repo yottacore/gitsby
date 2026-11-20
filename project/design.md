@@ -124,7 +124,7 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 - No command shells out through `eval`. Arguments are passed as arrays, so a message or branch name is never re-parsed.
 
-- Every program gitsby runs, git included, is found by one lookup that passes over any PATH entry that is gitsby itself. A link named `gh` to gitsby would otherwise start gitsby with gh's arguments. With nothing else on PATH, the command refuses with "Not found in path" and names that entry. The program still sees its own name as argv[0].
+- Every program gitsby runs, git included, is found by one lookup that passes over any PATH entry that is gitsby itself. A link named `gh` to gitsby would otherwise start gitsby with gh's arguments. With nothing else on PATH, the command refuses with "Not found in path" and names that entry. The program still sees its own name as argv[0]. On Windows it passes over a `.bat` or `.cmd` file the same way, and names it in that refusal too. Windows runs a batch file through cmd, which reads the arguments again by its own rules, so an `&` in a branch name would run what follows it, and no quoting is safe for every argument. A program named by its path is refused when it is a batch file, for the same reason.
 	- Started under the name of a tool `raw` runs, gitsby refuses and points to `gitsby raw <name>`. Acting as that tool would be one more way in, and nothing needs it. Any other name still runs, since the release files are named like `gitsby-linux-amd64`.
 
 - Any command named inside an error message, or in the built-in help, has to be one the parser still accepts. The help is the only documentation most people read, so it drifting is a defect, not a typo.

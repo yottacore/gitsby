@@ -586,9 +586,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 30: On Windows, a git.bat or git.cmd on PATH re-reads gitsby's arguments through cmd
 	- ID: 2026111910222873
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w
+	- Needs external testing: vm925w, the Windows Go tests `[dfhmj]` and `[dfhmk]`, which stage 7 runs there. Both pass under wine, which is only a stand-in.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102228
 	- Opened by:
@@ -599,6 +599,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on vm925w, also with git.cmd and a name holding %PATH%. Confirmed.
 	- Possible cause [Bug]: walkTool in exec.go accepts .bat and .cmd, and Go doesn't quote for cmd.
 	- Origin: c14672e, 2026-10-21. exec.LookPath did the same before it. No round saw it.
+	- Actual cause [Bug]: As guessed. Windows runs a .bat or .cmd file through cmd, which reads the command line again, so an `&` in an argument runs what follows and `%NAME%` expands. Go quotes only for the program's own parser.
+	- Actual fix [Bug]: On Windows the PATH walk that every spawn and `raw` use passes over a .bat or .cmd file and takes the next program. With none left, the "Not found in path" refusal names the batch file. A program named by its path is refused when it is a batch file, PATHEXT included.
+	- Decisions: Pass over rather than refuse, as with gitsby's own entry, since a batch file can't be run safely at all. The batch file is named only in the refusal when nothing else is found. A warning on each pass-over would have to be a refusal under `-q`, per the UI style guide, so skip and refuse would differ only interactively. This departs from "names it" when another program is found. The tool cache key now holds PATHEXT too, since the look reads it.
+	- Test case: Go `[dfhmh]` (batch names, refusal text), and Windows-only `[dfhmj]` (the walk passes over .bat and .cmd, the refusal names them, a given path is refused) and `[dfhmk]` (a real run: an `&` and a `%NAME%` argument never reach cmd).
+	- Verified: the quick gate, every area, on the fix (test.bash 2197/0, fuzz 310/0, parity 31/0). Under wine, `[dfhmk]` fails on the build before, with cmd running the text after the `&` and expanding the name, and passes after. `[dfhmj]` fails with the path check taken out. gosec gives the same 37 findings before and after.
+	- Swept: every spawn goes through toolPath (`TestOneSpawnSite`): the findTool callers, `raw`'s own walkTool and its handover, and the ssh probe, whose program can be a path. install.ps1 runs no tool by bare name. The test-only `cmd /c mklink` runs cmd.exe itself.
+	- Branch: nov19c-2026111910222873
+	- Commit: 3058008
 
 - Code Review 20261119 item 31: On Windows, a held accounts file gives the wrong Fix and mixed slashes
 	- ID: 2026111910222859
