@@ -33,6 +33,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Conflict advice after a --staged run drops --staged
+	- ID: 2026111918550541
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-185505
+	- Opened by:
+	- Requirements [Feature]: When a --staged run stops on unresolved conflicts, the command it says to run again keeps --staged. Without it the rerun commits the whole tree, sweeping in edits left out on purpose.
+	- Notes: rerunText in mutate.go left off every option. With --staged no pull uses --autostash, so only a conflict already in the tree reaches this.
+	- Origin: found while fixing 2026111910223074. Read only.
+	- Closed reason: Done
+	- Done: The rerun advice keeps --staged wherever the run had it, after the command and its target.
+	- Test case: test.bash [dfhh6]; Go [dfhh2] TestRerunNamesTheCommand, with 4 new --staged cases and a check that --staged reads back.
+	- Verified: [dfhh6] fails on the build before the fix, where the advice said 'gitsby sync', and passes with it. [dfhh2] fails its 5 --staged cases before the fix and passes after. lint, unit and suite passed: test.bash 2179/0.
+	- Swept: rerunText is the one place the advice is built, for both refuseConflicts callers.
+	- Decisions: --staged goes last, after the target, where the parser takes it like any option. The other options, such as -q and --no-fetch, stay off: dropping them changes nothing about what is committed.
+	- Branch: nov19c-2026111910223074
+	- Acceptance signoff: Self-closed: its test failed before the fix and passes after.
+	- Closed: 20261119-190622
+	- Commit: cf81f3c
+	- 20261119: [dfhh2]'s case for 'sync --staged' expects 'sync --staged', not 'sync', as this item asks.
+
 - On Windows PowerShell 5.1, a paste line drops a double quote from a branch name
 	- ID: 2026111917564808
 	- Type: Bug
@@ -173,7 +196,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 16: After an autostash conflict, sync, br switch and pr create say to run pullcom again
 	- ID: 2026111910223074
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102230
@@ -184,6 +207,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, all 3 commands. Confirmed.
 	- Possible cause [Bug]: cmdCommit passes pullcom by name to refuseConflicts. pullIfOnline already uses typedName.
 	- Origin: 8dfe5ff, nov18. Missed twin of that fix.
+	- Closed reason: Done
+	- Actual cause [Bug]: cmdCommit named pullcom in its conflict advice whatever command ran. Every command that parks reaches it after its autostash pull: sync, br switch, br create and br hotfix off a feature branch, br merge, pr create and release.
+	- Actual fix [Bug]: One helper builds the advice from the command as typed, with its branch, version or remote. cmdCommit and the pull check in pullIfOnline both use it.
+	- Test case: test.bash [dfhh3] to [dfhh5]; Go [dfhh2] TestRerunNamesTheCommand.
+	- Verified: [dfhh4] fails on the build before the fix, where all 5 commands named pullcom, and passes with it. [dfhh2] fails with the helper made to name pullcom. The quick gate passed with every area: test.bash 2178/0, fuzz 310/0, parity 31/0.
+	- Swept: every refuseConflicts caller, by grep: cmdCommit (pullcom, sync, every cmdPush park, repo create and repo connect) and pullIfOnline. Both now take the same helper. release is covered by [dfhh2] only, not by a suite check.
+	- Decisions: The advice keeps the target argument for br create, br hotfix, br switch, release, repo create and repo connect, and --staged where the run had it (2026111918550541). It leaves off a commit message, a PR title and the other options, as pullcom's advice did.
+	- Branch: nov19c-2026111910223074
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261119-185455
+	- Commit: 5c6bdc8
 
 - Code Review 20261119 item 17: br merge pushes your own commits on dev with no --direct warning
 	- ID: 2026111910223060

@@ -5037,6 +5037,49 @@ GHEOF
 	fAssert     "[dfg1h] br hotfix refuses it too"  bash -c "[[ \"\$(cat '${cf}/br-hotfix.rc')\" == 1 ]]"
 	fAssert     "[dfg1j] and makes no hotfix branch, leaving the conflict and the stash"  bash -c "cd '${cf}/br-hotfix' && ! git show-ref --quiet refs/heads/hotfix/cfhotfix && [[ -z \"\$(git ls-remote --heads origin hotfix/cfhotfix)\" ]] && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]] && [[ -n \"\$(git stash list)\" ]]"
 
+	## Every command that parks pulls with --autostash and stops in the commit's conflict check.
+	## The advice there named pullcom for all of them, which commits but doesn't push, switch or
+	## open the PR. Each clone stands on a feature branch one commit behind origin's, with an edit
+	## to the line that commit changed.
+	( cd "${cf}/theirs" || exit 1
+	  git checkout --quiet -b cffeat && git push --quiet -u origin cffeat
+	  printf 'line1\nTHEIRS\nFEAT\n' > shared.txt && git commit --quiet -am "their feat edit" && git push --quiet origin cffeat )
+	local cfp cfpRun
+	for cfp in sync switch prcreate create merge; do
+		case "${cfp}" in
+			sync)     cfpRun=(sync) ;;
+			switch)   cfpRun=(br switch main) ;;
+			prcreate) cfpRun=(pr create) ;;
+			create)   cfpRun=(br create cfnew) ;;
+			merge)    cfpRun=(br merge) ;;
+		esac
+		git clone --quiet "${cf}/origin.git" "${cf}/park-${cfp}" 2>/dev/null
+		(
+			cd "${cf}/park-${cfp}" || exit 1
+			git checkout --quiet cffeat && git reset --quiet --keep HEAD~1 && printf 'line1\nTHEIRS\nMINE\n' > shared.txt
+			rc=0; PATH="${ghp}" "${gitsby}" -q "${cfpRun[@]}" > "${cf}/park-${cfp}.out" 2>&1 || rc=$?
+			echo "${rc}" > "${cf}/park-${cfp}.rc"
+		)
+	done
+	fAssert     "[dfhh3] sync, br switch, pr create, br create and br merge refuse a conflicted autostash reapply"  bash -c "for c in sync switch prcreate create merge; do [[ \"\$(cat '${cf}'/park-\${c}.rc)\" == 1 ]] || exit 1; done"
+	fAssert     "[dfhh4] and each names itself to run again, not pullcom"  bash -c "cd '${cf}' && grep -qF \"run 'gitsby sync' again.\" park-sync.out && grep -qF \"run 'gitsby br switch main' again.\" park-switch.out && grep -qF \"run 'gitsby pr create' again.\" park-prcreate.out && grep -qF \"run 'gitsby br create cfnew' again.\" park-create.out && grep -qF \"run 'gitsby br merge' again.\" park-merge.out && ! grep -q 'pullcom' park-*.out"
+	fAssert     "[dfhh5] and stays on the branch with the conflict and the stash, pushing nothing"  bash -c "for c in sync switch prcreate create merge; do cd '${cf}'/park-\${c} && [[ \"\$(git branch --show-current)\" == cffeat ]] && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]] && [[ -n \"\$(git stash list)\" ]] || exit 1; done; [[ -z \"\$(git -C '${cf}/origin.git' branch --list cfnew)\" ]] && [[ \"\$(git -C '${cf}/origin.git' rev-parse main)\" == \"\$(git -C '${cf}/theirs' rev-parse main)\" ]]"
+
+	## A --staged run commits the index only, so advice that dropped the flag led to a rerun that
+	## committed the whole tree. A stash pop left the conflict, and --no-fetch skips the pull,
+	## which git refuses over unmerged files before the commit's check is reached.
+	git clone --quiet "${cf}/origin.git" "${cf}/park-staged" 2>/dev/null
+	(
+		cd "${cf}/park-staged" || exit 1
+		git checkout --quiet cffeat && printf 'line1\nTHEIRS\nSTASHED\n' > shared.txt && git stash --quiet
+		printf 'line1\nTHEIRS\nCOMMITTED\n' > shared.txt && git add shared.txt && git commit --quiet -m "committed here"
+		git stash pop --quiet >/dev/null 2>&1 || true  ## exits 1 on the conflict it leaves
+		echo left > left.txt
+		rc=0; "${gitsby}" -q --no-fetch sync --staged > "${cf}/park-staged.out" 2>&1 || rc=$?
+		echo "${rc}" > "${cf}/park-staged.rc"
+	)
+	fAssert     "[dfhh6] a --staged sync stopped on a conflict names --staged to run again"  bash -c "cd '${cf}' && [[ \"\$(cat park-staged.rc)\" == 1 ]] && grep -qF \"run 'gitsby sync --staged' again.\" park-staged.out"
+
 	## A submodule with its own edits or untracked files shows in status, but 'git add --all'
 	## stages nothing for it. Deciding from status, the commit ran with nothing staged and failed,
 	## and the protected-branch checks refused work that isn't this repo's to commit.

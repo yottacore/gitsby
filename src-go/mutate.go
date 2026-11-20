@@ -25,7 +25,7 @@ func (a *app) cmdCommit() error {
 	// resolved, so the markers themselves would be committed, and then pushed by
 	// sync. Ordinary use reaches this: a pull whose autostash reapply conflicts
 	// still exits 0, so nothing upstream of here notices.
-	if err := a.refuseConflicts("nothing was committed", meName+" pullcom"); err != nil {
+	if err := a.refuseConflicts("nothing was committed", a.rerunText()); err != nil {
 		return err
 	}
 	if a.opt.staged {
@@ -174,16 +174,32 @@ func (a *app) pullIfOnline(extra ...string) error {
 		return err
 	}
 	// An autostash reapply that conflicts still exits 0. With no commit after it to
-	// catch that, br create went on to branch and push over the markers. The arg is
-	// the new branch's name for the only callers that pass --autostash.
+	// catch that, br create went on to branch and push over the markers.
 	if slices.Contains(extra, "--autostash") {
-		rerun := meName + " " + typedName(a.cmd)
+		return a.refuseConflicts("stopped after the pull", a.rerunText())
+	}
+	return nil
+}
+
+// rerunText is the command to run again once a stop is cleared: the one that was
+// typed, with the branch, version or remote it was given, since without that it
+// would do something else. --staged stays too, since a rerun without it commits
+// the whole tree, edits left out on purpose included. A commit message, a PR title
+// and the other options are left off. Every command that parks reaches cmdCommit's
+// check, so naming pullcom there sent sync and the rest to a command that doesn't
+// push or move.
+func (a *app) rerunText() string {
+	rerun := meName + " " + typedName(a.cmd)
+	switch a.cmd.name {
+	case "br-create", "br-hotfix", "br-switch", "release", "repo-create", "repo-connect":
 		if a.cmd.arg != "" {
 			rerun += " " + typedArg(a.cmd.arg, runtime.GOOS)
 		}
-		return a.refuseConflicts("stopped after the pull", rerun)
 	}
-	return nil
+	if a.opt.staged {
+		rerun += " --staged"
+	}
+	return rerun
 }
 
 // pullArgs is the pull for a branch with an upstream. It merges what the command's fetch

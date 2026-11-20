@@ -91,6 +91,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `br create` and `br hotfix` off `main` or `dev` stop when the pull's restore of your edits conflicts, list the files, and point at the stash git kept, as `pullcom` does. They used to make the branch and push it over the conflict markers, and say Done.
 
+- When the pull's restore of your edits conflicts, `sync`, `br switch`, `br create`, `br hotfix`, `br merge`, `pr create` and `release` say to run themselves again once it's resolved, with `--staged` when it was given. They said to run `pullcom`, which commits but doesn't push, switch branches or open the pull request.
+
 - A submodule with its own edits or untracked files no longer stops `pullcom`, `sync`, `br switch`, `br merge`, `br create`, `pr ok` or `release`. They tried to commit it, found nothing to commit, and failed. `br switch` off `main` no longer refuses over it, `sync` on `main` no longer calls it a direct push, and `release` no longer counts it as something new.
 
 - With `status.showUntrackedFiles=no` set, untracked files count as work. The plan said the tree was clean, then `sync` on `dev` committed them and pushed them straight to origin at exit 0, past the direct-push refusal. `br switch` off `main` or `dev`, `pr ok`, `release` and `repo connect` read them the same way now.

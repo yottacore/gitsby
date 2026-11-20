@@ -443,3 +443,64 @@ func TestPendingOpNamed(t *testing.T) { // [dfh53]
 		}
 	}
 }
+
+// A stop's advice names the command that ran, and reads back as that command, for
+// every one that commits or pulls. --staged stays, since a rerun without it commits
+// the whole tree. cmdCommit used to name pullcom for all of them,
+// which commits but doesn't push, switch or open the PR.
+func TestRerunNamesTheCommand(t *testing.T) { // [dfhh2]
+	settle := func(argv ...string) (command, options) {
+		t.Helper()
+		opt, cmd, _, err := parseArgs(argv)
+		if err == nil {
+			cmd, err = collapseCommand(cmd)
+		}
+		if err == nil {
+			cmd, err = sortCommand(cmd, &opt)
+		}
+		if err != nil {
+			t.Fatalf("%v: %v", argv, err)
+		}
+		return cmd, opt
+	}
+	for _, tc := range []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"pullcom", "msg1"}, "pullcom"},
+		{[]string{"update", "-m", "msg1"}, "pullcom"},
+		{[]string{"sync", "msg1"}, "sync"},
+		{[]string{"sync", "--staged"}, "sync --staged"},
+		{[]string{"pullcom", "--staged", "-m", "msg1"}, "pullcom --staged"},
+		{[]string{"br", "switch", "feat1", "--staged"}, "br switch feat1 --staged"},
+		{[]string{"pr", "create", "--staged", "title1"}, "pr create --staged"},
+		{[]string{"release", "--staged", "v1.2.3"}, "release v1.2.3 --staged"},
+		{[]string{"br", "create", "feat1"}, "br create feat1"},
+		{[]string{"branch", "new", "feat1"}, "br create feat1"},
+		{[]string{"br", "hotfix", "hotfix/fix1"}, "br hotfix hotfix/fix1"},
+		{[]string{"br", "switch", "feat1"}, "br switch feat1"},
+		{[]string{"br", "go"}, "br switch"},
+		{[]string{"br", "merge", "msg1"}, "br merge"},
+		{[]string{"br", "land", "-m", "msg1"}, "br merge"},
+		{[]string{"pr", "create", "title1"}, "pr create"},
+		{[]string{"pr", "new", "-m", "title1"}, "pr create"},
+		{[]string{"release", "v1.2.3"}, "release v1.2.3"},
+		{[]string{"release"}, "release"},
+		{[]string{"repo", "connect", "o/n"}, "repo connect o/n"},
+		{[]string{"repo", "create", "o/n"}, "repo create o/n"},
+	} {
+		cmd, opt := settle(tc.argv...)
+		got := (&app{cmd: cmd, opt: opt}).rerunText()
+		if got != meName+" "+tc.want {
+			t.Errorf("%v: rerun is %q, want %q", tc.argv, got, meName+" "+tc.want)
+			continue
+		}
+		back, backOpt := settle(strings.Fields(got)[1:]...)
+		if back.name != cmd.name || backOpt.staged != opt.staged || (cmd.name != "pullcom" && cmd.name != "sync" && cmd.name != "br-merge" && back.arg != cmd.arg) {
+			t.Errorf("%v: %q reads back as %+v, not %+v", tc.argv, got, back, cmd)
+		}
+		if strings.Contains(got, "msg1") || strings.Contains(got, "title1") {
+			t.Errorf("%v: %q carries the message", tc.argv, got)
+		}
+	}
+}
