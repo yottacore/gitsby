@@ -33,6 +33,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- A candidate suffixed after a dot sorts above its own release in every tag scan
+	- ID: 2026111920273377
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-202733
+	- Opened by:
+	- Related IDs: 2026111910222928
+	- Steps to reproduce [Bug]: Tag v3.0.0.rc1, then v3.0.0, then run 'gitsby release' or release.bash with no version.
+	- Incorrect behavior [Bug]: git's version sort with versionsort.suffix=- ranks v3.0.0.rc1 above v3.0.0, so the newest tag reads as the candidate, the next version comes out as v3.0.0 again, and the cut stops on a tag that exists. gen-winres.bash and the demo stamp take the candidate's version too.
+	- Expected behavior [Bug]: A candidate sorts below its own release whether its suffix follows a dash or a dot.
+	- Reproduced [Bug]: 2026-11-19 on b23, the sort only, in a temp repo with tags v3.0.0, v3.0.0.rc1 and v3.0.0-rc.2. Adding versionsort.suffix=. puts v3.0.0 first. The cut that follows is read, not run.
+	- Possible cause [Bug]: The tag scans in src-go/release.go (resolveRelease and the --points-at one), cicd/release.bash, cicd/utility/gen-winres.bash and the demo stamp in cicd/cicd.bash pass only versionsort.suffix=-.
+	- Origin: ed296a4, 2026-09-16, with the dotted suffix the version check admits. Found while fixing 2026111910222928. Plausible for the cut, Confirmed for the sort.
+
 - In a sparse checkout, an edited tracked file outside it is left uncommitted at exit 0
 	- ID: 2026111920000538
 	- Type: Bug
@@ -489,7 +505,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 26: release.bash publishes a dot-suffixed version as a full release
 	- ID: 2026111910222928
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102229
@@ -500,6 +516,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, fIsReleaseVersion v3.0.0.rc1. Confirmed.
 	- Possible cause [Bug]: release.bash lines 325 and 349 test only for a dash.
 	- Origin: ed296a4, 2026-09-16. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: As the possible cause says. Phase 3's check of which release the install line takes also called a tag full by its lack of a dash.
+	- Actual fix [Bug]: release.bash calls a version a candidate when the shared version pattern finds anything past X.Y.Z, after a dash or a dot. That one test makes the pre-release, promotes the last tag to its plain version, and reads the install line's tag. design.md's release policy names the dot form.
+	- Decisions: The pre-release message says a suffix, not a semver suffix, since a dot suffix isn't semver. A dotted suffix is still taken rather than refused, since 'gitsby release' takes it and its nextVersion reads it as a candidate.
+	- Against: 2026111016332132's Decisions row, which left a dotted suffix publishing as a full release, unchanged. This item asks for the change, and the standing rule calls any suffixed tag a candidate.
+	- Swept: every dash test on a version in release.bash: the bump (was line 325), the pre-release flag (349) and phase 3's install line check (619). The asset name split at 235 is a file name, not a version. Go's nextVersion already reads any suffix. Installers go by GitHub's pre-release flag, not the tag. The tag sort is the same class and is filed as 2026111920273377.
+	- Branch: nov19c-2026111910222928
+	- Test case: test.bash [dfhm3] [dfhm4], and [dd5es] for the dash form.
+	- Verified: [dfhm3] and [dfhm4] fail against the old release.bash and pass after. Quick gate passed, every area: test.bash 2197/0, fuzz 310/0, parity 31/0.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261119-202747
+	- 2026-11-19: [dd5es] now looks for 'has a suffix', was 'has a semver suffix', for the message this item changed. The rest of the check is as it was.
 
 - Code Review 20261119 item 27: release.bash finds the default branch with symbolic-ref --short
 	- ID: 2026111910222914

@@ -6664,7 +6664,17 @@ LGEOF
 		fAssert "[dd5er] and HEAD, the tags and origin are as they were"  test "${relState}" = "$(fRelState)"
 		fRelRun --dry-run v1.3.0-beta.1
 		fAssert "[dd5es] a suffixed version says it publishes as a pre-release" \
-			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'v1.3.0-beta.1 has a semver suffix, so it publishes as a pre-release.' '${relOut}' && grep -qF 'would: gh release create v1.3.0-beta.1 as a pre-release with ' '${relOut}'"
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'v1.3.0-beta.1 has a suffix, so it publishes as a pre-release.' '${relOut}' && grep -qF 'would: gh release create v1.3.0-beta.1 as a pre-release with ' '${relOut}'"
+		## The version check takes a suffix after a dot, and nextVersion reads one as a candidate, but
+		## only a dash made a pre-release. v3.0.0.rc1 would have published as a full release.
+		fRelRun --dry-run v1.3.0.rc1
+		fAssert "[dfhm3] a version suffixed after a dot publishes as a pre-release too" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'v1.3.0.rc1 has a suffix, so it publishes as a pre-release.' '${relOut}' && grep -qF 'would: gh release create v1.3.0.rc1 as a pre-release with ' '${relOut}'"
+		git -C "${relRepo}" tag v1.3.0.rc1
+		fRelRun --dry-run
+		git -C "${relRepo}" tag -d v1.3.0.rc1 >/dev/null
+		fAssert "[dfhm4] and with no version given, it promotes to its plain version as a full release" \
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'the next one after v1.3.0.rc1 is v1.3.0' '${relOut}' && grep -qF 'would: gh release create v1.3.0 with ' '${relOut}'"
 		## Each of these passed, and 'gitsby release' refused it after the pipeline and the merge, or
 		## git refused the tag after the release merge.
 		local relBad="" relBadOk=1
@@ -10132,3 +10142,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261118 JC: A hand-typed 2.x value with a quote before a "#" reads whole after the conversion, [dfg4g].
 ##		- 20261118 JC: A 2.x value with a byte that isn't UTF-8 reads as 2.x read it after the conversion, [dfg5c].
 ##		- 20261119 JC: account apply warns about a nested account with no email, and whoami flags an empty address, [dfh7n] to [dfh7r]. With GIT_DIR set, every command takes the account from that repo, [dfh7j] to [dfh7m].
+##		- 20261119 JC: release.bash makes a pre-release of a version suffixed after a dot, and promotes one to its plain version, [dfhm3] [dfhm4].
