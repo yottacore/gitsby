@@ -5159,6 +5159,44 @@ GHEOF
 	fAssertOut  "[dfh4n] br switch off dev with only a hidden untracked file refuses"  "Working tree has changes on 'dev'"  bash -c "cd '${hu}/work' && '${gitsby}' -q br switch hufeat 2>&1"
 	fAssert     "[dfh4p] repo connect with no commits and only hidden untracked files publishes them"  bash -c "cd '${hu}/fresh' && '${gitsby}' -q repo connect '${hu}/fresh.git' >/dev/null 2>&1 && git -C '${hu}/fresh.git' ls-tree -r --name-only main | grep -qx f\.txt"
 
+	## In a sparse checkout, 'git add --all' stages what is inside it and then exits 1 over a
+	## file outside it, so the run stopped after the plan and the pull with the index half staged.
+	local sp="${work}/$1-sparse"
+	mkdir -p "${sp}"
+	git init --quiet --bare -b main "${sp}/origin.git"
+	git clone --quiet "${sp}/origin.git" "${sp}/work" 2>/dev/null
+	(
+		cd "${sp}/work" || exit 1
+		mkdir in out && echo a > in/a.txt && echo o > out/o.txt
+		git add in out && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b spfeat && git push --quiet -u origin spfeat
+		git sparse-checkout set --cone in
+		git config advice.updateSparsePath false
+		echo n > in/new.txt && mkdir -p out && echo x > out/new.txt
+	) >/dev/null 2>&1
+	fAssertOut  "[dfhk8] -q sync with a file outside the sparse checkout refuses before the plan, naming it"  'File: out/new\.txt'  bash -c "cd '${sp}/work' && '${gitsby}' -q sync 'sp' 2>&1"
+	fAssert     "[dfhk9] and stages, commits and pushes nothing"  bash -c "cd '${sp}/work' && rc=0 && out=\"\$('${gitsby}' -q sync 'sp' 2>&1)\" || rc=\$?; [[ \${rc} == 1 ]] && [[ \"\${out}\" != *'Going to do'* ]] && git diff --cached --quiet && [[ \"\$(git rev-list --count HEAD)\" == 1 && \"\$(git rev-list --count origin/spfeat)\" == 1 ]]"
+	fAssert     "[dfhka] sync --staged with the file outside still commits what is staged"  bash -c "cd '${sp}/work' && git add in/new.txt && '${gitsby}' -q sync --staged 'sp' >/dev/null 2>&1 && git -C '${sp}/origin.git' ls-tree -r --name-only spfeat | grep -qx in/new\.txt && [[ -n \"\$(git status --porcelain --untracked-files=normal -- out)\" ]]"
+	fAssert     "[dfhkb] br create off a protected branch carries the file along"  bash -c "cd '${sp}/work' && git checkout --quiet dev && '${gitsby}' -q br create spnew >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == spnew && -f out/new.txt ]]"
+
+	## A tracked file outside the sparse checkout, written back and edited, is one 'git add --all'
+	## skips without a word, so the run said Done at exit 0 with the edit left out.
+	git clone --quiet -b spfeat "${sp}/origin.git" "${sp}/edit" 2>/dev/null
+	git clone --quiet -b spfeat "${sp}/origin.git" "${sp}/inside" 2>/dev/null
+	(
+		cd "${sp}/edit" || exit 1
+		git sparse-checkout set --cone in
+		mkdir -p out && echo changed > out/o.txt && echo b >> in/a.txt
+		cd "${sp}/inside" || exit 1
+		echo c > in/c.txt && git add in/c.txt && git commit --quiet -m c && git push --quiet
+		git sparse-checkout set --cone in
+		echo b >> in/a.txt && rm in/c.txt
+	) >/dev/null 2>&1
+	fAssertOut  "[dfhkj] -q sync with an edited tracked file outside the sparse checkout refuses before the plan, naming it"  'File: out/o\.txt'  bash -c "cd '${sp}/edit/in' && '${gitsby}' -q sync 'sp' 2>&1"
+	fAssert     "[dfhkk] and commits and pushes nothing"  bash -c "cd '${sp}/edit' && rc=0 && out=\"\$('${gitsby}' -q sync 'sp' 2>&1)\" || rc=\$?; [[ \${rc} == 1 ]] && [[ \"\${out}\" != *'Going to do'* ]] && [[ \"\$(git diff --name-only | tr '\\n' ' ')\" == 'in/a.txt out/o.txt ' ]] && git diff --cached --quiet"
+	fAssert     "[dfhkm] an edit and a delete inside the sparse checkout still go out"  bash -c "cd '${sp}/inside' && '${gitsby}' -q sync 'sp' >/dev/null 2>&1 && [[ -z \"\$(git status --porcelain)\" ]] && ! git -C '${sp}/origin.git' ls-tree -r --name-only spfeat | grep -qx in/c\.txt"
+
 	## A stopped am, range pick, revert or merge was finished under gitsby's message, or left
 	## for its --continue to apply onto the branch gitsby switched to. src's first commit
 	## clashes with feat's, so each '|| :' is a stop that is the point.

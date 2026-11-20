@@ -504,3 +504,36 @@ func TestRerunNamesTheCommand(t *testing.T) { // [dfhh2]
 		}
 	}
 }
+
+// git's lead, as git 2.51 writes it under LC_ALL=C, with the advice on and off.
+func TestSparseAddPaths(t *testing.T) { // [dfhkc]
+	lead := "The following paths and/or pathspecs matched paths that exist\noutside of your sparse-checkout definition, so will not be\nupdated in the index:\n"
+	cases := []struct {
+		stderr string
+		want   []string
+	}{
+		{lead + "out/new.txt\nout/sub dir/b.txt\nhint: If you intend to update such entries, try one of the following:\nhint: * Use the --sparse option.\n", []string{"out/new.txt", "out/sub dir/b.txt"}},
+		{lead + "out/new.txt\n", []string{"out/new.txt"}},
+		{"warning: adding embedded git repository: sub\n" + lead + "out/a.txt\r\n", []string{"out/a.txt"}},
+		{"fatal: Unable to create '/r/.git/index.lock': File exists.\n", nil},
+		{"", nil},
+	}
+	for _, c := range cases {
+		if got := sparseAddPaths(c.stderr); !slices.Equal(got, c.want) {
+			t.Errorf("sparseAddPaths(%q) = %q, want %q", c.stderr, got, c.want)
+		}
+	}
+}
+
+// A dry run's add and remove lines are what it takes, quotes and spaces in a path
+// included. Anything else 'git diff' had is left out.
+func TestSkippedEdits(t *testing.T) { // [dfhkn]
+	dry := "add 'in/a.txt'\nremove 'in/gone.txt'\r\nadd 'in/it's here.txt'\n"
+	got := skippedEdits([]string{"in/a.txt", "in/gone.txt", "in/it's here.txt", "out/o.txt"}, dry)
+	if want := []string{"out/o.txt"}; !slices.Equal(got, want) {
+		t.Errorf("skippedEdits = %q, want %q", got, want)
+	}
+	if got := skippedEdits(nil, dry); got != nil {
+		t.Errorf("skippedEdits with no edits = %q, want none", got)
+	}
+}

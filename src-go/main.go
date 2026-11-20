@@ -436,6 +436,9 @@ func (a *app) preflight() error {
 	if err := a.refuseMergePushesOwn(); err != nil {
 		return err
 	}
+	if err := a.refuseSparseAdd(); err != nil {
+		return err
+	}
 	return a.stagedPreflight()
 }
 

@@ -33,6 +33,32 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- In a sparse checkout, an edited tracked file outside it is left uncommitted at exit 0
+	- ID: 2026111920000538
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-200005
+	- Opened by:
+	- Steps to reproduce [Bug]: Set a sparse cone, write a tracked file outside it back into the tree and edit it, then run gitsby -q pullcom m.
+	- Incorrect behavior [Bug]: Status lists the file as modified, git add --all stages nothing for it, and gitsby says Nothing to commit and Done, exit 0.
+	- Expected behavior [Bug]: The edit is committed, or the run says why it isn't.
+	- Reproduced [Bug]: 2026-11-19 on b23, git 2.51, found while fixing 2026111910222973. Confirmed.
+	- Possible cause [Bug]: git add --all skips tracked paths outside the sparse patterns without an error, and nothing before the commit compares that with status.
+	- Origin: Go port. No round reached it.
+	- Closed reason: Done
+	- Actual cause [Bug]: git add --all skips a tracked path outside the sparse patterns without an error, even with its skip-worktree bit cleared, and the commit decides from the index after the add. So the edit was left out and the run said Done.
+	- Actual fix [Bug]: refuseSparseAdd also compares git diff with the paths its dry run of git add --all would take. In a sparse checkout, an edited tracked file the dry run leaves out is refused before the plan, in the same list as new files outside it, with the same two fixes. --staged is left alone.
+	- Branch: nov19c-2026111910222973
+	- Commit: 397c85f
+	- Test case: test.bash [dfhkj] to [dfhkm]; Go [dfhkn] TestSkippedEdits.
+	- Verified: [dfhkj] and [dfhkk] fail on be87857 and pass with the fix. [dfhkm], an edit and a delete inside the checkout, passes on both, and fails with the dry run's remove lines not read. A conflicted file in a sparse checkout still gets the conflict advice. The quick gate's lint, unit and suite areas passed: test.bash 2194/0. gosec reports nothing new in the changed files.
+	- Swept: the dry run is the only place gitsby asks what git add --all takes. Submodules are compared with --ignore-submodules=dirty, as treeDirty reads them, since add stages nothing for a dirty one.
+	- Decisions: Refuse, not stage with --sparse, as for 2026111910222973, since the checkout's shape is the user's choice. The comparison runs only when core.sparseCheckout is on, the one case where add skips an edit, so no other repo pays for it or can be refused by it. It is folded into the one dry run rather than a second check.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
+	- Closed: 20261119-200649
+
 - br merge from a branch that shares no history with dev pushes it, switches to dev, then fails
 	- ID: 2026111919473452
 	- Type: Bug
@@ -397,7 +423,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 23: In a sparse checkout, a failed git add leaves the index half staged
 	- ID: 2026111910222973
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102229
@@ -408,6 +434,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
 	- Possible cause [Bug]: cmdCommit doesn't know about sparse checkout.
 	- Origin: Go port. No round reached it.
+	- Closed reason: Done
+	- Actual cause [Bug]: In a sparse checkout, git add --all stages what is inside it, then exits 1 over a new file outside it. Nothing before the plan asked, so the run stopped after the pull with the index half staged.
+	- Actual fix [Bug]: Every command whose commit stages the whole tree runs the same add as a dry run before the plan. When git names files outside the sparse checkout, the run refuses, lists them, and says how to take them in or use --staged.
+	- Branch: nov19c-2026111910222973
+	- Commit: be87857
+	- Test case: test.bash [dfhk8] to [dfhkb]; Go [dfhkc] TestSparseAddPaths.
+	- Verified: [dfhk8] and [dfhk9] fail on the build before the fix and pass with it. [dfhka] (--staged) and [dfhkb] (br create off dev) pass on both, as guards. The fixture turns advice.updateSparsePath off, since git still lists the files then. The quick gate passed with every area: test.bash 2191/0, fuzz 310/0, parity 31/0. gosec reports nothing new in the changed files.
+	- Swept: git add runs only in cmdCommit, by grep for "git", "add" in src-go. Its callers are pullcom, sync, br switch, br merge, br create and br hotfix off a feature branch, pr create, release, repo create and repo connect; stagesTree names each. --staged never stages, so it isn't checked.
+	- Decisions: Refuse rather than stage with --sparse, since the sparse checkout is a choice the run shouldn't undo, and the expected behavior asks for a refusal. Only git's sparse-path failure is refused; any other dry-run failure, such as a held index lock, is left to the real add. LC_ALL=C keeps git's lead in English; no git translation is installed here, so that part isn't pinned. An edited tracked file outside the checkout is a separate case, filed and fixed as 2026111920000538.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261119-200016
 
 - Code Review 20261119 item 24: [daf7x] passes with the code it checks taken out
 	- ID: 2026111910222957

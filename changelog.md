@@ -99,6 +99,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `pullcom`, `sync`, `br switch`, `br merge`, `br create`, `br hotfix`, `br prune`, `pr create`, `pr ok` and `release` refuse while a merge, `git am`, cherry-pick, revert, rebase or bisect is stopped partway, and name the commands that finish it and drop it. They used to commit the half-done work under their own message, or switch branches and leave the rest of a cherry-pick range or patch series to apply onto the next branch. A stopped rebase was refused only as a detached HEAD.
 
+- In a sparse checkout, a command that commits the whole tree refuses before its plan when a new or edited file sits outside the checkout, and names the file. `git add --all` used to stage the rest and then fail over a new file, after the pull, with the index left half staged. An edited one was left out without a word, and the command said Done.
+
 - A syntax error from `release` or `raw` that quotes what was typed shows a control character by name, as every other error does, so an escape typed by mistake no longer changes the terminal's colors.
 
 - With commits on `main` or `dev` that origin doesn't have, `sync` and `br switch` name a way to move them to a new branch that works: `git checkout -b <branch-name>`, then `git branch -f main origin/main`. They named `br create`, which takes a dirty tree along but leaves commits on `main`, so the next `sync` refused again. A dirty tree alone still gets `br create`. `pr create` from `main` or `dev` with commits on it names the same way off.

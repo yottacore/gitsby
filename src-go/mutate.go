@@ -11,6 +11,7 @@
 package main
 
 import (
+	"bytes"
 	"cmp"
 	"os"
 	"path/filepath"
@@ -289,6 +290,103 @@ func (a *app) ownCommitsAhead() bool {
 // not from add.
 func treeDirty() bool {
 	return runOut("git", "status", "--porcelain", "--ignore-submodules=dirty", "--untracked-files=normal") != ""
+}
+
+// stagesTree: this run's commit step stages the whole tree with 'git add --all', the
+// way dispatch reaches cmdCommit. br create and br hotfix off a protected branch
+// carry the tree along instead, and --staged never stages.
+func (a *app) stagesTree() bool {
+	if !a.inRepo || a.opt.staged {
+		return false
+	}
+	switch a.cmd.name {
+	case "pullcom", "sync", "br-merge", "release", "repo-create", "repo-connect":
+		return true
+	case "br-switch":
+		return a.currentBranch() != a.switchTarget()
+	case "br-create", "br-hotfix":
+		return !a.isProtectedBranch("")
+	case "pr":
+		return a.pr.sub == "create"
+	}
+	return false
+}
+
+// refuseSparseAdd: in a sparse checkout, 'git add --all' leaves out files outside
+// it. A new one makes it exit 1 after staging the rest, so the run would stop after
+// its pull with the index half staged. An edited tracked one is skipped without a
+// word, so the run said Done with the edit left out. A dry run of the same add asks
+// git itself, before the plan: the new files are in its error, and the skipped
+// edits are what 'git diff' has that it doesn't list. git lists the new files
+// whatever advice.updateSparsePath says, and LC_ALL=C keeps its words readable.
+// Any other failure is left to the real add, since the dry run also fails when
+// another git holds the index lock, and then lists nothing.
+func (a *app) refuseSparseAdd() error {
+	if !a.stagesTree() {
+		return nil
+	}
+	cmd := toolCmd("git", "add", "--all", "--dry-run")
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	var paths []string
+	if cmd.Run() != nil {
+		if paths = sparseAddPaths(stderr.String()); len(paths) == 0 {
+			return nil
+		}
+	}
+	// Outside a sparse checkout add takes every edit, so there is nothing to compare.
+	if runOut("git", "config", "--type=bool", "core.sparseCheckout") == "true" {
+		paths = append(paths, skippedEdits(changedPaths("--ignore-submodules=dirty"), stdout.String())...)
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	slices.Sort(paths)
+	return refusalBlock("'git add --all' would leave out files outside the sparse checkout, or stop partway on them. Nothing was done.", [][]string{
+		noteLines("File", slices.Compact(paths)...),
+		noteLines("Fix", "Take their folders into the checkout with 'git sparse-checkout add <folder>', or move, delete or restore the files. Then run this again.", "Or stage what to commit yourself, and run this with --staged."),
+	}, nil)
+}
+
+// skippedEdits: the edited tracked paths that a dry run of 'git add --all' doesn't
+// list, from its "add 'path'" and "remove 'path'" lines under LC_ALL=C. Both name
+// paths from the top of the repo.
+func skippedEdits(edited []string, dryRun string) []string {
+	taken := map[string]bool{}
+	for _, line := range splitLines(dryRun) {
+		for _, verb := range []string{"add '", "remove '"} {
+			if path, ok := strings.CutPrefix(line, verb); ok && strings.HasSuffix(path, "'") {
+				taken[strings.TrimSuffix(path, "'")] = true
+			}
+		}
+	}
+	var skipped []string
+	for _, path := range edited {
+		if !taken[path] {
+			skipped = append(skipped, path)
+		}
+	}
+	return skipped
+}
+
+// sparseAddPaths reads the paths out of what 'git add' says under LC_ALL=C: a lead
+// that ends "updated in the index:", one path per line, then the hints if advice is on.
+func sparseAddPaths(stderr string) []string {
+	var paths []string
+	in := false
+	for _, line := range splitLines(stderr) {
+		switch {
+		case strings.HasSuffix(line, "updated in the index:"):
+			in = true
+		case !in:
+		case line == "" || strings.HasPrefix(line, "hint:") || strings.HasPrefix(line, "warning:") || strings.HasPrefix(line, "error:") || strings.HasPrefix(line, "fatal:"):
+			return paths
+		default:
+			paths = append(paths, line)
+		}
+	}
+	return paths
 }
 
 // refuseDirectPush: nobody is there to read the warning, so -q refuses instead.
