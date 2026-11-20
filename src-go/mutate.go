@@ -110,6 +110,7 @@ func pendingOp(paths []string) (stoppedOp, bool) {
 		case "REVERT_HEAD":
 			return stoppedOp{"revert", "--continue", "--abort"}, true
 		case "sequencer":
+			// No todo to read: take it as a cherry-pick, the usual one.
 			todo, _ := os.ReadFile(filepath.Join(p, "todo"))
 			if word, _, _ := strings.Cut(strings.TrimSpace(string(todo)), " "); word == "revert" {
 				return stoppedOp{"revert", "--continue", "--abort"}, true

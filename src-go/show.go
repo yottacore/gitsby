@@ -119,9 +119,10 @@ func (a *app) showIncoming() {
 // one, and a rename or copy reads 'old -> new' as git status --short has it. git
 // quotes a name with a tab in it, so splitting on tabs can't cut one.
 func nameStatusColumns(out string) []string {
-	var rows [][]string
+	split := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	rows := make([][]string, 0, len(split))
 	width := 0
-	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+	for _, line := range split {
 		f := strings.Split(line, "\t")
 		rows = append(rows, f)
 		width = max(width, len(f[0]))

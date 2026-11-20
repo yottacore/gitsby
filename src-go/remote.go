@@ -13,6 +13,7 @@ import (
 	"context"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -274,12 +275,14 @@ func probeSSHLogin(ctx context.Context, env []string, url string, sshCmd []strin
 	if target == "" || !inPath("ssh") || len(sshCmd) == 0 || !sshTakesOptions(sshCmd[0]) {
 		return "?"
 	}
-	args := append(sshCmd[1:], "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "--", target)
+	// A copy, since this runs on a look-ahead goroutine and append could write into the caller's array.
+	args := slices.Concat(sshCmd[1:], []string{"-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "--", target})
 	// Both streams: ssh writes host-key and missing-identity warnings ahead of the
 	// greeting, so it is not reliably the first line - anchoring to the whole output
 	// answered '?' for exactly the multi-key setups this exists for.
 	probe := toolCmdContext(ctx, sshCmd[0], args...)
 	probe.Env = env
+	// No exit code to read: github.com says hello and then exits 1.
 	out, _ := probe.CombinedOutput()
 	for _, line := range splitLines(string(out)) {
 		for _, greeting := range sshGreetingREs {

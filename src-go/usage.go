@@ -219,9 +219,9 @@ func (u cmdUsage) helpBlock() []string {
 		lines = u.lines()
 	} else {
 		lines = strings.Split(u.refuse("").Error(), "\n")
-		var what []string
-		for _, l := range wrapWords(u.help, noteWidth+16) {
-			what = append(what, "  "+l)
+		what := wrapWords(u.help, noteWidth+16)
+		for i, l := range what {
+			what[i] = "  " + l
 		}
 		lines = slices.Insert(lines, 1, what...)
 	}

@@ -1669,9 +1669,9 @@ func (a *app) accountUnsetPlan() (t accountSetTarget, done bool, err error) {
 	// a key on a dotted line leaves its blocks behind as lines of their own, so the
 	// plan is read off the text the save writes rather than the key lines. A
 	// rewrite has no file line numbers to give, so it compares layouts.
-	ok := false
+	var ok bool
 	if kept {
-		var sure []int
+		sure := make([]int, 0, len(keys))
 		for _, k := range keys {
 			sure = append(sure, k.num)
 		}
