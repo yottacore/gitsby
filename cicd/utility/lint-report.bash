@@ -55,7 +55,7 @@ fNewest() {
 	local d="$1" best="" newest="" f b t
 	for f in "${d}"/run_*.log; do
 		[[ -e "${f}" ]] || continue
-		b="$(basename "${f}")"; t="${b#run_}"; t="${t%%_*}"; t="${t%.log}"
+		b="${f##*/}"; t="${b#run_}"; t="${t%%_*}"; t="${t%.log}"
 		[[ "${t}" > "${best}" ]] && { best="${t}"; newest="${f}"; }
 	done
 	[[ -n "${newest}" ]] || return 1
@@ -107,3 +107,4 @@ fi
 ##		- 20260915: Matches each tool's output format rather than the words warning and error, which matched a file named errors.go in the archive listing.
 ##		- 20261004 JC: Every expansion braced, and shellcheck enforces it.
 ##		- 20261026 JC: Drops the suites' PASS, FAIL and SKIP lines.
+##		- 20261120 JC: No basename per log in the newest-log loop.

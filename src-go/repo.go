@@ -272,7 +272,7 @@ func (a *app) settleRepoClone() (bool, error) {
 // will bring a remote into existence.
 func (a *app) settleRepoConnect() error {
 	wantCreate := a.cmd.name == "repo-create"
-	hasWork := false
+	var hasWork bool
 	if a.inRepo {
 		hasWork = runOK("git", "rev-parse", "-q", "--verify", "HEAD") || runOut("git", "status", "--porcelain", "--untracked-files=normal") != ""
 	} else {

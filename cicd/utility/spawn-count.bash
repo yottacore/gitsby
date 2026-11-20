@@ -336,6 +336,15 @@ countDir="${root}/${SPAWN_COUNT_DIR}"
 mkdir -p "${countDir}"
 baseline=""
 for f in "${countDir}"/spawn_*.tsv; do [[ -f "${f}" ]] && baseline="${f}"; done
+## The baseline's counts by label, read once. A label listed twice keeps both, so the digits check refuses it.
+declare -A baseWas=()
+if [[ -n "${baseline}" ]]; then
+	while IFS=$'\t' read -r k v _ || [[ -n "${k}" ]]; do
+		[[ -n "${k}" ]] || continue
+		[[ -z "${baseWas["${k}"]+x}" ]] || v="${baseWas["${k}"]}"$'\n'"${v}"
+		baseWas["${k}"]="${v}"
+	done < "${baseline}"
+fi
 
 declare -i regressed=0 overLimit=0 underLimit=0 failedRun=0
 ## One line per command, whatever it did, so a -q-less run shows each count and its verdict:
@@ -361,8 +370,7 @@ for ((i = 0; i < ${#labels[@]}; i++)); do
 		continue
 	fi
 	(( counts[i] < expects[i] )) && underLimit=$((underLimit + 1))
-	was=""
-	[[ -z "${baseline}" ]] || was="$(awk -F'\t' -v k="${labels[i]}" '$1==k{print $2}' "${baseline}" || true)"
+	was="${baseWas["${labels[i]}"]:-}"
 	[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${counts[i]}, new"; continue; }
 	## Arithmetic on text from a file runs any $(...) in an array subscript, so only digits go on.
 	[[ "${was}" =~ ^[0-9]+$ ]] || fDie "spawn-count: $(basename "${baseline}") has '${was}' for ${labels[i]}, which isn't a count. Fix or delete that file."
@@ -399,10 +407,9 @@ fi
 ## UTC, as the run in the image is, so the newest record is the newest run on any box.
 stamp="$(date -u +%Y%m%d-%H%M%S)"
 out="${countDir}/spawn_${stamp}.tsv"
-: > "${out}"
 for ((i = 0; i < ${#labels[@]}; i++)); do
-	[[ -n "${skipped[i]}" ]] || printf '%s\t%s\n' "${labels[i]}" "${counts[i]}" >> "${out}"
-done
+	[[ -n "${skipped[i]}" ]] || printf '%s\t%s\n' "${labels[i]}" "${counts[i]}"
+done > "${out}"
 TZ=UTC0 gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ((quiet)) || fEcho_Clean "  recorded $(basename "${out}")"
 
@@ -433,3 +440,4 @@ TZ=UTC0 gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261109 JC: Records are named and rotated in UTC. The box named them in its own time and the image in UTC, so west of UTC a box run took the image's older record as its baseline, and rotation dropped its own.
 ##		- 20261110 JC: A measure fails when its command exits nonzero. The fake tea answers pulls list and pulls create, so pr create in the Gitea folder runs to the end.
 ##		- 20261110 JC: A push that has an upstream asks for-each-ref where it goes, 1 more each: br switch of a staged change 37 -> 38, pr create in the Gitea folder 42 -> 43.
+##		- 20261120 JC: Reads the baseline once, not once per command, and writes the record in one go.

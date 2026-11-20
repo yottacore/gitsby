@@ -113,11 +113,12 @@ func (a *app) inheritOK(name string, args ...string) bool {
 // Display copy is masked per argument, so a credentialed URL never prints its
 // token in the announcement or the failure.
 func (a *app) step(name string, args ...string) error {
-	disp := maskURL(name)
+	var disp strings.Builder
+	disp.WriteString(maskURL(name))
 	for i, arg := range args {
-		disp += " " + shellWord(maskURL(arg), i > 0 && args[i-1] == "-m") // as the plan shows it
+		disp.WriteString(" " + shellWord(maskURL(arg), i > 0 && args[i-1] == "-m")) // as the plan shows it
 	}
-	return a.stepAs(disp, disp, name, args...)
+	return a.stepAs(disp.String(), disp.String(), name, args...)
 }
 
 // shellWord quotes an argument for display so a pasted line runs as shown.

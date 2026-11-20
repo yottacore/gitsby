@@ -55,7 +55,7 @@ fNewestTwo(){
 	local d="$1" f b t
 	for f in "${d}"/spawn_*.tsv; do
 		[[ -e "${f}" ]] || continue
-		b="$(basename "${f}")"; t="${b#spawn_}"; t="${t%%_*}"; t="${t%.tsv}"
+		b="${f##*/}"; t="${b#spawn_}"; t="${t%%_*}"; t="${t%.tsv}"
 		printf '%s\t%s\n' "${t}" "${f}"
 	done | sort -r | sed -n '1,2p'
 }
@@ -81,6 +81,16 @@ if ((check)) && ((! noMark)) && [[ -n "${ts}" ]]; then
 	printf '%s\n' "${ts}" > "${marker}" 2>/dev/null || echo "spawn-report: could not write marker: ${marker}" >&2
 fi
 
+## The previous counts by label, read once. A label listed twice keeps both, so fCount refuses it.
+declare -A prevWas=()
+if [[ -n "${prev}" ]]; then
+	while IFS=$'\t' read -r label count _ || [[ -n "${label}" ]]; do
+		[[ -n "${label}" ]] || continue
+		[[ -z "${prevWas["${label}"]+x}" ]] || count="${prevWas["${label}"]}"$'\n'"${count}"
+		prevWas["${label}"]="${count}"
+	done < "${prev}"
+fi
+
 tag="COUNTS"; ((check)) && tag="NEW"
 fEcho_Clean "${tag} $(basename "${newest}")$( [[ -n "${prev}" ]] && echo "  (vs $(basename "${prev}"))" )"
 while IFS=$'\t' read -r label count; do
@@ -88,7 +98,7 @@ while IFS=$'\t' read -r label count; do
 	fCount "${newest##*/}" "${count}" "${label}"
 	delta=""
 	if [[ -n "${prev}" ]]; then
-		was="$(awk -F'\t' -v k="${label}" '$1==k{print $2}' "${prev}")"
+		was="${prevWas["${label}"]:-}"
 		[[ -z "${was}" ]] || fCount "${prev##*/}" "${was}" "${label}"
 		if   [[ -z "${was}" ]];              then delta="  (new)"
 		elif (( count > was ));            then delta="  (was ${was})"
@@ -105,3 +115,4 @@ done < "${newest}"
 ##		- 20261003 JC: The newest two are taken without a head, which failed the sort's write once the folder held a thousand or so recordings.
 ##		- 20261004 JC: fEcho_Clean prints with printf. Every expansion braced, and shellcheck
 ##		  enforces it.
+##		- 20261120 JC: Reads the previous recording once, not once per label, and no basename per recording.
