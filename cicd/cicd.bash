@@ -21,7 +21,8 @@
 ##	- Purpose: Local CI/CD pipeline. Generic engine for a Go project;
 ##	  per-project settings live in config.bash.
 ##	- Stages (fail-fast, any error aborts before the next stage):
-##	   0. remote sync (fast-forward from origin before anything is built or tested)
+##	   0. remote sync (fast-forward from origin before anything is built or tested, or merge it
+##	      when diverged, stopping if it doesn't merge clean)
 ##	   1. lint (gofmt + go vet + staticcheck + golangci-lint, shellcheck over the pipeline's own scripts, and ruff over the Python files: its leak rules, then ruff.toml's)
 ##	   2. build + unit tests (go test -race, failing on a goroutine left running) + regression tests (cicd/test.bash against the compiled binary)
 ##	   3. fuzz + security (cicd/fuzz.bash) + native fuzz targets + govulncheck + pip-audit + spawn counts + leak checks (a soak test and CodeQL); --quick skips both audits and CodeQL
@@ -29,7 +30,8 @@
 ##	   5. dogfood (cross-build every target and install each to its first existing dir)
 ##	   6. demo gif (fake-terminal render; skipped under --quick)
 ##	   7. Remote tests (cicd/remote-tests.bash, over ssh on the Mac, the Unix boxes and whichever Windows box is free; --quick only cross-builds the Unix boxes' targets)
-##	   8. backup + publish to git (runs from repo root)
+##	   8. backup + publish to git (runs from repo root), committing only the tracked files in
+##	      PUBLISH_PATHS that the run changed and that matched HEAD when it started
 ##	- Each step that runs opens with "[ <local time>: Step N of M; Starting <step> ]" and closes
 ##	  with the same line saying PASS or FAIL. M counts only the steps that run, and the plan
 ##	  at the top names the flag or reason for each one that doesn't.
@@ -1125,7 +1127,14 @@ if ((doSync)); then
 		counts="$(git rev-list --left-right --count '@{u}...HEAD' 2>/dev/null || echo "0	0")"
 		behind="${counts%%[[:space:]]*}"; ahead="${counts##*[[:space:]]}"
 		if   ((behind == 0)); then fEcho_Clean "up to date with origin (${ahead} to publish)"
-		elif ((ahead > 0));   then fDie "diverged from origin: ${ahead} local, ${behind} remote. Reconcile before building."
+		elif ((ahead > 0)); then
+			## Diverged. A merge that goes in clean is tested with the rest. One that doesn't is
+			## backed out, the stash put back with it, and the run stops before building anything.
+			fEcho_Clean "merging ${behind} commit(s) from origin into ${ahead} local"
+			if ! git merge --no-ff --no-edit --autostash '@{u}'; then
+				git rev-parse -q --verify MERGE_HEAD >/dev/null && git merge --abort
+				fDie "diverged from origin: ${ahead} local, ${behind} remote, and they don't merge clean. Reconcile before building."
+			fi
 		else
 			## Only behind, so this can only be a fast-forward. --autostash carries a dirty
 			## tree over it rather than refusing, and puts it back afterward.
@@ -1135,6 +1144,10 @@ if ((doSync)); then
 	fi
 	fStepEnd
 fi
+
+## The files publish may take, less those already edited, which may be another session's work.
+publishWas=()
+((! ${#GIT_PUBLISH[@]})) || mapfile -d '' publishWas < <(git diff -z --name-only HEAD -- "${PUBLISH_PATHS[@]}" 2>/dev/null)
 
 ## Version stamped into every build this run. Dev builds have what describe says; a
 ## release injects the clean one. Read after the sync, which can move HEAD. -dirty
@@ -1436,18 +1449,25 @@ fStepEnd
 ## Always run the publisher quiet: cicd already gave the initial prompt, so skip
 ## its redundant continue-prompt. With no message it still lets git open the editor.
 pubFlags=(--quiet)
+## What the run changed of PUBLISH_PATHS, one per line. The publisher commits only those.
+fPublishPaths(){
+	local -A was=(); local f=""; local -a now=()
+	for f in ${publishWas[@]+"${publishWas[@]}"}; do was["${f}"]=1; done
+	mapfile -d '' now < <(git diff -z --name-only HEAD -- "${PUBLISH_PATHS[@]}" 2>/dev/null)
+	for f in ${now[@]+"${now[@]}"}; do
+		[[ -n "${was["${f}"]:-}" || "${f}" == *$'\n'* ]] || printf '%s\n' "${f}"
+	done
+}
 if ((${#GIT_PUBLISH[@]} == 0)); then
 	:
-elif [[ -n "${publishMsg}" ]]; then
-	fStep publish
-	## Hands-off: the publisher fills the empty commit message from -m so `git
-	## commit` won't open an editor.
-	fEcho_Clean "hands-off publish (commit message: \"${publishMsg}\")"
-	"${GIT_PUBLISH[@]}" "${pubFlags[@]}" -m "${publishMsg}"
-	fStepEnd
 else
 	fStep publish
-	"${GIT_PUBLISH[@]}" "${pubFlags[@]}"
+	pubPaths="$(fPublishPaths)"
+	fEcho_Clean "the run changed $(grep -c . <<< "${pubPaths}") tracked file(s)${pubPaths:+: ${pubPaths//$'\n'/, }}"
+	## Hands-off: the publisher fills the empty commit message from -m so `git
+	## commit` won't open an editor.
+	[[ -z "${publishMsg}" ]] || { fEcho_Clean "hands-off publish (commit message: \"${publishMsg}\")"; pubFlags+=(-m "${publishMsg}"); }
+	GIT_BACKUP_AND_PUBLISH_PATHS="${pubPaths}" "${GIT_PUBLISH[@]}" "${pubFlags[@]}"
 	fStepEnd
 fi
 
@@ -1514,3 +1534,4 @@ fEcho_Clean
 ##		- 2026-11-09 JC: The run's stamp, which names its log, temp folder, soak and CodeQL folders and archived demo gif, is in UTC, and the rotations read it so. The image named them in UTC and the box in its own time.
 ##		- 2026-11-10 JC: The demo build takes the newest tag's version only in the shape 'gitsby release' takes, through fIsReleaseVersion.
 ##		- 2026-11-20 JC: The demo's tag scan is fReleaseTags, so a candidate suffixed after a dot no longer stamps the demo over its own release.
+##		- 2026-11-20 JC: Stage 0 merges a diverged origin with --no-ff when it merges clean, and backs the merge out and stops when it doesn't. Publish commits only the tracked files the run changed, so another session's edits stay out of its commit.

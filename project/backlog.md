@@ -33,6 +33,53 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- CICD process gaps: dogfood builds don't go to the synced app folders, and there's no dogfood script
+	- ID: 2026112013542597
+	- Type: Enhancement
+	- Status: Waiting for answers
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-135425
+	- Opened by:
+	- Requirements: The shared CICD rules put each build in the synced app folder for its OS, and a dogfood_gitsby.ps1 with launchers copies the newest into a GFS-rotated versions folder, with a link to it as the program. Stage 5 copies each build straight into the synced tool folders on PATH instead, and run-latest.ps1 is a different design.
+	- Progress log:
+		- 2026-11-20: Waiting for answers. Moving it changes which gitsby every box finds on PATH, and every session's git commands go through it.
+
+- CICD process gaps: publish commits every pending edit in the tree, another session's included
+	- ID: 2026112013542584
+	- Type: Bug
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-135425
+	- Opened by:
+	- Incorrect behavior: Stage 8's publisher stages the whole tree, so a run commits whatever else is edited there.
+	- Expected behavior: Publish commits only the tracked files the run itself changed. Here that's the demo gif, and only when it matched HEAD when the run started.
+	- Actual fix: config.bash names the files a run may rewrite. cicd.bash notes which of them were already edited at the start and hands the publisher the rest that changed. The publisher commits only those, as the copy in a sister project does.
+	- Branch: sync-publish
+	- Test case: test.bash [dfjme], [dfjmf] and [dfjmg].
+	- Acceptance signoff: Self-closed: all 3 failed against the old cicd.bash and publisher, and pass now.
+	- Closed: 20261120-135440
+	- Commit: 0633cc1
+
+- CICD process gaps: stage 0 stops on any branch that diverged from origin
+	- ID: 2026112013542571
+	- Type: Enhancement
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-135425
+	- Opened by:
+	- Requirements: Per the shared CICD rules, a diverged branch merges origin in with --no-ff when it merges clean, and the run then tests the merged tree. A merge that conflicts is backed out with the tree as it was, uncommitted edits included, and the run stops.
+	- Decisions: This supersedes the earlier call, under the 20260812 accounts and arguments item, that stage 0 stops on any divergence.
+	- Branch: sync-publish
+	- Test case: test.bash [dfjmb], [dfjmc], [dd5g3] (now the conflict case) and [dfjmd].
+	- Acceptance signoff: Self-closed: each check failed against the old stage 0 or a planted fault, and passes now.
+	- Closed: 20261120-135440
+	- Commit: 0633cc1
+
 - Code Review 20261119 item 24: [daf7x] passes with the code it checks taken out
 	- ID: 2026111910222957
 	- Type: Bug

@@ -304,7 +304,7 @@ git clone https://github.com/yottacore/gitsby.git
 cd gitsby/src-go && go build -o gitsby .
 ~~~
 
-`cicd/cicd.bash` is the local pipeline and the one command to know. Run it before opening a PR. Eight stages, numbered as the run prints them, behind a stage 0 that fast-forwards from origin so everything after it tests the tree that is actually going out:
+`cicd/cicd.bash` is the local pipeline and the one command to know. Run it before opening a PR. Eight stages, numbered as the run prints them, behind a stage 0 that brings in origin's new commits so everything after it tests the tree that is actually going out:
 
 1. Lints (gofmt, vet, staticcheck, golangci-lint, shellcheck, and ruff on the Python helpers).
 2. Builds, runs the unit tests under the race detector, and runs the regression suite of over 1000 checks against the binary it just built. A goroutine still running when the unit tests end fails them.
@@ -313,7 +313,7 @@ cd gitsby/src-go && go build -o gitsby .
 5. Cross-builds every target and installs each to its own tool directory.
 6. Rebuilds the demo gif, if it changed.
 7. Runs the Go tests on two Macs, a Windows box, a FreeBSD box and a Linux arm64 box over ssh, and the regression suite on all but Windows. The Linux arm64 box also runs the windows/arm64 Go tests under Wine.
-8. **Commits and pushes.** It ends by publishing - worth knowing before you run it on a fork.
+8. **Commits and pushes.** It ends by publishing - worth knowing before you run it on a fork. It commits only the tracked files the run itself changed, which is the demo gif, so other edits in the tree stay as they are.
 
 Stages 1-4 and the demo gif run in a Debian image built from `cicd/container/Dockerfile`, as does `--backlog-run-quick`, so every box lints, tests and renders with the same tool versions. The builds stage 5 installs and stage 7 tests are made with the image's Go too, then copied and sent from the box, and so are the ones `cicd/release.bash` publishes. Without a working docker they run on the box itself, with a warning. Any stage whose tooling isn't installed reports itself absent and is skipped, so a missing `gifsicle` won't stop the rest. Stage 5's destinations are one machine's paths, set in `cicd/config.bash`; on anyone else's box that stage finds nothing writable and says so, which is harmless. Stage 7's boxes are that machine's too, and a box that is off or busy is skipped the same way.
 
