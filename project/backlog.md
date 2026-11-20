@@ -33,6 +33,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Installers: --release dev installs the newest release, pre-releases included
+	- ID: 2026112015351403
+	- Type: Enhancement
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-153514
+	- Closed: 20261120-153514
+	- Requirements: The installer directives want --release dev|stable, as zuid has it. dev takes the newest release of either kind. A full release ranks above pre-releases of its own version. --release dev with --tag is refused.
+	- Decisions: Answered 2026-11-20: yes to --release dev, no to dropping --arch, which stays as design.md records it.
+	- Branch: release-dev
+	- Test case: [dfjr3] to [dfjr9]. [dbfkc] [dbfkd] [dbfks] [dd5cx] [dbfm0] [dbfm1] now check what replaced the old refusal. All failed on the old installers.
+
 - CICD process gaps: dogfood builds don't go to the synced app folders, and there's no dogfood script
 	- ID: 2026112013542597
 	- Type: Enhancement

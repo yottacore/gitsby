@@ -4423,16 +4423,14 @@ GHEOF
 	fAssertOut  "[dbfkb] go installer refuses a bad --arch"           "--arch takes"              bash -c "bash '${goInst}' --arch sparc"
 	## The joined spellings are case arms of their own, so the checks above say nothing about them.
 	fAssertOut  "[dd5cw] go installer refuses a bad --target=VALUE"   "--target takes 'user' or 'system' \(got 'bogus'\)"  bash -c "bash '${goInst}' --target=bogus"
-	fAssertOut  "[dd5cx] and names the dropped --release=dev"         'no .--release dev. any more'  bash -c "bash '${goInst}' --release=dev"
+	fAssertOut  "[dd5cx] and reads --release=dev"                     'both pick the release'        bash -c "bash '${goInst}' --release=dev --tag v1"
 	fAssertOut  "[dd5cy] and refuses a bad --arch=VALUE"              "--arch takes 'amd64' or 'arm64' \(got 'sparc'\)"  bash -c "bash '${goInst}' --arch=sparc"
 	fAssertOut  "[dd5cz] and a path-shaped --tag=VALUE"               'not a path'                   bash -c "HOME='${work}/joinhome' bash '${goInst}' -y --tag=../x"
-	## '--release dev' installed the tip of a branch while the product was a script. A branch has
-	## no build behind it now, so the flag is answered by name rather than left to fail as an
-	## unknown option - the same treatment --offline got.
-	fAssertOut  "[dbfkc] go installer names the dropped --release dev" 'no .--release dev. any more' bash -c "bash '${goInst}' --release dev"
-	fAssertOut  "[dbfkd] and says so before touching the network"      'build the tip yourself'      bash -c "bash '${goInst}' --release dev"
-	## 'stable' named the default and still does, so the text says it takes that one.
-	fAssertOut  "[dbfke] go installer refuses any other --release"     "takes only 'stable'"         bash -c "bash '${goInst}' --release beta"
+	## '--release dev' installed the tip of a branch while the product was a script, and was then
+	## refused. It takes pre-releases now, so naming a tag as well is two answers to one question.
+	fAssertOut  "[dbfkc] go installer refuses --release dev with --tag" 'both pick the release'   bash -c "bash '${goInst}' --release dev --tag v1"
+	fAssertOut  "[dbfkd] and documents --release stable|dev"           '--release stable[|]dev'  bash -c "bash '${goInst}' --help"
+	fAssertOut  "[dbfke] go installer refuses any other --release"     "takes 'stable' or 'dev'"     bash -c "bash '${goInst}' --release beta"
 	fAssertNotOut "[dcntp] and --help doesn't say it takes neither"    'takes neither'               bash -c "bash '${goInst}' --help"
 	## A tag is interpolated into a download URL, so a path-shaped one installs a binary from
 	## some other repo while the printed plan still names this one.
@@ -4746,10 +4744,12 @@ GHEOF
 	local rlGo="SHA256SUMS,gitsby-linux-amd64,gitsby-linux-arm64,gitsby-freebsd-amd64,gitsby-freebsd-arm64,gitsby-darwin-universal,gitsby-windows-amd64.exe"
 	local rlOld="gitsby,gitsby.ps1,SHA256SUMS"
 	printf '%s *gitsby\n%s *gitsby.ps1\n' "$(printf '%064d' 1)" "$(printf '%064d' 2)" > "${rl}/sums/v2.1.0"
-	for rlTag in v3.0.0 v3.0.0-beta.1 v3.1.0-beta.1; do cp "${ei}/SHA256SUMS" "${rl}/sums/${rlTag}"; done
+	for rlTag in v3.0.0 v3.0.0-beta.1 v3.0.0-rc.1 v3.1.0-beta.1; do cp "${ei}/SHA256SUMS" "${rl}/sums/${rlTag}"; done
 	fReleaseList "v3.0.0-beta.1:true:${rlGo}" "v2.1.0:false:${rlOld}" "v2.0.2:false:${rlOld}" > "${rl}/beta.json"
 	fReleaseList "v3.1.0-beta.1:true:${rlGo}" "v3.0.0:false:${rlGo}" "v3.0.0-beta.1:true:${rlGo}" "v2.1.0:false:${rlOld}" > "${rl}/full.json"
 	fReleaseList "v2.1.1-rc.1:true:${rlOld}" "v2.1.0:false:${rlOld}" "v2.0.2:false:${rlOld}" > "${rl}/none.json"
+	## A candidate listed above its own release, as a late re-tag would put it.
+	fReleaseList "v3.0.0-rc.1:true:${rlGo}" "v3.0.0:false:${rlGo}" "v3.0.0-beta.1:true:${rlGo}" > "${rl}/rc.json"
 	fStub "${rl}/bin/curl" <<-'CURLEOF'
 		#!/usr/bin/env bash
 		url=""
@@ -4784,6 +4784,15 @@ GHEOF
 			&& grep -q '/repos/' '${rl}/calls-none2' && ! grep -q '/gitsby-' '${rl}/calls-none2'"
 	fAssertOut "[ddf9e] go installer names the full release with no binary when the list can't be read"  'v2\.1\.0, the latest full release, has no gitsby binary.*rate-limiting' \
 		fRlInstall nolist v2.1.0 "" -y
+	## --release dev is the highest version of either kind, with a release above its own candidates.
+	fAssertOut "[dfjr3] go installer --release dev takes the highest release, pre-releases included"  '\(v3\.1\.0-beta\.1\) from' \
+		fRlInstall devfull v3.0.0 "${rl}/full.json" --release dev -y
+	fAssert    "[dfjr4] and asks the list, not releases/latest, which never names a pre-release" \
+		bash -c "grep -q '/repos/' '${rl}/calls-devfull' && ! grep -q 'releases/latest' '${rl}/calls-devfull'"
+	fAssertOut "[dfjr5] and puts a full release above pre-releases of its own version"  '\(v3\.0\.0\) from' \
+		fRlInstall devrc "" "${rl}/rc.json" --release dev -y
+	fAssertOut "[dfjr6] and says when no release publishes a binary"  'No release of yottacore/gitsby publishes a gitsby binary yet' \
+		fRlInstall devnone "" "${rl}/none.json" --release dev -y
 	## An explicit tag asks neither the redirect nor the list, and is refused or installed as before.
 	fAssertOut "[ddf9f] go installer still refuses a --tag release with no binary for this platform"  'release v2\.1\.0 publishes no gitsby binary for' \
 		fRlInstall tag21 v3.0.0 "${rl}/full.json" --tag v2.1.0 -y
@@ -4794,8 +4803,8 @@ GHEOF
 		local goInstPs="${root}/install.ps1"
 		fAssertFail "[dbfkq] go ps installer refuses a bad -Target"    pwsh -NoProfile -File "${goInstPs}" -Target bogus
 		fAssertFail "[dbfkr] go ps installer refuses a bad -Arch"      pwsh -NoProfile -File "${goInstPs}" -Arch sparc
-		fAssertOut  "[dbfks] go ps installer names the dropped -Release dev" 'no .-Release dev. any more' \
-			bash -c "pwsh -NoProfile -File '${goInstPs}' -Release dev 2>&1"
+		fAssertOut  "[dbfks] go ps installer refuses -Release dev with -Tag" 'both pick the release' \
+			bash -c "pwsh -NoProfile -File '${goInstPs}' -Release dev -Tag v1 2>&1"
 		fAssertOut  "[dbfkt] go ps installer refuses a path-shaped -Tag" 'not a path' \
 			pwsh -NoProfile -File "${goInstPs}" -Yes -Tag '../../evil/repo/main'
 		## -Ref named this parameter for two releases, so it stays bound as an alias.
@@ -4854,7 +4863,7 @@ GHEOF
 			fInstallerDated "${goInstPs}" pwsh -NoProfile -File "${goInstPs}" -Version
 		fAssert    "[dfjqh] and --version gives the same answer" \
 			fInstallerDated "${goInstPs}" pwsh -NoProfile -File "${goInstPs}" --version
-		fAssertOut "[dcnv2] go ps installer refuses any other -Release"  "takes only 'stable'" \
+		fAssertOut "[dcnv2] go ps installer refuses any other -Release"  "takes 'stable' or 'dev'" \
 			bash -c "pwsh -NoProfile -File '${goInstPs}' -Release beta 2>&1"
 		fAssert    "[dcnv3] and frames the refusal with blank lines"  fFramed pwsh -NoProfile -File "${goInstPs}" -Release beta
 		## A native command's nonzero exit does not trip $ErrorActionPreference, and nothing read
@@ -4874,15 +4883,15 @@ GHEOF
 		## The documented one-liners are 'iex' and a scriptblock, neither of which is a script
 		## file - so -File coverage alone says nothing about them. Both must bind their
 		## parameters, refuse by throwing rather than exiting, and leave the calling session
-		## alive and unaltered. -Release dev is the refusal that comes before any network call.
+		## alive and unaltered. -Release dev with -Tag is a refusal that comes before any network call.
 		if ((canNoTty)); then
 			local goInstPsNative=""; goInstPsNative="$( fWinPath "${goInstPs}" )"
 			## Decode the bytes ourselves rather than Get-Content, which quietly drops a BOM.
 			local goReadInst="\$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('${goInstPsNative}'))"
 			fAssertOut "[dbfky] go iex form binds and refuses"     'CAUGHT:'           fPwshText "${goReadInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 			fAssertOut "[dbfkz] and leaves the session alive"      'HOST ALIVE'        fPwshText "${goReadInst}; try { \$t | Invoke-Expression } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
-			fAssertOut "[dbfm0] go scriptblock form binds options" 'no .-Release dev. any more' fPwshText "${goReadInst}; try { & ([scriptblock]::Create(\$t)) -Release dev -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
-			fAssertOut "[dbfm1] and leaves the session alive too"  'HOST ALIVE'        fPwshText "${goReadInst}; try { & ([scriptblock]::Create(\$t)) -Release dev -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+			fAssertOut "[dbfm0] go scriptblock form binds options" 'both pick the release' fPwshText "${goReadInst}; try { & ([scriptblock]::Create(\$t)) -Release dev -Tag v1 -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
+			fAssertOut "[dbfm1] and leaves the session alive too"  'HOST ALIVE'        fPwshText "${goReadInst}; try { & ([scriptblock]::Create(\$t)) -Release dev -Tag v1 -Target system } catch { \"CAUGHT: \$(\$_.Exception.Message)\" }; 'HOST ALIVE'"
 			fAssertOut "[dbfm2] go installer leaks no StrictMode"  'strict stayed off' fPwshText "${goReadInst}; try { \$t | Invoke-Expression } catch { }; try { \$q = \$neverSet; 'strict stayed off' } catch { 'STRICT LEAKED' }"
 			fAssertOut "[dbfm3] go installer leaks no ErrorAction" 'EAP=Continue'      fPwshText "${goReadInst}; try { \$t | Invoke-Expression } catch { }; \"EAP=\$ErrorActionPreference\""
 		else
@@ -5105,6 +5114,12 @@ GHEOF
 				bash -c "grep -q '/download/v3\.0\.0-beta\.1/gitsby-' '${rlp}/calls' && '${rlp}/h-beta/.local/bin/gitsby' --version | grep -q 'stand-in'"
 			fAssertOut "[ddf9k] go ps installer takes a full release with a binary over a newer pre-release"  '\(v3\.0\.0\) from' \
 				fRlPsInstall full "" "${rl}/full.json" -Yes
+			fAssertOut "[dfjr7] go ps installer -Release dev takes the highest release, pre-releases included"  '\(v3\.1\.0-beta\.1\) from' \
+				fRlPsInstall devfull v3.0.0 "${rl}/full.json" -Release dev -Yes
+			fAssert    "[dfjr8] and asks the list, not releases/latest" \
+				bash -c "grep -q '/repos/' '${rlp}/calls' && ! grep -q 'releases/latest' '${rlp}/calls'"
+			fAssertOut "[dfjr9] and puts a full release above pre-releases of its own version"  '\(v3\.0\.0\) from' \
+				fRlPsInstall devrc "" "${rl}/rc.json" -Release dev -Yes
 			fAssertOut "[ddf9m] go ps installer says when no release publishes a binary"  'No release of yottacore/gitsby publishes a gitsby binary yet' \
 				fRlPsInstall none v2.1.0 "${rl}/none.json" -Yes
 			fAssert    "[ddf9n] and downloads nothing"  bash -c "grep -q '/repos/' '${rlp}/calls' && ! grep -q '/gitsby-' '${rlp}/calls'"
@@ -10337,3 +10352,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261119 JC: release.bash makes a pre-release of a version suffixed after a dot, and promotes one to its plain version, [dfhm3] [dfhm4].
 ##		- 20261120 JC: pr create refuses a branch that shares no history with its base through gh and tea, and leaves it to the git host through glab and in a shallow clone, [dfjg8] to [dfjgc].
 ##		- 20261120 JC: Each installer's --version is the date of its newest History entry, and every PowerShell file outside legacy/ is plain ASCII, [dfjqe] to [dfjqh].
+##		- 20261120 JC: --release dev takes the newest release, pre-releases included, [dfjr3] to [dfjr9]; [dbfkc] [dbfkd] [dbfks] [dd5cx] [dbfm0] [dbfm1] check what replaced the refusal.
