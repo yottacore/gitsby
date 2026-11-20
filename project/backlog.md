@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - CICD process gaps: dogfood builds don't go to the synced app folders, and there's no dogfood script
 	- ID: 2026112013542597
 	- Type: Enhancement
-	- Status: Waiting for answers
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-135425
@@ -44,6 +44,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements: The shared CICD rules put each build in the synced app folder for its OS, and a dogfood_gitsby.ps1 with launchers copies the newest into a GFS-rotated versions folder, with a link to it as the program. Stage 5 copies each build straight into the synced tool folders on PATH instead, and run-latest.ps1 is a different design.
 	- Progress log:
 		- 2026-11-20: Waiting for answers. Moving it changes which gitsby every box finds on PATH, and every session's git commands go through it.
+		- 2026-11-20: Answered no, so it closes as Won't fix.
+	- Closed reason: Won't fix
+	- Decisions: Answered 2026-11-20: no. Dogfood stays a single executable in the synced tool folder on PATH, with no versions folder or rotation.
+	- Test case: n/a, nothing changes.
+	- Closed: 20261120-141207
 
 - CICD process gaps: publish commits every pending edit in the tree, another session's included
 	- ID: 2026112013542584
