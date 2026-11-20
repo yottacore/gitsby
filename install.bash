@@ -31,6 +31,8 @@ fSyntax(){
 	Options:
 	  --target user|system   Install for you (~/.local/bin, default) or everyone (/usr/local/bin).
 	  -s, --system           The same thing as --target system.
+	  --release stable|dev   stable (default): the newest full release.
+	                         dev: the newest release, pre-releases included.
 	  --arch amd64|arm64     Which binary to fetch. Detected from this machine by default.
 	                         macOS has one binary for both.
 	  -t, --tag TAG          A published release tag (default: the latest release).
@@ -38,7 +40,6 @@ fSyntax(){
 	  -y, --yes              Don't ask for confirmation.
 	  -h, --help             This.
 	  --version              The installer's own version.
-	  --release stable       The older name for the default. '--release dev' is gone.
 	EOF
 	echo
 }
@@ -90,14 +91,11 @@ fMain(){
 		*) fErr "--arch takes 'amd64' or 'arm64' (got '${arch}')." ;;
 	esac
 
-	## '--release dev' installed the tip of a branch, which meant downloading a script. There is
-	## no script to download now, and a branch has no build behind it - so name what happened
-	## rather than letting a familiar flag fail as an unknown option.
+	## dev once installed a branch tip. A branch has no build, so it means pre-releases now.
 	case "${releaseChannel}" in
-		"") : ;;
-		stable) : ;;
-		dev) fErr "There is no '--release dev' any more: gitsby is a compiled binary, and a branch has no published build. Take a release with '--tag TAG', or build the tip yourself: git clone https://github.com/${repo}.git && cd gitsby/src-go && go build -o gitsby ." ;;
-		*)   fErr "--release takes only 'stable' now, which is the default; use '--tag TAG' for a specific release." ;;
+		""|stable) releaseChannel="stable" ;;
+		dev) [[ -z "${tag}" ]] || fErr "--release dev and --tag both pick the release; give one of them." ;;
+		*)   fErr "--release takes 'stable' or 'dev' (got '${releaseChannel}')." ;;
 	esac
 
 	## The tag goes in a download URL, so a path-shaped one walks out of this repo and installs
@@ -155,13 +153,14 @@ fMain(){
 	sums=""; sumsFor=""; published=""
 
 	## No --tag: the newest full release with a gitsby-<os>-<arch> binary for any platform, or while
-	## none has one, the newest such pre-release. Any platform, so every machine is pointed at the
-	## same one.
+	## none has one, the newest such pre-release. With --release dev, the newest of either. Any
+	## platform, so every machine is pointed at the same one.
 	if [[ -z "${tag}" ]]; then
-		## releases/latest first: a redirect, so no auth and no rate limit. Every lookup needs '||
-		## true', since under 'set -e' a failed assignment ends the run silently. wget answers a
-		## declined redirect with exit 8.
-		if command -v curl >/dev/null 2>&1; then
+		## releases/latest first: a redirect, so no auth and no rate limit. It never names a
+		## pre-release, so dev goes to the list. Every lookup needs '|| true', since under 'set -e'
+		## a failed assignment ends the run silently. wget answers a declined redirect with exit 8.
+		if [[ "${releaseChannel}" == dev ]]; then :
+		elif command -v curl >/dev/null 2>&1; then
 			tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${repo}/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/||p' || true)"
 		elif command -v wget >/dev/null 2>&1; then
 			tag="$(wget -q --max-redirect=0 -S -O /dev/null "https://github.com/${repo}/releases/latest" 2>&1 | sed -n 's|.*[Ll]ocation: .*/releases/tag/\([^[:space:]]*\).*|\1|p' | head -n 1 || true)"
@@ -192,8 +191,9 @@ fMain(){
 				         -e 's/^[[:space:]]*"prerelease":[[:space:]]*\([a-z]*\).*/P \1/p' \
 				         -e 's|^[[:space:]]*"browser_download_url":[[:space:]]*"[^"]*/releases/download/\(.*\)/gitsby-[^/"]*".*|B \1|p' || true)"
 			## Highest version wins, not newest listed, so a backported fix isn't taken. A tie keeps
-			## the newer listed. A full release is never weighed against a pre-release, where sort -V
-			## puts 1.0.0-rc1 first.
+			## the newer listed. 'true' and 'false' pick among pre-releases or full ones; 'any' picks
+			## from both, with a full release above pre-releases of its own version, where sort -V
+			## would put 1.0.0-rc1 first.
 			fPickTag(){
 				awk -v wantPre="$1" '
 					function vkey(t,  v,n,a,i,k) { v=t; sub(/^[vV]/,"",v); n=split(v,a,"[._-]"); k=""
@@ -203,11 +203,17 @@ fMain(){
 					$1=="P" && t!="" { pre[t]=$2; listed[++count]=t; t="" }
 					$1=="B" { binary[$2]=1 }
 					END { for (i=1;i<=count;i++) { c=listed[i]
-							if ((c in binary) && pre[c]==wantPre && vkey(c)>best) { best=vkey(c); bestT=c } }
+							if (!(c in binary) || (wantPre!="any" && pre[c]!=wantPre)) continue
+							k=vkey(c) (pre[c]=="true" ? "0" : "1")
+							if (k>best) { best=k; bestT=c } }
 						if (bestT!="") print bestT }'
 			}
-			tag="$(printf '%s\n' "${releaseFacts}" | fPickTag false || true)"
-			if [[ -z "${tag}" ]]; then
+			if [[ "${releaseChannel}" == dev ]]; then
+				tag="$(printf '%s\n' "${releaseFacts}" | fPickTag any || true)"
+			else
+				tag="$(printf '%s\n' "${releaseFacts}" | fPickTag false || true)"
+			fi
+			if [[ -z "${tag}" && "${releaseChannel}" == stable ]]; then
 				tag="$(printf '%s\n' "${releaseFacts}" | fPickTag true || true)"
 				[[ -z "${tag}" ]] || { echo; fEcho "No full release has a gitsby binary yet; taking the newest pre-release, ${tag}."; }
 			fi
@@ -351,5 +357,6 @@ fMain(){
 ##		- 20261119 JC: Everything runs from one function called on the last line, so a download cut short runs nothing. One such cut said the checksum was verified and exited 0 with nothing installed.
 ##		- 20261120 JC: A PATH entry with a trailing slash counts as having the install folder, so it no longer gets the not-on-PATH note.
 ##		- 20261120 JC: --version prints the installer's own version, the date of its newest change.
+##		- 20261120 JC: --release dev takes the newest release, pre-releases included. It was refused, since it once meant a branch tip.
 
 fMain "${@}"

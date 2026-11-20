@@ -264,7 +264,7 @@ On Windows the PowerShell installer also puts that directory on your PATH, since
 
 For anything else - installing for everyone, taking an older release, or naming the architecture yourself - download the installer and run it with `--help`.
 
-Either installer takes the newest full release that has a binary in it. Until there is one, that means the newest pre-release, and the installer says so. After that, a pre-release is installed only by naming its tag with `--tag`.
+Either installer takes the newest full release that has a binary in it. Until there is one, that means the newest pre-release, and the installer says so. After that, a pre-release is installed with `--release dev`, which takes the newest release of either kind, or by naming its tag with `--tag`.
 
 ### Without the installer
 

@@ -18,7 +18,8 @@
         -Yes                  Don't ask for confirmation.
         -Help                 Show the options and exit. '--help' works too.
         -Version              The installer's own version. '--version' works too.
-        -Release stable       The older name for the default. -Release dev is gone.
+        -Release stable|dev   stable (default): the newest full release.
+                              dev: the newest release, pre-releases included.
     The Bash installer's spellings work as well, such as --target=system and --yes.
 
     The options are listed here rather than as parameter help. They belong to the function
@@ -51,8 +52,7 @@ function Install-Gitsby {
         # -Ref was this parameter's name while gitsby was a script installed from a tree. It
         # names a published release now, and the old spelling stays as an alias for good.
         [Alias('Ref')][ValidatePattern('^[A-Za-z0-9._/-]+$')][string]$Tag,
-        # Took 'dev' or 'stable' when a branch could be installed from its tree. Bound rather
-        # than dropped, so a familiar flag gets an explanation instead of a binder error.
+        # No ValidateSet, so a wrong value gets the same message as in the Bash installer.
         [string]$Release,
         [switch]$Help,
         [switch]$Version
@@ -86,7 +86,8 @@ function Install-Gitsby {
         Write-Host '  -Yes                  Do not ask for confirmation.'
         Write-Host '  -Help                 This.'
         Write-Host "  -Version              The installer's own version."
-        Write-Host "  -Release stable       The older name for the default. '-Release dev' is gone."
+        Write-Host '  -Release stable|dev   stable (default): the newest full release.'
+        Write-Host '                        dev: the newest release, pre-releases included.'
         Write-Host ''
         return
     }
@@ -99,13 +100,13 @@ function Install-Gitsby {
 
     $repo = 'yottacore/gitsby'
 
-    # '-Release dev' installed the tip of a branch, which meant downloading a script. There is
-    # no script to download now, and a branch has no build behind it.
-    if ($Release -eq 'dev') {
-        throw "There is no '-Release dev' any more: gitsby is a compiled binary, and a branch has no published build. Take a release with '-Tag TAG', or build the tip yourself: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ."
+    # dev once installed a branch tip. A branch has no build, so it means pre-releases now.
+    if ($Release -and $Release -notin 'stable', 'dev') {
+        throw "-Release takes 'stable' or 'dev' (got '${Release}')."
     }
-    if ($Release -and $Release -ne 'stable') {
-        throw "-Release takes only 'stable' now, which is the default; use '-Tag TAG' for a specific release."
+    $takePre = $Release -eq 'dev'
+    if ($takePre -and $Tag) {
+        throw '-Release dev and -Tag both pick the release; give one of them.'
     }
     # The tag goes in a download URL, so a path-shaped one walks out of this repo and installs
     # somebody else's binary while the plan on screen still names ours. ValidatePattern admits
@@ -181,13 +182,15 @@ function Install-Gitsby {
     }
 
     # No -Tag: the newest full release with a gitsby binary, or while none has one, the newest
-    # such pre-release. Its own variable, since assigning to $Tag re-runs its ValidatePattern.
+    # such pre-release. With -Release dev, the newest of either. Its own variable, since
+    # assigning to $Tag re-runs its ValidatePattern.
     $tagName = $Tag
     $sums = ''
     $sumsFor = ''
     if (-not $tagName) {
-        # releases/latest first: a redirect, so no auth and no rate limit. 7's headers have
-        # Location as a property; 5.1's need the indexer. Unreadable is no answer.
+        # releases/latest first: a redirect, so no auth and no rate limit. It never names a
+        # pre-release, so dev goes to the list. 7's headers have Location as a property; 5.1's
+        # need the indexer. Unreadable is no answer.
         function Read-LocationHeader($response) {
             try {
                 $headers = $response.Headers
@@ -198,13 +201,15 @@ function Install-Gitsby {
             } catch { return '' }
         }
         $location = ''
-        try {
-            # Not Stop. On 5.1 that turns the redirect into an error with no response attached, and
-            # only carrying on hands back the 302 itself. 7 throws either way, response and all.
-            $resp = Invoke-WebRequest -Uri "https://github.com/${repo}/releases/latest" -MaximumRedirection 0 -UseBasicParsing -ErrorAction SilentlyContinue
-            $location = Read-LocationHeader $resp
-        } catch {
-            if ($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response) { $location = Read-LocationHeader $_.Exception.Response }
+        if (-not $takePre) {
+            try {
+                # Not Stop. On 5.1 that turns the redirect into an error with no response attached,
+                # and only carrying on hands back the 302 itself. 7 throws either way, response and all.
+                $resp = Invoke-WebRequest -Uri "https://github.com/${repo}/releases/latest" -MaximumRedirection 0 -UseBasicParsing -ErrorAction SilentlyContinue
+                $location = Read-LocationHeader $resp
+            } catch {
+                if ($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response) { $location = Read-LocationHeader $_.Exception.Response }
+            }
         }
         $noBinary = ''
         if ($location -match '/releases/tag/([^/\s]+)') {
@@ -236,8 +241,8 @@ function Install-Gitsby {
             $releases = @($releaseList)
             $withBinary = @($releases | Where-Object { @($_.assets | Where-Object { [string]$_.name -like 'gitsby-*' }).Count -gt 0 })
             # Highest version wins, not newest listed, so a backported fix isn't taken.
-            # Sort-Object is stable, so a tie keeps the newer listed. A full release is never
-            # weighed against a pre-release.
+            # Sort-Object is stable, so a tie keeps the newer listed. Only dev weighs a full release
+            # against a pre-release, and puts it above pre-releases of its own version.
             $tagVersion = {
                 $v = ($_.tag_name -replace '^[vV]', '') -replace '[-+].*$', ''
                 $parsed = [version]'0.0'
@@ -245,7 +250,11 @@ function Install-Gitsby {
             }
             $newestFull = $withBinary | Where-Object { -not $_.prerelease } | Sort-Object -Property @{Expression = $tagVersion} -Descending | Select-Object -First 1
             $newestPre = $withBinary | Where-Object { $_.prerelease } | Sort-Object -Property @{Expression = $tagVersion} -Descending | Select-Object -First 1
-            if ($newestFull) {
+            $newestAny = $withBinary | Sort-Object -Property @{Expression = $tagVersion; Descending = $true}, @{Expression = { -not $_.prerelease }; Descending = $true} | Select-Object -First 1
+            if ($takePre) {
+                if (-not $newestAny) { throw "No release of ${repo} publishes a gitsby binary yet, so there is nothing to install. Build it instead: git clone https://github.com/${repo}.git; cd gitsby/src-go; go build -o gitsby ." }
+                $tagName = [string]$newestAny.tag_name
+            } elseif ($newestFull) {
                 $tagName = [string]$newestFull.tag_name
             } elseif ($newestPre) {
                 $tagName = [string]$newestPre.tag_name
@@ -607,3 +616,5 @@ try {
 #     there. The plan and the result both call the scopes account and system.
 #   - 20261120 JC: -Version prints the installer's own version, the date of its newest change.
 #     The copyright line is plain ASCII, like the rest of the file.
+#   - 20261120 JC: -Release dev takes the newest release, pre-releases included. It was refused,
+#     since it once meant a branch tip.
