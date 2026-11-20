@@ -464,9 +464,9 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 25: safe-rm.ps1 doesn't refuse cmd's other separators
 	- ID: 2026111910222942
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w
+	- Needs external testing: vm925w: one run of the tools folder's win-bash-run.bash with any script, which removes its folder through safe-rm.ps1. It shows the box's real %TEMP% still passes the safe set. The refusal itself runs before cmd, so it's pinned here.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102229
 	- Opened by:
@@ -474,9 +474,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Steps to reproduce [Bug]: Set TEMP to a folder whose name holds a comma, semicolon or equals sign, then let the guard remove a test folder under it.
 	- Incorrect behavior [Bug]: The guard passes it, and cmd's rmdir splits the path into two.
 	- Expected behavior [Bug]: The guard refuses those characters too, or anything outside a short safe set.
-	- Reproduced [Bug]: No. Read on 2026-11-19. Plausible.
+	- Reproduced [Bug]: 2026-11-19 on b23, under pwsh 7.6 with a stand-in cmd.exe. A TEMP holding a comma reached rmdir. No Windows box has one.
 	- Possible cause [Bug]: The refused set at safe-rm.ps1 line 28 stops at &|<>^%"().
 	- Origin: f7e1c0b, round-20261111. Missed twin of that class fix.
+	- Actual cause [Bug]: As read. The guard refused a list of cmd's characters, and the list missed , ; and =, which cmd splits at.
+	- Actual fix [Bug]: safe-rm.ps1 refuses a full path with any character outside letters, digits, space and _.:~\/-, before rmdir runs. The refusal text stays the same.
+	- Decisions: An allowed set rather than a longer refused list, as the expected behavior offers, so a character nobody listed is refused too. Letters and digits are Unicode ones, so a user folder with an accented name still passes. ~ stays for 8.3 short names, space because 5.1 quotes it, and / because pwsh off Windows spells paths with it. A folder with any other character, such as an apostrophe or a plus, is now left behind with a note.
+	- Branch: nov19c-2026111910222942
+	- Commit: f829287
+	- Test case: test.bash [dfhks] runs the guard under pwsh with TEMP holding each of 20 other characters, then one with only safe ones, a space, a ~ and an accented letter among them, which is removed as usual. [df50j] and [dez5g] still pass.
+	- Verified: [dfhks] fails on the previous safe-rm.ps1 (the comma folder went) and passes after. It also goes red with ~, space or Unicode letters taken out of the set. Quick run of every area passed: test.bash 2195/0, fuzz 310/0, parity 31/0. Not run on Windows.
+	- Swept: safe-rm.ps1 is the only script that calls cmd.exe with a path, by grep of cicd, install.ps1 and src-go. config_windows_test.go's mklink takes a Go temp path through Go's own quoting, a test only, left alone.
 
 - Code Review 20261119 item 26: release.bash publishes a dot-suffixed version as a full release
 	- ID: 2026111910222928

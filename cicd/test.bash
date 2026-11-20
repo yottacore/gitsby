@@ -8739,9 +8739,20 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			fAssert "[df50j] the Windows box's guard refuses a folder whose path holds a character cmd acts on, and leaves it" \
 				env PATH="${rtWinBin}:${PATH}" bash -c 'mkdir -p "$1/a&b/test_gitsby_1/sub" && out="$(TEMP="$1/a&b" pwsh -NoProfile -NonInteractive -Command ". \"$2\"; if (fSafeRm \"$1/a&b/test_gitsby_1\") { exit 1 }" 2>&1 </dev/null)" \
 					&& [[ "${out}" == *"safe-rm: refused, a character cmd would act on:"* && -d "$1/a&b/test_gitsby_1/sub" ]]' _ "${rtWinTemp}" "${rtGuard}.fn.ps1"
+			## The same over the class: cmd also splits at , ; and =, so only a short safe set gets by.
+			## Each temp folder holds one other character, and one holds only safe ones, an 8.3 ~ and
+			## a letter past ASCII among them, which goes as usual.
+			# shellcheck disable=SC2016  ## PowerShell reads the variable, not bash.
+			printf '%s\n' '. $env:SR_GUARD' "if (fSafeRm (Join-Path \$env:TEMP 'test_gitsby_1')) { 'gone' } else { 'left' }" > "${rtGuard}.class.ps1"
+			# shellcheck disable=SC2016  ## the inner shell does the expanding.
+			fAssert "[dfhks] the Windows box's guard lets only letters, digits, space and _.:~\\/- through to cmd, whatever else the temp path holds" \
+				env PATH="${rtWinBin}:${PATH}" SR_GUARD="${rtGuard}.fn.ps1" bash -c 'n=0; for c in , ";" = "!" "'"'"'" + "[" "]" "{" "}" @ "#" "\$" "\`" "	" "&" "%" "^" "*" "?"; do n=$((n+1)); t="$1/class-${n}/a${c}b"; mkdir -p "${t}/test_gitsby_1/sub" || exit 1; out="$(TEMP="${t}" pwsh -NoProfile -NonInteractive -File "$2" 2>&1 </dev/null)"; \
+					[[ "${out}" == *"safe-rm: refused, a character cmd would act on:"* && "${out}" == *left* && -d "${t}/test_gitsby_1/sub" ]] || { echo "not refused: [${c}] ${out}"; exit 1; }; done; \
+					t="$1/class-ok/Ab 9~1.é_-x"; mkdir -p "${t}/test_gitsby_1/sub" && out="$(TEMP="${t}" pwsh -NoProfile -NonInteractive -File "$2" 2>&1 </dev/null)" && [[ "${out}" == *gone* && ! -e "${t}/test_gitsby_1" && -d "${t}/test_gitsby_1.gone/sub" ]]' _ "${rtWinTemp}" "${rtGuard}.class.ps1"
 		else
 			fSkip "[dez5g] needs pwsh"
 			fSkip "[df50j] needs pwsh"
+			fSkip "[dfhks] needs pwsh"
 		fi
 		## Handed an image, as stage 7 does, every box's Go tests come from its Go, with the folder
 		## the build goes in mounted at its own path. A docker that writes the -o file stands in.
