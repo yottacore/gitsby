@@ -4141,7 +4141,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: reproduced on vm925w, its test failed before the fix and passes after there.
 	- Closed: 20261120-080834
 	- Decisions:
-		- Both spellings in the line, picked by $PSNativeCommandArgumentPassing when it runs, rather than no command for such a name. Every caller keeps its command, and only a name with a double quote gets the longer line. A Check: entry in questions.md asks about it.
+		- Both spellings in the line, picked by $PSNativeCommandArgumentPassing when it runs, rather than no command for such a name. Every caller keeps its command, and only a name with a double quote gets the longer line. Its Check: entry was answered 2026-11-20, and the call stands.
+		- With Set-StrictMode on in Windows PowerShell 5.1, the unset variable stops the line with an error and git doesn't run. Left as is, since it's an error rather than a wrong branch, for a rare name in a rare setup.
 		- The pick reads Standard and Windows as escaping. Under Windows passing pwsh still passes .cmd and .bat files the Legacy way, and git and gitsby are .exe files.
 		- The Legacy spelling leaves out the quotes 5.1 adds around a word with a space, since no ref name holds one.
 		- [dfhfc]'s Windows PowerShell 5.1 leg exited 1 partway once on vm925w, the first run after a start from off, with no stderr kept. It passed in the 3 runs after. psRun now prints the shell's stderr when it fails.
@@ -4275,7 +4276,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed: 20261119-182500
 	- Decisions:
 		- The delete names the branch the push went to, rather than br merge refusing every branch that tracks another name, since under push.default=upstream that push is meant.
-		- Refused where pr create refuses, with the same way off, so the 2 commands that read the park push's head agree. A push to another remote is refused rather than left with no delete, since the merge goes to origin and gitsby's branch commands act on origin. Check: entry filed.
+		- Refused where pr create refuses, with the same way off, so the 2 commands that read the park push's head agree. A push to another remote is refused rather than left with no delete, since the merge goes to origin and gitsby's branch commands act on origin. Its Check: entry was answered 2026-11-20, and the call stands.
 		- A head on a protected branch is refused with br merge's own text, ahead of refuseParkPush's 'sync --direct', since after that the delete would still take dev.
 
 - Code Review 20261119 item 15: pr ok from another branch pulls that branch while its plan says the target
@@ -4360,7 +4361,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
 	- Closed: 20261119-182500
 	- Decisions:
-		- No --direct for br merge. The ways off name 'sync --direct' from dev, which keeps --direct's command list as 2026111910223293 left it. Check: entry filed.
+		- No --direct for br merge. The ways off name 'sync --direct' from dev, which keeps --direct's command list as 2026111910223293 left it. Its Check: entry was answered 2026-11-20, and the call stands.
 		- The way to keep the commits off names 2 plain git commands run from where br merge stands, since dev isn't checked out and 'git branch -f' needs no switch.
 		- Only a target with an upstream counts, as for sync, so a dev never pushed goes up as a first publish without asking.
 		- The target's tip is compared with its upstream's from branchRefs first, so a level target costs no git call.
@@ -4541,7 +4542,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed reason: Done
 	- Actual cause [Bug]: As the possible cause says. Phase 3's check of which release the install line takes also called a tag full by its lack of a dash.
 	- Actual fix [Bug]: release.bash calls a version a candidate when the shared version pattern finds anything past X.Y.Z, after a dash or a dot. That one test makes the pre-release, promotes the last tag to its plain version, and reads the install line's tag. design.md's release policy names the dot form.
-	- Decisions: The pre-release message says a suffix, not a semver suffix, since a dot suffix isn't semver. A dotted suffix is still taken rather than refused, since 'gitsby release' takes it and its nextVersion reads it as a candidate.
+	- Decisions: The pre-release message says a suffix, not a semver suffix, since a dot suffix isn't semver. A dotted suffix is still taken rather than refused, since 'gitsby release' takes it and its nextVersion reads it as a candidate. Its Check: entry was answered 2026-11-20, and the call stands.
 	- Against: 2026111016332132's Decisions row, which left a dotted suffix publishing as a full release, unchanged. This item asks for the change, and the standing rule calls any suffixed tag a candidate.
 	- Swept: every dash test on a version in release.bash: the bump (was line 325), the pre-release flag (349) and phase 3's install line check (619). The asset name split at 235 is a file name, not a version. Go's nextVersion already reads any suffix. Installers go by GitHub's pre-release flag, not the tag. The tag sort is the same class and is filed as 2026111920273377.
 	- Branch: nov19c-2026111910222928
