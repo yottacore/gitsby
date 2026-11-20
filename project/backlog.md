@@ -330,7 +330,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 21: When a 2.x file can't be converted, its notice says two opposite things
 	- ID: 2026111910223002
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102230
@@ -341,6 +341,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. Confirmed.
 	- Possible cause [Bug]: The head and the Why line are written apart in config.go and cfgformat.go.
 	- Origin: ca74ed4, nov18. Regression of item 2026111016332218's notice.
+	- Closed reason: Done
+	- Actual cause [Bug]: The head said the run read the file in the old format, which holds only when no line reads differently. For a line no quote fits, the run reads the converted text, and the Why line said so on its own.
+	- Actual fix [Bug]: The head alone says how the run read the file, from a readNew field set with the Why line in config.go's load. It says the new format for a line no quote fits, and that format otherwise. The Why line names the line and no longer says how it was read, so the refusal in 'account set', which repeats it, doesn't either.
+	- Decisions: The head was changed rather than the reading, since reading the file the 2.x way needs the 2.x module, which stays out of the binary per design.md. The head says the new format rather than naming the line, since more than one line can read differently and the Why line names only the first.
+	- Branch: nov19c-2026111910223002
+	- Test case: Go `[dfhjk]` TestOld2xNoticeOneReading: a line no quote fits reads the new way and the head says so, a file kept for an unwritable folder reads the 2.x way and the head says that, and neither the notice nor the refusal says otherwise. test.bash `[dfhjm]` the steps' file through the binary.
+	- Verified: `[dfhjk]` fails on the previous config.go and cfgformat.go, and `[dfhjm]`'s check fails on the binary built from them. Both pass with the fix. Quick gate, every area: test.bash 2185/0, fuzz 310/0, parity 31/0.
+	- Swept: every other place that sets the migration's why is replaceOldFormat's write path, and none of them says how the file was read. The flat and old-pin notices read the file in that format when not converted, so the head holds for them.
+	- Acceptance signoff: Self-closed: reproduced, and its tests fail before the fix and pass after.
+	- Closed: 20261119-193639
+	- Commit: 33d0ae7
 
 - Code Review 20261119 item 22: On an unborn branch with an origin, br create renames the branch, then fails
 	- ID: 2026111910222988

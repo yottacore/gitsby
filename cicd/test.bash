@@ -9596,6 +9596,12 @@ GLEOF
 	printf 'account: work\n\tname: O"Brien#2\n\tpathcontains: dev/c"#/proj\n\n#\n# This config file format is SHCL.\n# "Simple Hierarchical Config Language"\n#\n' > "${fg}/old2xrun/config.shcl"
 	fAssertOut "[dfg4g] a 2.x value with a quote before a '#' reads whole after the conversion"  '^ok$' \
 		bash -c "cd '${fgRepo}' && out=\$(PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/old2xrun/config.shcl' account list 2>&1); [[ \$out == *'Converted the accounts file from the SHCL 2.x format'* && \$out == *'O\"Brien#2 <'* ]] && grep -qxF \"	pathcontains: 'dev/c\\\"#/proj'\" '${fg}/old2xrun/config.shcl' && echo ok"
+	## A value no quote can keep leaves the file as it is, and the run reads it the new way. The
+	## notice says that once, with no Why line saying the opposite.
+	mkdir -p "${fg}/old2xbad"
+	printf 'account: work\n\tname: it'"'"'s a"b#c\n\n#\n# This config file format is SHCL.\n# "Simple Hierarchical Config Language"\n#\n' > "${fg}/old2xbad/config.shcl"
+	fAssertOut "[dfhjm] a 2.x file that can't be converted says once how this run read it"  '^ok$' \
+		bash -c "cd '${fgRepo}' && out=\$(PATH='${fgPath}' '${gitsby}' -NoFetch --config '${fg}/old2xbad/config.shcl' account list 2>&1); [[ \$out == *'This run read it in the new format.'* && \$out != *'in that format'* && \$out != *'new way'* && \$out == *'commits .: it'\"'\"'s a\"b <'* ]] && echo ok"
 	## 2.x read a byte that isn't UTF-8 as U+FFFD, and v3 keeps the byte, so the converted file has
 	## to hold U+FFFD where 2.x read it.
 	mkdir -p "${fg}/old2xbyte"

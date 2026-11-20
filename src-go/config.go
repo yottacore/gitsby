@@ -558,7 +558,8 @@ func (c *config) load(o options) error {
 		converted, m, bad := convert2x(string(data))
 		c.migration = &formatMigration{kind: oldMajor, from: from, changed: changedLines(string(data), m.Text), lost: m.Lost}
 		if bad > 0 {
-			c.migration.why = fmt.Sprintf("line %d reads one way in the old format and another in the new, and this run read it the new way", bad)
+			c.migration.why = fmt.Sprintf("line %d reads one way in the old format and another in the new", bad)
+			c.migration.readNew = true
 			c.migration.fix = fmt.Sprintf("Put the value on line %d in quotes, then run this again.", bad)
 		} else {
 			replaceOldFormat(file, string(data), converted, c.migration)
