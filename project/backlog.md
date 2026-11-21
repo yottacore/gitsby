@@ -33,6 +33,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Go test [dfk1m] hangs on Windows, so stage 7's Go test run doesn't end
+	- ID: 2026112021204523
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-212045
+	- Opened by:
+	- Related IDs: 2026112017135720, 2026112017135704
+	- Steps to reproduce [Bug]: Build the Windows Go test binary from nov20c and run TestRemoteReachesGiveUpOnAStalledSSHRemote on vm925w, which has Windows OpenSSH on PATH.
+	- Incorrect behavior [Bug]: The test was still running when the run was stopped at 300 s. Its own limit is 30 s per reach. No subtest line showed, so which reach waits isn't known yet.
+	- Expected behavior [Bug]: Each reach gives up within its limit on Windows too, or the test skips there with the reason.
+	- Reproduced [Bug]: 2026-11-20 on vm925w, once, from e0ef618. With it skipped, the rest of the binary passed there: 294 ok, 32 skipped, none failed. Confirmed.
+	- Possible cause [Bug]: Not known. Windows OpenSSH may not act on ServerAliveInterval against a server that sent its banner, which would mean the fetch itself still hangs on Windows. Or the listener's held connections keep something open there.
+	- Origin: adcef33, nov20c (2026112017135720). Its tests ran on b23 only.
+
 - Put an ssh client in the cicd image, so the ssh stall tests run in the quick gate
 	- ID: 2026112020462150
 	- Type: Enhancement
@@ -405,7 +421,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 13: 2 Go tests fail on Windows, so the next full run fails at stage 7
 	- ID: 2026112017135704
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-171357
@@ -416,6 +432,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on vm925w, and [dfhjk] under Wine on b23. Confirmed.
 	- Possible cause [Bug]: cfgformat_test.go:783 lacks the `isWindows() || os.Geteuid() == 0` skip. branch_test.go:380 renames a folder Windows still has open.
 	- Origin: bcc3cb2, nov19c (2026111910223002), and 6f277d3, nov19b (2026111910223119). Both rounds ran chosen Windows tests, never the whole binary.
+	- Closed reason: Done
+	- Actual cause [Bug]: [dfhjk] locked its folder with chmod in both cases, and on Windows chmod doesn't lock a folder, so the file was converted. [dfh8b] called t.Chdir(clone) while in linked. t.Chdir keeps the folder it leaves open until its test ends, so it can go back, and Windows won't rename an open folder. Nothing else held it: no git process was left, and a GC changed nothing.
+	- Actual fix [Bug]: [dfhjk] runs its 2 cases as subtests, and the unwritable-folder one skips on Windows and as root, as the other chmod tests do. [dfh8b] runs its cases from linked in a subtest of their own, so linked is let go before the rename. Its twin [dfjzf], added this round, renamed linked with the cwd still there, and each of its asks is now a subtest for the same reason.
+	- Test case: Go [dfhjk] TestOld2xNoticeOneReading, [dfh8b] TestRefuseHeldBranch and [dfjzf] TestRefuseBusyBranch, on vm925w. Linux renames an open folder, so no check here can fail on it.
+	- Verified: on vm925w, the build before the fix failed all 3, and the fixed build (e0ef618) passed all 3, with the unwritable-folder case of [dfhjk] skipped. The whole fixed binary with its sources there, [dfk1m] skipped, passed: 294 ok, 32 skipped. Quick gate with every area passed: test.bash 2299/0, fuzz 310/0, parity 31/0.
+	- Swept: every os.Chmod of a folder in src-go's tests (cfgformat_test.go 165, 368, 677 skip on Windows and root; accountcmd_test.go 1857 skips as root and passed on vm925w), and every test with 2 or more t.Chdir calls (TestEnterRepoSettlesTopLevel, TestDefaultBranchBesideSameNamedTag, TestRefuseNarrowFetch, TestRawNestChain). Only [dfh8b] and [dfjzf] rename or remove a folder they were in, per grep of os.Rename and os.RemoveAll in *_test.go.
+	- Decisions: [dfhjk] keeps its first case on Windows, since only the second needs a locked folder. Subtests rather than os.Chdir, so the tests keep using t.Chdir and its restore. A retry on the rename was ruled out, since the folder stayed held for 15 s.
+	- Note: The whole Windows binary hung at [dfk1m], filed as 2026112021204523.
+	- Branch: nov20c-2026112017135704
+	- Commit: e0ef618
+	- Acceptance signoff: Self-closed: all 3 tests failed on vm925w before the fix and pass after.
+	- Closed: 20261120-212100
 
 - Code Review 20261120 item 14: Every command that stages the tree runs a dry-run add before the plan, in every repo
 	- ID: 2026112017135689
