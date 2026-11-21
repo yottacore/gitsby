@@ -131,7 +131,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: Windows' OpenSSH doesn't exit after it reports the timeout, so git waits on it. The fix is upstream. gitsby can't put a time limit on a whole fetch, since a large one can run long. Killing git on Windows also leaves its ssh running.
 	- Origin: Win32-OpenSSH. gitsby's limits from adcef33 (2026112017135720) reach that ssh; it ignores them by not exiting.
 	- Note: Upstream issue text drafted in private/claude_simple/upstream/2026112021513016/.
-	- Upstream: PowerShell/Win32-OpenSSH#1427, commented 20261121 (https://github.com/PowerShell/Win32-OpenSSH/issues/1427#issuecomment-7066202716)
+	- Upstream: PowerShell/Win32-OpenSSH#1427, commented 20261121 (<https://github.com/PowerShell/Win32-OpenSSH/issues/1427#issuecomment-7066202716>)
 	- 20261121: the hang is Win32-OpenSSH#1427, an async write to stderr that never completes when stderr is a pipe. Checked on vm925w: with stderr to a file, ssh.exe exits 255 at 3 seconds; with stderr to a pipe it was killed at 20 seconds, whatever stdout is. Commented there rather than filing a new issue.
 	- 20261121: a possible workaround on gitsby's side is to give that ssh a file for stderr, read back afterwards. Not tried.
 
