@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Stage 0 brings staged edits back unstaged after a merge that goes in clean
 	- ID: 2026112110520434
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261121-105204
@@ -45,10 +45,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Steps to reproduce [Bug]: Stage an edit and edit the file again, on a tree behind or diverged from origin, where the merge goes in clean. Run stage 0.
 	- Incorrect behavior [Bug]: The edits come back, but the index no longer holds the staged copy.
 	- Expected behavior [Bug]: Staged edits stay staged, as they do when fSyncMerge backs a merge out, and as the publisher keeps them since 2026112017135488.
-	- Reproduced [Bug]: 2026-11-21 on b23, by a git 2.51 probe of git merge --no-ff --autostash. Stage 0 itself not run.
+	- Reproduced [Bug]: 2026-11-21 on b23, the real stage 0 against a local bare origin: [dfkwk] and [dfkwm] fail on the unfixed cicd.bash. Confirmed.
 	- Possible cause [Bug]: git applies its autostash without --index. fSyncMerge keeps --autostash, and the new stash entry it leaves is the signal item 9 chose for a failed restore.
 	- Origin: b463d2b (2026-08-12) for the fast-forward, 0633cc1 for the merge. Found in the sweep for 2026112017135488. Confirmed for git, Plausible for stage 0.
 	- Note: A fix that stashes by hand and pops with --index changes the signal in 2026112017135764's Decisions, so it needs an Against: line.
+	- Closed reason: Done
+	- Actual cause [Bug]: git puts an autostash back without --index, so after a fast-forward or merge that went in clean, staged edits came back unstaged and a file staged and then edited again lost its staged copy.
+	- Actual fix [Bug]: fSyncMerge in cicd.bash stashes the edits itself, merges without --autostash, and puts them back with stash pop --index. A pop that fails, whether on a clash in the tree or in the index, backs the merge out to the commit it started from, pops there with --index, and stops naming the files. A merge that fails is aborted and the edits put back the same way.
+	- Against: 2026112017135764's Decisions, where the new stash entry is the signal. The signal is now the pop's exit status, since a hand pop reports a failed restore and --autostash didn't. The rest of that decision holds: the reset goes to the starting commit, --index keeps staged edits staged, and a stash entry the user already had is left alone.
+	- Decisions: Stash by hand and pop with --index, as the publisher's fStashPop does, rather than keep --autostash and rebuild the index afterward, since git keeps no copy of the index once an autostash applies clean. A new stash entry after the push is how stage 0 knows it stashed anything, so with nothing to stash the user's own entry is never popped. A clash in the index leaves no unmerged file, so the message names the files both the stash and the merge changed. git stash refuses an intent-to-add file, as --autostash does (git 2.51 probe), so that case now stops with its own message rather than the diverged one; not run through stage 0. A Ctrl+C between the stash and the pop leaves the edits in stash@{0}.
+	- Test case: test.bash [dfkwk], [dfkwm], [dfkwn] and [dfkwp], with [dfk07] to [dfk0a] still passing.
+	- Verified: [dfkwk] and [dfkwm] fail on the unfixed cicd.bash (suite 2335/4) and pass with the fix. [dfkwn] fails when the pop runs with nothing stashed, and [dfkwp] fails with the file-naming fallback taken out, and both pass with the fix. The quick gate with every area passed: test.bash 2339/0, fuzz 310/0, parity 31/0.
+	- Swept: every --autostash and stash pop in cicd/, by grep. Only fSyncMerge's two callers had --autostash, and both go through the hand stash now. The publisher already pops with --index (2026112017135488). parity.bash's --autostash is a plan-text pattern for gitsby's own pulls. Left alone: the frozen v2.1.0 scripts under legacy/, and the Go pulls, which 2026112017135488 swept.
+	- Branch: nov21-2026112110520434
+	- Commit: d37b6ce
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261121-111634
 
 - Code Review 20261120 item 14: Every command that stages the tree runs a dry-run add before the plan, in every repo
 	- ID: 2026112017135689
@@ -363,7 +375,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 28: Stage 6 replaces a demo gif that was already edited when the run started
 	- ID: 2026112017135473
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171354
@@ -371,9 +383,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Steps to reproduce [Bug]: Edit assets/demo.gif, then do a plain run whose render differs.
 	- Incorrect behavior [Bug]: cicd.bash:1400 moves the new render over it. Only the new render is archived, and publish commits nothing.
 	- Expected behavior [Bug]: An edited gif is left as it is, the way publish treats it.
-	- Reproduced [Bug]: No. Read only. Plausible.
+	- Reproduced [Bug]: 2026-11-21 on b23, the real stage 6 in the pipeline fixture: [dfkwr] fails on the unfixed cicd.bash, with the edited gif replaced by the new render. Confirmed.
 	- Possible cause [Bug]: Nothing checks the gif before the `mv -f`.
 	- Origin: bcdf93c (2026-10-04). Missed twin of 2026112013542584.
+	- Closed reason: Done
+	- Actual cause [Bug]: Stage 6 never checked whether the gif was already edited before moving the new render over it.
+	- Actual fix [Bug]: cicd.bash records, after the sync, whether assets/demo.gif differs from HEAD. Stage 6 then leaves an edited gif as it is with a warning, as publish leaves it uncommitted.
+	- Decisions: Edited means a change against HEAD, staged or not, the same test publish uses (publishWas). It is recorded whether or not the run publishes, so --no-publish leaves the gif alone too. An untracked gif is still replaced, which [de5aw] relies on. The warning follows the other two 'demo gif differs' lines. The check comes after the tool-version and hands-off ones, so their messages are unchanged.
+	- Test case: test.bash [dfkwr].
+	- Verified: [dfkwr] fails on the unfixed cicd.bash (suite 2335/4) and passes with the fix. The quick gate with every area passed: test.bash 2339/0, fuzz 310/0, parity 31/0.
+	- Swept: every write to the demo gif in cicd.bash, by grep for DEMOGIF_OUT and demogifOut: the one mv -f in stage 6. The run in the image records its own state from the same mounted tree. release.bash refuses a tree the run changed, per design.md, and writes no gif.
+	- Branch: nov21-2026112110520434
+	- Commit: 4d2d59e
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
+	- Closed: 20261121-111634
 
 - Code Review 20261120 item 29: The publish prompt says a blank message opens the editor, but the publisher writes one itself
 	- ID: 2026112017135459
@@ -404,7 +427,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 30: The run's plan says stage 0 only fast-forwards
 	- ID: 2026112017135444
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on signoff
+		- Waits on a read of the new wording: the plan's 'Remote sync' line and contributing.md's paragraph on the sync.
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171354
@@ -414,6 +438,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The plan names the merge.
 	- Reproduced [Bug]: 2026-11-20, by reading. Confirmed.
 	- Origin: d0cc3da. 0633cc1 (2026112013542571) left it.
+	- Actual cause [Bug]: 0633cc1 made stage 0 merge a diverged origin, and left the plan line and contributing.md saying it only fast-forwards and stops when diverged.
+	- Actual fix [Bug]: The plan says 'fast-forward from origin first, or merge it when diverged'. contributing.md says a diverged branch gets a merge commit that publishing pushes, and that the run stops when they don't merge clean or the uncommitted edits clash.
+	- Test case: test.bash [dfkwq].
+	- Verified: [dfkwq] fails on the unfixed cicd.bash and passes with the fix. The quick gate with every area passed: test.bash 2339/0, fuzz 310/0, parity 31/0. contributing.md passes the markdown check.
+	- Swept: README.md, contributing.md, design.md, workflows.md and the style guides, by grep for 'stage 0', 'remote sync' and 'fast-forwards from'. Only contributing.md:231 was stale. README's stage 0 sentence and cicd.bash's header were already right.
+	- Decisions: Only the stale clause in contributing.md was rewritten. The fast-forward sentence before it still holds for a branch that is only behind.
+	- Stand-in: none (20261121). Wording only, so a person reads it.
+	- Branch: nov21-2026112110520434
+	- Commit: a850e71
 	- 20261120: also sweep contributing.md:231, which still says the pipeline stops if the branch has diverged; that went stale with 0633cc1 (found under 2026112017135764).
 
 - Code Review 20261120 item 31: design.md says a later candidate is installed only with --tag

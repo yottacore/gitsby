@@ -228,7 +228,7 @@ That binary is the whole product. The rest of the tooling below is for running t
 
 All three suites take `-q`, which drops the per-check line and keeps the failures and the total. The pipeline passes it on an unattended run.
 
-The pipeline fast-forwards from `origin` before it builds anything, so the checks run against the tree that will actually be pushed. It stops if your branch has diverged, warns and carries on if you're offline or the branch has no upstream, and `--no-sync` skips it.
+The pipeline fast-forwards from `origin` before it builds anything, so the checks run against the tree that will actually be pushed. If your branch has diverged it merges origin in, with a merge commit that publishing pushes, and stops if they don't merge clean or your uncommitted edits clash with what came in. It warns and carries on if you're offline or the branch has no upstream, and `--no-sync` skips it.
 
 The regression and fuzz suites both run against the compiled binary, so build before you run them - or let the pipeline do it, which is what its second stage is for.
 

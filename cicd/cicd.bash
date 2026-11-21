@@ -984,7 +984,7 @@ elif [[ -n "${containerNote}" ]]; then
 	fEcho "${containerNote}"
 fi
 if ((doSync)); then
-	fEcho_Clean "Remote sync .........: fast-forward from origin first"
+	fEcho_Clean "Remote sync .........: fast-forward from origin first, or merge it when diverged"
 else
 	fEcho_Clean "Remote sync .........: $(fOffWhy sync)"
 fi
@@ -1110,16 +1110,29 @@ if [[ -n "${LINT_LOG_DIR:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && mkdir -
 	trap 'fRunTmpDone "$?"; exec 1>&- 2>&-; wait "${teePid}" 2>/dev/null' EXIT
 fi
 
-## Stage 0's merge of '@{u}', with the merge options in $@. Returns 1 when git's merge fails.
-## git exits 0 when --autostash can't put the edits back, with markers in the tree and the edits
-## only in a new stash entry, so that entry is the signal. Back out to where it started, where the
-## stash applies clean, and stop.
+## Stage 0's merge of '@{u}', with the merge options in $@. Returns 1 when git's merge fails, with
+## the tree and the edits as they were. The edits are stashed by hand rather than with --autostash,
+## which git puts back without --index, so staged edits came back unstaged. 'stash pop --index'
+## says when it can't put them back, which --autostash doesn't. Then back out to where it started,
+## where the stash applies clean, and stop.
 fSyncMerge(){
-	local pre="" stashWas="" clash=""
+	local pre="" stashWas="" stashed=0 clash=""
 	pre="$(git rev-parse HEAD)"; stashWas="$(git rev-parse -q --verify refs/stash || true)"
-	git merge "$@" '@{u}' || return 1
-	[[ "$(git rev-parse -q --verify refs/stash || true)" != "${stashWas}" ]] || return 0
+	git stash push --quiet || fDie "couldn't stash the uncommitted edits to merge from origin. Commit or reconcile them before building."
+	## Only a new entry is ours. With nothing to stash there is none, and an older one is the user's.
+	[[ "$(git rev-parse -q --verify refs/stash || true)" == "${stashWas}" ]] || stashed=1
+	if ! git merge "$@" '@{u}'; then
+		git rev-parse -q --verify MERGE_HEAD >/dev/null && git merge --abort
+		((stashed)) || return 1
+		{ git reset --quiet --hard "${pre}" && git stash pop --quiet --index; } && return 1
+		fDie "the merge from origin failed, and putting the uncommitted edits back failed too. They're in stash@{0}."
+	fi
+	((stashed)) || return 0
+	git stash pop --quiet --index >/dev/null 2>&1 && return 0
+	## A clash in the tree leaves unmerged files. One in the index puts nothing back, so name the
+	## files both the stash and the merge changed.
 	clash="$(git diff --no-relative --name-only --diff-filter=U | paste -sd ' ')"
+	[[ -n "${clash}" ]] || clash="$(comm -12 <(git diff --no-relative --name-only "${pre}" HEAD | sort) <(git diff --no-relative --name-only 'stash@{0}^1' 'stash@{0}' | sort) | paste -sd ' ')"
 	if ! { git reset --quiet --hard "${pre}" && git stash pop --quiet --index; }; then
 		fDie "uncommitted edits clash with origin, and putting them back failed. They're in stash@{0}."
 	fi
@@ -1147,15 +1160,14 @@ if ((doSync)); then
 			## Diverged. A merge that goes in clean is tested with the rest. One that doesn't is
 			## backed out, the stash put back with it, and the run stops before building anything.
 			fEcho_Clean "merging ${behind} commit(s) from origin into ${ahead} local"
-			if ! fSyncMerge --no-ff --no-edit --autostash; then
-				git rev-parse -q --verify MERGE_HEAD >/dev/null && git merge --abort
+			if ! fSyncMerge --no-ff --no-edit; then
 				fDie "diverged from origin: ${ahead} local, ${behind} remote, and they don't merge clean. Reconcile before building."
 			fi
 		else
-			## Only behind, so this can only be a fast-forward. --autostash carries a dirty
-			## tree over it rather than refusing, and puts it back afterward.
+			## Only behind, so this can only be a fast-forward. fSyncMerge carries a dirty tree
+			## over it rather than refusing, and puts it back afterward.
 			fEcho_Clean "fast-forwarding ${behind} commit(s) from origin"
-			fSyncMerge --ff-only --autostash || fDie "fast-forward from origin failed"
+			fSyncMerge --ff-only || fDie "fast-forward from origin failed"
 		fi
 	fi
 	fStepEnd
@@ -1164,6 +1176,9 @@ fi
 ## The files publish may take, less those already edited, which may be another session's work.
 publishWas=()
 ((! ${#GIT_PUBLISH[@]})) || mapfile -d '' publishWas < <(git diff -z --name-only HEAD -- "${PUBLISH_PATHS[@]}" 2>/dev/null)
+## Stage 6 leaves a demo gif edited before the run as it is, as publish leaves it uncommitted.
+demogifWasEdited=0
+((! DO_DEMOGIF)) || [[ -z "$(git diff --no-relative --name-only HEAD -- "${DEMOGIF_OUT}" 2>/dev/null)" ]] || demogifWasEdited=1
 
 ## Version stamped into every build this run. Dev builds have what describe says; a
 ## release injects the clean one. Read after the sync, which can move HEAD. -dirty
@@ -1408,6 +1423,9 @@ else
 		elif [[ -n "${handsOff}" ]]; then
 			rm -f -- "${demogifTmp:?}"
 			fEcho "WARNING: demo gif differs; ${handsOff} rewrites no tracked file, so the committed one stays"
+		elif ((demogifWasEdited)); then
+			rm -f -- "${demogifTmp:?}"
+			fEcho "WARNING: demo gif differs, but ${DEMOGIF_OUT} was already edited when the run started, so it stays as it is"
 		else
 			## Keep the new original out of tree (GFS-pruned), then move it into the repo.
 			mkdir -p "${DEMOGIF_ARCHIVE_DIR}"
@@ -1551,3 +1569,4 @@ fEcho_Clean
 ##		- 2026-11-20 JC: Stage 0 merges a diverged origin with --no-ff when it merges clean, and backs the merge out and stops when it doesn't. Publish commits only the tracked files the run changed, so another session's edits stay out of its commit.
 ##		- 2026-11-20 JC: Stage 0 also stops when the edits it carried over clash with what came in, which git reports at exit 0. The merge or fast-forward is backed out and the edits put back.
 ##		- 2026-11-21 JC: The message prompt, the plan and --help say a blank answer gets an automatic message, which the publisher writes under --quiet. They said it opened the editor.
+##		- 2026-11-21 JC: Stage 0 stashes the edits itself and puts them back with --index, so staged edits stay staged across a merge or fast-forward that goes in clean. Stage 6 leaves a demo gif that was edited before the run as it is.

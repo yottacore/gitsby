@@ -8672,6 +8672,8 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fGateOnly "demogif publish" -m 'hands off'
 		fAssert "[dfjmf] and leaves out one that was already edited when the run started" \
 			bash -c "[[ '${gateRc}' == 0 ]] && grep -qxF 'paths=[]' '${gateCalls}' && grep -qF 'the run changed 0 tracked file(s)' '${gateOut}'"
+		fAssert "[dfkwr] and stage 6 leaves that gif as it is, rather than moving the new render over it" \
+			bash -c "[[ \"\$(cat '${gateDir}/assets/demo.gif')\" == edited && ! -e '${gateDir}/assets/demo.gif.new' ]] && grep -qF 'WARNING: demo gif differs, but assets/demo.gif was already edited when the run started, so it stays as it is' '${gateOut}'"
 		rm -f -- "${gateFail:?}/pillow"
 		## The real publisher, told to commit one of two edited files. Its gitsby runs git, and its
 		## rar is never called with the backup off but has to be there.
@@ -8960,6 +8962,39 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dfk09] and when one clashes with what it fast-forwarded over"  fGateRanSaying 1 'uncommitted edits clash with origin in notes.txt, so the merge was backed out'
 		fAssert "[dfk0a] and backs that out too, with the edit put back and the older stash entry left alone" \
 			bash -c "[[ \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == clash && \"\$(git -C '${gateDir}' diff --name-only HEAD)\" == notes.txt && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' && -z \"\$(git -C '${gateDir}' ls-files -u)\" ]]"
+		## Staged edits stay staged over a fast-forward and a merge that go in clean: a file staged
+		## and then edited again, and a new file that is only staged. git puts an autostash back
+		## without --index, which unstaged both.
+		git -C "${gateDir}" reset --quiet --hard '@{u}'
+		fGateUpstream seven
+		echo staged >> "${gateDir}/notes.txt" && git -C "${gateDir}" add notes.txt && echo later >> "${gateDir}/notes.txt"
+		echo new > "${gateDir}/new.txt" && git -C "${gateDir}" add new.txt
+		fGateOnly sync
+		fAssert "[dfkwk] stage 0 keeps staged edits staged over a fast-forward, and the user's stash entry as it was" \
+			bash -c "[[ '${gateRc}' == 0 && \"\$(git -C '${gateDir}' rev-parse HEAD)\" == \"\$(git -C '${gateOther}' rev-parse HEAD)\" && \"\$(git -C '${gateDir}' show :notes.txt | tail -n 1)\" == staged && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == later && \"\$(git -C '${gateDir}' diff --cached --name-only | paste -sd ' ')\" == 'new.txt notes.txt' && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' ]]"
+		git -C "${gateDir}" reset --quiet --hard '@{u}'
+		echo mine > "${gateDir}/mine.txt" && git -C "${gateDir}" add mine.txt && git -C "${gateDir}" commit --quiet -m mine -- mine.txt
+		fGateUpstream eight
+		echo staged >> "${gateDir}/notes.txt" && git -C "${gateDir}" add notes.txt && echo later >> "${gateDir}/notes.txt"
+		echo new > "${gateDir}/new.txt" && git -C "${gateDir}" add new.txt
+		fGateOnly sync
+		fAssert "[dfkwm] and over a merge" \
+			bash -c "[[ '${gateRc}' == 0 && \"\$(git -C '${gateDir}' rev-parse HEAD^2)\" == \"\$(git -C '${gateOther}' rev-parse HEAD)\" && \"\$(git -C '${gateDir}' show :notes.txt | tail -n 1)\" == staged && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == later && \"\$(git -C '${gateDir}' diff --cached --name-only | paste -sd ' ')\" == 'new.txt notes.txt' && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' ]]"
+		fAssert "[dfkwq] and the plan says a diverged branch is merged"  grep -qxF 'Remote sync .........: fast-forward from origin first, or merge it when diverged' "${gateOut}"
+		## Nothing to carry over makes no stash entry, so the one there is the user's and stays.
+		git -C "${gateDir}" reset --quiet --hard '@{u}'
+		fGateUpstream nine
+		fGateOnly sync
+		fAssert "[dfkwn] and with nothing to carry over, leaves the user's stash entry in the stash" \
+			bash -c "[[ '${gateRc}' == 0 && \"\$(git -C '${gateDir}' rev-parse HEAD)\" == \"\$(git -C '${gateOther}' rev-parse HEAD)\" && -z \"\$(git -C '${gateDir}' status --porcelain --untracked-files=no)\" && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' ]]"
+		## A staged edit where origin changed the same lines: --index puts nothing back and leaves no
+		## unmerged file to name.
+		fGateUpstream ten notes.txt
+		echo mine >> "${gateDir}/notes.txt" && git -C "${gateDir}" add notes.txt
+		syncHead="$(git -C "${gateDir}" rev-parse HEAD)"
+		fGateOnly sync
+		fAssert "[dfkwp] a staged edit that clashes with what came in stops the run, named, with the edit still staged" \
+			bash -c "[[ '${gateRc}' == 1 && \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(git -C '${gateDir}' show :notes.txt | tail -n 1)\" == mine && -z \"\$(git -C '${gateDir}' diff --name-only)\" && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' && -z \"\$(git -C '${gateDir}' ls-files -u)\" ]] && grep -qF 'uncommitted edits clash with origin in notes.txt, so the merge was backed out' '${gateOut}'"
 		git -C "${gateDir}" remote set-url origin "${work}/gate-pipe-nowhere.git"
 		fGateOnly sync
 		fAssert "[dd5g4] an origin it can't reach is a warning, not a stop"  fGateRanSaying 0 "WARNING: can't reach origin"
