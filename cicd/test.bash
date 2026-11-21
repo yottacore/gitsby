@@ -5505,6 +5505,46 @@ GHEOF
 	)
 	fAssert     "[dfkym] pullcom pulls when only a submodule's fetch fails"  bash -c "cd '${smg}/mine' && [[ \"\$(cat ../pullcom.rc)\" == 0 ]] && git merge-base --is-ancestor \"\$(git -C '${smg}/origin.git' rev-parse dev)\" HEAD"
 	fAssert     "[dfkyn] and names the submodule fetch rather than offline"  bash -c "cd '${smg}' && grep -qF \"fetching a submodule failed\" pullcom.out && ! grep -qE 'offline|unreachable' pullcom.out"
+	fAssert     "[dfm00] and keeps origin's submodule bump, though the submodule lacks that commit"  bash -c "cd '${smg}/mine' && [[ \"\$(git rev-parse HEAD:child)\" == \"\$(git -C '${smg}/origin.git' rev-parse dev:child)\" ]]"
+
+	## A pull moves the gitlink but not the submodule's checkout, so 'git add --all' staged the
+	## old commit, and pullcom committed it, undoing origin's bump for the next sync to push.
+	local smb="${work}/$1-submodulebump"
+	mkdir -p "${smb}"
+	git init --quiet --bare -b main "${smb}/child.git"
+	git clone --quiet "${smb}/child.git" "${smb}/childwork" 2>/dev/null
+	git init --quiet --bare -b main "${smb}/origin.git"
+	git clone --quiet "${smb}/origin.git" "${smb}/theirs" 2>/dev/null
+	(
+		cd "${smb}/childwork" || exit 1
+		echo c > c.txt && git add --all && git commit --quiet -m child && git push --quiet origin main
+		cd "${smb}/theirs" || exit 1
+		echo a > a.txt && git add --all
+		git -c protocol.file.allow=always submodule --quiet add "${smb}/child.git" child
+		git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git -c protocol.file.allow=always clone --quiet --recurse-submodules -b dev "${smb}/origin.git" "${smb}/mine" 2>/dev/null
+		cd "${smb}/mine" && git config protocol.file.allow always
+		cd "${smb}/childwork" && echo d >> c.txt && git commit --quiet -am more && git push --quiet origin main
+		cd "${smb}/theirs/child" && git pull --quiet origin main
+		cd "${smb}/theirs" && git add child && git commit --quiet -m bump && git push --quiet origin dev
+		cd "${smb}/mine" || exit 1
+		echo m > m.txt
+		"${gitsby}" -q pullcom 'mine' > "${smb}/pullcom.out" 2>&1
+		echo "$?" > "${smb}/pullcom.rc"
+		git rev-parse HEAD > "${smb}/head.1"
+		"${gitsby}" -q pullcom 'again' > "${smb}/pullcom2.out" 2>&1
+		echo "$?" > "${smb}/pullcom2.rc"
+	)
+	fAssert     "[dfkzx] pullcom after origin bumps a submodule keeps the bump and commits the rest"  bash -c "cd '${smb}/mine' && [[ \"\$(cat ../pullcom.rc)\" == 0 && \"\$(git rev-parse HEAD:child)\" == \"\$(git -C '${smb}/origin.git' rev-parse dev:child)\" ]] && git log -1 --pretty=%s | grep -qx mine && git cat-file -e HEAD:m.txt"
+	fAssert     "[dfkzy] and says it left the submodule out, naming its path and git submodule update"  bash -c "cd '${smb}' && grep -qF 'WARNING: a submodule is checked out behind the commit this branch records for it, so it was left out of the commit' pullcom.out && grep -qF 'git submodule update' pullcom.out && grep -qE '^  File: .*/mine/child\$' pullcom.out"
+	fAssert     "[dfkzz] a second pullcom with the submodule still behind commits nothing and keeps the bump"  bash -c "cd '${smb}/mine' && [[ \"\$(cat ../pullcom2.rc)\" == 0 && \"\$(git rev-parse HEAD)\" == \"\$(cat ../head.1)\" && \"\$(git rev-parse HEAD:child)\" == \"\$(git -C '${smb}/origin.git' rev-parse dev:child)\" ]] && grep -qF 'Nothing to commit.' ../pullcom2.out"
+	fAssert     "[dfm01] once the submodule is updated, the tree is clean"  bash -c "cd '${smb}/mine' && git submodule --quiet update && [[ -z \"\$(git status --porcelain)\" ]]"
+	## The checks made before anything is staged counted that submodule as work too, so br switch
+	## refused to leave dev, naming pullcom, and sync on dev called it a direct push.
+	fAssert     "[dfm09] br switch off dev with only a submodule behind its gitlink moves"  bash -c "cd '${smb}/mine' && git push --quiet origin dev && git -C child checkout --quiet HEAD~1 && git branch smbfeat && '${gitsby}' -q br switch smbfeat >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == smbfeat ]]"
+	fAssert     "[dfm0a] -q sync on dev with only that submodule isn't a direct push, and pushes no move back"  bash -c "cd '${smb}/mine' && git checkout --quiet dev && '${gitsby}' -q sync 'smb' >/dev/null 2>&1 && [[ \"\$(git -C '${smb}/origin.git' rev-parse dev:child)\" == \"\$(git rev-parse HEAD:child)\" && \"\$(git -C child rev-parse HEAD)\" != \"\$(git rev-parse HEAD:child)\" ]]"
+	fAssert     "[dfm0b] a submodule moved sideways still counts as work on dev"  bash -c "cd '${smb}/mine' && ( cd child && git checkout --quiet -b side && git commit --quiet --allow-empty -m side ) && ! '${gitsby}' -q br switch smbfeat >/dev/null 2>&1; rc=\$?; git -C child checkout --quiet --detach HEAD~1; exit \${rc}"
 
 	## status.showUntrackedFiles=no hides untracked files from status, but 'git add --all' still
 	## takes them. Read from status, the plan said clean and the guards let them through.
@@ -10943,3 +10983,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261121 JC: Every command that stages the whole tree refuses an edit outside a sparse checkout, and none runs the dry run of git add, or reads core.sparseCheckout, outside one, [dfksp] [dfksq].
 ##		- 20261121 JC: The token walk has a gitsby.ghTokenFile set by hand, with and without gitsby.host, so the fallback's host check is pinned. [dfh3s] and [dfh3t] run on a dirty tree, and [dfktt] [dfktv] check nothing was committed. 2319 -> 2325.
 ##		- 20261121 JC: The real publisher with an empty path list, with another staged edit, with a failed pull, with a staged edit the pull clashes with, with an untracked file in the way, and with --quiet and no message, [dfkvy] to [dfkw1], [dfkw5], [dfkw3]. A blank answer at the cicd message prompt and --help, [dfkw2] [dfkw4].
+##		- 20261121 JC: pullcom leaves a submodule out of the commit when it's checked out behind the commit HEAD records, as after a pull that bumped it, [dfkzx] to [dfm01]. br switch and sync don't count it as work, [dfm09] to [dfm0b].

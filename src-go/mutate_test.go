@@ -450,8 +450,8 @@ func TestTreeDirtyUntrackedHidden(t *testing.T) { // [dfh4g]
 	for _, value := range []string{"no", "false", "normal", "all"} {
 		runGit(t, clone, "config", "status.showUntrackedFiles", value)
 		a := newApp(newPrinter())
-		if !treeDirty() || !a.commitPending() {
-			t.Errorf("status.showUntrackedFiles=%s: treeDirty() = %v, commitPending() = %v, want both true", value, treeDirty(), a.commitPending())
+		if !a.treeDirty() || !a.commitPending() {
+			t.Errorf("status.showUntrackedFiles=%s: treeDirty() = %v, commitPending() = %v, want both true", value, a.treeDirty(), a.commitPending())
 		}
 	}
 }
@@ -463,7 +463,7 @@ func TestStatusNamesUntracked(t *testing.T) { // [dfh4h]
 	if err != nil || len(files) < 10 {
 		t.Fatalf("found %d sources: %v", len(files), err)
 	}
-	call := regexp.MustCompile(`"git",\s*"status"`)
+	call := regexp.MustCompile(`"git",\s*("-c",\s*"[^"]*",\s*)*"status"`)
 	found := 0
 	for _, file := range files {
 		if strings.HasSuffix(file, "_test.go") {

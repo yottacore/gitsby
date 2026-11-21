@@ -40,7 +40,20 @@ func (a *app) cmdCommit() error {
 		}
 		// The index, not status: a submodule with its own edits or untracked files
 		// shows in status, but add stages nothing for it, and the commit would fail.
-		if !indexDiffers() {
+		staged, differs := stagedRaw()
+		if behind := a.behindGitlinks(staged); len(behind) > 0 {
+			// Shown as a step, though the plan can't list it, since it changes the index.
+			if err := a.step("git", append([]string{"--literal-pathspecs", "reset", "-q", "--"}, behind...)...); err != nil {
+				return err
+			}
+			files := make([]string, 0, len(behind))
+			for _, path := range behind {
+				files = append(files, nativePath(a.workTop+"/"+path))
+			}
+			a.out.statusNotes("WARNING: a submodule is checked out behind the commit this branch records for it, so it was left out of the commit, which would have undone that move. 'git submodule update' checks out the recorded one.", noteLines("File", files...))
+			differs = indexDiffers()
+		}
+		if !differs {
 			a.out.status("Nothing to commit.")
 			return nil
 		}
@@ -290,13 +303,38 @@ func (a *app) ownCommitsAhead() bool {
 	return a.hasUpstream() && runOut("git", "rev-list", "--first-parent", "--no-merges", "-n", "1", "@{u}..HEAD") != ""
 }
 
-// treeDirty: whether 'git add --all' has anything to take. A submodule's own edits
-// and untracked files show in status but aren't this repo's to commit, so they
-// don't count. A submodule moved to another commit still does. Untracked files are
-// asked for by name, since status.showUntrackedFiles=no hides them from status but
-// not from add.
-func treeDirty() bool {
-	return runOut("git", "status", "--porcelain", "--ignore-submodules=dirty", "--untracked-files=normal") != ""
+// treeDirty: whether the commit has anything to take. A submodule's own edits and
+// untracked files show in status but aren't this repo's to commit, so they don't
+// count. A submodule moved to another commit still does, unless the commit would
+// leave it out as behind (behindGitlinks), which costs a spawn only when one has
+// moved. Untracked files are asked for by name, since status.showUntrackedFiles=no
+// hides them from status but not from add.
+func (a *app) treeDirty() bool {
+	// v2 paths follow status.relativePaths, unlike v1's, and gitlinkBehind wants them
+	// from the top.
+	out := runOut("git", "-c", "status.relativePaths=false", "status", "--porcelain=v2", "-z", "--ignore-submodules=dirty", "--untracked-files=normal")
+	for _, entry := range strings.Split(out, "\x00") {
+		if entry == "" {
+			continue
+		}
+		// "1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>": a submodule whose checkout
+		// moved and nothing staged. Any other entry is work, and stops the loop before
+		// a rename's second path could be read as an entry.
+		f := strings.SplitN(entry, " ", 9)
+		if len(f) == 9 && f[0] == "1" && f[1] == ".M" && strings.HasPrefix(f[2], "SC") && f[5] == "160000" && a.gitlinkBehind(f[8], "HEAD", f[7]) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// gitlinkBehind: the submodule at path, from the top, is checked out on an ancestor
+// of recorded, or doesn't have recorded at all. See behindGitlinks.
+func (a *app) gitlinkBehind(path, checkedOut, recorded string) bool {
+	dir := filepath.Join(a.workTop, path)
+	rc := exitCode(toolCmd("git", "-C", dir, "merge-base", "--is-ancestor", checkedOut, recorded).Run())
+	return rc == 0 || (rc == 128 && !runOK("git", "-C", dir, "cat-file", "-e", recorded+"^{commit}"))
 }
 
 // diffArgs is 'git diff' over args, read the same whatever the user's diff config.
@@ -307,6 +345,38 @@ func treeDirty() bool {
 // comes later, so it wins.
 func diffArgs(args ...string) []string {
 	return append([]string{"diff", "--no-relative", "--no-textconv", "--no-ext-diff", "--ignore-submodules=none"}, args...)
+}
+
+// stagedRaw is what the index holds that HEAD doesn't, as 'git diff --cached --raw
+// -z' gives it, and whether there is any. It costs the same one spawn as
+// indexDiffers, which a commit asks right after its add anyway. A failed read
+// counts as differing, as indexDiffers does.
+func stagedRaw() (string, bool) {
+	out, ok := runOutOK("git", diffArgs("--cached", "--raw", "-z", "--no-abbrev", "--no-renames")...)
+	return out, !ok || out != ""
+}
+
+// behindGitlinks are the staged submodule moves that go back: the submodule is
+// checked out on an ancestor of the commit HEAD records for it. A pull or switch
+// moves the gitlink but not the submodule's checkout, so add --all stages the old
+// commit, and the commit undid origin's bump (2026112112175066). A submodule that
+// doesn't have the recorded commit counts too: work built on that commit would
+// contain it, so this is a bump whose submodule fetch failed. A move forward or
+// sideways is the user's, and is staged as before.
+func (a *app) behindGitlinks(raw string) []string {
+	fields := strings.Split(raw, "\x00")
+	var behind []string
+	for i := 0; i+1 < len(fields); i += 2 {
+		// ":<old mode> <new mode> <old sha> <new sha> <status>", then the path.
+		meta := strings.Fields(fields[i])
+		if len(meta) != 5 || meta[0] != ":160000" || meta[1] != "160000" {
+			continue
+		}
+		if recorded, checkedOut, path := meta[2], meta[3], fields[i+1]; a.gitlinkBehind(path, checkedOut, recorded) {
+			behind = append(behind, path)
+		}
+	}
+	return behind
 }
 
 // indexDiffers: whether the index has anything a commit would take.
@@ -827,7 +897,7 @@ func (a *app) commitPending() bool {
 	if a.opt.staged {
 		return indexDiffers()
 	}
-	return treeDirty()
+	return a.treeDirty()
 }
 
 // pushesToRemote: whether this command sends anything to origin, since the identity

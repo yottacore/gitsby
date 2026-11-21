@@ -181,6 +181,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - When origin answers but the fetch of a submodule fails, as when the submodule's own remote has moved, Gitsby says so and goes on with the pull. It used to take the failure as being offline, so `pullcom` skipped the pull and said Done with the branch still behind.
 
+- After a pull that moved a submodule to a newer commit, `pullcom` and the other commands that commit no longer commit the submodule back to its old one. git moves the recorded commit but not the submodule's own checkout, so `git add --all` took the old commit, and the next push undid origin's move. Gitsby now leaves out a submodule checked out behind the commit the branch records, warns, and names `git submodule update`. `br switch` off `dev` no longer refuses over it, and `sync` on `dev` no longer calls it a direct push.
+
 - For a branch held by a locked worktree whose folder is gone, the refusal names mounting the folder again, or `git worktree unlock` and then `git worktree prune`. It used to name prune alone, which passes over a locked worktree, so the next run refused the same way.
 
 - `repo connect` and `repo create` refuse before anything runs in a shallow clone, naming `git fetch --unshallow`, since git refuses to push its cut-off history to a new repo. `repo connect` also refuses a local repo with a working tree that has the branch it would push checked out. Both used to commit and add the remote, and then the push failed, on every rerun too.

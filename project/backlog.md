@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - After pulling a submodule bump, pullcom commits the submodule back to its old commit
 	- ID: 2026112112175066
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261121-121750
@@ -47,6 +47,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-21 on b23, git 2.51, local bare repos. Confirmed.
 	- Possible cause [Bug]: cmdPull merges with no submodule update, and cmdCommit stages a submodule moved off its gitlink as new work, per 2026111016332293.
 	- Origin: Go port. Found while working 2026112017151559. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: A pull or switch moves the gitlink but not the submodule's checkout. git add --all then staged the old commit as a submodule move, and the commit took it. The checks made before staging read the same entry from status as work, so br switch refused to leave dev and sync on dev called it a direct push.
+	- Actual fix [Bug]: After git add --all, cmdCommit reads the staged changes with --raw, in the spawn the index check already cost, and unstages any submodule checked out on an ancestor of the commit HEAD records, or lacking that commit. It warns, names the folder on a File: line, and names 'git submodule update'. treeDirty reads status v2 and skips the same case. design.md and the changelog say so.
+	- Test case: test.bash [dfkzx] to [dfkzz], [dfm00], [dfm01], [dfm09] to [dfm0b].
+	- Verified: [dfm00], [dfkzx], [dfkzy] fail on the build before the fix and pass with it. [dfkzz] passed there before its bump condition was added, which is unverified on that build. [dfm09] and [dfm0a] fail with only the commit fixed and pass with treeDirty fixed. [dfm01] and [dfm0b] pass on both, as guards. [dfh4h] fails on a git status call without --untracked-files after its pattern was widened to see '-c' options. The quick gate with every area passed: test.bash 2358/0, fuzz 310/0, parity 31/0, spawn counts. gosec 37, as before.
+	- Swept: git add runs only in cmdCommit. Every pre-staging check goes through treeDirty: commitPending (directPush, releasePreflight), br switch's dirty refusal and pr ok's refusal. pr ok's isn't run here, since it needs a git host. The plan's status block still lists the submodule, as it does a dirty one.
+	- Decisions: Left out with a warning rather than updated, since the submodule's checkout is its own, an update detaches a branch checked out there, and it may need a fetch the run already saw fail. git merge ignores submodule.recurse, so that setting isn't honored either. A move forward or sideways is still committed, since it may be the user's. A submodule lacking the recorded commit counts as behind: work built on that commit would contain it. The unstage shows as a step though the plan can't list it. treeDirty passes -c status.relativePaths=false, since v2 paths follow it, and [dfh4h]'s pattern now sees calls with -c options.
+	- Branch: nov21-2026112112175066
+	- Commit: 2cdbb74, deba756
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sibling checks are swept.
+	- Closed: 20261121-130548
 
 - The ssh identity probe and the ssh -G read cut a bracketed IPv6 host in an ssh:// origin at its first colon
 	- ID: 2026112111542213

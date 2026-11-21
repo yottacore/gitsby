@@ -264,6 +264,7 @@ func (a *app) enterRepo() error {
 	if n := len(opFiles); len(answers) == 6+n && answers[0] == "true" {
 		top, a.opPaths, a.sparseFile, a.worktreesDir, answers = answers[3], answers[4:4+n], answers[4+n], answers[5+n], answers[:3]
 	}
+	a.workTop = top
 	a.git.contextDir.set(contextOf(top))
 	if len(answers) == 3 {
 		if answers[2] == "true" {
@@ -505,7 +506,7 @@ func (a *app) preflightBranch() error {
 		}
 		// Refusing a dirty protected branch belongs here too, before the plan is shown
 		// and confirmed.
-		if a.currentBranch() != a.switchTarget() && a.isProtectedBranch("") && treeDirty() {
+		if a.currentBranch() != a.switchTarget() && a.isProtectedBranch("") && a.treeDirty() {
 			return usagef("Working tree has changes on '%s'; won't auto-commit to a protected branch. Carry them to a new branch (%s br create <name>), or commit them here deliberately (%s pullcom) first.", a.currentBranch(), meName, meName)
 		}
 		// A clean one can still be ahead, and the park push would send that.

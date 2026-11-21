@@ -565,7 +565,7 @@ func (a *app) prAcceptPreflight(prBranch string) error {
 	// The git host merges what origin already has, then the branch goes local and remote.
 	// Work that never reached origin is outside the PR and outside the merge -
 	// refuse, don't lose it.
-	if treeDirty() || isAhead() {
+	if a.treeDirty() || isAhead() {
 		if prBranch == a.pr.headBranch {
 			return usagef("'%s' has changes that aren't on origin, so PR #%s can't include them. Run '%s sync' first.", prBranch, a.pr.num, meName)
 		}
