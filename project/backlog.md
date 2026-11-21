@@ -627,6 +627,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The plan names the merge.
 	- Reproduced [Bug]: 2026-11-20, by reading. Confirmed.
 	- Origin: d0cc3da. 0633cc1 (2026112013542571) left it.
+	- 20261120: also sweep contributing.md:231, which still says the pipeline stops if the branch has diverged; that went stale with 0633cc1 (found under 2026112017135764).
 
 - Code Review 20261120 item 31: design.md says a later candidate is installed only with --tag
 	- ID: 2026112017135430
