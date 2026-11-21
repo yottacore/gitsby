@@ -2461,6 +2461,68 @@ fRunSuite(){
 	( cd "${tmA}" && git branch --quiet --unset-upstream && echo three > h.txt )
 	fAssert "[dfh40] after --unset-upstream, sync publishes it under its own name" \
 		bash -c "cd '${tmA}' && '${gitsby}' -q sync 'three' && [[ \"\$(git -C '${tmO}' rev-parse feat)\" == \"\$(git rev-parse feat)\" && \"\$(git -C '${tmO}' rev-parse main)\" != \"\$(git rev-parse feat)\" ]]"
+	## Every push of the current branch a command makes is refused before the plan where git
+	## would refuse it, so nothing is committed first. Under simple, a branch tracking one of
+	## another name is one. release and repo connect committed, then had the push refused
+	## (2026112017135749).
+	local ppO="${work}/$1-ppo.git" ppA="${work}/$1-ppa"
+	git init --quiet --bare -b main "${ppO}"
+	git clone --quiet "${ppO}" "${ppA}" 2>/dev/null
+	( cd "${ppA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git push --quiet origin main:refs/heads/feature-x && git fetch --quiet && git checkout --quiet -B feat origin/feature-x )
+	## Refused with nothing done: no commit, the edit still in the tree, no tag, and origin as it
+	## was. $1 is -q, or empty to run it in a pty and answer n at any prompt.
+	fPpRefused(){
+		local quiet="$1" head="" out="" rc=0; shift
+		head="$(git -C "${ppA}" rev-parse HEAD)"
+		echo "$*" >> "${ppA}/f.txt"
+		if [[ -n "${quiet}" ]]; then
+			out="$(cd "${ppA}" && "${gitsby}" "${quiet}" "$@" 2>&1)" && rc=1
+		else
+			out="$(fAnswerPrompt n "cd '${ppA}' && '${gitsby}' $*")"
+		fi
+		[[ "$(git -C "${ppA}" rev-parse HEAD)" == "${head}" && "$(git -C "${ppA}" branch --show-current)" == feat ]] || rc=1
+		git -C "${ppA}" diff --quiet && rc=1
+		[[ -z "$(git -C "${ppA}" tag)" && -z "$(git -C "${ppO}" tag)" ]] || rc=1
+		[[ "$(git -C "${ppO}" rev-parse feature-x)" == "$(git -C "${ppO}" rev-parse main)" ]] || rc=1
+		grep -qF 'Nothing was done' <<< "${out}" || rc=1
+		grep -qF 'Continue?' <<< "${out}" && rc=1
+		git -C "${ppA}" checkout --quiet -- f.txt
+		return "${rc}"
+	}
+	fAssert "[dfk10] sync -q refuses it before committing"       fPpRefused -q sync
+	fAssert "[dfk11] br switch -q too"                           fPpRefused -q br switch main
+	fAssert "[dfk12] br create -q too"                           fPpRefused -q br create next
+	fAssert "[dfk13] br hotfix -q too"                           fPpRefused -q br hotfix fx
+	fAssert "[dfk14] br merge -q too"                            fPpRefused -q br merge
+	fAssert "[dfk15] release -q too, with nothing tagged"        fPpRefused -q release v1.0.0
+	fAssert "[dfk16] repo connect -q too"                        fPpRefused -q repo connect "${ppO}"
+	if ((hasPty)); then
+		fAssert "[dfk17] release asked in person refuses before the plan"  fPpRefused "" release v1.0.0
+	else
+		fSkipBlock "release's refusal in person (no pty)"
+	fi
+	## Where git takes the push, repo connect's plan line names where it goes, which isn't
+	## always 'git push -u origin HEAD'.
+	git -C "${ppA}" config push.default upstream
+	echo two > "${ppA}/g.txt"
+	fAssertPlan "[dfk1a] repo connect's plan names the push that runs"  "^ +git push \(branch 'feat', to 'feature-x'\) \*$"  bash -c "cd '${ppA}' && '${gitsby}' -q repo connect '${ppO}'"
+	fAssert     "[dfk1b] and the run lands there"  bash -c "[[ \"\$(git -C '${ppO}' rev-parse feature-x)\" == \"\$(git -C '${ppA}' rev-parse feat)\" ]] && ! git -C '${ppO}' show-ref --verify --quiet refs/heads/feat"
+	## release from a branch whose push lands on main refuses as br create does, since --direct
+	## isn't release's, and the pull of main would put the work in the release unasked.
+	git -C "${ppA}" config branch.feat.merge refs/heads/main
+	fPpReleaseToMain(){ local out=""
+		echo three >> "${ppA}/g.txt"
+		out="$(cd "${ppA}" && "${gitsby}" -q release v1.0.0 2>&1)" && return 1
+		grep -qF 'sync --direct' <<< "${out}" && [[ -z "$(git -C "${ppA}" tag)" ]] && ! git -C "${ppA}" diff --quiet && [[ "$(git -C "${ppO}" rev-parse main)" != "$(git -C "${ppA}" rev-parse feat)" ]] ;}
+	fAssert     "[dfk1c] release -q from a branch whose push lands on main refuses, naming sync --direct"  fPpReleaseToMain
+	## The park push's plan line names a remote other than origin (2026112017135225).
+	local p2O="${work}/$1-p2o.git" p2U="${work}/$1-p2u.git" p2A="${work}/$1-p2a"
+	git init --quiet --bare -b main "${p2O}"
+	git init --quiet --bare -b main "${p2U}"
+	git clone --quiet "${p2O}" "${p2A}" 2>/dev/null
+	( cd "${p2A}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git remote add up "${p2U}" && git checkout --quiet -b feat && git push --quiet -u up feat && echo two > g.txt )
+	fAssertPlan "[dfk18] the park push's plan line names a remote other than origin"  "^ +git push \(branch 'feat', to 'feat' on 'up'\) \*$"  bash -c "cd '${p2A}' && '${gitsby}' -q sync two"
+	fAssert     "[dfk19] and the run pushes there"  bash -c "[[ \"\$(git -C '${p2U}' rev-parse feat)\" == \"\$(git -C '${p2A}' rev-parse feat)\" ]] && ! git -C '${p2O}' show-ref --verify --quiet refs/heads/feat"
 
 	## A shallow clone fetches only main, so origin's dev never shows, and br merge went into
 	## main. The branch commands refuse until the fetch is widened. A single-branch clone of dev

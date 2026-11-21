@@ -107,6 +107,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `br merge` on a branch that tracks one of another name deletes that branch from origin once it's merged. It named the current branch, so the branch it pushed to stayed on origin, and the leased delete of an older branch of that name warned that it had commits the merge didn't, which wasn't so. Where its push goes to another remote, to a ref that isn't a branch, or to `main` or `dev`, it's refused before the plan.
 
+- `release` and `repo connect` on a branch that git won't push, such as one tracking a branch of another name under `push.default=simple`, refuse before the plan, as `sync` does. They committed the tree first, then stopped at the push with a message saying nothing was done. `release` from a branch whose push lands on `main` or `dev` refuses too, naming `sync --direct`. The plan's push line names the remote when it isn't origin, and `repo connect`'s line names the push that runs.
+
 - `br merge` warns before its push of `dev` sends commits made on `dev` itself, the way `sync` there does, and with `-q` it refuses. So does a hotfix's merge back into `dev`, from `br merge` and `pr ok`. They used to go to origin's `dev` with the merge, at exit 0.
 
 - `sync`, `br switch`, `br create`, `br hotfix` and `release` warn before they push a branch back up that origin deleted, most often when its pull request merged, and with `-q` they refuse. Their push put it back on origin as a new branch. `git branch --unset-upstream` first says the push is meant.

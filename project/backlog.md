@@ -295,7 +295,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 10: release and repo connect commit the tree, then refuse the push and say nothing was done
 	- ID: 2026112017135749
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-171357
@@ -306,6 +306,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, with -q and at the prompt. Confirmed.
 	- Possible cause [Bug]: parkPushes at mutate.go:697 leaves release and repo connect out. pushDest.refusal at mutate.go:690 always says "Nothing was done", also when it's reached after a commit, a merge or a tag.
 	- Origin: 1c8c364 and ca1f916, nov19b, Code Review 20261119 item 1. Missed twin, since its Swept row lists release's park push.
+	- Actual cause [Bug]: The refusal before the plan read its own list of park-push commands, which left out release and repo connect. Both committed the tree, then had the push refused at the step, whose text said nothing was done. repo connect's plan line was a fixed 'git push -u origin HEAD', whatever ran.
+	- Actual fix [Bug]: Every push of the current branch a command makes is on one list (plannedPushes in mutate.go), which the refusals before the plan, the --direct and gone-branch checks and the plan's push line read, and the step builds the same way. release and repo connect are on it, so they refuse before the plan where git would refuse the push. release from a branch whose push lands on main or dev refuses as br create does, naming sync --direct. repo connect's plan line names the push that runs. The step's own refusal, now reached only after a commit, a merge or a tag, no longer says nothing was done. design.md and the changelog say so.
+	- Branch: nov20c-2026112017135211
+	- Test case: test.bash [dfk10] to [dfk1c]; Go TestPlannedPushesEveryCommand [dfk0z] and TestPlannedPushDisp [dfk0y].
+	- Verified: [dfk15] to [dfk17] and [dfk1a] fail on the build before the fix and pass with it. [dfk1c] pushed the feature branch to main and tagged it at exit 0 on the old build, and refuses on the new one. [dfk10] to [dfk14] pass on both, since those commands were already refused. [dfk0z] fails with release or repo connect taken off the list, and [dfk0y] fails with the step's refusal saying nothing was done. The quick gate passed with every area: test.bash 2299/0, fuzz 310/0, parity 31/0, spawn counts unchanged. gosec 37, as before, none in the changed lines.
+	- Swept: every reader of the old command list and pushTarget: directPush, directTarget, pushesGoneBranch, the preflight refusal and the sync plan line. Every pushCurrent caller: the park pushes and repo connect's are on the list. br merge's target, release's default branch and dev, and the hotfix back-merge push other branches, and are child 2026112020293534. parkHead still reads pushDest, since br merge and pr create ask it with nothing to push and offline too.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-202950
+	- Closed reason: Done
+	- Decisions:
+		- The run builds its push with the same function the list uses, rather than reading the list made before the commit, since the commit drops the cached refs.
+		- release from a feature branch whose push lands on main or dev is refused rather than given --direct, which stays sync's and br switch's, per 2026111016332380. Before, it pushed the work to main ahead of the release merge.
+		- repo connect's first publish keeps 'git push -u origin HEAD', which is what runs.
+		- The --direct and gone-branch checks stay on park pushes, so repo connect isn't asked about either.
+	- Commit: ccb0c7f
 
 - Code Review 20261120 item 11: A branch another worktree is rebasing or bisecting isn't refused, so the run pushes and then fails
 	- ID: 2026112017135735
@@ -844,7 +859,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 45: The park push's plan line leaves out a remote other than origin
 	- ID: 2026112017135225
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171352
@@ -855,6 +870,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
 	- Possible cause [Bug]: preview.go:43 names a ref of another name but never another remote.
 	- Origin: ca1f916, nov19b, Code Review 20261119 item 1.
+	- Closed reason: Done
+	- Actual cause [Bug]: The plan's push line named a target of another name, but never the remote, while the step pushes to the push remote that pushRemote, remote.pushDefault or the upstream sets.
+	- Actual fix [Bug]: The line comes from the push list's entry, the one the step's arguments come from, and names the remote when it isn't origin, as `git push (branch 'feat', to 'feat' on 'up') *`. That covers sync and every command whose plan shows the park push.
+	- Branch: nov20c-2026112017135211
+	- Test case: test.bash [dfk18] [dfk19]; Go TestPlannedPushDisp [dfk0y].
+	- Verified: [dfk18] fails on the build before the fix and passes with it. [dfk19] passes on both, since the push already went to up. [dfk0y] checks each line against the step's own arguments, over 10 push setups. The quick gate passed with every area: test.bash 2299/0, fuzz 310/0, parity 31/0.
+	- Swept: every plan line for a push of the current branch: the sync line, which br switch, br create, br hotfix, br merge, pr create and release show, and repo connect's. The 'git push *' lines for br merge's target, the back-merge and release's default branch and dev push other branches, and are child 2026112020293534.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-203013
+	- Decisions:
+		- Another remote is named as "to '<branch>' on '<remote>'", always with the branch, so the line reads the same whether or not the name changes. A push to origin under its own name keeps the line parity pins against v2.1.0.
+	- Commit: ccb0c7f
 
 - Code Review 20261120 enhancement 1: One list of each command's pushes, read by preflight, the plan and the run
 	- ID: 2026112017135211
@@ -867,6 +894,26 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements [Feature]: Which guard covers which push has been fixed one command list at a time: 2026111016332380 (directPush), Code Review 20261119 item 1 (parkPushes), item 9 (pushesGoneBranch), item 17 (mergePushesOwn), and item 10 here. Give each command one plannedPushes list, with each push's branch, destination and kind, and have the guards, the plan and the run read it. Item 18's PR base is the same kind of problem, so give pr create and pr ok one target helper.
 	- Decisions: Answered 2026-11-20: fix it with items 10 and 45 as one change, though defects are still open.
 	- Origin: Repeat class, 5 command-list fixes since 2026-11-10.
+	- Branch: nov20c-2026112017135211
+	- Test case: test.bash [dfk10] to [dfk1c]; Go TestPlannedPushesEveryCommand [dfk0z] and TestPlannedPushDisp [dfk0y].
+	- Progress log:
+		- 20261120: The core is in, with items 10 (2026112017135749) and 45 (2026112017135225). Each command's pushes of the branch it stands on are one list, plannedPushes in mutate.go, with each push's branch, remote, ref and kind. The refusal before the plan, the --direct and gone-branch checks, and the plan's push line read it, and the step builds its push the same way. [dfk0z] walks the usages table, so a new mutating command fails until it's put on the list or named as one that doesn't push.
+		- The pushes of other branches, and the one target helper for pr create and pr ok, are child 2026112020293534. The helper comes with item 18's fix (2026112017135624).
+	- Commit: ccb0c7f
+
+- Put the pushes of other branches on the push list: br merge's target, the hotfix back-merge, and release's default branch and dev
+	- ID: 2026112020293534
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-202935
+	- Opened by:
+	- Parent ID: 2026112017135211
+	- Related IDs: 2026112017135624
+	- Requirements [Feature]: The push list holds only pushes of the branch a command stands on. br merge's push of its target, the hotfix back-merge's push of dev (br merge and pr ok), and release's pushes of the default branch and dev are still refused by git only at the step, after the merge or the tag. Add them to the list, so a push git would refuse is refused before the plan, mergePushesOwn reads its targets from it, and the plan's 'git push *' lines name where each goes. Give pr create and pr ok one target helper, through item 18's fix (2026112017135624).
+	- Estimated effort: Avg
+	- Progress log: Open questions for the design: a target that isn't local yet has no push fields to read until the checkout makes it, so where remote.pushDefault sends it would mean copying git's rule. The atomic push names origin and the target's own name, and release pushes dev only when it has an upstream.
 
 - Code Review 20261120 enhancement 2: One token grant per run, given only to the child that needs it
 	- ID: 2026112017135196

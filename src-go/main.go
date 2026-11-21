@@ -430,7 +430,7 @@ func (a *app) preflight() error {
 	if err := a.refuseHeldBranch(); err != nil {
 		return err
 	}
-	if err := a.refuseParkPush(); err != nil {
+	if err := a.refusePlannedPushes(); err != nil {
 		return err
 	}
 	if err := a.refuseGoneBranch(); err != nil {
@@ -478,7 +478,7 @@ func (a *app) preflightBranch() error {
 		if err := a.refuseUnrelatedMerge(); err != nil {
 			return err
 		}
-		// Its delete names the branch the park push goes to. Ahead of refuseParkPush,
+		// Its delete names the branch the park push goes to. Ahead of refusePlannedPushes,
 		// since after its 'sync --direct' the delete would still name dev.
 		if a.hasOrigin() {
 			if _, err := a.parkHead(a.currentBranch()); err != nil {
@@ -603,7 +603,11 @@ func (a *app) settleTarget() (bool, error) {
 		return a.settleRepoClone()
 	case "repo-create", "repo-connect":
 		// Resolve what we're publishing to before the preview, so the plan is real.
-		return false, a.settleRepoConnect()
+		if err := a.settleRepoConnect(); err != nil {
+			return false, err
+		}
+		// Its push onto an origin already set is known only now. It commits first.
+		return false, a.refusePlannedPushes()
 	}
 	return false, nil
 }
