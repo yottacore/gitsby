@@ -5245,6 +5245,7 @@ GHEOF
 	fAssertOut "[dfg1r] release with only a dirty submodule has nothing new"  'Nothing new to release since v0\.1\.0'  bash -c "cd '${smd}/top' && '${gitsby}' -q release 2>&1"
 	fAssert    "[dfg1s] and cuts no tag"  bash -c "cd '${smd}/top' && ! git rev-parse -q --verify refs/tags/v0.1.1 >/dev/null"
 	fAssert    "[dfg1t] a submodule moved to another commit is still committed"  bash -c "cd '${smd}/top' && git checkout --quiet smfeat && ( cd child && git add --all && git commit --quiet -m moved ) && '${gitsby}' -q pullcom 'bump' && [[ -z \"\$(git status --porcelain)\" ]] && git log -1 --pretty=%s | grep -qx bump"
+	fAssert    "[dfjwp] and with diff.ignoreSubmodules=all too"  bash -c "cd '${smd}/top' && git config diff.ignoreSubmodules all && ( cd child && git commit --quiet --allow-empty -m again ) && '${gitsby}' -q pullcom 'bump2'; rc=\$?; git config --unset diff.ignoreSubmodules; [[ \${rc} == 0 && -z \"\$(git status --porcelain)\" ]] && git log -1 --pretty=%s | grep -qx bump2"
 
 	## status.showUntrackedFiles=no hides untracked files from status, but 'git add --all' still
 	## takes them. Read from status, the plan said clean and the guards let them through.
@@ -5271,6 +5272,40 @@ GHEOF
 	fAssertOut  "[dfh4m] the plan lists the hidden untracked file"  '^    \?\? untracked\.txt$'  bash -c "cd '${hu}/work' && '${gitsby}' -q status 2>&1"
 	fAssertOut  "[dfh4n] br switch off dev with only a hidden untracked file refuses"  "Working tree has changes on 'dev'"  bash -c "cd '${hu}/work' && '${gitsby}' -q br switch hufeat 2>&1"
 	fAssert     "[dfh4p] repo connect with no commits and only hidden untracked files publishes them"  bash -c "cd '${hu}/fresh' && '${gitsby}' -q repo connect '${hu}/fresh.git' >/dev/null 2>&1 && git -C '${hu}/fresh.git' ls-tree -r --name-only main | grep -qx f\.txt"
+
+	## diff.relative cut gitsby's git diff reads to the folder it ran from, so from sub/ a
+	## conflicted autostash reapply outside it went unseen, and the markers were committed and
+	## pushed at exit 0. An edit outside it was "Nothing to commit.", and so was one a textconv
+	## driver showed no change for.
+	local dr="${work}/$1-diffconfig"
+	mkdir -p "${dr}"
+	git init --quiet --bare -b main "${dr}/origin.git"
+	git clone --quiet "${dr}/origin.git" "${dr}/mine" 2>/dev/null
+	(
+		cd "${dr}/mine" || exit 1
+		mkdir sub && printf 'line1\nline2\nline3\n' > shared.txt && echo s > sub/s.txt
+		git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b drfeat && git push --quiet -u origin drfeat
+	)
+	git clone --quiet -b drfeat "${dr}/origin.git" "${dr}/theirs" 2>/dev/null
+	( cd "${dr}/theirs" && printf 'line1\nTHEIRS\nline3\n' > shared.txt && git commit --quiet -am theirs && git push --quiet )
+	git clone --quiet -b drfeat "${dr}/origin.git" "${dr}/outside" 2>/dev/null
+	(
+		cd "${dr}/mine" || exit 1
+		git config diff.relative true
+		printf 'line1\nMINE\nline3\n' > shared.txt && echo s2 > sub/s.txt
+		cd sub || exit 1
+		rc=0; "${gitsby}" -q sync 'dr' > "${dr}/sync.out" 2>&1 || rc=$?
+		echo "${rc}" > "${dr}/sync.rc"
+		cd "${dr}/outside" || exit 1
+		git config diff.relative true
+		git config diff.same.textconv 'echo same <' && echo 'shared.txt diff=same' > .git/info/attributes
+		echo edited > shared.txt
+	)
+	fAssert     "[dfjwj] -q sync from sub/ with diff.relative refuses a conflicted autostash reapply outside it"  bash -c "[[ \"\$(cat '${dr}/sync.rc')\" == 1 ]]"
+	fAssert     "[dfjwk] and names the file in its refusal"  grep -qx '    shared\.txt' "${dr}/sync.out"
+	fAssert     "[dfjwm] and commits and pushes no conflict markers"  bash -c "cd '${dr}/mine' && ! git log -p | grep -q '<<<<<<<' && ! git -C '${dr}/origin.git' log -p drfeat | grep -q '<<<<<<<' && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]]"
+	fAssert     "[dfjwn] pullcom from sub/ commits an edit outside it, which a textconv driver shows no change for"  bash -c "cd '${dr}/outside/sub' && '${gitsby}' -q pullcom 'dr out' && [[ -z \"\$(git status --porcelain)\" ]] && git log -1 --pretty=%s | grep -qx 'dr out'"
 
 	## In a sparse checkout, 'git add --all' stages what is inside it and then exits 1 over a
 	## file outside it, so the run stopped after the plan and the pull with the index half staged.
@@ -10353,3 +10388,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261120 JC: pr create refuses a branch that shares no history with its base through gh and tea, and leaves it to the git host through glab and in a shallow clone, [dfjg8] to [dfjgc].
 ##		- 20261120 JC: Each installer's --version is the date of its newest History entry, and every PowerShell file outside legacy/ is plain ASCII, [dfjqe] to [dfjqh].
 ##		- 20261120 JC: --release dev takes the newest release, pre-releases included, [dfjr3] to [dfjr9]; [dbfkc] [dbfkd] [dbfks] [dd5cx] [dbfm0] [dbfm1] check what replaced the refusal.
+##		- 20261120 JC: diff.relative, a textconv driver and diff.ignoreSubmodules=all hide no conflict or staged edit from sync and pullcom run in a subfolder, [dfjwj] to [dfjwp].

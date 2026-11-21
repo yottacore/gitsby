@@ -151,7 +151,7 @@ func (a *app) releasePreflight() error {
 	// --staged the index.
 	parks := treeDirty()
 	if a.opt.staged {
-		parks = !runOK("git", "diff", "--cached", "--quiet")
+		parks = indexDiffers()
 	}
 	if !a.rel.bumped || parks || isAhead() {
 		return nil

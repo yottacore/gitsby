@@ -63,7 +63,7 @@ func pathSet(lists ...[]string) map[string]bool {
 
 // changedPaths is 'git diff --name-only' over args, with paths from the top.
 func changedPaths(args ...string) []string {
-	out := runOut("git", append([]string{"diff", "--name-only", "-z", "--no-renames"}, args...)...)
+	out := runOut("git", diffArgs(append([]string{"--name-only", "-z", "--no-renames"}, args...)...)...)
 	var paths []string
 	for _, path := range strings.Split(out, "\x00") {
 		if path != "" {

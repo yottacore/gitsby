@@ -108,7 +108,7 @@ func (a *app) showIncoming() {
 	var lines []string
 	// Three dots diff from the merge base, so commits of our own that the upstream
 	// lacks don't show up reversed, as if the pull would undo them.
-	if out, _ := toolCmd("git", "diff", "--name-status", "HEAD...@{u}").Output(); len(out) > 0 {
+	if out, _ := toolCmd("git", diffArgs("--name-status", "HEAD...@{u}")...).Output(); len(out) > 0 {
 		lines = nameStatusColumns(string(out))
 	}
 	a.showLines(lines)

@@ -426,7 +426,7 @@ func (a *app) warnHotfixTouchedCode(workBranch, targetBranch string) {
 		base = "refs/remotes/origin/" + targetBranch
 	}
 	// Paths come back from the top of the tree, wherever this runs from.
-	out, ok := runOutOK("git", "diff", "--name-only", base+"...refs/heads/"+workBranch)
+	out, ok := runOutOK("git", diffArgs("--name-only", base+"...refs/heads/"+workBranch)...)
 	switch {
 	case !ok:
 		a.out.clean("")

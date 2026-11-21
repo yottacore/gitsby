@@ -30,7 +30,7 @@ func (a *app) cmdCommit() error {
 		return err
 	}
 	if a.opt.staged {
-		if runOK("git", "diff", "--cached", "--quiet") {
+		if !indexDiffers() {
 			a.out.status("Nothing staged, so nothing was committed.")
 			return nil
 		}
@@ -40,7 +40,7 @@ func (a *app) cmdCommit() error {
 		}
 		// The index, not status: a submodule with its own edits or untracked files
 		// shows in status, but add stages nothing for it, and the commit would fail.
-		if runOK("git", "diff", "--cached", "--quiet") {
+		if !indexDiffers() {
 			a.out.status("Nothing to commit.")
 			return nil
 		}
@@ -152,7 +152,7 @@ func (a *app) refusePendingOp() error {
 // stopped says what didn't happen, and rerun is the command to run once they're
 // settled.
 func (a *app) refuseConflicts(stopped, rerun string) error {
-	conflicted := runLines("git", "diff", "--name-only", "--diff-filter=U")
+	conflicted := runLines("git", diffArgs("--name-only", "--diff-filter=U")...)
 	if len(conflicted) == 0 {
 		return nil
 	}
@@ -291,6 +291,21 @@ func (a *app) ownCommitsAhead() bool {
 // not from add.
 func treeDirty() bool {
 	return runOut("git", "status", "--porcelain", "--ignore-submodules=dirty", "--untracked-files=normal") != ""
+}
+
+// diffArgs is 'git diff' over args, read the same whatever the user's diff config.
+// diff.relative cut it to the folder gitsby ran from, a textconv driver whose
+// output didn't change hid an edit from --quiet, and diff.ignoreSubmodules=all hid
+// a submodule that add stages, so a conflict or a staged edit went unseen. Every
+// git diff gitsby reads goes through here. A caller's own --ignore-submodules
+// comes later, so it wins.
+func diffArgs(args ...string) []string {
+	return append([]string{"diff", "--no-relative", "--no-textconv", "--no-ext-diff", "--ignore-submodules=none"}, args...)
+}
+
+// indexDiffers: whether the index has anything a commit would take.
+func indexDiffers() bool {
+	return !runOK("git", diffArgs("--cached", "--quiet")...)
 }
 
 // stagesTree: this run's commit step stages the whole tree with 'git add --all', the
@@ -742,7 +757,7 @@ func (a *app) refuseParkPush() error {
 // commitPending: whether the command's commit step has anything to take.
 func (a *app) commitPending() bool {
 	if a.opt.staged {
-		return !runOK("git", "diff", "--cached", "--quiet")
+		return indexDiffers()
 	}
 	return treeDirty()
 }

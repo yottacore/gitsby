@@ -51,7 +51,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 1: With diff.relative or a textconv driver, an autostash conflict is committed and pushed
 	- ID: 2026112017135886
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261120-171358
@@ -63,6 +63,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: The decisions read plain `git diff`, which follows diff config: mutate.go:155, :33, :43 and :745, and release.go:154.
 	- Sweep: staged.go:66 changedPaths, refuseSparseAdd, branchcmd.go:429 and show.go:111.
 	- Origin: cfb6d90 (Go port) and 9f53a91 (--staged). No round saw it. Same class as Code Review 20261119 item 2, whose sweep covered git status only.
+	- Closed reason: Done
+	- Actual cause [Bug]: Every git diff gitsby read for a decision followed the user's diff config. diff.relative cut it to the folder gitsby ran from, and a textconv driver whose output didn't change made 'diff --cached --quiet' say the index matched HEAD.
+	- Actual fix [Bug]: One helper, diffArgs in mutate.go, starts every git diff with --no-relative, --no-textconv, --no-ext-diff and --ignore-submodules=none. The conflict check, the commit decisions, the --staged checks, the hotfix note and the incoming list all go through it.
+	- Test case: Go [dfjwf] TestDiffReadsIgnoreDiffConfig, [dfjwh] TestDiffReadsSeeSubmoduleMove and [dfjwg] TestDiffReadsUseDiffArgs; test.bash [dfjwj] to [dfjwn] and [dfjwp].
+	- Verified: [dfjwj], [dfjwk], [dfjwm], [dfjwn] and [dfjwp] fail on the build before the fix (test.bash 2235/5) and pass with it. [dfjwf] fails with --no-relative dropped, or with both --no-textconv and --no-ext-diff dropped. [dfjwh] fails with --ignore-submodules=none dropped, or put after the caller's options. The quick gate with every area passed: test.bash 2240/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Swept: every git diff in src-go, by grep for '"git", "diff"' and '[]string{"diff"': cmdCommit (2), refuseConflicts and commitPending in mutate.go, releasePreflight, changedPaths (which refuseSparseAdd and stagedPreflight use), warnHotfixTouchedCode and showIncoming. [dfjwg] fails on any new one. Read only, left alone: the 3 git diff reads in cicd.bash and release.bash run from the repo root and list names, which a textconv driver doesn't change.
+	- Decisions: Flags on one helper rather than plumbing. diff-index needs a HEAD, which a new repo doesn't have, and ls-files lists only the current folder unless given ':/', so each site would need its own guard. --no-relative needs git 2.28 by its release notes (not run on an older git), one release past the 2.27 that pull --autostash on a merge already needs. --ignore-submodules=none goes past the item's list, since diff.ignoreSubmodules=all hid a submodule move that add stages and git commit takes, and design.md counts a moved submodule as work. On git 2.51 either --no-textconv or --no-ext-diff alone clears the textconv case; both stay.
+	- Branch: nov20c-2026112017135886
+	- Commit: 7265edf
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-180535
 
 - Code Review 20261120 item 2: With an Enterprise account, gh's own credential helper gives the token to any other Enterprise host
 	- ID: 2026112017135870
@@ -753,7 +764,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 enhancement 3: Decide from plumbing, so user git config can't blind gitsby's reads
 	- ID: 2026112017135182
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171351
@@ -761,6 +772,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements [Feature]: User config has blinded gitsby's own reads 4 times, each fixed at one site: status.showUntrackedFiles (Code Review 20261119 item 2), add's translated messages (item 23), and diff.relative and textconv (item 1 here). Read decisions through diff-index, diff-files and ls-files -u, or one helper that adds --no-relative, --no-textconv and --no-ext-diff. A Go test like [dfh4h] fails on any plain git diff read in src-go without them.
 	- Decisions: Answered 2026-11-20: fix it with item 1 as one change, though defects are still open.
 	- Origin: Repeat class.
+	- Closed reason: Done
+	- Done: Every git diff in src-go goes through one helper, diffArgs in mutate.go, which adds --no-relative, --no-textconv, --no-ext-diff and --ignore-submodules=none. design.md says so under pullcom and sync. Item 1 (2026112017135886) has the reasons for flags over plumbing.
+	- Test case: Go [dfjwg] TestDiffReadsUseDiffArgs, with [dfjwf] and [dfjwh] for what the flags do.
+	- Verified: [dfjwg] fails on the tree before the change, naming all 8 old calls, and passes after.
+	- Branch: nov20c-2026112017135886
+	- Commit: 7265edf
+	- Acceptance signoff: Self-closed: its test failed before the change and passes after.
+	- Closed: 20261120-180535
 
 - Code Review 20261120 enhancement 4: Every park push runs the full branch query again
 	- ID: 2026112017135167

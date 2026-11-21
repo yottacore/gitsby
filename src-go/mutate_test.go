@@ -342,6 +342,131 @@ func TestStatusNamesUntracked(t *testing.T) { // [dfh4h]
 	}
 }
 
+// diff.relative cut every git diff to the folder gitsby ran from, and a textconv
+// driver whose output didn't change hid a staged edit from --quiet. So from sub/ an
+// autostash conflict outside it went unseen and its markers were committed, and an
+// edit staged outside it was "Nothing to commit".
+func TestDiffReadsIgnoreDiffConfig(t *testing.T) { // [dfjwf]
+	_, clone := gitTestRepo(t)
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(clone, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(clone, "sub"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	write("f.txt", "base\n")
+	write("sub/s.txt", "s\n")
+	runGit(t, clone, "add", "f.txt", "sub/s.txt")
+	runGit(t, clone, "commit", "-q", "-m", "base")
+	runGit(t, clone, "config", "diff.relative", "true")
+	runGit(t, clone, "config", "diff.same.textconv", "echo same <")
+	write(".git/info/attributes", "f.txt diff=same\n")
+	t.Chdir(filepath.Join(clone, "sub"))
+
+	write("f.txt", "staged\n")
+	runGit(t, clone, "add", "f.txt")
+	a := newApp(newPrinter())
+	a.opt.staged = true
+	if !indexDiffers() || !a.commitPending() {
+		t.Errorf("an edit staged outside sub/: indexDiffers() = %v, commitPending() = %v, want both true", indexDiffers(), a.commitPending())
+	}
+	if got := changedPaths("--cached", "HEAD"); !slices.Contains(got, "f.txt") {
+		t.Errorf("changedPaths(--cached HEAD) = %q, want f.txt in it", got)
+	}
+	if got := changedPaths("HEAD"); !slices.Contains(got, "f.txt") {
+		t.Errorf("changedPaths(HEAD) = %q, want f.txt in it", got)
+	}
+
+	// A real conflict on f.txt, outside the folder this runs from.
+	runGit(t, clone, "commit", "-q", "-m", "ours")
+	runGit(t, clone, "checkout", "-q", "-b", "other", "HEAD~1")
+	write("f.txt", "theirs\n")
+	runGit(t, clone, "commit", "-q", "-am", "theirs")
+	runGit(t, clone, "checkout", "-q", "main")
+	merge := exec.Command("git", "merge", "-q", "other")
+	merge.Dir = clone
+	if merge.Run() == nil {
+		t.Fatal("the merge didn't conflict")
+	}
+	a = newApp(newPrinter())
+	if err := a.refuseConflicts("nothing was committed", "gitsby sync"); err == nil {
+		t.Error("refuseConflicts saw no conflict outside sub/")
+	}
+}
+
+// diff.ignoreSubmodules=all hid a submodule moved to another commit from git diff,
+// though 'git add --all' stages it and git commit takes it, so the commit step said
+// "Nothing to commit." and left it staged.
+func TestDiffReadsSeeSubmoduleMove(t *testing.T) { // [dfjwh]
+	origin, clone := gitTestRepo(t)
+	child := filepath.Join(filepath.Dir(origin), "child")
+	runGit(t, filepath.Dir(origin), "init", "-q", "-b", "main", child)
+	runGit(t, child, "commit", "-q", "--allow-empty", "-m", "c1")
+	runGit(t, clone, "-c", "protocol.file.allow=always", "submodule", "-q", "add", child, "child")
+	runGit(t, clone, "commit", "-q", "-m", "add child")
+	runGit(t, filepath.Join(clone, "child"), "commit", "-q", "--allow-empty", "-m", "c2")
+	runGit(t, clone, "config", "diff.ignoreSubmodules", "all")
+	runGit(t, clone, "add", "child")
+	t.Chdir(clone)
+	if !indexDiffers() {
+		t.Error("indexDiffers() = false with the submodule's move staged")
+	}
+	if got := changedPaths("--cached", "HEAD"); !slices.Contains(got, "child") {
+		t.Errorf("changedPaths(--cached HEAD) = %q, want child in it", got)
+	}
+	// The sparse check's own --ignore-submodules=dirty still wins over the helper's.
+	if err := os.WriteFile(filepath.Join(clone, "child", "dirt.txt"), []byte("d\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, clone, "reset", "-q")
+	runGit(t, filepath.Join(clone, "child"), "reset", "-q", "--hard", "HEAD~1")
+	if got := changedPaths("--ignore-submodules=dirty"); len(got) != 0 {
+		t.Errorf("changedPaths(--ignore-submodules=dirty) = %q with only untracked files in the submodule, want none", got)
+	}
+}
+
+// Every git diff read in src-go goes through diffArgs, so no new one can come back
+// blind to the conflict or the edit [dfjwf] makes.
+func TestDiffReadsUseDiffArgs(t *testing.T) { // [dfjwg]
+	files, err := filepath.Glob("*.go")
+	if err != nil || len(files) < 10 {
+		t.Fatalf("found %d sources: %v", len(files), err)
+	}
+	call := regexp.MustCompile(`("git",\s*|\[\]string\{)"diff"`)
+	helper, found := 0, 0
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if strings.Contains(line, "diffArgs(") && !strings.Contains(line, "func diffArgs(") {
+				found++
+			}
+			if !call.MatchString(line) {
+				continue
+			}
+			if strings.Contains(line, `"diff", "--no-relative", "--no-textconv", "--no-ext-diff", "--ignore-submodules=none"`) {
+				helper++
+				continue
+			}
+			t.Errorf("%s:%d runs git diff without diffArgs: %s", file, i+1, strings.TrimSpace(line))
+		}
+	}
+	if helper != 1 {
+		t.Errorf("found %d diffArgs bodies, want 1", helper)
+	}
+	if found < 5 {
+		t.Errorf("found %d diffArgs calls, want at least 5; the pattern no longer matches the source", found)
+	}
+}
+
 // A stopped am, pick, revert, merge, rebase or bisect was finished under gitsby's
 // message, or left for its --continue to apply onto the branch gitsby switched to.
 // Each state is made by real git, and named before anything else runs.
