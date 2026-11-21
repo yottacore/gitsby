@@ -131,7 +131,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 4: An account whose host is ignored falls back to github.com, and its Gitea token goes there
 	- ID: 2026112017135838
 	- Type: Bug
-	- Status: Waiting on UAT
+	- Status: Closed
 		- The token fix is pinned. Left for a look: the identity block's new Why and Fix lines for an ignored host, shown by 'gitsby whoami' in such an account's folder.
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
@@ -151,6 +151,10 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: Go [dfjxe], test.bash [dfh5s] (raw git, plain git and raw gh in its folder).
 	- Verified: [dfjxe] and the 3 walk cases fail on the unfixed build and pass after.
 	- Swept: hostOf's callers: accountHost, fragmentNames (the file is named '_<login>' now), fragmentKeys, fragmentHelperFor, loginOf, account list's gh store check, and the identity block's notes.
+	- Closed reason: Done
+	- Closed: 20261120
+	- Acceptance signoff: 20261120, closed under the standing close rule; a changed message alone is no reason to wait
+	- 20261120: the Why line was cut to 2 sentences before the close: 'That block's host isn't a plain host name, so it was ignored. A block with no host gets no token anywhere.'
 
 - Code Review 20261120 item 5: release from a feature branch with unpushed work or a dirty tree tags the commit already released
 	- ID: 2026112017135822
