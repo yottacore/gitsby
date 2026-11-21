@@ -427,7 +427,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 30: The run's plan says stage 0 only fast-forwards
 	- ID: 2026112017135444
 	- Type: Bug
-	- Status: Waiting on signoff
+	- Status: Closed
 		- Waits on a read of the new wording: the plan's 'Remote sync' line and contributing.md's paragraph on the sync.
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
@@ -444,9 +444,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: [dfkwq] fails on the unfixed cicd.bash and passes with the fix. The quick gate with every area passed: test.bash 2339/0, fuzz 310/0, parity 31/0. contributing.md passes the markdown check.
 	- Swept: README.md, contributing.md, design.md, workflows.md and the style guides, by grep for 'stage 0', 'remote sync' and 'fast-forwards from'. Only contributing.md:231 was stale. README's stage 0 sentence and cicd.bash's header were already right.
 	- Decisions: Only the stale clause in contributing.md was rewritten. The fast-forward sentence before it still holds for a branch that is only behind.
-	- Stand-in: none (20261121). Wording only, so a person reads it.
 	- Branch: nov21-2026112110520434
 	- Commit: a850e71
+	- Closed reason: Done
+	- Closed: 20261121
+	- Acceptance signoff: 20261121. A factual fix to a plan line and one doc clause, so no choice was left open; closed per the project's close rule.
 	- 20261120: also sweep contributing.md:231, which still says the pipeline stops if the branch has diverged; that went stale with 0633cc1 (found under 2026112017135764).
 
 - Code Review 20261120 item 31: design.md says a later candidate is installed only with --tag
