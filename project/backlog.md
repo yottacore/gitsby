@@ -956,6 +956,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements [Feature]: The push list holds only pushes of the branch a command stands on. br merge's push of its target, the hotfix back-merge's push of dev (br merge and pr ok), and release's pushes of the default branch and dev are still refused by git only at the step, after the merge or the tag. Add them to the list, so a push git would refuse is refused before the plan, mergePushesOwn reads its targets from it, and the plan's 'git push *' lines name where each goes. Give pr create and pr ok one target helper, through item 18's fix (2026112017135624).
 	- Estimated effort: Avg
 	- Progress log: Open questions for the design: a target that isn't local yet has no push fields to read until the checkout makes it, so where remote.pushDefault sends it would mean copying git's rule. The atomic push names origin and the target's own name, and release pushes dev only when it has an upstream.
+		- 20261121: the pr create and pr ok target helper is done, as prTarget in pr.go, through 2026112017135624. The other pushes are still open.
 
 - Code Review 20261120 enhancement 4: Every park push runs the full branch query again
 	- ID: 2026112017135167
