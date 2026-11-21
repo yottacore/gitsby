@@ -33,6 +33,31 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Put an ssh client in the cicd image, so the ssh stall tests run in the quick gate
+	- ID: 2026112020462150
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-204621
+	- Opened by:
+	- Requirements [Feature]: The image has no ssh, so Go tests [dfk1m] and [dfk1n] skip in the container run and pass only in the --no-container arm. Add openssh-client to cicd/container/Dockerfile. The edit rebuilds the image, about 8 minutes once.
+	- Note: The literal asserts in [dbfvz], [dcnp4], [deyth] and [dfg26] check the ssh options in the container meanwhile.
+
+- The ssh identity probe asks port 22 for an ssh:// origin on another port
+	- ID: 2026112020462137
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-204621
+	- Opened by:
+	- Steps to reproduce [Bug]: Point origin at ssh://git@host:2222/o/r.git, where only port 2222 serves git, with no ssh_config entry for the host. Run gitsby status.
+	- Incorrect behavior [Bug]: The SSH line's account probe runs ssh -T git@host with no -p, so it asks port 22. The SSH line's ssh -G read has no port either, so a Match on the port isn't seen.
+	- Expected behavior [Bug]: The probe and the ssh -G read connect to the port the URL names, as git's fetch does.
+	- Possible cause [Bug]: sshConnectTarget in remote.go drops the port, and neither caller passes -p. TestSSHConnectTarget pins the target without it.
+	- Origin: Plausible, read only. Found while working 2026112017135720.
+
 - Code Review 20261120 item 46: A submodule whose remote is gone makes pullcom skip the pull as if origin were unreachable
 	- ID: 2026112017151559
 	- Type: Bug
@@ -352,7 +377,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 12: An ssh origin that stalls after its banner hangs the fetch with no time limit
 	- ID: 2026112017135720
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-171357
@@ -363,6 +388,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, OpenSSH 10.3p1. Confirmed. The identity probe at remote.go:279 has the same arguments, by reading.
 	- Possible cause [Bug]: The ssh arguments at remote.go:207 set ConnectTimeout only. ServerAliveInterval and ServerAliveCountMax would end the stall.
 	- Origin: 3d22222 (Go port). Missed twin of Code Review 20261119 item 11, whose sweep covered http only.
+	- Closed reason: Done
+	- Actual cause [Bug]: ssh's ConnectTimeout bounds only the connect and the server's banner. gitsby set nothing for what comes after, and ssh sets no limit of its own, so the fetch and the login probe waited on a quiet server until killed.
+	- Actual fix [Bug]: The fetch, origin/HEAD healing, br prune's ls-remote, the repo probe and the login probe add ServerAliveInterval=10 and ServerAliveCountMax=3 after ConnectTimeout=3. A server quiet for 30 s, the key exchange included, ends the wait, the same limit an http fetch has. pullcom on such an origin warns that the fetch failed after 30 s and goes on.
+	- Branch: nov20c-2026112017135720
+	- Commit: adcef33
+	- Test case: Go test [dfk1m] TestRemoteReachesGiveUpOnAStalledSSHRemote, the fetch, ls-remote, repo probe and both login probe paths against a listener that sends a banner and then nothing. Go test [dfk1n] TestSSHStallOptionsAsSSHReadsThem, remoteEnv's command read back through ssh -G, with a command's own values kept.
+		- 2026-11-20: [dbfvz], [dcnp4], [deyth] and [dfg26] asserted the ssh command with ' -o ConnectTimeout=3' added. They now assert ' -o ConnectTimeout=3 -o ServerAliveInterval=10 -o ServerAliveCountMax=3', spelled out once in the test file. Nothing else they check changed.
+	- Verified: [dfk1m] fails with the ServerAlive options taken out, the fetch still waiting at 30 s, and fails with either login probe caller passing ConnectTimeout alone. [dfk1n] fails with the options taken out, and with them put ahead of the command's own. Both pass with the fix. The built binary's pullcom on a banner-only ssh origin ended at 30 s with the offline warning. The quick gate passed with every area. [dfk1m] and [dfk1n] skip in the container, which has no ssh, and passed in the unit area with --no-container. gosec 37, unchanged.
+	- Swept: every spawn that reaches a remote over ssh outside a step. fetch and set-head in fetchRemote, ls-remote --heads in askOriginHeads and ls-remote in probeRemote all read remoteEnv. probeSSHLogin is called from sshLogin and askSSHLoginAhead, and both pass the limits. The ssh -G reads in show.go and account.go read config only. Push, pull and clone run as steps.
+	- Decisions: One stallSeconds, 30, for http and ssh, so both transports give up alike. ServerAliveInterval is a third of it. The options go after the command's own words, since ssh keeps the first value it reads, so a value the ssh command sets itself wins. One in ssh_config is outranked, as ConnectTimeout already was. Push, pull and clone stay as git runs them, per 2026111910223148. The look-ahead probe reads its limits on the calling goroutine, per askSSHLoginAhead's rule.
+	- Note: Found while working it, filed as 2026112020462137 (the probe drops an ssh:// port) and 2026112020462150 (no ssh in the cicd image).
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-205352
 
 - Code Review 20261120 item 13: 2 Go tests fail on Windows, so the next full run fails at stage 7
 	- ID: 2026112017135704
