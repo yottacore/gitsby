@@ -76,6 +76,8 @@ func TestSSHTarget(t *testing.T) { // [dbfrq]
 		{"git@github.com:octocat/hello.git", "github.com"},
 		{"github_work:octocat/hello.git", "github_work"},
 		{"ssh://git@github.com:22/octocat/hello.git", "github.com"},
+		{"ssh://git@[::1]:2222/o/r.git", "::1"}, // [dfkyf] a bracketed IPv6 host
+		{"ssh://[2001:db8::7]/o/r.git", "2001:db8::7"},
 		{"https://github.com/octocat/hello.git", ""}, // no ssh identity involved
 		{"/srv/local/repo", ""},
 		{"C:/srv/repo", ""}, // a drive path is not 'host:path'
@@ -115,6 +117,9 @@ func TestSSHDestCarriesThePort(t *testing.T) { // [dfkxt]
 	}{
 		{"ssh://git@host:2222/o/r.git", []string{"-p", "2222", "--", "git@host"}},
 		{"ssh://host:2222/team@x:1/r.git", []string{"-p", "2222", "--", "host"}},
+		{"ssh://git@[::1]:2222/o/r.git", []string{"-p", "2222", "--", "git@::1"}}, // [dfkyf]
+		{"ssh://[::1]/o/r.git", []string{"--", "::1"}},
+		{"ssh://git@[::1]:/o/r.git", []string{"--", "git@::1"}},
 		{"ssh://git@host/o/r.git", []string{"--", "git@host"}},
 		{"ssh://git@host:/o/r.git", []string{"--", "git@host"}},
 		{"ssh://git@host:22x/o/r.git", []string{"--", "git@host"}},

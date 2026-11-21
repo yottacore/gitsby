@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The ssh identity probe and the ssh -G read cut a bracketed IPv6 host in an ssh:// origin at its first colon
 	- ID: 2026112111542213
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261121-115422
@@ -47,6 +47,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The probe and the ssh -G read ask about ::1 on port 2222, as git's fetch does.
 	- Possible cause [Bug]: sshTarget, sshConnectTarget and sshPort in remote.go split the authority at its first colon, with no case for brackets.
 	- Origin: Plausible, read only. Found while working 2026112020462137.
+	- Reproduced [Bug]: 2026-11-21, [dfkyf] fails on the unfixed remote.go: sshTarget gave '[' and sshDest gave '--', 'git@['. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: sshTarget and sshPort cut the authority at its first colon, so a bracketed IPv6 host ended at '[' and its port was lost.
+	- Actual fix [Bug]: A new sshURLHostPort reads the authority once for both. A bracketed host keeps its colons and loses the brackets, and only a ':' after the ']' starts the port. sshConnectTarget and sshDest take it through those two.
+	- Branch: nov21-2026112111542213
+	- Test case: Go [dfkyf], the bracketed rows of TestSSHTarget and TestSSHDestCarriesThePort.
+	- Verified: [dfkyf] fails on the unfixed code and passes after. The quick gate passed for lint and unit.
+	- Swept: sshTarget, sshConnectTarget, sshPort and sshDest are the only readers of an ssh:// authority in remote.go. Other sshTarget callers (show.go, repo.go, remote.go:520) take its result. splitRemoteURL already reads brackets (2026112017135807).
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261121-115917
 
 - Stage 0 brings staged edits back unstaged after a merge that goes in clean
 	- ID: 2026112110520434

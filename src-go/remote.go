@@ -58,22 +58,33 @@ func identityMismatchText(cli, cliWho, sshWho string) string {
 	return cli + " acts as '" + cliWho + "', but this remote's key authenticates as '" + sshWho + "'."
 }
 
+// sshURLHostPort splits an ssh:// URL's authority into host and port text. A
+// bracketed IPv6 host keeps its colons and loses the brackets, as ssh wants it, and
+// only a ':' after the ']' starts the port. An '@' in the path is part of the path.
+func sshURLHostPort(url string) (host, port string) {
+	authority := strings.TrimPrefix(url, "ssh://")
+	if slash := strings.IndexByte(authority, '/'); slash >= 0 {
+		authority = authority[:slash]
+	}
+	authority = authority[strings.LastIndexByte(authority, '@')+1:]
+	if strings.HasPrefix(authority, "[") {
+		if end := strings.IndexByte(authority, ']'); end > 0 {
+			host = authority[1:end]
+			port = strings.TrimPrefix(authority[end+1:], ":")
+			return host, port
+		}
+	}
+	host, port, _ = strings.Cut(authority, ":")
+	return host, port
+}
+
 // sshTarget is the host to ask ssh about, pulled out of a remote URL. Empty for
 // https and local-path remotes - and for a Windows drive path, which is not
 // 'host:path' however much it looks like one.
 func sshTarget(url string) string {
 	switch {
 	case strings.HasPrefix(url, "ssh://"):
-		host := url[len("ssh://"):]
-		if i := strings.Index(host, "/"); i >= 0 {
-			host = host[:i]
-		}
-		if at := strings.LastIndex(host, "@"); at >= 0 {
-			host = host[at+1:]
-		}
-		if c := strings.Index(host, ":"); c >= 0 {
-			host = host[:c]
-		}
+		host, _ := sshURLHostPort(url)
 		return host
 	case strings.Contains(url, "://"): // https/git/file: no ssh identity involved
 		return ""
@@ -130,13 +141,8 @@ func sshPort(url string) string {
 	if !strings.HasPrefix(url, "ssh://") {
 		return ""
 	}
-	authority := url[len("ssh://"):]
-	if slash := strings.IndexByte(authority, '/'); slash >= 0 {
-		authority = authority[:slash]
-	}
-	authority = authority[strings.LastIndexByte(authority, '@')+1:]
-	_, port, found := strings.Cut(authority, ":")
-	if !found || port == "" || strings.Trim(port, "0123456789") != "" {
+	_, port := sshURLHostPort(url)
+	if port == "" || strings.Trim(port, "0123456789") != "" {
 		return ""
 	}
 	return port
