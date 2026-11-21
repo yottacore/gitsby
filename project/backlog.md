@@ -62,7 +62,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 15: Nothing tests the token file fallback's host check
 	- ID: 2026112017135672
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-171356
@@ -73,6 +73,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, by mutation in a clone. Confirmed.
 	- Possible cause [Bug]: [dfh5s] runs its GITSBY_ACCOUNT case in the Gitea repo, where the fragment helper refuses first.
 	- Origin: 22554f6, Code Review 20261119 item 4 (2026111910223247). Its Verified row describes a check by hand.
+	- Closed reason: Done
+	- Actual cause [Bug]: [dfh5s]'s GITSBY_ACCOUNT case ran where another check refused first. Since 5102690 the fallback skips the keys the run's own fragments set, so the issue's steps no longer give the Gitea token with the check taken out. Only a gitsby.ghTokenFile set outside them reaches the check.
+	- Actual fix [Bug]: The walk sets gitsby.ghTokenFile by hand, with gitsby.host naming the Gitea host beside it, and asks for github.com from a repo in no account's folder. raw git and raw gh get nothing. With no gitsby.host, github.com still gets the token. A Gitea host asked with no gitsby.host gets nothing too, which accountServesHost also stops.
+	- Branch: nov21-2026112017135672
+	- Commit: 3712bf2
+	- Test case: test.bash [dfh5s] 'raw git asked for github.com by the same, with gitsby.host naming the Gitea host beside it', 'raw gh with that gitsby.host' and 'raw git asked for a Gitea host by a run naming a GitHub login'. [dfh5t] 'raw git asked for github.com by a run naming a GitHub login'.
+	- Verified: With ownTokenFileServes forced true, the 2 gitsby.host cases fail and pass on the real code (test.bash 2325/0). With accountServesHost forced true as well, the Gitea host case fails too.
+	- Swept: ownTokenFileServes has one caller, accountToken's fallback. The issue's own path, a github.com repo in the Gitea account's folder, was tried and passes with the check taken out, since 5102690, so it wasn't added.
+	- Decisions: A hand-set gitsby.ghTokenFile with gitsby.host naming a Gitea host gets no positive case, since a run naming a bare login is served only on GitHub (accountServesHost).
+	- Acceptance signoff: Self-closed: the new cases fail with the check taken out and pass with it.
+	- Closed: 20261121-103256
 
 - Code Review 20261120 item 16: The sparse checkout refusal is pinned through sync only
 	- ID: 2026112017135655
@@ -227,7 +238,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 23: [dbhg7] passes with the refusal it checks taken out
 	- ID: 2026112017135548
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171355
@@ -238,6 +249,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, by mutation. Confirmed.
 	- Possible cause [Bug]: accountcmd_test.go:688 checks only that some refusal came back.
 	- Origin: The 2026-09 accounts work, renumbered in a5ce9cc. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: [dbhg7] checked only that an error came back, and shcl refuses a repeated key on its own.
+	- Actual fix [Bug]: [dbhg7] wants the refusal that names the key's count, and the file as it was. Its twin [dbhg8] passed the same way on shcl's refusal of the empty key it becomes, and now wants its own text.
+	- Branch: nov21-2026112017135672
+	- Commit: 3712bf2
+	- Test case: Go [dbhg7], [dbhg8].
+	- Verified: With the '%d times' refusal taken out, [dbhg7] fails on both layouts, on shcl's 'isn't a setting the file can hold (Multiple)'. With the unread key refusal taken out, [dbhg8] fails. Both pass on the real code.
+	- Swept: the account set tests that check only that an error came back: [dbhg7], [dbhg8] and [dbhg9]. [dbhg9] already fails with its refusal taken out. The rest match a text.
+	- Decisions: [dbhg7] and [dbhg8] keep every case they had and add a text check.
+	- Acceptance signoff: Self-closed: both tests fail with their refusal taken out and pass with it.
+	- Closed: 20261121-103256
 
 - Code Review 20261120 item 24: For a locked worktree whose folder is gone, the refusal suggests git worktree prune, which does nothing
 	- ID: 2026112017135532
@@ -486,7 +508,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 40: [dfh3s] and [dfh3t] pass with refuseParkPush taken out
 	- ID: 2026112017135297
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171352
@@ -497,6 +519,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, by mutation. Confirmed. [dfh3x], [dfh3y] and [dfh40] go red, so the refusal itself is pinned.
 	- Possible cause [Bug]: The checks match `--unset-upstream`, which the push step's refusal prints too, on a clean tree.
 	- Origin: 1c8c364, Code Review 20261119 item 1. The same kind as Code Review 20261119 item 24.
+	- Closed reason: Done
+	- Actual cause [Bug]: The tree was clean when [dfh3s] and [dfh3t] ran, so a build that refused only at the push step committed nothing, and its refusal names --unset-upstream too.
+	- Actual fix [Bug]: [dfh3s] and [dfh3t] run on a dirty tree. [dfh3s] also wants 'Nothing was done.', which the step's refusal doesn't print, and [dfktt] [dfktv] check that HEAD and the edit are as they were. The tree is put back before [dfh3w].
+	- Branch: nov21-2026112017135672
+	- Commit: 3712bf2
+	- Test case: test.bash [dfh3s], [dfktt], [dfh3t], [dfktv].
+	- Verified: refuseParkPush is refusePlannedPushes now. With its 'return p.refusal()' made 'continue', [dfh3s], [dfktt] and [dfktv] fail, with [dfk10] to [dfk17], and all pass on the real code (test.bash 2325/0). [dfh3t] alone still passes, since it checks the refusal and the branch, and [dfktv] covers its commit.
+	- Swept: [dfk10] to [dfk17], the same refusal for the other park pushes, already fail with it taken out. [dfh3v] passes with it out, rightly, since the step still refuses the push.
+	- Decisions: [dfh3s] now passes a commit message and also wants 'Nothing was done.'. What it checked before still holds.
+	- Acceptance signoff: Self-closed: the new checks fail with the refusal taken out and pass with it.
+	- Closed: 20261121-103256
 
 - Code Review 20261120 item 41: [df33r] fails whenever another copy of the suite runs
 	- ID: 2026112017135283

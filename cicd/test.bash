@@ -2444,11 +2444,18 @@ fRunSuite(){
 	git clone --quiet "${tmO}" "${tmA}" 2>/dev/null
 	( cd "${tmA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git switch --quiet -c feat origin/main && echo two > g.txt && git add --all && git commit --quiet -m "on feat" )
 	fTmMainKept(){ [[ "$(git -C "${tmO}" rev-parse main)" != "$(git -C "${tmA}" rev-parse feat)" ]] && ! git -C "${tmO}" show-ref --verify --quiet refs/heads/next ;}
-	fAssert "[dfh3s] sync -q on a branch tracking origin/main refuses, naming --unset-upstream" \
-		bash -c "cd '${tmA}' && out=\"\$('${gitsby}' -q sync 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'git branch --unset-upstream' <<< \"\${out}\""
+	## The push step refuses with the same text on its own, so the tree is dirty here, and nothing
+	## committed is what shows the refusal came before the plan (2026112017135297).
+	local tmTip; tmTip="$(git -C "${tmA}" rev-parse HEAD)"; echo dirty >> "${tmA}/g.txt"
+	fTmUntouched(){ [[ "$(git -C "${tmA}" rev-parse HEAD)" == "${tmTip}" && "$(git -C "${tmA}" status --porcelain)" == ' M g.txt' ]] ;}
+	fAssert "[dfh3s] sync -q on a branch tracking origin/main refuses before the plan, naming --unset-upstream" \
+		bash -c "cd '${tmA}' && out=\"\$('${gitsby}' -q sync 'dirty' 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'git branch --unset-upstream' <<< \"\${out}\" && grep -qF 'Nothing was done.' <<< \"\${out}\""
+	fAssert "[dfktt] and commits nothing"  fTmUntouched
 	fAssert "[dfh3t] br switch -q and br create -q refuse it too, and stay on the branch" \
 		bash -c "cd '${tmA}' && ! '${gitsby}' -q br switch main >/dev/null 2>&1 && ! '${gitsby}' -q br create next >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == feat ]]"
+	fAssert "[dfktv] and commit nothing either"  fTmUntouched
 	fAssert "[dfh3v] and origin's main never got the branch"  fTmMainKept
+	printf 'two\n' > "${tmA}/g.txt"
 	git -C "${tmA}" config push.default upstream
 	fAssert "[dfh3w] under push.default=upstream, sync -q refuses without --direct, naming main" \
 		bash -c "cd '${tmA}' && out=\"\$('${gitsby}' -q sync 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"straight to 'main'\" <<< \"\${out}\" && grep -qF 'Re-run with --direct' <<< \"\${out}\""
@@ -9963,16 +9970,18 @@ printf 'protocol=https\nhost=%s\n\n' "${TW_ASK}" | git credential fill >/dev/nul
 exit 1
 FSEOF
 	local twItem
-	for twItem in gh/proj gh/gt/proj ghe/proj gl/proj bad/proj; do git init --quiet "${tw}/trees/${twItem}"; done
+	for twItem in gh/proj gh/gt/proj ghe/proj gl/proj bad/proj loose/gh loose/gt; do git init --quiet "${tw}/trees/${twItem}"; done
 	git -C "${tw}/trees/gh/proj" remote add origin https://github.com/acme/proj.git
 	git -C "${tw}/trees/gh/gt/proj" remote add origin https://gitea.walk.test/acme/proj.git
+	git -C "${tw}/trees/loose/gh" remote add origin https://github.com/acme/proj.git
+	git -C "${tw}/trees/loose/gt" remote add origin https://gitea.walk.test/acme/proj.git
 	git -C "${tw}/trees/ghe/proj" remote add origin https://ghe.walk.test/acme/proj.git
 	git -C "${tw}/trees/gl/proj" remote add origin https://gitlab.walk.test/acme/proj.git
 	git -C "${tw}/trees/bad/proj" remote add origin https://github.com/acme/proj.git
 	git init --quiet -b main "${tw}/trees/gl/feat"; git -C "${tw}/trees/gl/feat" remote add origin https://gitlab.walk.test/acme/proj.git
 	( cd "${tw}/trees/gl/feat" || exit 1; echo a > a.txt; git add a.txt; git commit --quiet -m init; git update-ref refs/remotes/origin/main HEAD
 		git switch --quiet -c glwalk; echo b > b.txt; git add b.txt; git commit --quiet -m b )
-	for twItem in gh gt ghe gl bad; do printf 'tok_walk_%s\n' "${twItem}" > "${tw}/home/${twItem}.tok"; chmod 600 "${tw}/home/${twItem}.tok"; done
+	for twItem in gh gt ghe gl bad hand; do printf 'tok_walk_%s\n' "${twItem}" > "${tw}/home/${twItem}.tok"; chmod 600 "${tw}/home/${twItem}.tok"; done
 	: > "${tw}/home/.gitconfig"
 	printf 'account: wgh\n\tpath: %s\n\tghaccount: walkstore\n\ttokenfile: %s\n\naccount: wgt\n\tpath: %s\n\thost: gitea.walk.test\n\tuser: gtuser\n\ttokenfile: %s\n\naccount: wghe\n\tpath: %s\n\thost: ghe.walk.test\n\ttokenfile: %s\n\naccount: wgl\n\tpath: %s\n\thost: gitlab.walk.test\n\ttokenfile: %s\n\naccount: wbad\n\tpath: %s\n\thost: https://gitea.walk.test\n\tuser: gtuser\n\ttokenfile: %s\n' \
 		"$(fWinPath "${tw}/trees/gh")" "$(fWinPath "${tw}/home/gh.tok")" "$(fWinPath "${tw}/trees/gh/gt")" "$(fWinPath "${tw}/home/gt.tok")" \
@@ -9985,6 +9994,18 @@ FSEOF
 	bash -c "cd '${tw}/trees/gh/proj' && ${twG} account apply" >/dev/null 2>&1
 	git config --file "${tw}/home/.gitconfig" credential.https://ghe2.walk.test.helper '!gh auth git-credential'
 	git config --file "${tw}/home/.gitconfig" credential.https://gitlab2.walk.test.helper '!glab auth git-credential'
+	## A gitsby.ghTokenFile set by hand, outside the fragments, is the one the fallback reads, and
+	## only for a run naming a GitHub login. With no gitsby.host beside it it's GitHub's, and with
+	## one it isn't. The repos are in no account's folder, so no fragment helper answers
+	## (2026112017135672).
+	local twHandFile
+	for twHandFile in hand handgt; do
+		git config --file "${tw}/home/${twHandFile}.gitconfig" include.path .gitconfig
+		git config --file "${tw}/home/${twHandFile}.gitconfig" gitsby.ghTokenFile "$(fWinPath "${tw}/home/hand.tok")"
+	done
+	git config --file "${tw}/home/handgt.gitconfig" gitsby.host gitea.walk.test
+	local twHand="GITSBY_ACCOUNT=walklogin env ${twEnv} GIT_CONFIG_GLOBAL='${tw}/home/hand.gitconfig' '${gitsby}' -q -NoFetch --config '${tw}/walk.shcl'"
+	local twHandGt="GITSBY_ACCOUNT=walklogin env ${twEnv} GIT_CONFIG_GLOBAL='${tw}/home/handgt.gitconfig' '${gitsby}' -q -NoFetch --config '${tw}/walk.shcl'"
 	local -a twWhat=(
 		"plain git asked for github.com in the nested Gitea account's folder"
 		"raw git, the same"
@@ -10006,9 +10027,12 @@ FSEOF
 		"plain git, the same"
 		"raw gh there"
 		"raw tea in a github.com account's folder, with GITEA_INSTANCE_URL set"
+		"raw git asked for a Gitea host by a run naming a GitHub login, with gitsby.ghTokenFile set by hand"
+		"raw git asked for github.com by the same, with gitsby.host naming the Gitea host beside it"
+		"raw gh with that gitsby.host"
 	)
 	local -a twWhere=( gh/gt/proj gh/gt/proj gh/gt/proj ghe/proj ghe/proj ghe/proj ghe/proj gh/proj gh/proj gl/proj
-		ghe/proj ghe/proj gl/feat ghe/proj ghe/proj gl/proj bad/proj bad/proj bad/proj gh/proj )
+		ghe/proj ghe/proj gl/feat ghe/proj ghe/proj gl/proj bad/proj bad/proj bad/proj gh/proj loose/gt loose/gh loose/gh )
 	local -a twRun=(
 		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
 		"printf 'protocol=https\nhost=github.com\n\n' | ${twG} raw git credential fill"
@@ -10030,6 +10054,9 @@ FSEOF
 		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
 		"${twG} raw gh auth token"
 		"GITEA_INSTANCE_URL=https://gitea.walk.test ${twG} raw tea whoami"
+		"printf 'protocol=https\nhost=gitea.walk.test\n\n' | ${twHand} raw git credential fill"
+		"printf 'protocol=https\nhost=github.com\n\n' | ${twHandGt} raw git credential fill"
+		"${twHandGt} raw gh auth token"
 	)
 	for twItem in "${!twRun[@]}"; do
 		fAssertNotOut "[dfh5s] no token for a host it isn't for: ${twWhat[twItem]}"  'tok_walk_' \
@@ -10046,9 +10073,10 @@ FSEOF
 		"raw glab api"
 		"pr's glab on GitLab"
 		"raw tea in the Gitea folder"
+		"raw git asked for github.com by a run naming a GitHub login, with gitsby.ghTokenFile set by hand"
 	)
-	twWhere=( gh/gt/proj gh/proj gh/gt/proj ghe/proj ghe/proj ghe/proj gh/proj gl/proj gl/proj gh/gt/proj )
-	local -a twWant=( gt gh gt ghe ghe ghe gh gl gl gt )
+	twWhere=( gh/gt/proj gh/proj gh/gt/proj ghe/proj ghe/proj ghe/proj gh/proj gl/proj gl/proj gh/gt/proj loose/gh )
+	local -a twWant=( gt gh gt ghe ghe ghe gh gl gl gt hand )
 	twRun=(
 		"printf 'protocol=https\nhost=gitea.walk.test\n\n' | env ${twEnv} git credential fill"
 		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
@@ -10060,6 +10088,7 @@ FSEOF
 		"${twG} raw glab api user"
 		": > '${tw}/gh.log'; ${twG} pr; cat '${tw}/gh.log'"
 		"${twG} raw tea whoami"
+		"printf 'protocol=https\nhost=github.com\n\n' | ${twHand} raw git credential fill"
 	)
 	for twItem in "${!twRun[@]}"; do
 		fAssertOut "[dfh5t] and the token still goes to its own host: ${twWhat[twItem]}"  "tok_walk_${twWant[twItem]}" \
@@ -10714,3 +10743,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261120 JC: --release dev takes the newest release, pre-releases included, [dfjr3] to [dfjr9]; [dbfkc] [dbfkd] [dbfks] [dd5cx] [dbfm0] [dbfm1] check what replaced the refusal.
 ##		- 20261120 JC: diff.relative, a textconv driver and diff.ignoreSubmodules=all hide no conflict or staged edit from sync and pullcom run in a subfolder, [dfjwj] to [dfjwp].
 ##		- 20261121 JC: Every command that stages the whole tree refuses an edit outside a sparse checkout, and none runs the dry run of git add, or reads core.sparseCheckout, outside one, [dfksp] [dfksq].
+##		- 20261121 JC: The token walk has a gitsby.ghTokenFile set by hand, with and without gitsby.host, so the fallback's host check is pinned. [dfh3s] and [dfh3t] run on a dirty tree, and [dfktt] [dfktv] check nothing was committed. 2319 -> 2325.
