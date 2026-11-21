@@ -684,22 +684,35 @@ func TestManagedIncludePattern(t *testing.T) { // [dcmf7]
 
 // 'path' is repeatable by design and any key can be in there twice by accident.
 // Replacing the first and leaving the rest looks like it worked and changes
-// nothing that is read. Both layouts.
+// nothing that is read. Both layouts. The refusal checked is gitsby's own, by its
+// count, since shcl refuses a repeated key on its own too and any refusal passed.
 func TestAccountSetRefusesADuplicatedKey(t *testing.T) { // [dbhg7]
 	for _, body := range []string{"account.work.path = /a\naccount.work.path = /b\n", "account: work\n\tpath: /a\n\tpath: /b\n"} {
-		a, _ := setApp(t, body, "work", "path", "/c")
-		if err := a.cmdAccountSet(); err == nil {
+		a, file := setApp(t, body, "work", "path", "/c")
+		before := readBack(t, file)
+		err := a.cmdAccountSet()
+		if err == nil {
 			t.Errorf("a key present twice was written anyway: %q", body)
+			continue
+		}
+		if !strings.Contains(err.Error(), "is in the accounts file 2 times.") {
+			t.Errorf("a key present twice wasn't refused for being there twice: %q\n%v", body, err)
+		}
+		if got := readBack(t, file); got != before {
+			t.Errorf("file changed:\n%s", got)
 		}
 	}
 }
 
 // A key the loader ignores, written past this command, ends up in the file and is
 // dropped on every read: the file says one thing and every command does another.
+// Checked by its text, since shcl refuses the empty key it would become.
 func TestAccountSetRefusesAKeyNothingReads(t *testing.T) { // [dbhg8]
 	a, _ := setApp(t, "account: work\n\tpath: /a\n", "work", "hostname", "gitea.com")
 	if err := a.cmdAccountSet(); err == nil {
 		t.Error("an unread key was accepted")
+	} else if !strings.Contains(err.Error(), "isn't an account key") {
+		t.Errorf("an unread key wasn't refused for being unread: %v", err)
 	}
 }
 

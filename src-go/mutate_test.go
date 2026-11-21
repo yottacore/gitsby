@@ -296,6 +296,63 @@ func TestPrCreateHead(t *testing.T) { // [dfh76]
 	}
 }
 
+// pr create's base comes off the branch its push lands on, which pr ok later reads
+// back as the PR's head, rather than off the current branch's name. Otherwise a
+// hotfix's PR opens on dev and pr ok back-merges a main the fix never reached.
+func TestPrTarget(t *testing.T) { // [dfm0t]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "push", "-q", "origin", "main:dev", "main:hotfix/x", "main:plain")
+	runGit(t, clone, "fetch", "-q")
+	runGit(t, clone, "config", "push.default", "upstream")
+	runGit(t, clone, "branch", "-q", "--track", "fix", "origin/hotfix/x")
+	runGit(t, clone, "branch", "-q", "--track", "hotfix/y", "origin/plain")
+	runGit(t, clone, "branch", "-q", "--no-track", "feat", "main")
+	runGit(t, clone, "branch", "-q", "--no-track", "hotfix/z", "main")
+	t.Chdir(clone)
+	tests := []struct{ branch, head, want string }{
+		{"fix", "hotfix/x", "main"},
+		{"hotfix/y", "plain", "dev"},
+		{"feat", "feat", "dev"},
+		{"hotfix/z", "hotfix/z", "main"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.branch, func(t *testing.T) {
+			runGit(t, clone, "checkout", "-q", tc.branch)
+			a := newApp(newPrinter())
+			head, err := a.prCreateHead(tc.branch)
+			if err != nil || head != tc.head {
+				t.Fatalf("prCreateHead() = %q, %v, want %q", head, err, tc.head)
+			}
+			a.pr.sub, a.pr.headBranch, a.pr.title = "create", head, "T"
+			for _, tool := range []hostTool{toolGh, toolTea, toolGlab} {
+				a.pr.tool, a.pr.cli = tool, "cli"
+				args := strings.Join(a.prCreateArgs(), " ")
+				if !strings.Contains(args, " "+tc.want+" ") || strings.Contains(args, " "+map[string]string{"main": "dev", "dev": "main"}[tc.want]+" ") {
+					t.Errorf("tool %d: prCreateArgs() = %q, want base %q", tool, args, tc.want)
+				}
+				if disp := a.prCreateDisp(); !strings.Contains(disp, " "+tc.want+" ") {
+					t.Errorf("tool %d: prCreateDisp() = %q, want base %q", tool, disp, tc.want)
+				}
+			}
+			// pr ok, standing anywhere, reads the same head back from the git host.
+			runGit(t, clone, "checkout", "-q", "main")
+			ok := newApp(newPrinter())
+			ok.pr.sub, ok.pr.headBranch = "ok", head
+			if got := ok.prTarget(); got != tc.want {
+				t.Errorf("pr ok prTarget() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	// The unrelated-history refusal names the same base.
+	runGit(t, clone, "checkout", "-q", "--orphan", "loose")
+	runGit(t, clone, "commit", "-q", "--allow-empty", "-m", "own")
+	a := newApp(newPrinter())
+	a.pr.sub, a.pr.headBranch, a.pr.tool = "create", "hotfix/loose", toolGh
+	if err := a.refuseUnrelatedPr("loose"); err == nil || !strings.Contains(err.Error(), "with 'main'") {
+		t.Errorf("refuseUnrelatedPr() = %v, want a refusal naming 'main'", err)
+	}
+}
+
 // br merge deletes origin's copy of what it merged, which is where the park push
 // went. A head on dev would have it delete dev.
 func TestMergeHead(t *testing.T) { // [dfhg7]
@@ -450,8 +507,8 @@ func TestTreeDirtyUntrackedHidden(t *testing.T) { // [dfh4g]
 	for _, value := range []string{"no", "false", "normal", "all"} {
 		runGit(t, clone, "config", "status.showUntrackedFiles", value)
 		a := newApp(newPrinter())
-		if !treeDirty() || !a.commitPending() {
-			t.Errorf("status.showUntrackedFiles=%s: treeDirty() = %v, commitPending() = %v, want both true", value, treeDirty(), a.commitPending())
+		if !a.treeDirty() || !a.commitPending() {
+			t.Errorf("status.showUntrackedFiles=%s: treeDirty() = %v, commitPending() = %v, want both true", value, a.treeDirty(), a.commitPending())
 		}
 	}
 }
@@ -463,7 +520,7 @@ func TestStatusNamesUntracked(t *testing.T) { // [dfh4h]
 	if err != nil || len(files) < 10 {
 		t.Fatalf("found %d sources: %v", len(files), err)
 	}
-	call := regexp.MustCompile(`"git",\s*"status"`)
+	call := regexp.MustCompile(`"git",\s*("-c",\s*"[^"]*",\s*)*"status"`)
 	found := 0
 	for _, file := range files {
 		if strings.HasSuffix(file, "_test.go") {

@@ -105,6 +105,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `pr create` on a branch that tracks one of another name, as `push.default=upstream` pushes it, opens the pull request from the branch it pushed to. It named the current branch, so the pull request came from an older branch of that name on origin, at exit 0. A branch that pushes to a remote other than origin is refused before the plan, since the pull request opens on origin, and `git branch --unset-upstream` lets it publish there under its own name.
 
+- `pr create` takes the pull request's base from the branch it pushes to, which `pr ok` later reads back, rather than from the current branch's name. A branch tracking `hotfix/x` under `push.default=upstream` opened its pull request against `dev`, and `pr ok` then merged `main` back into `dev`, though the fix never reached `main`.
+
 - `br merge` on a branch that tracks one of another name deletes that branch from origin once it's merged. It named the current branch, so the branch it pushed to stayed on origin, and the leased delete of an older branch of that name warned that it had commits the merge didn't, which wasn't so. Where its push goes to another remote, to a ref that isn't a branch, or to `main` or `dev`, it's refused before the plan.
 
 - `release` and `repo connect` on a branch that git won't push, such as one tracking a branch of another name under `push.default=simple`, refuse before the plan, as `sync` does. They committed the tree first, then stopped at the push with a message saying nothing was done. `release` from a branch whose push lands on `main` or `dev` refuses too, naming `sync --direct`. The plan's push line names the remote when it isn't origin, and `repo connect`'s line names the push that runs.
@@ -178,6 +180,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On Windows, Gitsby no longer runs a `git.bat` or `git.cmd` that comes ahead of `git.exe` on PATH, nor any other batch file for a tool it runs. Windows hands a batch file to cmd, which reads the arguments again by its own rules, so `br switch` to a branch named `x&ver` ran `ver`, and a `%NAME%` in an argument was replaced. Gitsby now passes over a batch file and takes the next one on PATH, and when there is no other, the "Not found in path" error names the batch file.
 
 - After `account set` changed an account's login, email or token file, Gitsby went on acting as the old login, with the old email and token, until `account apply` ran again. It read the copy `account apply` had written for plain git. It now goes by the accounts file, and `account set` says when plain git needs `account apply` again.
+
+- When origin answers but the fetch of a submodule fails, as when the submodule's own remote has moved, Gitsby says so and goes on with the pull. It used to take the failure as being offline, so `pullcom` skipped the pull and said Done with the branch still behind.
+
+- After a pull that moved a submodule to a newer commit, `pullcom` and the other commands that commit no longer commit the submodule back to its old one. git moves the recorded commit but not the submodule's own checkout, so `git add --all` took the old commit, and the next push undid origin's move. Gitsby now leaves out a submodule checked out behind the commit the branch records, warns, and names `git submodule update`. `br switch` off `dev` no longer refuses over it, and `sync` on `dev` no longer calls it a direct push.
+
+- For a branch held by a locked worktree whose folder is gone, the refusal names mounting the folder again, or `git worktree unlock` and then `git worktree prune`. It used to name prune alone, which passes over a locked worktree, so the next run refused the same way.
+
+- `repo connect` and `repo create` refuse before anything runs in a shallow clone, naming `git fetch --unshallow`, since git refuses to push its cut-off history to a new repo. `repo connect` also refuses a local repo with a working tree that has the branch it would push checked out. Both used to commit and add the remote, and then the push failed, on every rerun too.
 
 ## v3.0.0-beta.1 - 2026-11-08
 

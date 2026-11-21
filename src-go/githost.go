@@ -46,7 +46,7 @@ func parseRemote(url string) remoteRef {
 	// ordinary 'git@github.com:owner/name' remote costs no ssh call at all - dropping
 	// it put one into the spawn count of every command on every GitHub repo.
 	if viaSSH && !isGitHubHost(ref.host) {
-		ref.host = resolveSSHHost(ref.host, sshConnectTarget(url))
+		ref.host = resolveSSHHost(ref.host, sshDest(url))
 	}
 	return ref
 }

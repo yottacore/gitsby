@@ -576,9 +576,9 @@ type sshConfig struct {
 // 'ssh -G' answers with the local login name - neither who we connect as nor the
 // account we act as, and on a personal box it looks plausible enough to be
 // believed. '--': an option-shaped host must not parse as an option.
-func readSSHConfig(target string) sshConfig {
+func readSSHConfig(dest []string) sshConfig {
 	var cfg sshConfig
-	for _, line := range splitLines(sshConfigText(target)) {
+	for _, line := range splitLines(sshConfigText(dest)) {
 		key, value, found := strings.Cut(line, " ")
 		if !found || value == "" {
 			continue
@@ -611,16 +611,16 @@ var sshConfigCache = struct {
 	text map[[2]string]string
 }{text: map[[2]string]string{}}
 
-// sshConfigText is what 'ssh -G' says about target, asked once per run. No ssh,
-// or a target it refuses, reads as no config, so every field stays unknown.
-// '--': an option-shaped host must not parse as an option.
-func sshConfigText(target string) string {
-	key := [2]string{target, os.Getenv("PATH")}
+// sshConfigText is what 'ssh -G' says about dest, sshDest's port and target, asked
+// once per run. No ssh, or a target it refuses, reads as no config, so every field
+// stays unknown. '--': an option-shaped host must not parse as an option.
+func sshConfigText(dest []string) string {
+	key := [2]string{strings.Join(dest, "\x00"), os.Getenv("PATH")}
 	sshConfigCache.Lock()
 	defer sshConfigCache.Unlock()
 	text, asked := sshConfigCache.text[key]
 	if !asked {
-		out, _ := toolCmd("ssh", "-G", "--", target).Output()
+		out, _ := toolCmd("ssh", append([]string{"-G"}, dest...)...).Output()
 		text = string(out)
 		sshConfigCache.text[key] = text
 	}
@@ -652,7 +652,7 @@ func (a *app) showSSHLine(remoteURL string) {
 	if hostAlias == "" || !inPath("ssh") {
 		return
 	}
-	ssh := readSSHConfig(sshConnectTarget(remoteURL))
+	ssh := readSSHConfig(sshDest(remoteURL))
 	// An '-i' in git's own ssh command outranks ssh -G's pick, since with IdentitiesOnly
 	// ssh_config's candidates never get a look in.
 	fields := a.sshArgv()

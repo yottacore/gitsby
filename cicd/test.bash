@@ -1329,17 +1329,38 @@ fGateNoDrift(){ fGateStatus 0 --no-container --gate && ! grep -qE 'tool versions
 ## demogif publish), the rest passed on. Its exit status goes to ${gateRc}, output in ${gateOut},
 ## and the calls log starts empty.
 fGateOnly(){
-	local keep=" $1 " s
 	local -a skip=()
+	mapfile -t skip < <(fGateSkips "$1")
 	shift
-	for s in sync lint test fuzz parity dogfood demogif remote publish; do [[ "${keep}" == *" ${s} "* ]] || skip+=("--no-${s}"); done
 	: > "${gateCalls}"; gateRc=0
 	fGateRun -y --no-container "${skip[@]}" "$@" </dev/null >"${gateOut}" 2>&1 || gateRc=$?
+}
+## fGateOnly without -y, so the run asks for the publish message, answered with the line in $1.
+fGateOnlyAnswering(){
+	local answer="$1"
+	local -a skip=()
+	mapfile -t skip < <(fGateSkips "$2")
+	shift 2
+	: > "${gateCalls}"; gateRc=0
+	fGateRun --no-container "${skip[@]}" "$@" <<< "${answer}" >"${gateOut}" 2>&1 || gateRc=$?
+}
+## The --no-<stage> options for every stage not named in $1.
+fGateSkips(){
+	local keep=" $1 " s
+	for s in sync lint test fuzz parity dogfood demogif remote publish; do [[ "${keep}" == *" ${s} "* ]] || printf '%s\n' "--no-${s}"; done
 }
 ## After fGateOnly: the run exited $1, and every extended regex after it matches the calls log.
 fGateRanCalling(){ local want="$1"; shift; [[ "${gateRc}" == "${want}" ]] && fGateCalled "$@" ;}
 ## After fGateOnly: the run exited $1, and its output matches the extended regex $2.
 fGateRanSaying(){ [[ "${gateRc}" == "$1" ]] && grep -qE -- "$2" "${gateOut}" ;}
+## The real publisher in ${pubDir}/repo, its backup off and the stubs first on PATH, with the
+## options in $@. GIT_BACKUP_AND_PUBLISH_PATHS goes on the call. Status in ${pubRc}, output in
+## ${pubDir}/out.
+fPubRun(){
+	pubRc=0
+	( cd "${pubDir}/repo" || exit 1; GIT_BACKUP_AND_PUBLISH_NOBACKUP=1 PATH="${pubDir}/bin:${PATH}" \
+		bash "${root}/cicd/utility/n8git_backup-and-publish" "$@" ) </dev/null >"${pubDir}/out" 2>&1 || pubRc=$?
+}
 ## A commit pushed to the pipeline fixture's origin from a second clone, adding the line $1 to the
 ## file $2, upstream.txt when left out.
 fGateUpstream(){
@@ -1725,6 +1746,11 @@ fBuildSites(){
 ## Five sites at least, so a pattern that stops matching can't pass on none.
 fBuildSitesCapped(){ local sites=""; sites="$(fBuildSites)" || return 1
 	[[ $(grep -c . <<< "${sites}") -ge 5 ]] && ! grep -qvE -- '-p "\$\{(BUILD|HEAVY)_JOBS\}"' <<< "${sites}" ;}
+## The sparse checkout cases: a run's exit, output and folder, and its GIT_TRACE file. An empty
+## trace means gitsby ran no git, so it can't say the dry run was skipped.
+fSparseRefused(){ [[ "${1}" == 1 && "${2}" == *"File: out/o.txt"* && "${2}" != *"Going to do"* ]] && grep -qF -- "add --all --dry-run" "${3}/trace" && git -C "${3}/w" diff --cached --quiet; }
+fNoSparseReads(){ [[ -s "${1}" ]] && ! grep -qE -- "add --all --dry-run|core\.sparseCheckout" "${1}"; }
+
 fRunSuite(){
 	fEcho_Clean "suite: ${1} (${gitsby})"
 
@@ -2439,11 +2465,18 @@ fRunSuite(){
 	git clone --quiet "${tmO}" "${tmA}" 2>/dev/null
 	( cd "${tmA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git switch --quiet -c feat origin/main && echo two > g.txt && git add --all && git commit --quiet -m "on feat" )
 	fTmMainKept(){ [[ "$(git -C "${tmO}" rev-parse main)" != "$(git -C "${tmA}" rev-parse feat)" ]] && ! git -C "${tmO}" show-ref --verify --quiet refs/heads/next ;}
-	fAssert "[dfh3s] sync -q on a branch tracking origin/main refuses, naming --unset-upstream" \
-		bash -c "cd '${tmA}' && out=\"\$('${gitsby}' -q sync 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'git branch --unset-upstream' <<< \"\${out}\""
+	## The push step refuses with the same text on its own, so the tree is dirty here, and nothing
+	## committed is what shows the refusal came before the plan (2026112017135297).
+	local tmTip; tmTip="$(git -C "${tmA}" rev-parse HEAD)"; echo dirty >> "${tmA}/g.txt"
+	fTmUntouched(){ [[ "$(git -C "${tmA}" rev-parse HEAD)" == "${tmTip}" && "$(git -C "${tmA}" status --porcelain)" == ' M g.txt' ]] ;}
+	fAssert "[dfh3s] sync -q on a branch tracking origin/main refuses before the plan, naming --unset-upstream" \
+		bash -c "cd '${tmA}' && out=\"\$('${gitsby}' -q sync 'dirty' 2>&1)\"; [[ \$? != 0 ]] && grep -qF 'git branch --unset-upstream' <<< \"\${out}\" && grep -qF 'Nothing was done.' <<< \"\${out}\""
+	fAssert "[dfktt] and commits nothing"  fTmUntouched
 	fAssert "[dfh3t] br switch -q and br create -q refuse it too, and stay on the branch" \
 		bash -c "cd '${tmA}' && ! '${gitsby}' -q br switch main >/dev/null 2>&1 && ! '${gitsby}' -q br create next >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == feat ]]"
+	fAssert "[dfktv] and commit nothing either"  fTmUntouched
 	fAssert "[dfh3v] and origin's main never got the branch"  fTmMainKept
+	printf 'two\n' > "${tmA}/g.txt"
 	git -C "${tmA}" config push.default upstream
 	fAssert "[dfh3w] under push.default=upstream, sync -q refuses without --direct, naming main" \
 		bash -c "cd '${tmA}' && out=\"\$('${gitsby}' -q sync 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"straight to 'main'\" <<< \"\${out}\" && grep -qF 'Re-run with --direct' <<< \"\${out}\""
@@ -2593,6 +2626,22 @@ fRunSuite(){
 	( cd "${wbW}" && git bisect reset && git checkout --quiet --detach ) >/dev/null 2>&1
 	fAssert "[dfjzt] once that worktree is done with dev, br switch dev goes through and parks the edit" \
 		bash -c "cd '${wbM}' && '${gitsby}' -q br switch dev >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == dev ]] && git -C '${wbO}' cat-file -e feat:h.txt"
+
+	## prune passes over a locked worktree, so one whose folder is gone keeps its branch after it.
+	## The refusal named prune alone, and the next run refused the same way.
+	local wlO="${work}/$1-wtlo.git" wlM="${work}/$1-wtlm" wlW="${work}/$1-wtl w"
+	git init --quiet --bare -b main "${wlO}"
+	git clone --quiet "${wlO}" "${wlM}" 2>/dev/null
+	(
+		cd "${wlM}" || exit 1
+		echo one > f.txt && git add f.txt && git commit --quiet -m initial && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev && git checkout --quiet main
+		git worktree add --quiet "${wlW}" dev && git worktree lock "${wlW}" && mv "${wlW}" "${wlW}-moved"
+	) >/dev/null 2>&1
+	fAssert "[dfkyq] br switch -q dev refuses for a locked worktree whose folder is gone, naming unlock then prune" \
+		bash -c "cd '${wlM}' && out=\"\$('${gitsby}' -q br switch dev 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"git worktree unlock '${wlW}'\" <<< \"\${out}\" && grep -qE '^ +git worktree prune\$' <<< \"\${out}\" && [[ \"\$(git branch --show-current)\" == main ]]"
+	fAssert "[dfkyr] and once those 2 run, br switch dev goes through" \
+		bash -c "cd '${wlM}' && git worktree unlock '${wlW}' && git worktree prune && '${gitsby}' -q br switch dev >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fStagedChecks "$1"
 
 	## A command that still means something locally runs offline and says what it skipped; one
@@ -3275,6 +3324,54 @@ fRunSuite(){
 	fAssertNotOut "[dcmn9] and does not send you off to repo create"         'repo create'                   bash -c "${cnOffRun}"
 	fAssert       "[dcmna] and nothing was set up"                           bash -c "[[ ! -e '${cnOff}/plain/.git' ]]"
 	fAssertOut    "[dcmnb] a remote that isn't there still says so"          "doesn.t exist, or you have no access"  bash -c "cd '${cn}/proj2' && '${gitsby}' -q repo connect '${cn}/nosuch.git'"
+	## A shallow clone's push to a new repo is refused ('shallow update not allowed'), and a push
+	## into the branch a repo with a working tree has checked out is too. Both were found only after
+	## the commit and the remote add, and the rerun, with origin set, failed the same way.
+	local cnSh="${cn}/shallow"
+	mkdir -p "${cnSh}"
+	git init --quiet --bare -b main "${cnSh}/src.git"
+	git clone --quiet "${cnSh}/src.git" "${cnSh}/srcw" 2>/dev/null
+	( cd "${cnSh}/srcw" && for i in 1 2; do echo "${i}" > "f${i}.txt" && git add --all && git commit --quiet -m "c${i}"; done && git push --quiet origin main )
+	git clone --quiet --depth 1 "file://${cnSh}/src.git" "${cnSh}/cut" 2>/dev/null
+	git clone --quiet --depth 1 "file://${cnSh}/src.git" "${cnSh}/kept" 2>/dev/null
+	git clone --quiet "${cnSh}/src.git" "${cnSh}/full" 2>/dev/null
+	git clone --quiet "${cnSh}/src.git" "${cnSh}/full2" 2>/dev/null
+	git init --quiet --bare -b main "${cnSh}/new.git"
+	git init --quiet -b main "${cnSh}/worktree"
+	git init --quiet -b main "${cnSh}/instead"
+	git -C "${cnSh}/instead" config receive.denyCurrentBranch updateInstead
+	mkdir -p "${cnSh}/bin"
+	fStub "${cnSh}/bin/gh" <<-EOF
+		#!/usr/bin/env bash
+		echo "\$1" >> '${cnSh}/gh-ran'; exit 1
+	EOF
+	( cd "${cnSh}/cut" && git remote remove origin && echo new > new.txt )
+	( cd "${cnSh}/full" && git remote remove origin && echo new > new.txt )
+	( cd "${cnSh}/full2" && git remote remove origin && echo new > new.txt )
+	## Refused, with the new file left uncommitted, no origin added and nothing in the new repo.
+	fCnShRefused(){
+		local out="" rc=0
+		out="$(cd "${cnSh}/$1" && "${gitsby}" -q repo connect "$2" 2>&1)" || rc=$?
+		((rc != 0)) || return 1
+		grep -qF "$3" <<< "${out}" || return 1
+		! grep -qF 'Going to do' <<< "${out}" || return 1
+		[[ "$(git -C "${cnSh}/$1" rev-list --count HEAD)" == "$4" && -z "$(git -C "${cnSh}/new.git" for-each-ref)" ]] || return 1
+		grep -qF 'new.txt' <<< "$(git -C "${cnSh}/$1" status --porcelain)" && ! git -C "${cnSh}/$1" remote get-url origin >/dev/null 2>&1
+	}
+	fAssert "[dfkys] repo connect -q from a shallow clone refuses before the plan, naming --unshallow, with nothing committed or added" \
+		fCnShRefused cut "${cnSh}/new.git" 'git fetch --unshallow' 1
+	fAssertOut "[dfkyt] and so does a rerun whose origin a refused push left set"  'git fetch --unshallow' \
+		bash -c "cd '${cnSh}/cut' && git remote add origin '${cnSh}/new.git' && '${gitsby}' -q repo connect 2>&1; git remote remove origin"
+	fAssert "[dfkyv] a shallow clone that keeps its origin still pushes new work through repo connect" \
+		bash -c "cd '${cnSh}/kept' && git checkout --quiet -b more && echo k > k.txt && '${gitsby}' -q repo connect >/dev/null 2>&1 && git -C '${cnSh}/src.git' cat-file -e more:k.txt"
+	fAssert "[dfkyw] repo connect -q to a repo with its branch checked out refuses before the plan, with nothing committed or added" \
+		fCnShRefused full "${cnSh}/worktree" 'git init --bare' 2
+	fAssertOut "[dfkz9] and so does a rerun whose origin a refused push left set"  'git init --bare' \
+		bash -c "cd '${cnSh}/full' && git remote add origin '${cnSh}/worktree' && '${gitsby}' -q repo connect 2>&1; git remote remove origin"
+	fAssert "[dfkza] repo create from a shallow clone refuses the same way, before asking gh about the repo" \
+		bash -c "cd '${cnSh}/cut' && out=\"\$(PATH='${cnSh}/bin':\"\${PATH}\" '${gitsby}' -q repo create me/proj 2>&1)\"; grep -qF 'git fetch --unshallow' <<< \"\${out}\" && ! grep -qx repo '${cnSh}/gh-ran' 2>/dev/null"
+	fAssert "[dfkyx] and goes through where receive.denyCurrentBranch is updateInstead" \
+		bash -c "cd '${cnSh}/full2' && '${gitsby}' -q repo connect '${cnSh}/instead' >/dev/null 2>&1 && [[ -f '${cnSh}/instead/new.txt' ]]"
 	## 127.0.0.1 port 1 is refused on this machine, not sent anywhere; the proxies are unset so it stays that way.
 	fAssertNotOut "[dcmnc] a credential in an unreachable url is not printed"  'tok_s3cret' \
 		bash -c "cd '${cnOff}/plain' && env -u https_proxy -u HTTPS_PROXY -u ALL_PROXY -u all_proxy '${gitsby}' -q repo connect 'https://me:tok_s3cret@127.0.0.1:1/me/proj.git'"
@@ -3804,6 +3901,24 @@ GHEOF
 	)
 	fAssert "[dfh74] an upstream on another remote refuses, with nothing pushed and no PR" \
 		bash -c "cd '${pnf}' && out=\"\$(PATH='${ghp}' FAKE_GH_LOG='${gh}/prfar4.log' '${gitsby}' -q pr create 'Second' 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"pushes to the remote 'second'\" <<< \"\${out}\" && { [[ ! -f '${gh}/prfar4.log' ]] || ! grep -q '^pr create' '${gh}/prfar4.log'; } && [[ \"\$(git -C '${gh}/prnew/second.git' rev-parse pny)\" != \"\$(git rev-parse pny)\" && \"\$(git ls-remote origin refs/heads/pny | cut -f1)\" == \"\$(git rev-parse origin/dev)\" ]]"
+	## The base follows the branch the push lands on, which pr ok later reads back as the PR's
+	## head and takes its target and back-merge from. It used to follow the current branch's name.
+	(
+		cd "${pnf}" || exit 1
+		git config push.default upstream
+		git push --quiet origin origin/main:refs/heads/hotfix/pnh origin/dev:refs/heads/pnplain
+		git fetch --quiet && git switch --quiet -c pnhf --track origin/hotfix/pnh
+		echo h > h.txt && git add h.txt && git commit --quiet -m "Hot work"
+		git switch --quiet -c hotfix/pnr --track origin/pnplain
+		echo r > r.txt && git add r.txt && git commit --quiet -m "Plain work"
+	)
+	fAssert "[dfm0q] pr create from a branch whose push lands on a hotfix branch bases the PR on the default branch" \
+		bash -c "cd '${pnf}' && git switch --quiet pnhf && PATH='${ghp}' FAKE_GH_LOG='${gh}/prbase1.log' '${gitsby}' -q pr create 'Hot' && grep -q -- '^pr create --base main --head hotfix/pnh ' '${gh}/prbase1.log'"
+	fAssert "[dfm0r] and the plan shows that base, on the line the run announces" \
+		fPlanRan '^ +gh pr create --base main ' bash -c "cd '${pnf}' && git switch --quiet pnhf && PATH='${ghp}' '${gitsby}' -q pr create 'Hot'"
+	fAssert "[dfm0s] a hotfix branch whose push lands on another branch bases it on dev" \
+		bash -c "cd '${pnf}' && git switch --quiet hotfix/pnr && PATH='${ghp}' FAKE_GH_LOG='${gh}/prbase2.log' '${gitsby}' -q pr create 'Plain' && grep -q -- '^pr create --base dev --head pnplain ' '${gh}/prbase2.log'"
+	( cd "${pnf}" && git switch --quiet pnhf && git config --unset push.default )
 
 	## GitHub won't open a pull request from a branch that shares no commit with its base, and
 	## said so only after the park push had published the branch.
@@ -5379,6 +5494,76 @@ GHEOF
 	fAssert    "[dfg1t] a submodule moved to another commit is still committed"  bash -c "cd '${smd}/top' && git checkout --quiet smfeat && ( cd child && git add --all && git commit --quiet -m moved ) && '${gitsby}' -q pullcom 'bump' && [[ -z \"\$(git status --porcelain)\" ]] && git log -1 --pretty=%s | grep -qx bump"
 	fAssert    "[dfjwp] and with diff.ignoreSubmodules=all too"  bash -c "cd '${smd}/top' && git config diff.ignoreSubmodules all && ( cd child && git commit --quiet --allow-empty -m again ) && '${gitsby}' -q pullcom 'bump2'; rc=\$?; git config --unset diff.ignoreSubmodules; [[ \${rc} == 0 && -z \"\$(git status --porcelain)\" ]] && git log -1 --pretty=%s | grep -qx bump2"
 
+	## fetch.recurseSubmodules defaults to on-demand, so once origin's dev moves a submodule, the
+	## fetch also fetches the submodule, and exits 1 when its remote is gone. Taken as offline,
+	## that skipped the pull though origin had answered.
+	local smg="${work}/$1-submodulegone"
+	mkdir -p "${smg}"
+	git init --quiet --bare -b main "${smg}/child.git"
+	git clone --quiet "${smg}/child.git" "${smg}/childwork" 2>/dev/null
+	git init --quiet --bare -b main "${smg}/origin.git"
+	git clone --quiet "${smg}/origin.git" "${smg}/theirs" 2>/dev/null
+	(
+		cd "${smg}/childwork" || exit 1
+		echo c > c.txt && git add --all && git commit --quiet -m child && git push --quiet origin main
+		cd "${smg}/theirs" || exit 1
+		echo a > a.txt && git add --all
+		git -c protocol.file.allow=always submodule --quiet add "${smg}/child.git" child
+		git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git -c protocol.file.allow=always clone --quiet --recurse-submodules -b dev "${smg}/origin.git" "${smg}/mine" 2>/dev/null
+		cd "${smg}/mine" && git config protocol.file.allow always
+		cd "${smg}/childwork" && echo d >> c.txt && git commit --quiet -am more && git push --quiet origin main
+		cd "${smg}/theirs/child" && git pull --quiet origin main
+		cd "${smg}/theirs" && git add child && git commit --quiet -m bump && git push --quiet origin dev
+		mv "${smg}/child.git" "${smg}/child.moved"
+		cd "${smg}/mine" || exit 1
+		rc=0; "${gitsby}" -q pullcom 'gone' > "${smg}/pullcom.out" 2>&1 || rc=$?
+		echo "${rc}" > "${smg}/pullcom.rc"
+	)
+	fAssert     "[dfkym] pullcom pulls when only a submodule's fetch fails"  bash -c "cd '${smg}/mine' && [[ \"\$(cat ../pullcom.rc)\" == 0 ]] && git merge-base --is-ancestor \"\$(git -C '${smg}/origin.git' rev-parse dev)\" HEAD"
+	fAssert     "[dfkyn] and names the submodule fetch rather than offline"  bash -c "cd '${smg}' && grep -qF \"fetching a submodule failed\" pullcom.out && ! grep -qE 'offline|unreachable' pullcom.out"
+	fAssert     "[dfm00] and keeps origin's submodule bump, though the submodule lacks that commit"  bash -c "cd '${smg}/mine' && [[ \"\$(git rev-parse HEAD:child)\" == \"\$(git -C '${smg}/origin.git' rev-parse dev:child)\" ]]"
+
+	## A pull moves the gitlink but not the submodule's checkout, so 'git add --all' staged the
+	## old commit, and pullcom committed it, undoing origin's bump for the next sync to push.
+	local smb="${work}/$1-submodulebump"
+	mkdir -p "${smb}"
+	git init --quiet --bare -b main "${smb}/child.git"
+	git clone --quiet "${smb}/child.git" "${smb}/childwork" 2>/dev/null
+	git init --quiet --bare -b main "${smb}/origin.git"
+	git clone --quiet "${smb}/origin.git" "${smb}/theirs" 2>/dev/null
+	(
+		cd "${smb}/childwork" || exit 1
+		echo c > c.txt && git add --all && git commit --quiet -m child && git push --quiet origin main
+		cd "${smb}/theirs" || exit 1
+		echo a > a.txt && git add --all
+		git -c protocol.file.allow=always submodule --quiet add "${smb}/child.git" child
+		git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git -c protocol.file.allow=always clone --quiet --recurse-submodules -b dev "${smb}/origin.git" "${smb}/mine" 2>/dev/null
+		cd "${smb}/mine" && git config protocol.file.allow always
+		cd "${smb}/childwork" && echo d >> c.txt && git commit --quiet -am more && git push --quiet origin main
+		cd "${smb}/theirs/child" && git pull --quiet origin main
+		cd "${smb}/theirs" && git add child && git commit --quiet -m bump && git push --quiet origin dev
+		cd "${smb}/mine" || exit 1
+		echo m > m.txt
+		"${gitsby}" -q pullcom 'mine' > "${smb}/pullcom.out" 2>&1
+		echo "$?" > "${smb}/pullcom.rc"
+		git rev-parse HEAD > "${smb}/head.1"
+		"${gitsby}" -q pullcom 'again' > "${smb}/pullcom2.out" 2>&1
+		echo "$?" > "${smb}/pullcom2.rc"
+	)
+	fAssert     "[dfkzx] pullcom after origin bumps a submodule keeps the bump and commits the rest"  bash -c "cd '${smb}/mine' && [[ \"\$(cat ../pullcom.rc)\" == 0 && \"\$(git rev-parse HEAD:child)\" == \"\$(git -C '${smb}/origin.git' rev-parse dev:child)\" ]] && git log -1 --pretty=%s | grep -qx mine && git cat-file -e HEAD:m.txt"
+	fAssert     "[dfkzy] and says it left the submodule out, naming its path and git submodule update"  bash -c "cd '${smb}' && grep -qF 'WARNING: a submodule is checked out behind the commit this branch records for it, so it was left out of the commit' pullcom.out && grep -qF 'git submodule update' pullcom.out && grep -qE '^  File: .*/mine/child\$' pullcom.out"
+	fAssert     "[dfkzz] a second pullcom with the submodule still behind commits nothing and keeps the bump"  bash -c "cd '${smb}/mine' && [[ \"\$(cat ../pullcom2.rc)\" == 0 && \"\$(git rev-parse HEAD)\" == \"\$(cat ../head.1)\" && \"\$(git rev-parse HEAD:child)\" == \"\$(git -C '${smb}/origin.git' rev-parse dev:child)\" ]] && grep -qF 'Nothing to commit.' ../pullcom2.out"
+	fAssert     "[dfm01] once the submodule is updated, the tree is clean"  bash -c "cd '${smb}/mine' && git submodule --quiet update && [[ -z \"\$(git status --porcelain)\" ]]"
+	## The checks made before anything is staged counted that submodule as work too, so br switch
+	## refused to leave dev, naming pullcom, and sync on dev called it a direct push.
+	fAssert     "[dfm09] br switch off dev with only a submodule behind its gitlink moves"  bash -c "cd '${smb}/mine' && git push --quiet origin dev && git -C child checkout --quiet HEAD~1 && git branch smbfeat && '${gitsby}' -q br switch smbfeat >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == smbfeat ]]"
+	fAssert     "[dfm0a] -q sync on dev with only that submodule isn't a direct push, and pushes no move back"  bash -c "cd '${smb}/mine' && git checkout --quiet dev && '${gitsby}' -q sync 'smb' >/dev/null 2>&1 && [[ \"\$(git -C '${smb}/origin.git' rev-parse dev:child)\" == \"\$(git rev-parse HEAD:child)\" && \"\$(git -C child rev-parse HEAD)\" != \"\$(git rev-parse HEAD:child)\" ]]"
+	fAssert     "[dfm0b] a submodule moved sideways still counts as work on dev"  bash -c "cd '${smb}/mine' && ( cd child && git checkout --quiet -b side && git commit --quiet --allow-empty -m side ) && ! '${gitsby}' -q br switch smbfeat >/dev/null 2>&1; rc=\$?; git -C child checkout --quiet --detach HEAD~1; exit \${rc}"
+
 	## status.showUntrackedFiles=no hides untracked files from status, but 'git add --all' still
 	## takes them. Read from status, the plan said clean and the guards let them through.
 	local hu="${work}/$1-hideuntracked"
@@ -5476,6 +5661,39 @@ GHEOF
 	fAssertOut  "[dfhkj] -q sync with an edited tracked file outside the sparse checkout refuses before the plan, naming it"  'File: out/o\.txt'  bash -c "cd '${sp}/edit/in' && '${gitsby}' -q sync 'sp' 2>&1"
 	fAssert     "[dfhkk] and commits and pushes nothing"  bash -c "cd '${sp}/edit' && rc=0 && out=\"\$('${gitsby}' -q sync 'sp' 2>&1)\" || rc=\$?; [[ \${rc} == 1 ]] && [[ \"\${out}\" != *'Going to do'* ]] && [[ \"\$(git diff --name-only | tr '\\n' ' ')\" == 'in/a.txt out/o.txt ' ]] && git diff --cached --quiet"
 	fAssert     "[dfhkm] an edit and a delete inside the sparse checkout still go out"  bash -c "cd '${sp}/inside' && '${gitsby}' -q sync 'sp' >/dev/null 2>&1 && [[ -z \"\$(git status --porcelain)\" ]] && ! git -C '${sp}/origin.git' ls-tree -r --name-only spfeat | grep -qx in/c\.txt"
+
+	## Every command whose commit stages the whole tree, as stagesTree lists them, refuses that
+	## edit in a sparse checkout. Only sync was run, so dropping any other from the list went
+	## unseen. Outside a sparse checkout none runs the dry run, which costs about what a status
+	## does, or the config read ahead of it. Each case gets its own origin, since the plain run goes through and pushes.
+	## pr create asks for a host CLI first, and the image has none, so it gets the fake gh.
+	local spCase="" spMode="" spD="" spOut="" spWhere="" spPath="" spRc=0 spI=0
+	local -a spArgs=() spRun=()
+	for spCase in 'spfeat pullcom sp' 'spfeat sync sp' 'spfeat br merge' 'spfeat br switch dev' 'spfeat br create spcr' 'spfeat br hotfix sphf' 'spfeat pr create' 'dev release' 'none repo create someone/sp' 'none repo connect @empty'; do
+		read -ra spArgs <<< "${spCase}"; spWhere="${spArgs[0]}"; spI=$((spI + 1))
+		spPath="${PATH}"; [[ "${spArgs[1]}" == pr ]] && spPath="${ghp}"
+		for spMode in sparse plain; do
+			spD="${sp}/all/${spI}-${spMode}"; mkdir -p "${spD}"
+			spRun=("${spArgs[@]:1}"); spRun=("${spRun[@]/#@empty/${spD}/empty.git}")
+			(
+				if [[ "${spWhere}" == none ]]; then
+					git init --quiet --bare -b main "${spD}/empty.git"
+					git init --quiet -b main "${spD}/w" && cd "${spD}/w" || exit 1
+					mkdir in out && echo a > in/a.txt && echo o > out/o.txt && git add in out && git commit --quiet -m init
+				else
+					git clone --quiet --bare "${sp}/origin.git" "${spD}/origin.git" && git clone --quiet -b "${spWhere}" "${spD}/origin.git" "${spD}/w" && cd "${spD}/w" || exit 1
+				fi
+				[[ "${spMode}" == plain ]] || git sparse-checkout set --cone in
+				mkdir -p out && echo changed > out/o.txt
+			) >/dev/null 2>&1
+			spRc=0; spOut="$(cd "${spD}/w" && PATH="${spPath}" GIT_TRACE="${spD}/trace" "${gitsby}" -q --no-fetch "${spRun[@]}" 2>&1)" || spRc=$?
+			if [[ "${spMode}" == sparse ]]; then
+				fAssert "[dfksp] -q ${spArgs[*]:1} in a sparse checkout refuses an edited file outside it before the plan, and stages nothing"  fSparseRefused "${spRc}" "${spOut}" "${spD}"
+			else
+				fAssert "[dfksq] -q ${spArgs[*]:1} outside a sparse checkout runs no dry run of git add, and reads no sparse setting"  fNoSparseReads "${spD}/trace"
+			fi
+		done
+	done
 
 	## A stopped am, range pick, revert or merge was finished under gitsby's message, or left
 	## for its --continue to apply onto the branch gitsby switched to. src's first commit
@@ -8606,6 +8824,8 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fGateOnly "demogif publish" -m 'hands off'
 		fAssert "[dfjmf] and leaves out one that was already edited when the run started" \
 			bash -c "[[ '${gateRc}' == 0 ]] && grep -qxF 'paths=[]' '${gateCalls}' && grep -qF 'the run changed 0 tracked file(s)' '${gateOut}'"
+		fAssert "[dfkwr] and stage 6 leaves that gif as it is, rather than moving the new render over it" \
+			bash -c "[[ \"\$(cat '${gateDir}/assets/demo.gif')\" == edited && ! -e '${gateDir}/assets/demo.gif.new' ]] && grep -qF 'WARNING: demo gif differs, but assets/demo.gif was already edited when the run started, so it stays as it is' '${gateOut}'"
 		rm -f -- "${gateFail:?}/pillow"
 		## The real publisher, told to commit one of two edited files. Its gitsby runs git, and its
 		## rar is never called with the backup off but has to be there.
@@ -8627,6 +8847,48 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			bash "${root}/cicd/utility/n8git_backup-and-publish" -q -m pub ) </dev/null >/dev/null 2>&1 || true
 		fAssert "[dfjmg] the publisher commits and pushes only the files it's told, and leaves the other edit in the tree" \
 			bash -c "[[ \"\$(git -C '${pubDir}/repo' show --name-only --format= HEAD)\" == a.txt && \"\$(git -C '${pubDir}/repo' diff --name-only)\" == b.txt && \"\$(git -C '${pubDir}/repo' rev-parse HEAD)\" == \"\$(git -C '${pubDir}/origin.git' rev-parse main)\" && -z \"\$(git -C '${pubDir}/repo' stash list)\" ]]"
+		## cicd.bash hands it an empty list on every run that changed none of PUBLISH_PATHS, which
+		## [dfjmf] pins. Set and empty is nothing to commit, not unset's whole tree.
+		local pubHead="" pubRc=0; pubHead="$(git -C "${pubDir}/repo" rev-parse HEAD)"
+		echo a3 >> "${pubDir}/repo/a.txt"
+		GIT_BACKUP_AND_PUBLISH_PATHS='' fPubRun -q -m pub
+		fAssert "[dfkvy] and told an empty list, commits nothing, with both edits left in the tree" \
+			bash -c "[[ '${pubRc}' == 0 && \"\$(git -C '${pubDir}/repo' rev-parse HEAD)\" == '${pubHead}' && \"\$(git -C '${pubDir}/origin.git' rev-parse main)\" == '${pubHead}' && \"\$(git -C '${pubDir}/repo' diff --name-only | paste -sd ' ')\" == 'a.txt b.txt' && -z \"\$(git -C '${pubDir}/repo' stash list)\" ]]"
+		## Its stash has to come back with --index, or another staged edit comes back unstaged.
+		git -C "${pubDir}/repo" add b.txt && echo b3 >> "${pubDir}/repo/b.txt"
+		GIT_BACKUP_AND_PUBLISH_PATHS=a.txt fPubRun -q -m pub
+		fAssert "[dfkvz] and leaves another staged edit staged, with a later edit of it in the tree" \
+			bash -c "[[ '${pubRc}' == 0 && \"\$(git -C '${pubDir}/repo' show --name-only --format= HEAD)\" == a.txt && \"\$(git -C '${pubDir}/repo' show :b.txt)\" == \$'b\\nb2' && \"\$(tail -n 1 '${pubDir}/repo/b.txt')\" == b3 && \"\$(git -C '${pubDir}/repo' rev-parse HEAD)\" == \"\$(git -C '${pubDir}/origin.git' rev-parse main)\" && -z \"\$(git -C '${pubDir}/repo' stash list)\" ]]"
+		## A pull that fails, since origin moved on under a local commit.
+		git clone --quiet "${pubDir}/origin.git" "${pubDir}/other" 2>/dev/null
+		printf 'c\n' > "${pubDir}/other/c.txt" && git -C "${pubDir}/other" add c.txt && git -C "${pubDir}/other" commit --quiet -m c && git -C "${pubDir}/other" push --quiet 2>/dev/null
+		echo a4 >> "${pubDir}/repo/a.txt" && git -C "${pubDir}/repo" commit --quiet -m local -- a.txt
+		GIT_BACKUP_AND_PUBLISH_PATHS=a.txt fPubRun -q -m pub
+		fAssert "[dfkw0] and when its pull fails, puts the staged edit back staged" \
+			bash -c "[[ '${pubRc}' != 0 && \"\$(git -C '${pubDir}/repo' show :b.txt)\" == \$'b\\nb2' && \"\$(tail -n 1 '${pubDir}/repo/b.txt')\" == b3 && -z \"\$(git -C '${pubDir}/repo' stash list)\" ]] && grep -qF 'git pull --ff-only failed. The working tree is as it was.' '${pubDir}/out'"
+		## A staged edit that the pull changes in the same place. --index can't put it back, and a
+		## plain pop would drop it, since the tree holds none of it.
+		git -C "${pubDir}/repo" fetch --quiet && git -C "${pubDir}/repo" reset --quiet --hard origin/main
+		printf 'c\nmine\n' > "${pubDir}/repo/c.txt" && git -C "${pubDir}/repo" add c.txt && printf 'c\n' > "${pubDir}/repo/c.txt"
+		printf 'c\ntheirs\n' > "${pubDir}/other/c.txt" && git -C "${pubDir}/other" commit --quiet -m theirs -- c.txt && git -C "${pubDir}/other" push --quiet 2>/dev/null
+		GIT_BACKUP_AND_PUBLISH_PATHS=a.txt fPubRun -q -m pub
+		fAssert "[dfkw1] and when the pull clashes with a staged edit, stops with the stash kept and nothing committed" \
+			bash -c "[[ '${pubRc}' != 0 && \"\$(git -C '${pubDir}/repo' rev-parse HEAD)\" == \"\$(git -C '${pubDir}/other' rev-parse HEAD)\" && \"\$(git -C '${pubDir}/repo' rev-parse HEAD)\" == \"\$(git -C '${pubDir}/origin.git' rev-parse main)\" && \"\$(git -C '${pubDir}/repo' show 'stash@{0}^2:c.txt')\" == \$'c\\nmine' && \"\$(git -C '${pubDir}/repo' stash list --format=%s)\" == 'On main: auto-stash' ]] && grep -qF 'staged edits clash with what the pull brought in' '${pubDir}/out'"
+		git -C "${pubDir}/repo" stash drop --quiet
+		## An untracked file in the way of a pulled one also fails the pop with the tracked files
+		## untouched. With nothing staged, that's not the clash above.
+		echo mine > "${pubDir}/repo/u.txt"
+		echo theirs > "${pubDir}/other/u.txt" && git -C "${pubDir}/other" add u.txt && git -C "${pubDir}/other" commit --quiet -m u && git -C "${pubDir}/other" push --quiet 2>/dev/null
+		GIT_BACKUP_AND_PUBLISH_PATHS=a.txt fPubRun -q -m pub
+		fAssert "[dfkw5] and an untracked file in the way is named as that, not as a staged clash" \
+			bash -c "[[ '${pubRc}' != 0 && \"\$(git -C '${pubDir}/repo' show 'stash@{0}^3:u.txt')\" == mine ]] && grep -qF \"these untracked files weren't put back\" '${pubDir}/out' && ! grep -qF 'staged edits clash' '${pubDir}/out'"
+		git -C "${pubDir}/repo" stash drop --quiet
+		## cicd.bash runs it with --quiet and, after a blank answer at its prompt, no -m. It writes
+		## the message itself, and never opens the editor.
+		echo a5 >> "${pubDir}/repo/a.txt"
+		GIT_EDITOR=false GIT_AUTO_MESSAGE='' GIT_BACKUP_AND_PUBLISH_MESSAGE='' GIT_BACKUP_AND_PUBLISH_PATHS=a.txt fPubRun --quiet
+		fAssert "[dfkw3] and with --quiet and no message, commits under one of its own rather than opening the editor" \
+			bash -c "[[ '${pubRc}' == 0 && \"\$(git -C '${pubDir}/repo' show --name-only --format= HEAD)\" == a.txt && \"\$(git -C '${pubDir}/repo' rev-parse HEAD)\" == \"\$(git -C '${pubDir}/origin.git' rev-parse main)\" ]] && grep -qxE 'pubscope [0-9]{8}-[0-9]{6}' <<< \"\$(git -C '${pubDir}/repo' log -1 --format=%s)\""
 		gateDir="${work}/gate"
 
 		## The stages the gate leaves out, on a fixture of their own that becomes a git repo with a
@@ -8792,6 +9054,12 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dd5fy] -m hands its message to the publisher"  fGateRanCalling 0 '^n8git_backup-and-publish --quiet -m hands off$'
 		fGateOnly publish --message='hands off'
 		fAssert "[dd5fz] and so does --message="  fGateRanCalling 0 '^n8git_backup-and-publish --quiet -m hands off$'
+		## A blank answer leaves the message to the publisher, which writes one under --quiet ([dfkw3]).
+		fGateOnlyAnswering '' publish
+		fAssert "[dfkw2] a blank answer at the message prompt is an automatic message, as the plan says" \
+			bash -c "[[ '${gateRc}' == 0 ]] && grep -qxF 'n8git_backup-and-publish --quiet' '${gateCalls}' && grep -qxF 'Publish (last) ......: cicd/utility/n8git_backup-and-publish (will prompt for message; blank = automatic message)' '${gateOut}'"
+		fAssert "[dfkw4] and --help says so, with no editor anywhere in it" \
+			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qF '(blank = automatic message; Ctrl+C aborts the whole run)' <<< \"\$out\" && ! grep -qi editor <<< \"\$out\""
 		## Stage 0 against a real origin: behind, behind with an edit in the tree, diverged, and gone.
 		git init --quiet --bare -b main "${gateOrigin}"
 		git -C "${gateDir}" remote add origin "${gateOrigin}"
@@ -8846,6 +9114,39 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dfk09] and when one clashes with what it fast-forwarded over"  fGateRanSaying 1 'uncommitted edits clash with origin in notes.txt, so the merge was backed out'
 		fAssert "[dfk0a] and backs that out too, with the edit put back and the older stash entry left alone" \
 			bash -c "[[ \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == clash && \"\$(git -C '${gateDir}' diff --name-only HEAD)\" == notes.txt && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' && -z \"\$(git -C '${gateDir}' ls-files -u)\" ]]"
+		## Staged edits stay staged over a fast-forward and a merge that go in clean: a file staged
+		## and then edited again, and a new file that is only staged. git puts an autostash back
+		## without --index, which unstaged both.
+		git -C "${gateDir}" reset --quiet --hard '@{u}'
+		fGateUpstream seven
+		echo staged >> "${gateDir}/notes.txt" && git -C "${gateDir}" add notes.txt && echo later >> "${gateDir}/notes.txt"
+		echo new > "${gateDir}/new.txt" && git -C "${gateDir}" add new.txt
+		fGateOnly sync
+		fAssert "[dfkwk] stage 0 keeps staged edits staged over a fast-forward, and the user's stash entry as it was" \
+			bash -c "[[ '${gateRc}' == 0 && \"\$(git -C '${gateDir}' rev-parse HEAD)\" == \"\$(git -C '${gateOther}' rev-parse HEAD)\" && \"\$(git -C '${gateDir}' show :notes.txt | tail -n 1)\" == staged && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == later && \"\$(git -C '${gateDir}' diff --cached --name-only | paste -sd ' ')\" == 'new.txt notes.txt' && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' ]]"
+		git -C "${gateDir}" reset --quiet --hard '@{u}'
+		echo mine > "${gateDir}/mine.txt" && git -C "${gateDir}" add mine.txt && git -C "${gateDir}" commit --quiet -m mine -- mine.txt
+		fGateUpstream eight
+		echo staged >> "${gateDir}/notes.txt" && git -C "${gateDir}" add notes.txt && echo later >> "${gateDir}/notes.txt"
+		echo new > "${gateDir}/new.txt" && git -C "${gateDir}" add new.txt
+		fGateOnly sync
+		fAssert "[dfkwm] and over a merge" \
+			bash -c "[[ '${gateRc}' == 0 && \"\$(git -C '${gateDir}' rev-parse HEAD^2)\" == \"\$(git -C '${gateOther}' rev-parse HEAD)\" && \"\$(git -C '${gateDir}' show :notes.txt | tail -n 1)\" == staged && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == later && \"\$(git -C '${gateDir}' diff --cached --name-only | paste -sd ' ')\" == 'new.txt notes.txt' && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' ]]"
+		fAssert "[dfkwq] and the plan says a diverged branch is merged"  grep -qxF 'Remote sync .........: fast-forward from origin first, or merge it when diverged' "${gateOut}"
+		## Nothing to carry over makes no stash entry, so the one there is the user's and stays.
+		git -C "${gateDir}" reset --quiet --hard '@{u}'
+		fGateUpstream nine
+		fGateOnly sync
+		fAssert "[dfkwn] and with nothing to carry over, leaves the user's stash entry in the stash" \
+			bash -c "[[ '${gateRc}' == 0 && \"\$(git -C '${gateDir}' rev-parse HEAD)\" == \"\$(git -C '${gateOther}' rev-parse HEAD)\" && -z \"\$(git -C '${gateDir}' status --porcelain --untracked-files=no)\" && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' ]]"
+		## A staged edit where origin changed the same lines: --index puts nothing back and leaves no
+		## unmerged file to name.
+		fGateUpstream ten notes.txt
+		echo mine >> "${gateDir}/notes.txt" && git -C "${gateDir}" add notes.txt
+		syncHead="$(git -C "${gateDir}" rev-parse HEAD)"
+		fGateOnly sync
+		fAssert "[dfkwp] a staged edit that clashes with what came in stops the run, named, with the edit still staged" \
+			bash -c "[[ '${gateRc}' == 1 && \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(git -C '${gateDir}' show :notes.txt | tail -n 1)\" == mine && -z \"\$(git -C '${gateDir}' diff --name-only)\" && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' && -z \"\$(git -C '${gateDir}' ls-files -u)\" ]] && grep -qF 'uncommitted edits clash with origin in notes.txt, so the merge was backed out' '${gateOut}'"
 		git -C "${gateDir}" remote set-url origin "${work}/gate-pipe-nowhere.git"
 		fGateOnly sync
 		fAssert "[dd5g4] an origin it can't reach is a warning, not a stop"  fGateRanSaying 0 "WARNING: can't reach origin"
@@ -9925,16 +10226,18 @@ printf 'protocol=https\nhost=%s\n\n' "${TW_ASK}" | git credential fill >/dev/nul
 exit 1
 FSEOF
 	local twItem
-	for twItem in gh/proj gh/gt/proj ghe/proj gl/proj bad/proj; do git init --quiet "${tw}/trees/${twItem}"; done
+	for twItem in gh/proj gh/gt/proj ghe/proj gl/proj bad/proj loose/gh loose/gt; do git init --quiet "${tw}/trees/${twItem}"; done
 	git -C "${tw}/trees/gh/proj" remote add origin https://github.com/acme/proj.git
 	git -C "${tw}/trees/gh/gt/proj" remote add origin https://gitea.walk.test/acme/proj.git
+	git -C "${tw}/trees/loose/gh" remote add origin https://github.com/acme/proj.git
+	git -C "${tw}/trees/loose/gt" remote add origin https://gitea.walk.test/acme/proj.git
 	git -C "${tw}/trees/ghe/proj" remote add origin https://ghe.walk.test/acme/proj.git
 	git -C "${tw}/trees/gl/proj" remote add origin https://gitlab.walk.test/acme/proj.git
 	git -C "${tw}/trees/bad/proj" remote add origin https://github.com/acme/proj.git
 	git init --quiet -b main "${tw}/trees/gl/feat"; git -C "${tw}/trees/gl/feat" remote add origin https://gitlab.walk.test/acme/proj.git
 	( cd "${tw}/trees/gl/feat" || exit 1; echo a > a.txt; git add a.txt; git commit --quiet -m init; git update-ref refs/remotes/origin/main HEAD
 		git switch --quiet -c glwalk; echo b > b.txt; git add b.txt; git commit --quiet -m b )
-	for twItem in gh gt ghe gl bad; do printf 'tok_walk_%s\n' "${twItem}" > "${tw}/home/${twItem}.tok"; chmod 600 "${tw}/home/${twItem}.tok"; done
+	for twItem in gh gt ghe gl bad hand; do printf 'tok_walk_%s\n' "${twItem}" > "${tw}/home/${twItem}.tok"; chmod 600 "${tw}/home/${twItem}.tok"; done
 	: > "${tw}/home/.gitconfig"
 	printf 'account: wgh\n\tpath: %s\n\tghaccount: walkstore\n\ttokenfile: %s\n\naccount: wgt\n\tpath: %s\n\thost: gitea.walk.test\n\tuser: gtuser\n\ttokenfile: %s\n\naccount: wghe\n\tpath: %s\n\thost: ghe.walk.test\n\ttokenfile: %s\n\naccount: wgl\n\tpath: %s\n\thost: gitlab.walk.test\n\ttokenfile: %s\n\naccount: wbad\n\tpath: %s\n\thost: https://gitea.walk.test\n\tuser: gtuser\n\ttokenfile: %s\n' \
 		"$(fWinPath "${tw}/trees/gh")" "$(fWinPath "${tw}/home/gh.tok")" "$(fWinPath "${tw}/trees/gh/gt")" "$(fWinPath "${tw}/home/gt.tok")" \
@@ -9947,6 +10250,18 @@ FSEOF
 	bash -c "cd '${tw}/trees/gh/proj' && ${twG} account apply" >/dev/null 2>&1
 	git config --file "${tw}/home/.gitconfig" credential.https://ghe2.walk.test.helper '!gh auth git-credential'
 	git config --file "${tw}/home/.gitconfig" credential.https://gitlab2.walk.test.helper '!glab auth git-credential'
+	## A gitsby.ghTokenFile set by hand, outside the fragments, is the one the fallback reads, and
+	## only for a run naming a GitHub login. With no gitsby.host beside it it's GitHub's, and with
+	## one it isn't. The repos are in no account's folder, so no fragment helper answers
+	## (2026112017135672).
+	local twHandFile
+	for twHandFile in hand handgt; do
+		git config --file "${tw}/home/${twHandFile}.gitconfig" include.path .gitconfig
+		git config --file "${tw}/home/${twHandFile}.gitconfig" gitsby.ghTokenFile "$(fWinPath "${tw}/home/hand.tok")"
+	done
+	git config --file "${tw}/home/handgt.gitconfig" gitsby.host gitea.walk.test
+	local twHand="GITSBY_ACCOUNT=walklogin env ${twEnv} GIT_CONFIG_GLOBAL='${tw}/home/hand.gitconfig' '${gitsby}' -q -NoFetch --config '${tw}/walk.shcl'"
+	local twHandGt="GITSBY_ACCOUNT=walklogin env ${twEnv} GIT_CONFIG_GLOBAL='${tw}/home/handgt.gitconfig' '${gitsby}' -q -NoFetch --config '${tw}/walk.shcl'"
 	local -a twWhat=(
 		"plain git asked for github.com in the nested Gitea account's folder"
 		"raw git, the same"
@@ -9968,9 +10283,12 @@ FSEOF
 		"plain git, the same"
 		"raw gh there"
 		"raw tea in a github.com account's folder, with GITEA_INSTANCE_URL set"
+		"raw git asked for a Gitea host by a run naming a GitHub login, with gitsby.ghTokenFile set by hand"
+		"raw git asked for github.com by the same, with gitsby.host naming the Gitea host beside it"
+		"raw gh with that gitsby.host"
 	)
 	local -a twWhere=( gh/gt/proj gh/gt/proj gh/gt/proj ghe/proj ghe/proj ghe/proj ghe/proj gh/proj gh/proj gl/proj
-		ghe/proj ghe/proj gl/feat ghe/proj ghe/proj gl/proj bad/proj bad/proj bad/proj gh/proj )
+		ghe/proj ghe/proj gl/feat ghe/proj ghe/proj gl/proj bad/proj bad/proj bad/proj gh/proj loose/gt loose/gh loose/gh )
 	local -a twRun=(
 		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
 		"printf 'protocol=https\nhost=github.com\n\n' | ${twG} raw git credential fill"
@@ -9992,6 +10310,9 @@ FSEOF
 		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
 		"${twG} raw gh auth token"
 		"GITEA_INSTANCE_URL=https://gitea.walk.test ${twG} raw tea whoami"
+		"printf 'protocol=https\nhost=gitea.walk.test\n\n' | ${twHand} raw git credential fill"
+		"printf 'protocol=https\nhost=github.com\n\n' | ${twHandGt} raw git credential fill"
+		"${twHandGt} raw gh auth token"
 	)
 	for twItem in "${!twRun[@]}"; do
 		fAssertNotOut "[dfh5s] no token for a host it isn't for: ${twWhat[twItem]}"  'tok_walk_' \
@@ -10008,9 +10329,10 @@ FSEOF
 		"raw glab api"
 		"pr's glab on GitLab"
 		"raw tea in the Gitea folder"
+		"raw git asked for github.com by a run naming a GitHub login, with gitsby.ghTokenFile set by hand"
 	)
-	twWhere=( gh/gt/proj gh/proj gh/gt/proj ghe/proj ghe/proj ghe/proj gh/proj gl/proj gl/proj gh/gt/proj )
-	local -a twWant=( gt gh gt ghe ghe ghe gh gl gl gt )
+	twWhere=( gh/gt/proj gh/proj gh/gt/proj ghe/proj ghe/proj ghe/proj gh/proj gl/proj gl/proj gh/gt/proj loose/gh )
+	local -a twWant=( gt gh gt ghe ghe ghe gh gl gl gt hand )
 	twRun=(
 		"printf 'protocol=https\nhost=gitea.walk.test\n\n' | env ${twEnv} git credential fill"
 		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
@@ -10022,6 +10344,7 @@ FSEOF
 		"${twG} raw glab api user"
 		": > '${tw}/gh.log'; ${twG} pr; cat '${tw}/gh.log'"
 		"${twG} raw tea whoami"
+		"printf 'protocol=https\nhost=github.com\n\n' | ${twHand} raw git credential fill"
 	)
 	for twItem in "${!twRun[@]}"; do
 		fAssertOut "[dfh5t] and the token still goes to its own host: ${twWhat[twItem]}"  "tok_walk_${twWant[twItem]}" \
@@ -10675,3 +10998,8 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261120 JC: Each installer's --version is the date of its newest History entry, and every PowerShell file outside legacy/ is plain ASCII, [dfjqe] to [dfjqh].
 ##		- 20261120 JC: --release dev takes the newest release, pre-releases included, [dfjr3] to [dfjr9]; [dbfkc] [dbfkd] [dbfks] [dd5cx] [dbfm0] [dbfm1] check what replaced the refusal.
 ##		- 20261120 JC: diff.relative, a textconv driver and diff.ignoreSubmodules=all hide no conflict or staged edit from sync and pullcom run in a subfolder, [dfjwj] to [dfjwp].
+##		- 20261121 JC: Every command that stages the whole tree refuses an edit outside a sparse checkout, and none runs the dry run of git add, or reads core.sparseCheckout, outside one, [dfksp] [dfksq].
+##		- 20261121 JC: The token walk has a gitsby.ghTokenFile set by hand, with and without gitsby.host, so the fallback's host check is pinned. [dfh3s] and [dfh3t] run on a dirty tree, and [dfktt] [dfktv] check nothing was committed. 2319 -> 2325.
+##		- 20261121 JC: The real publisher with an empty path list, with another staged edit, with a failed pull, with a staged edit the pull clashes with, with an untracked file in the way, and with --quiet and no message, [dfkvy] to [dfkw1], [dfkw5], [dfkw3]. A blank answer at the cicd message prompt and --help, [dfkw2] [dfkw4].
+##		- 20261121 JC: pullcom leaves a submodule out of the commit when it's checked out behind the commit HEAD records, as after a pull that bumped it, [dfkzx] to [dfm01]. br switch and sync don't count it as work, [dfm09] to [dfm0b].
+##		- 20261121 JC: pr create bases the pull request on the branch its push lands on, the head pr ok reads back, in the run and the plan, [dfm0q] to [dfm0s].

@@ -33,129 +33,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Code Review 20261120 item 14: Every command that stages the tree runs a dry-run add before the plan, in every repo
-	- ID: 2026112017135689
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-171356
-	- Opened by:
-	- Steps to reproduce [Bug]: In a repo with 100,000 files and one edit, time `gitsby -q --no-fetch pullcom m` on 5af785f and on 576d891.
-	- Incorrect behavior [Bug]: The dry run takes about 230 ms, as long as a git status, and git's time for the run goes from 982 to 1294 ms. pullcom, br switch, sync, br merge, br create off a feature branch, pr create and release each spawn 2 more processes. A clean `br switch dev` pays it too.
-	- Expected behavior [Bug]: Only a sparse checkout pays for it. 2026111920000538's decision says no other repo does.
-	- Reproduced [Bug]: 2026-11-20 on b23, with strace and timed calls on both builds. Confirmed.
-	- Possible cause [Bug]: refuseSparseAdd runs the dry run before it reads core.sparseCheckout.
-	- Origin: be87857 (2026111910222973) and 397c85f (2026111920000538). No round saw it.
-
-- Code Review 20261120 item 15: Nothing tests the token file fallback's host check
-	- ID: 2026112017135672
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-171356
-	- Opened by:
-	- Steps to reproduce [Bug]: Force ownTokenFileServes to true at account.go:355, then run the Go tests and test.bash.
-	- Incorrect behavior [Bug]: Both stay green. With that change, in a github.com repo inside a Gitea account's folder, `GITSBY_ACCOUNT=walklogin raw git credential fill` gives the Gitea token, and raw gh gets it as GH_TOKEN.
-	- Expected behavior [Bug]: A check fails when the fallback stops checking the host.
-	- Reproduced [Bug]: 2026-11-20 on b23, by mutation in a clone. Confirmed.
-	- Possible cause [Bug]: [dfh5s] runs its GITSBY_ACCOUNT case in the Gitea repo, where the fragment helper refuses first.
-	- Origin: 22554f6, Code Review 20261119 item 4 (2026111910223247). Its Verified row describes a check by hand.
-
-- Code Review 20261120 item 16: The sparse checkout refusal is pinned through sync only
-	- ID: 2026112017135655
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-171356
-	- Opened by:
-	- Steps to reproduce [Bug]: Remove br-merge from the first case in stagesTree at mutate.go:303, then run test.bash and `go test -run 'Sparse|Stages'`.
-	- Incorrect behavior [Bug]: Nothing goes red. On the [dfhkj] fixture, the changed build's `br merge -q` exits 0 with the edit outside the checkout left out.
-	- Expected behavior [Bug]: A check for every command stagesTree names.
-	- Reproduced [Bug]: 2026-11-20 on b23, by mutation. Confirmed.
-	- Possible cause [Bug]: [dfhkj] runs sync, plus br create off dev, which isn't refused.
-	- Origin: 7bf2c8e, Code Review 20261119 item 23 and 2026111920000538. Its Swept row names 10 commands.
-
-- Code Review 20261120 item 17: No check runs the real publisher with an empty path list
-	- ID: 2026112017135640
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-171356
-	- Opened by:
-	- Steps to reproduce [Bug]: At n8git_backup-and-publish:375 and :389, read an empty GIT_BACKUP_AND_PUBLISH_PATHS as unset, then run [dfjme] to [dfjmg].
-	- Incorrect behavior [Bug]: All 3 stay green. On the [dfjmg] fixture with an empty list, the changed publisher commits both edits, while the current one commits nothing.
-	- Expected behavior [Bug]: A check of the real publisher with the variable set and empty, since [dfjmf] shows cicd.bash passes an empty list on every run that changed nothing.
-	- Reproduced [Bug]: 2026-11-20 on b23, by mutation on the fixture. Confirmed.
-	- Possible cause [Bug]: [dfjme] and [dfjmf] use the stub, and [dfjmg] passes a.txt.
-	- Origin: 0633cc1 (2026112013542584). No round saw it.
-
-- With Windows' own OpenSSH as the ssh command, a fetch from an ssh origin that stalls after its banner waits until killed
-	- ID: 2026112021513016
+- pr ok takes the PR's target from its head's name, not the base the git host gives it
+	- ID: 2026112113223086
 	- Type: Bug
 	- Status: Queued
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-215130
+	- Opened: 20261121-132230
 	- Opened by:
-	- Related IDs: 2026112021204523, 2026112017135720
-	- Steps to reproduce [Bug]: On vm925w, point a GIT_SSH_COMMAND of C:/Windows/System32/OpenSSH/ssh.exe with gitsby's three ssh options at a 127.0.0.1 listener that sends an SSH banner and then nothing, and run git ls-remote on it, as gitsby's fetch does with a core.sshCommand naming that ssh.exe. People set that to use Windows' ssh-agent.
-	- Incorrect behavior [Bug]: ssh prints that the connection timed out after about 3 s, but neither it nor git exits. git ls-remote was still running when killed at 28 s.
-	- Expected behavior [Bug]: The fetch gives up within its 30 s limit, as it does with Git for Windows' own ssh, which exits at the timeout.
-	- Reproduced [Bug]: 2026-11-20 on vm925w, OpenSSH_for_Windows_9.5p2, git 2.55.0.windows.5, with GIT_SSH_COMMAND naming that ssh.exe. Confirmed. The same ssh run alone, with stdin NUL, a pipe held open, a closed pipe or -n, was still running at 25 s, and kept running 20 s after the server closed the connection.
-	- Possible cause [Bug]: Windows' OpenSSH doesn't exit after it reports the timeout, so git waits on it. The fix is upstream. gitsby can't put a time limit on a whole fetch, since a large one can run long. Killing git on Windows also leaves its ssh running.
-	- Origin: Win32-OpenSSH. gitsby's limits from adcef33 (2026112017135720) reach that ssh; it ignores them by not exiting.
-	- Note: Upstream issue text drafted in private/claude_simple/upstream/2026112021513016/.
-	- Upstream: PowerShell/Win32-OpenSSH#1427, commented 20261121 (https://github.com/PowerShell/Win32-OpenSSH/issues/1427#issuecomment-7066202716)
-	- 20261121: the hang is Win32-OpenSSH#1427, an async write to stderr that never completes when stderr is a pipe. Checked on vm925w: with stderr to a file, ssh.exe exits 255 at 3 seconds; with stderr to a pipe it was killed at 20 seconds, whatever stdout is. Commented there rather than filing a new issue.
-	- 20261121: a possible workaround on gitsby's side is to give that ssh a file for stderr, read back afterwards. Not tried.
-
-- The ssh identity probe asks port 22 for an ssh:// origin on another port
-	- ID: 2026112020462137
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-204621
-	- Opened by:
-	- Steps to reproduce [Bug]: Point origin at ssh://git@host:2222/o/r.git, where only port 2222 serves git, with no ssh_config entry for the host. Run gitsby status.
-	- Incorrect behavior [Bug]: The SSH line's account probe runs ssh -T git@host with no -p, so it asks port 22. The SSH line's ssh -G read has no port either, so a Match on the port isn't seen.
-	- Expected behavior [Bug]: The probe and the ssh -G read connect to the port the URL names, as git's fetch does.
-	- Possible cause [Bug]: sshConnectTarget in remote.go drops the port, and neither caller passes -p. TestSSHConnectTarget pins the target without it.
-	- Origin: Plausible, read only. Found while working 2026112017135720.
-
-- Code Review 20261120 item 46: A submodule whose remote is gone makes pullcom skip the pull as if origin were unreachable
-	- ID: 2026112017151559
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171515
-	- Opened by:
-	- Steps to reproduce [Bug]: Clone a repo with a submodule. Move the submodule's remote away, have origin's dev bump the gitlink, and run `gitsby -q pullcom` on dev.
-	- Incorrect behavior [Bug]: The fetch of origin works, but the submodule fetch fails, so gitsby warns that the remote is unreachable, skips the pull, and prints Done at exit 0. dev stays behind 1.
-	- Expected behavior [Bug]: The pull runs, since origin answered. A failed submodule fetch is named for what it is.
-	- Reproduced [Bug]: 2026-11-20 on b23, git 2.51, local bare repos. Confirmed.
-	- Possible cause [Bug]: The fetch at remote.go:310 follows fetch.recurseSubmodules, which defaults to on-demand, and any failure sets offline.
-	- Origin: 3d22222 (Go port). No round saw it.
-
-- Code Review 20261120 item 18: pr create takes the PR's base from the current branch's name while its head is the branch it pushes
-	- ID: 2026112017135624
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171356
-	- Opened by:
-	- Steps to reproduce [Bug]: Under push.default=upstream, run `git checkout -b fix --track origin/hotfix/x`, commit, and run `gitsby -q pr create Fix`. Then run `pr ok` on that PR.
-	- Incorrect behavior [Bug]: It opens `--base dev --head hotfix/x`. pr ok then takes the head as a hotfix, pulls main and back-merges origin/main into dev at exit 0, though the fix never reached main. Names the other way round open against main and skip the back-merge.
-	- Expected behavior [Bug]: The base follows the head that's pushed, so pr create and pr ok agree.
-	- Reproduced [Bug]: 2026-11-20 on b23, with a fake gh and a stand-in for the git host's merge. Confirmed.
-	- Possible cause [Bug]: `base := a.branchTarget("")` at pr.go:613. refuseUnrelatedPr at pr.go:464 reads the base the same way. pr ok reads only the PR's head, never its base.
-	- Origin: 4918b5b. Code Review 20261119 item 7 (5b4e930) moved the head and left the base. Missed twin.
+	- Related IDs: 2026112017135624
+	- Steps to reproduce [Bug]: Open a PR from hotfix/x against dev on the git host's web page, then run `gitsby -q pr ok <n>`.
+	- Incorrect behavior [Bug]: The git host merges it into dev. pr ok then reads the head as a hotfix, checks out and pulls main, and back-merges main into dev at exit 0, though the fix never reached main. A plain branch's PR opened against main merges there, and pr ok checks out dev and skips the back-merge.
+	- Expected behavior [Bug]: pr ok takes the target and the back-merge from the base the PR has, or refuses before the plan when the base isn't the one its head's name gives.
+	- Possible cause [Bug]: readPr asks gh, tea and glab for the head and state only. prTarget in pr.go reads the target off the head's name.
+	- Origin: 4918b5b, Go port. Plausible. Found while fixing 2026112017135624, whose pr create now opens every PR on the base pr ok expects, so only a PR opened elsewhere is left.
 
 - Code Review 20261120 item 19: A resumed release started on main with an edited file pushes a commit past the tag
 	- ID: 2026112017135608
@@ -202,51 +93,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: prCreateDisp at pr.go:630 has one form for every tool.
 	- Origin: 197677f. No round saw it.
 
-- Code Review 20261120 item 23: [dbhg7] passes with the refusal it checks taken out
-	- ID: 2026112017135548
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171355
-	- Opened by:
-	- Steps to reproduce [Bug]: Remove the "%d times" refusal at accountcmd.go:1463 and run TestAccountSetRefusesADuplicatedKey.
-	- Incorrect behavior [Bug]: It passes on the shcl module's own refusal.
-	- Expected behavior [Bug]: It fails when gitsby's refusal goes.
-	- Reproduced [Bug]: 2026-11-20 on b23, by mutation. Confirmed.
-	- Possible cause [Bug]: accountcmd_test.go:688 checks only that some refusal came back.
-	- Origin: The 2026-09 accounts work, renumbered in a5ce9cc. No round saw it.
-
-- Code Review 20261120 item 24: For a locked worktree whose folder is gone, the refusal suggests git worktree prune, which does nothing
-	- ID: 2026112017135532
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171355
-	- Opened by:
-	- Steps to reproduce [Bug]: Run `git worktree add ../wt dev` and `git worktree lock ../wt`, move the folder away, then run `gitsby -q br switch dev`.
-	- Incorrect behavior [Bug]: It says prune frees the branch. Prune skips a locked worktree, so the next run refuses the same way.
-	- Expected behavior [Bug]: For a locked worktree, the refusal names mounting it, or unlocking and then pruning.
-	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
-	- Possible cause [Bug]: branchcmd.go:87-89 doesn't read the lock.
-	- Origin: 6f277d3, nov19b, Code Review 20261119 item 13.
-
-- Code Review 20261120 item 25: repo connect from a shallow clone commits and adds origin, then the push is refused
-	- ID: 2026112017135517
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171355
-	- Opened by:
-	- Steps to reproduce [Bug]: Run `git clone --depth 1`, remove origin, add a file, and run `gitsby -q repo connect <empty bare repo>`.
-	- Incorrect behavior [Bug]: It commits and adds the remote, then the push fails with "shallow update not allowed", exit 1. A rerun fails the same way. A local target that isn't bare fails the same way.
-	- Expected behavior [Bug]: Refused up front, as repo.go's header promises for a target that can't work.
-	- Reproduced [Bug]: 2026-11-20 on b23, both cases. Confirmed.
-	- Possible cause [Bug]: settleRepoConnect at repo.go:287 doesn't check for a shallow repo or a local target that isn't bare.
-	- Origin: 115bb7d and aa044ac (Go port). No round saw it.
-
 - Code Review 20261120 item 26: install.ps1 picks a different release than install.bash when a tag has a dot suffix or 4 numbers
 	- ID: 2026112017135503
 	- Type: Bug
@@ -261,66 +107,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on vm925w in 5.1 and 7, and in pwsh on b23 with stubs. Confirmed.
 	- Possible cause [Bug]: install.ps1:247 strips only a `-` or `+` suffix, so `[version]` fails on 3.1.0.rc1 and reads 3.0.0.1 as newer than 3.0.0.
 	- Origin: 4ccd133 (2026-10-03). `-Release dev` (7c6a66a, 2026112015351403) now reaches it. Missed twin of 2026111920273377, whose Swept row left the installers out.
-
-- Code Review 20261120 item 27: The publisher brings other staged edits back unstaged
-	- ID: 2026112017135488
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171354
-	- Opened by:
-	- Steps to reproduce [Bug]: Stage b.txt, edit it again, and run the publisher with `GIT_BACKUP_AND_PUBLISH_PATHS=a.txt -q -m pub`.
-	- Incorrect behavior [Bug]: It commits only a.txt, which is right, but b.txt's index entry goes back to HEAD. The staged copy is left only in a dropped stash.
-	- Expected behavior [Bug]: Other staged edits stay staged, as n8git_backup-and-publish:371 says.
-	- Reproduced [Bug]: 2026-11-20 on b23, the real publisher with a stub gitsby. Confirmed.
-	- Possible cause [Bug]: A plain `git stash pop` at n8git_backup-and-publish:341 and :357. Stage 0's autostash merge does the same, by a git probe.
-	- Origin: bbb90b5 (2026-07-25), and the claim in 0633cc1 (2026112013542584). No round saw it.
-
-- Code Review 20261120 item 28: Stage 6 replaces a demo gif that was already edited when the run started
-	- ID: 2026112017135473
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171354
-	- Opened by:
-	- Steps to reproduce [Bug]: Edit assets/demo.gif, then do a plain run whose render differs.
-	- Incorrect behavior [Bug]: cicd.bash:1400 moves the new render over it. Only the new render is archived, and publish commits nothing.
-	- Expected behavior [Bug]: An edited gif is left as it is, the way publish treats it.
-	- Reproduced [Bug]: No. Read only. Plausible.
-	- Possible cause [Bug]: Nothing checks the gif before the `mv -f`.
-	- Origin: bcdf93c (2026-10-04). Missed twin of 2026112013542584.
-
-- Code Review 20261120 item 29: The publish prompt says a blank message opens the editor, but the publisher writes one itself
-	- ID: 2026112017135459
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171354
-	- Opened by:
-	- Steps to reproduce [Bug]: Run the publisher as cicd.bash does, with --quiet and no -m, and with GIT_EDITOR=false.
-	- Incorrect behavior [Bug]: It commits with an automatic message. cicd.bash:1062, :1093 and :1450 say a blank answer opens the editor.
-	- Expected behavior [Bug]: The prompt and the plan say what runs, per style-guide_ui-ux.md:98.
-	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
-	- Possible cause [Bug]: The cicd text is older than the publisher's automatic message.
-	- Origin: bbce553 (2026-07-22) and bcdf93c, then bbb90b5. No round saw it.
-
-- Code Review 20261120 item 30: The run's plan says stage 0 only fast-forwards
-	- ID: 2026112017135444
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171354
-	- Opened by:
-	- Steps to reproduce [Bug]: Run cicd.bash and read the plan.
-	- Incorrect behavior [Bug]: cicd.bash:987 says "Remote sync: fast-forward from origin first", but a diverged branch now gets a merge commit that publish pushes.
-	- Expected behavior [Bug]: The plan names the merge.
-	- Reproduced [Bug]: 2026-11-20, by reading. Confirmed.
-	- Origin: d0cc3da. 0633cc1 (2026112013542571) left it.
-	- 20261120: also sweep contributing.md:231, which still says the pipeline stops if the branch has diverged; that went stale with 0633cc1 (found under 2026112017135764).
 
 - Code Review 20261120 item 31: design.md says a later candidate is installed only with --tag
 	- ID: 2026112017135430
@@ -460,21 +246,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: Each says it was run both ways, per the review rules, and a self-closed item says why it closed.
 	- Reproduced [Bug]: 2026-11-20, by reading. Confirmed.
 	- Origin: nov19b, nov19c, nov20 and release-dev. Like Code Review 20261119 item 37, backlog-check doesn't look for it.
-
-- Code Review 20261120 item 40: [dfh3s] and [dfh3t] pass with refuseParkPush taken out
-	- ID: 2026112017135297
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171352
-	- Opened by:
-	- Steps to reproduce [Bug]: Change mutate.go:724 to `if true || !a.parkPushes()` and run test.bash's [dfh3s] block.
-	- Incorrect behavior [Bug]: [dfh3s], [dfh3t] and [dfh3v] stay green. With a dirty tree, the changed build's sync, br switch main and br create commit, then refuse at the push with the same text.
-	- Expected behavior [Bug]: They fail when the refusal no longer comes before the plan.
-	- Reproduced [Bug]: 2026-11-20 on b23, by mutation. Confirmed. [dfh3x], [dfh3y] and [dfh40] go red, so the refusal itself is pinned.
-	- Possible cause [Bug]: The checks match `--unset-upstream`, which the push step's refusal prints too, on a clean tree.
-	- Origin: 1c8c364, Code Review 20261119 item 1. The same kind as Code Review 20261119 item 24.
 
 - Code Review 20261120 item 41: [df33r] fails whenever another copy of the suite runs
 	- ID: 2026112017135283
@@ -677,6 +448,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Requirements [Feature]: The push list holds only pushes of the branch a command stands on. br merge's push of its target, the hotfix back-merge's push of dev (br merge and pr ok), and release's pushes of the default branch and dev are still refused by git only at the step, after the merge or the tag. Add them to the list, so a push git would refuse is refused before the plan, mergePushesOwn reads its targets from it, and the plan's 'git push *' lines name where each goes. Give pr create and pr ok one target helper, through item 18's fix (2026112017135624).
 	- Estimated effort: Avg
 	- Progress log: Open questions for the design: a target that isn't local yet has no push fields to read until the checkout makes it, so where remote.pushDefault sends it would mean copying git's rule. The atomic push names origin and the target's own name, and release pushes dev only when it has an upstream.
+		- 20261121: the pr create and pr ok target helper is done, as prTarget in pr.go, through 2026112017135624. The other pushes are still open.
 
 - Code Review 20261120 enhancement 4: Every park push runs the full branch query again
 	- ID: 2026112017135167
@@ -811,6 +583,32 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 	- Acceptance signoff: Hand test on b28l, run in the 2026-10-23 round as asked.
 	- Closed: 20261023-195424
+
+- After pulling a submodule bump, pullcom commits the submodule back to its old commit
+	- ID: 2026112112175066
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261121-121750
+	- Opened by:
+	- Steps to reproduce [Bug]: Clone a repo with a submodule. Have origin's dev move the submodule to a newer commit, then run `gitsby -q pullcom` on dev.
+	- Incorrect behavior [Bug]: The pull moves the gitlink, but the submodule's own checkout stays where it was. `git add --all` then stages the old commit, and pullcom commits it, undoing origin's bump. The next sync pushes that.
+	- Expected behavior [Bug]: A gitlink the pull just moved isn't committed back. The submodule is updated, or left for the user with a note.
+	- Reproduced [Bug]: 2026-11-21 on b23, git 2.51, local bare repos. Confirmed.
+	- Possible cause [Bug]: cmdPull merges with no submodule update, and cmdCommit stages a submodule moved off its gitlink as new work, per 2026111016332293.
+	- Origin: Go port. Found while working 2026112017151559. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: A pull or switch moves the gitlink but not the submodule's checkout. git add --all then staged the old commit as a submodule move, and the commit took it. The checks made before staging read the same entry from status as work, so br switch refused to leave dev and sync on dev called it a direct push.
+	- Actual fix [Bug]: After git add --all, cmdCommit reads the staged changes with --raw, in the spawn the index check already cost, and unstages any submodule checked out on an ancestor of the commit HEAD records, or lacking that commit. It warns, names the folder on a File: line, and names 'git submodule update'. treeDirty reads status v2 and skips the same case. design.md and the changelog say so.
+	- Test case: test.bash [dfkzx] to [dfkzz], [dfm00], [dfm01], [dfm09] to [dfm0b].
+	- Verified: [dfm00], [dfkzx], [dfkzy] fail on the build before the fix and pass with it. [dfkzz] passed there before its bump condition was added, which is unverified on that build. [dfm09] and [dfm0a] fail with only the commit fixed and pass with treeDirty fixed. [dfm01] and [dfm0b] pass on both, as guards. [dfh4h] fails on a git status call without --untracked-files after its pattern was widened to see '-c' options. The quick gate with every area passed: test.bash 2358/0, fuzz 310/0, parity 31/0, spawn counts. gosec 37, as before.
+	- Swept: git add runs only in cmdCommit. Every pre-staging check goes through treeDirty: commitPending (directPush, releasePreflight), br switch's dirty refusal and pr ok's refusal. pr ok's isn't run here, since it needs a git host. The plan's status block still lists the submodule, as it does a dirty one.
+	- Decisions: Left out with a warning rather than updated, since the submodule's checkout is its own, an update detaches a branch checked out there, and it may need a fetch the run already saw fail. git merge ignores submodule.recurse, so that setting isn't honored either. A move forward or sideways is still committed, since it may be the user's. A submodule lacking the recorded commit counts as behind: work built on that commit would contain it. The unstage shows as a step though the plan can't list it. treeDirty passes -c status.relativePaths=false, since v2 paths follow it, and [dfh4h]'s pattern now sees calls with -c options.
+	- Branch: nov21-2026112112175066
+	- Commit: 2cdbb74, deba756
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sibling checks are swept.
+	- Closed: 20261121-130548
 
 - Code Review 20261120 item 1: With diff.relative or a textconv driver, an autostash conflict is committed and pushed
 	- ID: 2026112017135886
@@ -2402,6 +2200,109 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept (2026-10-05, `pr create` and `release`): every step after their commit. In release.go the pulls of `dev` and the default branch, both checkouts, the merge and its back-out, the tag, both pushes, and the fast-forward of `dev`. Its nothing-new check read the whole tree as work to release, and now reads the index under the flag. In pr.go the push and the `gh` or `tea` call. `pr ok` reads the whole tree to refuse, and refuses the flag. The line above about pr.go and release.go held only while they refused the flag.
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
+
+- Code Review 20261120 item 14: Every command that stages the tree runs a dry-run add before the plan, in every repo
+	- ID: 2026112017135689
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-171356
+	- Opened by:
+	- Steps to reproduce [Bug]: In a repo with 100,000 files and one edit, time `gitsby -q --no-fetch pullcom m` on 5af785f and on 576d891.
+	- Incorrect behavior [Bug]: The dry run takes about 230 ms, as long as a git status, and git's time for the run goes from 982 to 1294 ms. pullcom, br switch, sync, br merge, br create off a feature branch, pr create and release each spawn 2 more processes. A clean `br switch dev` pays it too.
+	- Expected behavior [Bug]: Only a sparse checkout pays for it. 2026111920000538's decision says no other repo does.
+	- Reproduced [Bug]: 2026-11-20 on b23, with strace and timed calls on both builds. Confirmed.
+	- Possible cause [Bug]: refuseSparseAdd runs the dry run before it reads core.sparseCheckout.
+	- Origin: be87857 (2026111910222973) and 397c85f (2026111920000538). No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: refuseSparseAdd ran git add --all --dry-run, and read core.sparseCheckout, before it knew the repo was a sparse checkout. git refuses or skips a path only where it has sparse patterns, so outside one both answers were always empty.
+	- Actual fix [Bug]: The rev-parse every run starts with also gives where git keeps this worktree's sparse patterns. Without that file, refuseSparseAdd returns with no spawn. With it, core.sparseCheckout decides, and only then does the dry run go.
+	- Test case: test.bash [dfksq], for each of the 10 commands stagesTree names.
+	- Verified: [dfksq] fails for all 10 commands with 576d891's mutate.go and passes with the fix. The gate's spawn counts are back at their expected values, such as pullcom 21 and br switch 28, 2 fewer each. Quick gate: unit, suite (test.bash 2319/0), fuzz 310/0 with spawn counts, and parity 31/0 passed. Lint: bash -n and shellcheck passed, then markdownlint stopped on a bare URL at backlog.md line 112, which dev has too; gofmt, go vet, staticcheck and golangci-lint run by hand are clean. gosec 37, as before.
+	- Swept: refuseSparseAdd is the only place gitsby asks git about a sparse checkout, by grep for sparse in src-go. Both of its spawns before the plan, the config read and the dry run, now wait on the patterns file.
+	- Decisions: The patterns file gates the config read too, so a repo that never had a sparse checkout pays no spawn. The run's first rev-parse locates it with one more --git-path. git reads no patterns without the file, so add refuses and skips nothing then, checked on git 2.51 with core.sparseCheckout on and no file. A disabled checkout keeps the file and pays only the config read. Skip-worktree bits set by hand with the setting off make add refuse nothing, and git diff doesn't list those files either (checked), so they don't need the dry run.
+	- Branch: nov21-2026112017135689
+	- Commit: 77d0101
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261121-095627
+
+- Code Review 20261120 item 15: Nothing tests the token file fallback's host check
+	- ID: 2026112017135672
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-171356
+	- Opened by:
+	- Steps to reproduce [Bug]: Force ownTokenFileServes to true at account.go:355, then run the Go tests and test.bash.
+	- Incorrect behavior [Bug]: Both stay green. With that change, in a github.com repo inside a Gitea account's folder, `GITSBY_ACCOUNT=walklogin raw git credential fill` gives the Gitea token, and raw gh gets it as GH_TOKEN.
+	- Expected behavior [Bug]: A check fails when the fallback stops checking the host.
+	- Reproduced [Bug]: 2026-11-20 on b23, by mutation in a clone. Confirmed.
+	- Possible cause [Bug]: [dfh5s] runs its GITSBY_ACCOUNT case in the Gitea repo, where the fragment helper refuses first.
+	- Origin: 22554f6, Code Review 20261119 item 4 (2026111910223247). Its Verified row describes a check by hand.
+	- Closed reason: Done
+	- Actual cause [Bug]: [dfh5s]'s GITSBY_ACCOUNT case ran where another check refused first. Since 5102690 the fallback skips the keys the run's own fragments set, so the issue's steps no longer give the Gitea token with the check taken out. Only a gitsby.ghTokenFile set outside them reaches the check.
+	- Actual fix [Bug]: The walk sets gitsby.ghTokenFile by hand, with gitsby.host naming the Gitea host beside it, and asks for github.com from a repo in no account's folder. raw git and raw gh get nothing. With no gitsby.host, github.com still gets the token. A Gitea host asked with no gitsby.host gets nothing too, which accountServesHost also stops.
+	- Branch: nov21-2026112017135672
+	- Commit: 3712bf2
+	- Test case: test.bash [dfh5s] 'raw git asked for github.com by the same, with gitsby.host naming the Gitea host beside it', 'raw gh with that gitsby.host' and 'raw git asked for a Gitea host by a run naming a GitHub login'. [dfh5t] 'raw git asked for github.com by a run naming a GitHub login'.
+	- Verified: With ownTokenFileServes forced true, the 2 gitsby.host cases fail and pass on the real code (test.bash 2325/0). With accountServesHost forced true as well, the Gitea host case fails too.
+	- Swept: ownTokenFileServes has one caller, accountToken's fallback. The issue's own path, a github.com repo in the Gitea account's folder, was tried and passes with the check taken out, since 5102690, so it wasn't added.
+	- Decisions: A hand-set gitsby.ghTokenFile with gitsby.host naming a Gitea host gets no positive case, since a run naming a bare login is served only on GitHub (accountServesHost).
+	- Acceptance signoff: Self-closed: the new cases fail with the check taken out and pass with it.
+	- Closed: 20261121-103256
+
+- Code Review 20261120 item 16: The sparse checkout refusal is pinned through sync only
+	- ID: 2026112017135655
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-171356
+	- Opened by:
+	- Steps to reproduce [Bug]: Remove br-merge from the first case in stagesTree at mutate.go:303, then run test.bash and `go test -run 'Sparse|Stages'`.
+	- Incorrect behavior [Bug]: Nothing goes red. On the [dfhkj] fixture, the changed build's `br merge -q` exits 0 with the edit outside the checkout left out.
+	- Expected behavior [Bug]: A check for every command stagesTree names.
+	- Reproduced [Bug]: 2026-11-20 on b23, by mutation. Confirmed.
+	- Possible cause [Bug]: [dfhkj] runs sync, plus br create off dev, which isn't refused.
+	- Origin: 7bf2c8e, Code Review 20261119 item 23 and 2026111920000538. Its Swept row names 10 commands.
+	- Closed reason: Done
+	- Actual cause [Bug]: The sparse checks ran sync, plus br create off dev, which stagesTree leaves out. Nothing ran the other 8 commands it names.
+	- Actual fix [Bug]: test.bash runs all 10 commands stagesTree names in a sparse checkout with an edited tracked file outside it, each on its own clone and origin, and checks that each refuses before the plan, names the file and stages nothing.
+	- Test case: test.bash [dfksp].
+	- Verified: with stagesTree cut down to pullcom and sync, [dfksp] fails for the other 8 (br merge, br switch, br create and br hotfix off a feature branch, pr create, release, repo create and repo connect), and passes with it whole. Quick gate as on 2026112017135689.
+	- Swept: the 10 cases are stagesTree's whole switch, and cmdCommit's callers, by grep for cmdCommit in src-go: cmdCommitPull in main.go and repo.go's publish.
+	- Decisions: One loop with one ID, as the test ID rule has it for a loop, with the command in each line's label. pr create gets the fake gh, since with no host CLI it stops before the check. A command added to stagesTree needs its own case in the loop. Nothing checks that the two lists match, since that would only be a grep of the source.
+	- Branch: nov21-2026112017135689
+	- Commit: 77d0101
+	- Acceptance signoff: Self-closed: reproduced by mutation, its test fails on the mutation and passes on the fix, and the sweep is answered.
+	- Closed: 20261121-095644
+
+- Code Review 20261120 item 17: No check runs the real publisher with an empty path list
+	- ID: 2026112017135640
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-171356
+	- Opened by:
+	- Steps to reproduce [Bug]: At n8git_backup-and-publish:375 and :389, read an empty GIT_BACKUP_AND_PUBLISH_PATHS as unset, then run [dfjme] to [dfjmg].
+	- Incorrect behavior [Bug]: All 3 stay green. On the [dfjmg] fixture with an empty list, the changed publisher commits both edits, while the current one commits nothing.
+	- Expected behavior [Bug]: A check of the real publisher with the variable set and empty, since [dfjmf] shows cicd.bash passes an empty list on every run that changed nothing.
+	- Reproduced [Bug]: 2026-11-20 on b23, by mutation on the fixture. Confirmed.
+	- Possible cause [Bug]: [dfjme] and [dfjmf] use the stub, and [dfjmg] passes a.txt.
+	- Origin: 0633cc1 (2026112013542584). No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: No check ran the real publisher with the path list set and empty. [dfjme] and [dfjmf] run a stub, and [dfjmg] passes a.txt.
+	- Actual fix [Bug]: test.bash runs the real publisher with an empty list, as cicd.bash calls it on a run that changed none of PUBLISH_PATHS. The publisher itself didn't change.
+	- Test case: test.bash [dfkvy].
+	- Verified: [dfkvy] fails with the publisher's two -v tests read as -n, the mutation the item names, and passes on the tree. The quick gate with every area passed: test.bash 2333/0, fuzz 310/0.
+	- Swept: by grep, the publisher tells set from unset only in those two -v tests, and the one case covers both. cicd.bash is its only caller, and always sets it.
+	- Branch: nov21-2026112017135640
+	- Commit: 7e79b53
+	- Acceptance signoff: Self-closed: its test fails on the mutation the item names and passes on the tree.
+	- Closed: 20261121-105300
 
 - Go test [dfk1m] hangs on Windows, so stage 7's Go test run doesn't end
 	- ID: 2026112021204523
@@ -5050,6 +4951,385 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- The ssh identity probe and the ssh -G read cut a bracketed IPv6 host in an ssh:// origin at its first colon
+	- ID: 2026112111542213
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261121-115422
+	- Opened by:
+	- Related IDs: 2026112020462137
+	- Steps to reproduce [Bug]: Point origin at ssh://git@[::1]:2222/o/r.git. Run gitsby status.
+	- Incorrect behavior [Bug]: sshTarget gives '[' as the host, so the probe asks ssh about git@[ and the SSH line reads no config. sshPort gives no port either.
+	- Expected behavior [Bug]: The probe and the ssh -G read ask about ::1 on port 2222, as git's fetch does.
+	- Possible cause [Bug]: sshTarget, sshConnectTarget and sshPort in remote.go split the authority at its first colon, with no case for brackets.
+	- Origin: Plausible, read only. Found while working 2026112020462137.
+	- Reproduced [Bug]: 2026-11-21, [dfkyf] fails on the unfixed remote.go: sshTarget gave '[' and sshDest gave '--', 'git@['. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: sshTarget and sshPort cut the authority at its first colon, so a bracketed IPv6 host ended at '[' and its port was lost.
+	- Actual fix [Bug]: A new sshURLHostPort reads the authority once for both. A bracketed host keeps its colons and loses the brackets, and only a ':' after the ']' starts the port. sshConnectTarget and sshDest take it through those two.
+	- Branch: nov21-2026112111542213
+	- Test case: Go [dfkyf], the bracketed rows of TestSSHTarget and TestSSHDestCarriesThePort.
+	- Verified: [dfkyf] fails on the unfixed code and passes after. The quick gate passed for lint and unit.
+	- Swept: sshTarget, sshConnectTarget, sshPort and sshDest are the only readers of an ssh:// authority in remote.go. Other sshTarget callers (show.go, repo.go, remote.go:520) take its result. splitRemoteURL already reads brackets (2026112017135807).
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261121-115917
+
+- Stage 0 brings staged edits back unstaged after a merge that goes in clean
+	- ID: 2026112110520434
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261121-105204
+	- Opened by:
+	- Related IDs: 2026112017135488, 2026112017135764
+	- Steps to reproduce [Bug]: Stage an edit and edit the file again, on a tree behind or diverged from origin, where the merge goes in clean. Run stage 0.
+	- Incorrect behavior [Bug]: The edits come back, but the index no longer holds the staged copy.
+	- Expected behavior [Bug]: Staged edits stay staged, as they do when fSyncMerge backs a merge out, and as the publisher keeps them since 2026112017135488.
+	- Reproduced [Bug]: 2026-11-21 on b23, the real stage 0 against a local bare origin: [dfkwk] and [dfkwm] fail on the unfixed cicd.bash. Confirmed.
+	- Possible cause [Bug]: git applies its autostash without --index. fSyncMerge keeps --autostash, and the new stash entry it leaves is the signal item 9 chose for a failed restore.
+	- Origin: b463d2b (2026-08-12) for the fast-forward, 0633cc1 for the merge. Found in the sweep for 2026112017135488. Confirmed for git, Plausible for stage 0.
+	- Note: A fix that stashes by hand and pops with --index changes the signal in 2026112017135764's Decisions, so it needs an Against: line.
+	- Closed reason: Done
+	- Actual cause [Bug]: git puts an autostash back without --index, so after a fast-forward or merge that went in clean, staged edits came back unstaged and a file staged and then edited again lost its staged copy.
+	- Actual fix [Bug]: fSyncMerge in cicd.bash stashes the edits itself, merges without --autostash, and puts them back with stash pop --index. A pop that fails, whether on a clash in the tree or in the index, backs the merge out to the commit it started from, pops there with --index, and stops naming the files. A merge that fails is aborted and the edits put back the same way.
+	- Against: 2026112017135764's Decisions, where the new stash entry is the signal. The signal is now the pop's exit status, since a hand pop reports a failed restore and --autostash didn't. The rest of that decision holds: the reset goes to the starting commit, --index keeps staged edits staged, and a stash entry the user already had is left alone.
+	- Decisions: Stash by hand and pop with --index, as the publisher's fStashPop does, rather than keep --autostash and rebuild the index afterward, since git keeps no copy of the index once an autostash applies clean. A new stash entry after the push is how stage 0 knows it stashed anything, so with nothing to stash the user's own entry is never popped. A clash in the index leaves no unmerged file, so the message names the files both the stash and the merge changed. git stash refuses an intent-to-add file, as --autostash does (git 2.51 probe), so that case now stops with its own message rather than the diverged one; not run through stage 0. A Ctrl+C between the stash and the pop leaves the edits in stash@{0}.
+	- Test case: test.bash [dfkwk], [dfkwm], [dfkwn] and [dfkwp], with [dfk07] to [dfk0a] still passing.
+	- Verified: [dfkwk] and [dfkwm] fail on the unfixed cicd.bash (suite 2335/4) and pass with the fix. [dfkwn] fails when the pop runs with nothing stashed, and [dfkwp] fails with the file-naming fallback taken out, and both pass with the fix. The quick gate with every area passed: test.bash 2339/0, fuzz 310/0, parity 31/0.
+	- Swept: every --autostash and stash pop in cicd/, by grep. Only fSyncMerge's two callers had --autostash, and both go through the hand stash now. The publisher already pops with --index (2026112017135488). parity.bash's --autostash is a plan-text pattern for gitsby's own pulls. Left alone: the frozen v2.1.0 scripts under legacy/, and the Go pulls, which 2026112017135488 swept.
+	- Branch: nov21-2026112110520434
+	- Commit: d37b6ce
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261121-111634
+
+- With Windows' own OpenSSH as the ssh command, a fetch from an ssh origin that stalls after its banner waits until killed
+	- ID: 2026112021513016
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-215130
+	- Opened by:
+	- Related IDs: 2026112021204523, 2026112017135720
+	- Steps to reproduce [Bug]: On vm925w, point a GIT_SSH_COMMAND of C:/Windows/System32/OpenSSH/ssh.exe with gitsby's three ssh options at a 127.0.0.1 listener that sends an SSH banner and then nothing, and run git ls-remote on it, as gitsby's fetch does with a core.sshCommand naming that ssh.exe. People set that to use Windows' ssh-agent.
+	- Incorrect behavior [Bug]: ssh prints that the connection timed out after about 3 s, but neither it nor git exits. git ls-remote was still running when killed at 28 s.
+	- Expected behavior [Bug]: The fetch gives up within its 30 s limit, as it does with Git for Windows' own ssh, which exits at the timeout.
+	- Reproduced [Bug]: 2026-11-20 on vm925w, OpenSSH_for_Windows_9.5p2, git 2.55.0.windows.5, with GIT_SSH_COMMAND naming that ssh.exe. Confirmed. The same ssh run alone, with stdin NUL, a pipe held open, a closed pipe or -n, was still running at 25 s, and kept running 20 s after the server closed the connection.
+	- Possible cause [Bug]: Windows' OpenSSH doesn't exit after it reports the timeout, so git waits on it. The fix is upstream. gitsby can't put a time limit on a whole fetch, since a large one can run long. Killing git on Windows also leaves its ssh running.
+	- Origin: Win32-OpenSSH. gitsby's limits from adcef33 (2026112017135720) reach that ssh; it ignores them by not exiting.
+	- Note: Upstream issue text drafted in private/claude_simple/upstream/2026112021513016/.
+	- Upstream: PowerShell/Win32-OpenSSH#1427, commented 20261121 (<https://github.com/PowerShell/Win32-OpenSSH/issues/1427#issuecomment-7066202716>)
+	- 20261121: the hang is Win32-OpenSSH#1427, an async write to stderr that never completes when stderr is a pipe. Checked on vm925w: with stderr to a file, ssh.exe exits 255 at 3 seconds; with stderr to a pipe it was killed at 20 seconds, whatever stdout is. Commented there rather than filing a new issue.
+	- 20261121: a possible workaround on gitsby's side is to give that ssh a file for stderr, read back afterwards. Not tried.
+	- Note: the 3 seconds above was with ServerAliveInterval=1, as in the upstream draft. With gitsby's options, ssh.exe with stderr to a file or NUL ends at 30 s on a stalled server.
+	- Closed reason: Done
+	- Actual cause [Bug]: Windows' own OpenSSH 9.5p2 never exits once it has written a line to a stderr that is a pipe, whatever the server does next: a stall, a close, or a refused login. To NUL or a file it exits on its limits. gitsby's fetch gives git NUL, so it ended at 30 s all along. The repo probe gave git a pipe, so it waited until killed. The login probe gave ssh a pipe, so it waited for its own 38 s limit on any server that made ssh write a line.
+	- Actual fix [Bug]: On Windows, the repo probe and the login probe read what git and ssh said back from a temp file rather than a pipe (errSink in remote.go). design.md says so under the ssh identity notes.
+	- Branch: nov21-2026112021513016
+	- Commit: b205e4a
+	- Test case: Go [dfkxx] TestRemoteReachesEndWithWindowsOwnSSH, on Windows with Windows' own ssh as core.sshCommand: the fetch, the repo probe and both login probe paths, against a server that closes at once and one quiet after its banner, each ending inside the login probe's own limit. It skips elsewhere. Go [dfkxw] TestErrSinkFileReadsLikeThePipe, the file path forced on: the same answers as the pipe, and no file left.
+	- Verified: On vm925w (OpenSSH_for_Windows 9.5p2, git 2.55.0.windows.5), [dfkxx] fails on a build with the file path turned off, with the repo probe and both login probes still waiting at 9 s against both servers. It passes with the file path, in 13 s. [dfk1m] passes there in 16 s, down from 32 s.
+	- Verified: In a rig run on vm925w, ssh.exe alone and under git ls-remote, with stderr to NUL or a file, ended at 30 s on a stalled server, and at once on a closed one or a refused login. With stderr to a pipe, every case was still running at 10 to 12 s.
+	- Verified: [dfkxw] fails with the file read taken out, with the removal taken out, and with the file never made. The quick gate passed with every area: test.bash 2339/0, fuzz 310/0, parity 31/0. gosec 37, unchanged.
+	- Swept: every command that reaches a remote and whose output gitsby reads, by grep for Stderr, Output and CombinedOutput beside remoteEnv and probeSSHLogin. probeRemote and probeSSHLogin use errSink. The fetch and set-head in fetchRemote run with NUL. askOriginHeads and the steps pass gitsby's own stderr through. gh and tea calls go over https, not ssh.
+	- Decisions: A workaround rather than Won't fix. The pipe that triggers the hang was gitsby's own, a temp file costs little, and the hang came from any line ssh wrote, not only a stall.
+	- Decisions: Windows only, behind errToFile, so other platforms keep the pipe. [dfkxw] runs the file path on every platform. If the temp file can't be made, the pipe is used.
+	- Decisions: A command that writes to gitsby's own stderr is left alone, since it gets what git run by hand would. Fixing that case for git run by hand is the upstream issue's job.
+	- Acceptance signoff: Self-closed: reproduced on vm925w, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261121-115347
+
+- The ssh identity probe asks port 22 for an ssh:// origin on another port
+	- ID: 2026112020462137
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-204621
+	- Opened by:
+	- Steps to reproduce [Bug]: Point origin at ssh://git@host:2222/o/r.git, where only port 2222 serves git, with no ssh_config entry for the host. Run gitsby status.
+	- Incorrect behavior [Bug]: The SSH line's account probe runs ssh -T git@host with no -p, so it asks port 22. The SSH line's ssh -G read has no port either, so a Match on the port isn't seen.
+	- Expected behavior [Bug]: The probe and the ssh -G read connect to the port the URL names, as git's fetch does.
+	- Possible cause [Bug]: sshConnectTarget in remote.go drops the port, and neither caller passes -p. TestSSHConnectTarget pins the target without it.
+	- Origin: Plausible, read only. Found while working 2026112017135720.
+	- Reproduced [Bug]: 2026-11-21 on b23, with a logging stand-in for ssh: [dfkxv] fails with the port left out, which gives the old arguments. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: sshConnectTarget gives only '[user@]host', and neither the login probe nor the ssh -G read added the URL's port.
+	- Actual fix [Bug]: sshDest in remote.go gives the URL's port as -p, then '--' and the target. The login probe, the SSH line's ssh -G read and the alias lookup all end their ssh call with it, so the last two still share one read. The port goes after the ssh command's own words, where git puts it.
+	- Branch: nov21-2026112021513016
+	- Commit: b205e4a
+	- Test case: Go [dfkxt] TestSSHDestCarriesThePort. Go [dfkxv] TestSSHCallsGoToTheURLsPort, the login probe and the ssh -G read through a logging stand-in for ssh, with one -G read for the alias lookup and the SSH line.
+	- Verified: [dfkxt] and [dfkxv] fail with the port left out of sshDest and pass with it. [df053] still counts one -G read. [dfkxx] on vm925w reaches its listener through the URL's port. The quick gate passed with every area.
+	- Swept: every ssh gitsby runs about a remote. probeSSHLogin, from sshLogin and askSSHLoginAhead, and sshConfigText, from readSSHConfig (the SSH line) and resolveSSHHost (parseRemote), all take sshDest. sshConnectTarget is now called only by sshDest and its own test.
+	- Decisions: Digits only for the port, since git can't connect with anything else. An scp-like URL has no port to give, as in git. [dbfrr] TestSSHConnectTarget still pins the target without the port, since the port now goes apart from it.
+	- Note: Examined and left alone: an ssh:// URL with a bracketed IPv6 host, which sshTarget cuts at its first colon. Filed as 2026112111542213.
+	- Acceptance signoff: Self-closed: reproduced with a stand-in, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261121-115347
+
+- Code Review 20261120 item 46: A submodule whose remote is gone makes pullcom skip the pull as if origin were unreachable
+	- ID: 2026112017151559
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171515
+	- Opened by:
+	- Steps to reproduce [Bug]: Clone a repo with a submodule. Move the submodule's remote away, have origin's dev bump the gitlink, and run `gitsby -q pullcom` on dev.
+	- Incorrect behavior [Bug]: The fetch of origin works, but the submodule fetch fails, so gitsby warns that the remote is unreachable, skips the pull, and prints Done at exit 0. dev stays behind 1.
+	- Expected behavior [Bug]: The pull runs, since origin answered. A failed submodule fetch is named for what it is.
+	- Reproduced [Bug]: 2026-11-20 on b23, git 2.51, local bare repos. Confirmed.
+	- Possible cause [Bug]: The fetch at remote.go:310 follows fetch.recurseSubmodules, which defaults to on-demand, and any failure sets offline.
+	- Origin: 3d22222 (Go port). No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: The pre-command fetch follows fetch.recurseSubmodules, on-demand by default, so once origin's branch moves a submodule it fetches that submodule too, and exits 1 when its remote is gone. Any failure set offline, though origin's refs were already in.
+	- Actual fix [Bug]: fetchRemote reads the fetch's stderr under LC_ALL=C, through a temp file. git's 'Errors during submodule fetch:' heading means origin's fetch worked, since git fetches submodules only after it does. Then the run warns that a submodule's fetch failed, names 'git submodule update', and isn't offline. design.md and the changelog say so.
+	- Test case: test.bash [dfkym] and [dfkyn].
+	- Verified: [dfkym] and [dfkyn] fail on the build before the fix and pass with it. Quick gate with every area: lint and unit passed, test.bash 2348/0, fuzz 310/0, parity 31/0.
+	- Swept: fetchRemote is the one git fetch in src-go, by grep, and the only place that sets offline. A pull of an upstream on another remote fetches through git pull as a step, so its failure is git's own output.
+	- Decisions: The warning names no submodule, since git lists submodule names rather than paths and a path goes on a File: line. Read from git's text rather than retrying the fetch with --recurse-submodules=no, which would double the wait when truly offline. A git that words the heading another way falls back to offline, as before. Once the pull runs, it meets 2026112112175066, as the case with the submodule's remote in place does today.
+	- Branch: nov21-2026112017151559
+	- Commit: 867360f
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261121-123934
+
+- Code Review 20261120 item 18: pr create takes the PR's base from the current branch's name while its head is the branch it pushes
+	- ID: 2026112017135624
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171356
+	- Opened by:
+	- Steps to reproduce [Bug]: Under push.default=upstream, run `git checkout -b fix --track origin/hotfix/x`, commit, and run `gitsby -q pr create Fix`. Then run `pr ok` on that PR.
+	- Incorrect behavior [Bug]: It opens `--base dev --head hotfix/x`. pr ok then takes the head as a hotfix, pulls main and back-merges origin/main into dev at exit 0, though the fix never reached main. Names the other way round open against main and skip the back-merge.
+	- Expected behavior [Bug]: The base follows the head that's pushed, so pr create and pr ok agree.
+	- Reproduced [Bug]: 2026-11-20 on b23, with a fake gh and a stand-in for the git host's merge. Confirmed.
+	- Possible cause [Bug]: `base := a.branchTarget("")` at pr.go:613. refuseUnrelatedPr at pr.go:464 reads the base the same way. pr ok reads only the PR's head, never its base.
+	- Origin: 4918b5b. Code Review 20261119 item 7 (5b4e930) moved the head and left the base. Missed twin.
+	- Closed reason: Done
+	- Actual cause [Bug]: pr create's run, its plan line and its unrelated-history refusal read the base off the current branch's name, while the head was the branch on origin the push lands on. pr ok reads that head back and takes its target and back-merge from it, so the two disagreed whenever the names differed.
+	- Actual fix [Bug]: One helper, prTarget in pr.go, reads the target off the PR's head branch on origin. pr create's gh, tea and glab calls, its plan line and its unrelated-history refusal use it, and so do pr ok's checkout, plan and held-branch check. prCreateArgs and prCreateDisp take no base, so a caller can't pass another. design.md and the changelog say so.
+	- Branch: nov21-2026112017135624
+	- Commit: 953ac24
+	- Test case: test.bash [dfm0q] to [dfm0s]; Go TestPrTarget [dfm0t].
+	- Verified: [dfm0q] to [dfm0s] fail on the build before the fix and pass with it. [dfm0t] fails with prTarget reading the current branch's name, for gh, tea and glab, the plan line, pr ok and the refusal. The quick gate passed with every area: test.bash 2361/0, fuzz 310/0, parity 31/0, spawn counts unchanged. gosec 37, as before, none in the changed lines.
+	- Swept: every branchTarget and isHotfixBranch caller. pr create's run, plan and refuseUnrelatedPr, and pr ok's cmdPrAccept, previewPr and checkoutsAhead now read prTarget. pr ok's isHotfixBranch calls and mergePushesOwn already read the PR's head. br merge, its staged check and refuseUnrelatedMerge read the current branch's name for both the merge and its target, since the merge is local, so they agree and were left alone. goneBranchLeave leaves pr create out, which has no gone-branch warning.
+	- Decisions: pr ok still reads only the PR's head, not its base. A PR opened elsewhere against another base is filed as 2026112113223086. isHotfixBranch(a.pr.headBranch) stays at its 4 sites rather than getting a helper of its own, since each already reads the head.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261121-132243
+
+- Code Review 20261120 item 23: [dbhg7] passes with the refusal it checks taken out
+	- ID: 2026112017135548
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171355
+	- Opened by:
+	- Steps to reproduce [Bug]: Remove the "%d times" refusal at accountcmd.go:1463 and run TestAccountSetRefusesADuplicatedKey.
+	- Incorrect behavior [Bug]: It passes on the shcl module's own refusal.
+	- Expected behavior [Bug]: It fails when gitsby's refusal goes.
+	- Reproduced [Bug]: 2026-11-20 on b23, by mutation. Confirmed.
+	- Possible cause [Bug]: accountcmd_test.go:688 checks only that some refusal came back.
+	- Origin: The 2026-09 accounts work, renumbered in a5ce9cc. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: [dbhg7] checked only that an error came back, and shcl refuses a repeated key on its own.
+	- Actual fix [Bug]: [dbhg7] wants the refusal that names the key's count, and the file as it was. Its twin [dbhg8] passed the same way on shcl's refusal of the empty key it becomes, and now wants its own text.
+	- Branch: nov21-2026112017135672
+	- Commit: 3712bf2
+	- Test case: Go [dbhg7], [dbhg8].
+	- Verified: With the '%d times' refusal taken out, [dbhg7] fails on both layouts, on shcl's 'isn't a setting the file can hold (Multiple)'. With the unread key refusal taken out, [dbhg8] fails. Both pass on the real code.
+	- Swept: the account set tests that check only that an error came back: [dbhg7], [dbhg8] and [dbhg9]. [dbhg9] already fails with its refusal taken out. The rest match a text.
+	- Decisions: [dbhg7] and [dbhg8] keep every case they had and add a text check.
+	- Acceptance signoff: Self-closed: both tests fail with their refusal taken out and pass with it.
+	- Closed: 20261121-103256
+
+- Code Review 20261120 item 24: For a locked worktree whose folder is gone, the refusal suggests git worktree prune, which does nothing
+	- ID: 2026112017135532
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171355
+	- Opened by:
+	- Steps to reproduce [Bug]: Run `git worktree add ../wt dev` and `git worktree lock ../wt`, move the folder away, then run `gitsby -q br switch dev`.
+	- Incorrect behavior [Bug]: It says prune frees the branch. Prune skips a locked worktree, so the next run refuses the same way.
+	- Expected behavior [Bug]: For a locked worktree, the refusal names mounting it, or unlocking and then pruning.
+	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
+	- Possible cause [Bug]: branchcmd.go:87-89 doesn't read the lock.
+	- Origin: 6f277d3, nov19b, Code Review 20261119 item 13.
+	- Closed reason: Done
+	- Actual cause [Bug]: refuseHeldBranch named prune for any worktree whose folder is gone. git worktree prune passes over a locked worktree, so the branch stayed held.
+	- Actual fix [Bug]: worktreeLocked in branchcmd.go finds the worktree's git dir by its gitdir file and reads git's 'locked' file there, only once the folder is gone. Then the Fix lines name mounting or putting back the folder, or 'git worktree unlock <folder>' and then 'git worktree prune'. design.md and the changelog say so.
+	- Test case: test.bash [dfkyq] and [dfkyr]; Go [dfkyp] TestRefuseHeldBranchLocked.
+	- Verified: [dfkyq] and [dfkyp] fail on the build before the fix and pass with it. [dfkyr] passes on both, and runs the 2 named commands. Quick gate as on 2026112017151559.
+	- Swept: the one site that names prune, by grep for 'worktree prune' in src-go. The checked-out, rebasing and bisecting refusals all reach it, since the lock is looked up by folder.
+	- Decisions: The unlock line quotes the folder with shellQuote, as other Fix lines quote a path. An unlocked worktree's refusal is unchanged.
+	- Branch: nov21-2026112017151559
+	- Commit: b3c57c3
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261121-123934
+
+- Code Review 20261120 item 25: repo connect from a shallow clone commits and adds origin, then the push is refused
+	- ID: 2026112017135517
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171355
+	- Opened by:
+	- Steps to reproduce [Bug]: Run `git clone --depth 1`, remove origin, add a file, and run `gitsby -q repo connect <empty bare repo>`.
+	- Incorrect behavior [Bug]: It commits and adds the remote, then the push fails with "shallow update not allowed", exit 1. A rerun fails the same way. A local target that isn't bare fails the same way.
+	- Expected behavior [Bug]: Refused up front, as repo.go's header promises for a target that can't work.
+	- Reproduced [Bug]: 2026-11-20 on b23, both cases. Confirmed.
+	- Possible cause [Bug]: settleRepoConnect at repo.go:287 doesn't check for a shallow repo or a local target that isn't bare.
+	- Origin: 115bb7d and aa044ac (Go port). No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: settleRepoConnect checked only whether the target existed and was empty. git refuses a shallow clone's push to a repo with none of its history, and a push into the branch a non-bare repo has checked out, and both were found at the push, after the commit and the remote add.
+	- Actual fix [Bug]: refuseShallowPublish refuses repo connect and repo create in a shallow clone, naming 'git fetch --unshallow', when the target is new or origin has no branches. refuseCheckedOutTarget refuses a local target with a working tree whose checked-out branch is the one the push goes to, unless its receive.denyCurrentBranch allows the push. Both run before the plan. design.md and the changelog say so.
+	- Test case: test.bash [dfkys] to [dfkyx], [dfkz9] and [dfkza].
+	- Verified: [dfkys], [dfkyt], [dfkyw], [dfkz9] and [dfkza] fail on the build before the fix and pass with it. [dfkyv] and [dfkyx] pass on both. Quick gate as on 2026112017151559, then lint, unit, fuzz and parity again after [dfkz9] and [dfkza], and test.bash 2350/0.
+	- Swept: all 3 connect modes: add and create refuse a shallow clone before the probe or gh, and push mode does when origin has no branches. A local target is checked in add mode and in push mode with an origin with no branches, such as one a refused push left set.
+	- Decisions: A shallow clone is refused even where a local target sets receive.shallowUpdate, which git hosts don't offer. A target given as a file:// URL isn't checked for a working tree. The refusals sit in the sentence with the target, as the other repo connect refusals do.
+	- Branch: nov21-2026112017151559
+	- Commit: 4342a52
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261121-123934
+
+- Code Review 20261120 item 27: The publisher brings other staged edits back unstaged
+	- ID: 2026112017135488
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171354
+	- Opened by:
+	- Steps to reproduce [Bug]: Stage b.txt, edit it again, and run the publisher with `GIT_BACKUP_AND_PUBLISH_PATHS=a.txt -q -m pub`.
+	- Incorrect behavior [Bug]: It commits only a.txt, which is right, but b.txt's index entry goes back to HEAD. The staged copy is left only in a dropped stash.
+	- Expected behavior [Bug]: Other staged edits stay staged, as n8git_backup-and-publish:371 says.
+	- Reproduced [Bug]: 2026-11-20 on b23, the real publisher with a stub gitsby. Confirmed.
+	- Possible cause [Bug]: A plain `git stash pop` at n8git_backup-and-publish:341 and :357. Stage 0's autostash merge does the same, by a git probe.
+	- Origin: bbb90b5 (2026-07-25), and the claim in 0633cc1 (2026112013542584). No round saw it.
+	- Closed reason: Done
+	- Related IDs: 2026112110520434
+	- Actual cause [Bug]: Both of the publisher's pops were a plain git stash pop, which brings staged edits back unstaged and drops an edit that is only staged.
+	- Actual fix [Bug]: Both pops go through fStashPop, which pops with --index. When the pull changed a staged file in the same place, --index puts nothing back, and the publisher stops with the edits all still in the stash. Nothing is committed or pushed.
+	- Decisions: An index clash stops the run rather than falling back to a plain pop, since a plain pop drops an edit that is only staged (git 2.51 probe). It is told from an untracked file in the way by the stash having a staged part, so that case keeps fStashPopFailed's message.
+	- Test case: test.bash [dfkvz], [dfkw0], [dfkw1] and [dfkw5].
+	- Verified: [dfkvz], [dfkw0] and [dfkw1] fail on the old publisher and pass on the fix. [dfkw5] fails with the staged-part check taken out. The quick gate with every area passed: test.bash 2333/0, fuzz 310/0.
+	- Swept: every stash pop and --autostash in the repo's scripts and Go source, by grep. fSyncMerge in cicd.bash already pops with --index when it backs a merge out. The Go pulls take no --autostash under --staged (staged.go), and commit the whole tree otherwise. Stage 0's --autostash on a merge that goes in clean brings staged edits back unstaged too, filed as 2026112110520434.
+	- Branch: nov21-2026112017135640
+	- Commit: 2493028
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261121-105300
+
+- Code Review 20261120 item 28: Stage 6 replaces a demo gif that was already edited when the run started
+	- ID: 2026112017135473
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171354
+	- Opened by:
+	- Steps to reproduce [Bug]: Edit assets/demo.gif, then do a plain run whose render differs.
+	- Incorrect behavior [Bug]: cicd.bash:1400 moves the new render over it. Only the new render is archived, and publish commits nothing.
+	- Expected behavior [Bug]: An edited gif is left as it is, the way publish treats it.
+	- Reproduced [Bug]: 2026-11-21 on b23, the real stage 6 in the pipeline fixture: [dfkwr] fails on the unfixed cicd.bash, with the edited gif replaced by the new render. Confirmed.
+	- Possible cause [Bug]: Nothing checks the gif before the `mv -f`.
+	- Origin: bcdf93c (2026-10-04). Missed twin of 2026112013542584.
+	- Closed reason: Done
+	- Actual cause [Bug]: Stage 6 never checked whether the gif was already edited before moving the new render over it.
+	- Actual fix [Bug]: cicd.bash records, after the sync, whether assets/demo.gif differs from HEAD. Stage 6 then leaves an edited gif as it is with a warning, as publish leaves it uncommitted.
+	- Decisions: Edited means a change against HEAD, staged or not, the same test publish uses (publishWas). It is recorded whether or not the run publishes, so --no-publish leaves the gif alone too. An untracked gif is still replaced, which [de5aw] relies on. The warning follows the other two 'demo gif differs' lines. The check comes after the tool-version and hands-off ones, so their messages are unchanged.
+	- Test case: test.bash [dfkwr].
+	- Verified: [dfkwr] fails on the unfixed cicd.bash (suite 2335/4) and passes with the fix. The quick gate with every area passed: test.bash 2339/0, fuzz 310/0, parity 31/0.
+	- Swept: every write to the demo gif in cicd.bash, by grep for DEMOGIF_OUT and demogifOut: the one mv -f in stage 6. The run in the image records its own state from the same mounted tree. release.bash refuses a tree the run changed, per design.md, and writes no gif.
+	- Branch: nov21-2026112110520434
+	- Commit: 4d2d59e
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
+	- Closed: 20261121-111634
+
+- Code Review 20261120 item 29: The publish prompt says a blank message opens the editor, but the publisher writes one itself
+	- ID: 2026112017135459
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171354
+	- Opened by:
+	- Steps to reproduce [Bug]: Run the publisher as cicd.bash does, with --quiet and no -m, and with GIT_EDITOR=false.
+	- Incorrect behavior [Bug]: It commits with an automatic message. cicd.bash:1062, :1093 and :1450 say a blank answer opens the editor.
+	- Expected behavior [Bug]: The prompt and the plan say what runs, per style-guide_ui-ux.md:98.
+	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
+	- Possible cause [Bug]: The cicd text is older than the publisher's automatic message.
+	- Origin: bbce553 (2026-07-22) and bcdf93c, then bbb90b5. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: The prompt, the plan line, --help and two comments in cicd.bash, and a comment in config.bash, date from when a blank answer let git open the editor. The publisher writes its own message under --quiet since bbb90b5, and cicd.bash always passes --quiet.
+	- Actual fix [Bug]: They say a blank answer gets an automatic message. What runs didn't change.
+	- Decisions: The text changed rather than the behavior, since cicd.bash's help says the run finishes unattended after its one prompt, and an editor at the end of a long run would hold it.
+	- Test case: test.bash [dfkw2], [dfkw3] and [dfkw4].
+	- Verified: on the old cicd.bash, --list printed 'blank = editor' and the [dfkw4] help check failed. Both pass now. [dfkw3] runs the publisher with --quiet, no message and GIT_EDITOR=false, and passes on both, since that part didn't change. The quick gate with every area passed: test.bash 2333/0, fuzz 310/0.
+	- Swept: every 'editor' in cicd/, README.md and project/, by grep. The 7 in cicd.bash and 1 in config.bash are fixed. README's How to develop says only that the run prompts once.
+	- Branch: nov21-2026112017135640
+	- Commit: 555160d
+	- Acceptance signoff: Self-closed: the plan and help checks failed on the old text and pass now, and nothing else changed.
+	- Closed: 20261121-105300
+
+- Code Review 20261120 item 30: The run's plan says stage 0 only fast-forwards
+	- ID: 2026112017135444
+	- Type: Bug
+	- Status: Closed
+		- Waits on a read of the new wording: the plan's 'Remote sync' line and contributing.md's paragraph on the sync.
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171354
+	- Opened by:
+	- Steps to reproduce [Bug]: Run cicd.bash and read the plan.
+	- Incorrect behavior [Bug]: cicd.bash:987 says "Remote sync: fast-forward from origin first", but a diverged branch now gets a merge commit that publish pushes.
+	- Expected behavior [Bug]: The plan names the merge.
+	- Reproduced [Bug]: 2026-11-20, by reading. Confirmed.
+	- Origin: d0cc3da. 0633cc1 (2026112013542571) left it.
+	- Actual cause [Bug]: 0633cc1 made stage 0 merge a diverged origin, and left the plan line and contributing.md saying it only fast-forwards and stops when diverged.
+	- Actual fix [Bug]: The plan says 'fast-forward from origin first, or merge it when diverged'. contributing.md says a diverged branch gets a merge commit that publishing pushes, and that the run stops when they don't merge clean or the uncommitted edits clash.
+	- Test case: test.bash [dfkwq].
+	- Verified: [dfkwq] fails on the unfixed cicd.bash and passes with the fix. The quick gate with every area passed: test.bash 2339/0, fuzz 310/0, parity 31/0. contributing.md passes the markdown check.
+	- Swept: README.md, contributing.md, design.md, workflows.md and the style guides, by grep for 'stage 0', 'remote sync' and 'fast-forwards from'. Only contributing.md:231 was stale. README's stage 0 sentence and cicd.bash's header were already right.
+	- Decisions: Only the stale clause in contributing.md was rewritten. The fast-forward sentence before it still holds for a branch that is only behind.
+	- Branch: nov21-2026112110520434
+	- Commit: a850e71
+	- Closed reason: Done
+	- Closed: 20261121
+	- Acceptance signoff: 20261121. A factual fix to a plan line and one doc clause, so no choice was left open; closed per the project's close rule.
+	- 20261120: also sweep contributing.md:231, which still says the pipeline stops if the branch has diverged; that went stale with 0633cc1 (found under 2026112017135764).
+
+- Code Review 20261120 item 40: [dfh3s] and [dfh3t] pass with refuseParkPush taken out
+	- ID: 2026112017135297
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171352
+	- Opened by:
+	- Steps to reproduce [Bug]: Change mutate.go:724 to `if true || !a.parkPushes()` and run test.bash's [dfh3s] block.
+	- Incorrect behavior [Bug]: [dfh3s], [dfh3t] and [dfh3v] stay green. With a dirty tree, the changed build's sync, br switch main and br create commit, then refuse at the push with the same text.
+	- Expected behavior [Bug]: They fail when the refusal no longer comes before the plan.
+	- Reproduced [Bug]: 2026-11-20 on b23, by mutation. Confirmed. [dfh3x], [dfh3y] and [dfh40] go red, so the refusal itself is pinned.
+	- Possible cause [Bug]: The checks match `--unset-upstream`, which the push step's refusal prints too, on a clean tree.
+	- Origin: 1c8c364, Code Review 20261119 item 1. The same kind as Code Review 20261119 item 24.
+	- Closed reason: Done
+	- Actual cause [Bug]: The tree was clean when [dfh3s] and [dfh3t] ran, so a build that refused only at the push step committed nothing, and its refusal names --unset-upstream too.
+	- Actual fix [Bug]: [dfh3s] and [dfh3t] run on a dirty tree. [dfh3s] also wants 'Nothing was done.', which the step's refusal doesn't print, and [dfktt] [dfktv] check that HEAD and the edit are as they were. The tree is put back before [dfh3w].
+	- Branch: nov21-2026112017135672
+	- Commit: 3712bf2
+	- Test case: test.bash [dfh3s], [dfktt], [dfh3t], [dfktv].
+	- Verified: refuseParkPush is refusePlannedPushes now. With its 'return p.refusal()' made 'continue', [dfh3s], [dfktt] and [dfktv] fail, with [dfk10] to [dfk17], and all pass on the real code (test.bash 2325/0). [dfh3t] alone still passes, since it checks the refusal and the branch, and [dfktv] covers its commit.
+	- Swept: [dfk10] to [dfk17], the same refusal for the other park pushes, already fail with it taken out. [dfh3v] passes with it out, rightly, since the step still refuses the push.
+	- Decisions: [dfh3s] now passes a commit message and also wants 'Nothing was done.'. What it checked before still holds.
+	- Acceptance signoff: Self-closed: the new checks fail with the refusal taken out and pass with it.
+	- Closed: 20261121-103256
 
 - Code Review 20261120 item 22: raw tea in a GitHub account's folder gets GH_TOKEN
 	- ID: 2026112017135562

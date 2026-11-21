@@ -134,7 +134,8 @@ func (a *app) prViewArgs() [][]string {
 	return [][]string{{"pr", "view", a.pr.num}, {"pr", "diff", a.pr.num}}
 }
 
-func (a *app) prCreateArgs(base string) []string {
+func (a *app) prCreateArgs() []string {
+	base := a.prTarget()
 	if a.pr.tool == toolGlab {
 		return a.glabArgs("mr", "create", "--target-branch", base, "--source-branch", a.pr.headBranch, "--title", a.pr.title, "--description", "", "--yes")
 	}
@@ -459,7 +460,7 @@ func (a *app) refuseUnrelatedPr(branch string) error {
 	if a.pr.tool == toolGlab {
 		return nil
 	}
-	base := a.branchTarget(branch)
+	base := a.prTarget()
 	refs := a.branchRefs()
 	baseRef := "refs/remotes/origin/" + base
 	if refs.tip[baseRef] == "" {
@@ -473,6 +474,15 @@ func (a *app) refuseUnrelatedPr(branch string) error {
 	}
 	return usagef("'%s' shares no history with '%s', so %s won't open a pull request for it. Nothing was done. Joining unrelated histories is raw-git territory: git merge --allow-unrelated-histories %s",
 		branch, base, a.hostName(), typedArg(strings.TrimPrefix(strings.TrimPrefix(baseRef, "refs/heads/"), "refs/remotes/"), runtime.GOOS))
+}
+
+// prTarget is what the PR merges into, read off its branch on origin: the one the
+// park push lands on for create, the one the git host names for ok. pr ok takes
+// its checkout and back-merge from that head, so a base read off the current
+// branch's own name opened a hotfix's PR on dev, and pr ok then back-merged a main
+// the fix never reached.
+func (a *app) prTarget() string {
+	return a.branchTarget(a.pr.headBranch)
 }
 
 // prCreateHead is the branch on origin the park push sends the work to, which the
@@ -565,7 +575,7 @@ func (a *app) prAcceptPreflight(prBranch string) error {
 	// The git host merges what origin already has, then the branch goes local and remote.
 	// Work that never reached origin is outside the PR and outside the merge -
 	// refuse, don't lose it.
-	if treeDirty() || isAhead() {
+	if a.treeDirty() || isAhead() {
 		if prBranch == a.pr.headBranch {
 			return usagef("'%s' has changes that aren't on origin, so PR #%s can't include them. Run '%s sync' first.", prBranch, a.pr.num, meName)
 		}
@@ -608,8 +618,7 @@ func (a *app) cmdPrCreate() error {
 	// Announced by hand rather than through step, like the approve below: step would
 	// print --head and --body too, which the preview doesn't, so the two lines would
 	// disagree.
-	base := a.branchTarget("")
-	return a.stepAs(a.prCreateDisp(base), a.pr.cli+" "+a.prCreateVerb(), a.pr.cli, a.prCreateArgs(base)...)
+	return a.stepAs(a.prCreateDisp(), a.pr.cli+" "+a.prCreateVerb(), a.pr.cli, a.prCreateArgs()...)
 }
 
 func (a *app) prCreateVerb() string {
@@ -624,8 +633,8 @@ func (a *app) prCreateVerb() string {
 
 // prCreateDisp is the one line the preview and the run both show for a create -
 // the title and the base, without the flags neither of them promised.
-func (a *app) prCreateDisp(base string) string {
-	return a.pr.cli + " " + a.prCreateVerb() + " --base " + base + " --title " + shellWord(a.pr.title, true)
+func (a *app) prCreateDisp() string {
+	return a.pr.cli + " " + a.prCreateVerb() + " --base " + a.prTarget() + " --title " + shellWord(a.pr.title, true)
 }
 
 // prOkMoves is whether pr ok ends on the PR's merge target rather than on the
@@ -643,7 +652,7 @@ func (a *app) cmdPrAccept() error {
 	// Resolve both before gh deletes the branch out from under us, and off the PR's
 	// own head branch (resolved up front) rather than the current one - they need not
 	// be the same.
-	targetBranch := a.branchTarget(a.pr.headBranch)
+	targetBranch := a.prTarget()
 	wasHotfixPr := a.isHotfixBranch(a.pr.headBranch)
 	moves := a.prOkMoves()
 	a.out.clean("")

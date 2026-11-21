@@ -117,15 +117,15 @@ func isDrivePath(p string) bool {
 // resolveSSHHost finds the real hostname behind an ssh_config alias
 // ('github_work' -> 'github.com'), so an aliased remote can still be recognized
 // as GitHub. The alias itself when ssh can't say. It asks about the connect
-// target, as the SSH line does, so both take the one 'ssh -G' read.
-func resolveSSHHost(alias, target string) string {
+// target and port, as the SSH line does, so both take the one 'ssh -G' read.
+func resolveSSHHost(alias string, dest []string) string {
 	if alias == "" || !inPath("ssh") {
 		return alias
 	}
-	if target == "" {
-		target = alias
+	if len(dest) == 0 {
+		dest = []string{"--", alias}
 	}
-	for _, line := range splitLines(sshConfigText(target)) {
+	for _, line := range splitLines(sshConfigText(dest)) {
 		key, value, found := strings.Cut(line, " ")
 		if found && key == "hostname" && value != "" {
 			return value

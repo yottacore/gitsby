@@ -13,6 +13,8 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -74,6 +76,8 @@ func TestSSHTarget(t *testing.T) { // [dbfrq]
 		{"git@github.com:octocat/hello.git", "github.com"},
 		{"github_work:octocat/hello.git", "github_work"},
 		{"ssh://git@github.com:22/octocat/hello.git", "github.com"},
+		{"ssh://git@[::1]:2222/o/r.git", "::1"}, // [dfkyf] a bracketed IPv6 host
+		{"ssh://[2001:db8::7]/o/r.git", "2001:db8::7"},
 		{"https://github.com/octocat/hello.git", ""}, // no ssh identity involved
 		{"/srv/local/repo", ""},
 		{"C:/srv/repo", ""}, // a drive path is not 'host:path'
@@ -101,6 +105,202 @@ func TestSSHConnectTarget(t *testing.T) { // [dbfrr]
 		if got := sshConnectTarget(tc.url); got != tc.want {
 			t.Errorf("sshConnectTarget(%q) = %q, want %q", tc.url, got, tc.want)
 		}
+	}
+}
+
+// The port an ssh:// remote names goes to ssh as '-p', as git gives it, and only
+// a port git could connect with.
+func TestSSHDestCarriesThePort(t *testing.T) { // [dfkxt]
+	tests := []struct {
+		url  string
+		want []string
+	}{
+		{"ssh://git@host:2222/o/r.git", []string{"-p", "2222", "--", "git@host"}},
+		{"ssh://host:2222/team@x:1/r.git", []string{"-p", "2222", "--", "host"}},
+		{"ssh://git@[::1]:2222/o/r.git", []string{"-p", "2222", "--", "git@::1"}}, // [dfkyf]
+		{"ssh://[::1]/o/r.git", []string{"--", "::1"}},
+		{"ssh://git@[::1]:/o/r.git", []string{"--", "git@::1"}},
+		{"ssh://git@host/o/r.git", []string{"--", "git@host"}},
+		{"ssh://git@host:/o/r.git", []string{"--", "git@host"}},
+		{"ssh://git@host:22x/o/r.git", []string{"--", "git@host"}},
+		{"git@host:2222/r.git", []string{"--", "git@host"}},
+		{"https://host:8443/o/r.git", nil},
+	}
+	for _, tc := range tests {
+		if got := sshDest(tc.url); !slices.Equal(got, tc.want) {
+			t.Errorf("sshDest(%q) = %q, want %q", tc.url, got, tc.want)
+		}
+	}
+}
+
+// The login probe and the SSH line's ssh -G read asked port 22 about an ssh://
+// origin on another port. Both go to the URL's port now, and the alias lookup
+// still shares the one -G read.
+func TestSSHCallsGoToTheURLsPort(t *testing.T) { // [dfkxv]
+	sshLog := logCalls(t, "ssh", `case "$*" in
+	-G*) printf 'user git\nhostname gitea.example.test\n' ;;
+	*"-p 2222 -- git@gitea-work") echo "Hi bob!" >&2 ;;
+esac
+exit 1`)
+	t.Setenv("GIT_SSH_COMMAND", "ssh")
+	url := "ssh://git@gitea-work:2222/acme/proj.git"
+	if got := parseRemote(url).host; got != "gitea.example.test" {
+		t.Errorf("parseRemote(%q).host = %q, want the alias resolved", url, got)
+	}
+	if got := readSSHConfig(sshDest(url)); got.host != "gitea.example.test" {
+		t.Errorf("readSSHConfig = %+v, want gitea.example.test", got)
+	}
+	if n := callsTo(t, sshLog, "-G -p 2222 -- git@gitea-work"); n != 1 {
+		t.Errorf("ssh -G was asked %d times with the URL's port, want 1", n)
+	}
+	if n := callsTo(t, sshLog, "-G"); n != 1 {
+		t.Errorf("ssh -G was asked %d times, want 1", n)
+	}
+	if got := newApp(newPrinter()).sshLogin(url); got != "bob" {
+		t.Errorf("sshLogin(%q) = %q, want bob, from the URL's port", url, got)
+	}
+}
+
+// What a remote reach says is read back from a temp file where Windows' own ssh
+// would hang on a pipe. The file path gives the same answers as the pipe, and
+// leaves no file behind.
+func TestErrSinkFileReadsLikeThePipe(t *testing.T) { // [dfkxw]
+	// The login it answers says which its stderr was.
+	fakeTool(t, "ssh", `echo "Warning: Permanently added 'host' to the list of known hosts." >&2
+if [ -f /dev/stderr ]; then echo "Hi file!" >&2; else echo "Hi pipe!" >&2; fi
+exit 1`)
+	t.Setenv("GIT_SSH_COMMAND", "ssh")
+	_, clone := gitTestRepo(t)
+	t.Chdir(clone)
+	missing := filepath.Join(t.TempDir(), "no-such-repo")
+	saved := errToFile
+	t.Cleanup(func() { errToFile = saved })
+	for _, toFile := range []bool{false, true} {
+		errToFile = toFile
+		tmp := t.TempDir()
+		t.Setenv("TMPDIR", tmp)
+		want := map[bool]string{false: "pipe", true: "file"}[toFile]
+		a := newApp(newPrinter())
+		if got := a.sshLogin("git@host:o/r.git"); got != want {
+			t.Errorf("sshLogin() with errToFile=%v = %q, want %s", toFile, got, want)
+		}
+		// Missing only from git's own words, so this reads them.
+		if state, reason := a.probeRemote(missing); state != repoMissing {
+			t.Errorf("probeRemote() with errToFile=%v = %v, %q, want missing", toFile, state, reason)
+		}
+		if left, _ := os.ReadDir(tmp); len(left) != 0 {
+			t.Errorf("with errToFile=%v the temp folder kept %d files", toFile, len(left))
+		}
+	}
+}
+
+// Windows' own OpenSSH never exits once it has written to a stderr that is a pipe
+// (Win32-OpenSSH#1427). Named as the ssh command, against a server that closes at
+// once and one quiet after its banner, every reach still ends on ssh's own limits,
+// the probes included.
+func TestRemoteReachesEndWithWindowsOwnSSH(t *testing.T) { // [dfkxx]
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows' own OpenSSH")
+	}
+	winSSH := filepath.ToSlash(filepath.Join(os.Getenv("SystemRoot"), "System32", "OpenSSH", "ssh.exe"))
+	if !isReadableFile(winSSH) || !inPath("ssh") {
+		t.Skip("no Windows OpenSSH at " + winSSH)
+	}
+	for _, name := range []string{"GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "config", "core.sshCommand", winSSH)
+	saved := stallSeconds
+	stallSeconds = 3
+	t.Cleanup(func() { stallSeconds = saved })
+	t.Chdir(clone)
+	p, _, _ := testPrinter()
+	for _, server := range []struct {
+		name  string
+		greet bool
+	}{{"closes at once", false}, {"is quiet after its banner", true}} {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Skip("no loopback listener:", err)
+		}
+		var mu sync.Mutex
+		var held []net.Conn
+		go func() {
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				if !server.greet {
+					_ = conn.Close()
+					continue
+				}
+				_, _ = conn.Write([]byte("SSH-2.0-OpenSSH_9.9\r\n")) // a failed write only ends that ssh sooner
+				mu.Lock()
+				held = append(held, conn)
+				mu.Unlock()
+			}
+		}()
+		release := func() {
+			_ = listener.Close()
+			mu.Lock()
+			for _, conn := range held {
+				_ = conn.Close()
+			}
+			mu.Unlock()
+		}
+		port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+		// An ssh that hung is ended by its port, or it holds the test's folders.
+		endHung := func() {
+			ps := "Get-CimInstance Win32_Process -Filter \"Name='ssh.exe'\" | Where-Object { $_.CommandLine -like '*-p " + port + " *' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+			_ = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", ps).Run()
+		}
+		url := "ssh://git@127.0.0.1:" + port + "/x.git"
+		runGit(t, clone, "remote", "set-url", "origin", url)
+		for _, reach := range []struct {
+			name string
+			run  func()
+		}{
+			{"fetch", func() { newApp(p).fetchRemote() }},
+			{"probe", func() {
+				if got, _ := newApp(p).probeRemote(url); got != repoUnknown {
+					t.Errorf("probeRemote() = %v when the server %s, want unknown", got, server.name)
+				}
+			}},
+			{"login probe", func() {
+				if got := newApp(p).sshLogin(url); got != "?" {
+					t.Errorf("sshLogin() = %q when the server %s, want ?", got, server.name)
+				}
+			}},
+			{"login probe asked ahead", func() {
+				b := newApp(p)
+				defer b.endProbes()
+				b.askSSHLoginAhead(url)
+				if got := b.sshLogin(url); got != "?" {
+					t.Errorf("sshLogin() asked ahead = %q when the server %s, want ?", got, server.name)
+				}
+			}},
+		} {
+			done := make(chan struct{})
+			go func() {
+				reach.run()
+				close(done)
+			}()
+			// Under the login probe's own limit, so that limit can't be what ended it.
+			limit := sshProbeWait() - 2*time.Second
+			select {
+			case <-done:
+			case <-time.After(limit):
+				t.Errorf("the %s was still waiting on Windows' own ssh after %v, when the server %s", reach.name, limit, server.name)
+				endHung()
+				<-done
+			}
+		}
+		release()
 	}
 }
 
@@ -469,8 +669,8 @@ func TestRemoteReachesGiveUpOnAStalledSSHRemote(t *testing.T) { // [dfk1m]
 				t.Errorf("probeRemote() = %v on a stalled remote, want unknown", got)
 			}
 		}},
-		// The login probe's target carries no port, so the port rides in the ssh
-		// command, as 'ssh -p' would give it. Last, since that command stays set.
+		// An scp-like URL carries no port, so the port rides in the ssh command, as
+		// 'ssh -p' would give it. Last, since that command stays set.
 		{"login probe", func() {
 			_ = os.Setenv("GIT_SSH_COMMAND", "ssh -p "+port) // t.Cleanup above puts the old value back
 			if got := newApp(p).sshLogin("git@127.0.0.1:stalled.git"); got != "?" {

@@ -72,7 +72,7 @@ func (a *app) checkoutsAhead() []string {
 			break
 		}
 		if a.prOkMoves() {
-			add(a.branchTarget(a.pr.headBranch))
+			add(a.prTarget())
 		}
 		if a.isHotfixBranch(a.pr.headBranch) {
 			add(a.mergeTarget())
@@ -97,13 +97,18 @@ func (a *app) refuseHeldBranch() error {
 				what, fix = "being bisected", "End the bisect there with 'git bisect reset', then run this again."
 			}
 		}
+		fixes := []string{fix}
 		if !pathExists(where) {
-			// git keeps the branch for a worktree whose folder was deleted by hand.
-			fix = "That folder is gone, so 'git worktree prune' frees the branch. Then run this again."
+			// git keeps the branch for a worktree whose folder was deleted by hand,
+			// and prune passes over a locked one, such as one on a drive that's out.
+			fixes = []string{"That folder is gone, so 'git worktree prune' frees the branch. Then run this again."}
+			if a.worktreeLocked(where) {
+				fixes = []string{"That folder is gone, but its worktree is locked, so 'git worktree prune' keeps the branch. Mount or put back the folder, or unlock the worktree and prune it, then run this again:", "  git worktree unlock " + shellQuote(nativePath(where)), "  git worktree prune"}
+			}
 		}
 		return refusalBlock("'"+branch+"' is "+what+" in another worktree, and this run has to check it out here. Nothing was done.", [][]string{
 			noteLines("File", nativePath(where)),
-			noteLines("Fix", fix),
+			noteLines("Fix", fixes...),
 		}, nil)
 	}
 	return nil
@@ -164,6 +169,25 @@ func worktreeBusyWith(gitDir, branch string) string {
 		return "bisect"
 	}
 	return ""
+}
+
+// worktreeLocked: whether the linked worktree at folder is locked, from the
+// 'locked' file git keeps in its git dir. Only asked once its folder is gone, so
+// the gitdir files are read only on the way to a refusal.
+func (a *app) worktreeLocked(folder string) bool {
+	if a.worktreesDir == "" {
+		return false
+	}
+	entries, _ := os.ReadDir(a.worktreesDir)
+	for _, e := range entries {
+		gitDir := filepath.Join(a.worktreesDir, e.Name())
+		if !e.IsDir() || filepath.Clean(worktreeFolder(gitDir, false)) != filepath.Clean(folder) {
+			continue
+		}
+		_, err := os.Lstat(filepath.Join(gitDir, "locked"))
+		return err == nil
+	}
+	return false
 }
 
 // worktreeFolder: the work tree a git dir belongs to. The main one's git dir is

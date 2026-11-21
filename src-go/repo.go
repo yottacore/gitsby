@@ -90,11 +90,12 @@ func (a *app) probeRemote(url string) (repoExistence, string) {
 	// stopped being enough once '--' ended gitsby's own options.
 	probe := toolCmd("git", "ls-remote", "--", url)
 	probe.Env = a.remoteEnv()
-	var errText bytes.Buffer
-	probe.Stderr = &errText
+	said := newErrSink()
+	defer said.close()
+	probe.Stderr = said.writer()
 	out, err := probe.Output()
 	if err != nil {
-		return lsRemoteFailure(errText.String(), err)
+		return lsRemoteFailure(said.text(), err)
 	}
 	if strings.TrimRight(string(out), "\r\n") != "" {
 		return repoNonEmpty, ""
@@ -293,13 +294,62 @@ func (a *app) settleRepoConnect() error {
 		if a.cmd.arg != "" && !sameRemote(a.cmd.arg, existingOrigin) {
 			return usagef("origin is already set to '%s'; changing remotes is raw-git territory.", maskURL(existingOrigin))
 		}
+		// An origin with no branches is as new as an added one, such as the one a
+		// refused push left behind.
+		if len(a.branchRefs().origin) == 0 {
+			if err := a.refuseShallowPublish(); err != nil {
+				return err
+			}
+			if isLocalPath(existingOrigin) {
+				if err := a.refuseCheckedOutTarget(existingOrigin); err != nil {
+					return err
+				}
+			}
+		}
 		a.tgt.connectMode, a.tgt.connectURL = "push", existingOrigin
 		return nil
-	case wantCreate:
-		return a.settleRepoCreate()
-	default:
-		return a.settleRepoConnectTo()
 	}
+	if err := a.refuseShallowPublish(); err != nil {
+		return err
+	}
+	if wantCreate {
+		return a.settleRepoCreate()
+	}
+	return a.settleRepoConnectTo()
+}
+
+// refuseShallowPublish: a shallow clone's history stops at a commit a new repo
+// doesn't have, so git refuses the push ('shallow update not allowed'), and found
+// that only after the commit and the remote add. A push onto an origin that has
+// the rest goes through, as in any shallow clone.
+func (a *app) refuseShallowPublish() error {
+	if !a.inRepo || runOut("git", "rev-parse", "--is-shallow-repository") != "true" {
+		return nil
+	}
+	return usagef("This is a shallow clone, and git won't push its cut-off history to a repo that doesn't have the rest. Nothing was done. Fetch the rest first, from where it was cloned: git fetch --unshallow <url>")
+}
+
+// refuseCheckedOutTarget: git refuses a push into the branch that a repo with a
+// working tree has checked out, unless its receive.denyCurrentBranch allows it.
+// Asked only of a target with no branches yet, so that branch is the unborn one its
+// 'git init' named, and the push goes to the branch of the same name here.
+func (a *app) refuseCheckedOutTarget(dir string) error {
+	if runOut("git", "-C", dir, "rev-parse", "--is-bare-repository") != "false" {
+		return nil
+	}
+	branch := "main" // what cmdConnect's 'git init' names
+	if a.inRepo {
+		branch = a.currentBranch()
+	}
+	if head := runOut("git", "-C", dir, "symbolic-ref", "-q", "HEAD"); head != "refs/heads/"+branch {
+		return nil
+	}
+	// git reads it as a bool or a word, in any case, and refuses when it's unset.
+	switch strings.ToLower(runOut("git", "-C", dir, "config", "--get", "receive.denyCurrentBranch")) {
+	case "ignore", "warn", "updateinstead", "false", "no", "off", "0":
+		return nil
+	}
+	return usagef("'%s' has a working tree with '%s' checked out, and git refuses a push into a checked-out branch. Nothing was done. Connect to a bare repository instead, made with: git init --bare <path>", dir, branch)
 }
 
 func (a *app) settleRepoCreate() error {
@@ -331,6 +381,11 @@ func (a *app) settleRepoConnectTo() error {
 		state, reason := a.probeRemote(a.cmd.arg)
 		if err := probedConnect(a.cmd.arg, state, reason); err != nil {
 			return err
+		}
+		if isLocalPath(a.cmd.arg) {
+			if err := a.refuseCheckedOutTarget(a.cmd.arg); err != nil {
+				return err
+			}
 		}
 		a.tgt.connectMode, a.tgt.connectURL = "add", a.cmd.arg
 		return nil
