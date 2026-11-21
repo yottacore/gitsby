@@ -136,9 +136,13 @@ func (a *app) releasePreflight() error {
 	// it, and the first tag would never go. A different version typed out is
 	// deliberate, so it still cuts its own.
 	typed := strings.TrimPrefix(a.cmd.arg, "v") != ""
-	if pending := a.unpushedRelease(); pending != "" && (!typed || strings.TrimPrefix(pending, "v") == ver) {
+	if pending, devOnly := a.unpushedRelease(); pending != "" && (!typed || strings.TrimPrefix(pending, "v") == ver) {
 		a.rel = releasePlan{tag: pending, resume: true}
-		a.out.status("Release " + pending + " is tagged here but never reached origin; finishing it.")
+		if devOnly {
+			a.out.status("Release " + pending + " is out, but 'dev' never reached origin; finishing it.")
+		} else {
+			a.out.status("Release " + pending + " is tagged here but never reached origin; finishing it.")
+		}
 		return nil
 	}
 	// Either spelling, or 'release 1.2.3' in a repo tagged v1.2.3 cuts a second tag
@@ -147,13 +151,8 @@ func (a *app) releasePreflight() error {
 		return usagef("Tag '%s' already exists.", have[0])
 	}
 	// An invented version on a target that gains nothing cuts a tag for no release, and
-	// a re-run cuts another. Fails open. A parked tree is something to release, or under
-	// --staged the index.
-	parks := treeDirty()
-	if a.opt.staged {
-		parks = indexDiffers()
-	}
-	if !a.rel.bumped || parks || isAhead() {
+	// a re-run cuts another. Fails open.
+	if !a.rel.bumped || a.parksIntoRelease() {
 		return nil
 	}
 	// Full refs throughout, since git reads a tag of the same name ahead of a branch.
@@ -170,13 +169,13 @@ func (a *app) releasePreflight() error {
 			return nil
 		}
 	}
-	relSource := ""
-	if a.branchExistsRemote("dev") {
-		relSource = "refs/remotes/origin/dev"
-	} else if a.branchExistsLocal("dev") {
-		relSource = "refs/heads/dev"
+	// Both copies of dev, since the release merges the local one after pulling
+	// origin's. Work parked on dev was counted above, but from another branch a local
+	// dev ahead of origin's is only seen here.
+	if a.branchExistsRemote("dev") && !runOK("git", "merge-base", "--is-ancestor", "refs/remotes/origin/dev", relTarget) {
+		return nil
 	}
-	if relSource != "" && !runOK("git", "merge-base", "--is-ancestor", relSource, relTarget) {
+	if a.branchExistsLocal("dev") && !runOK("git", "merge-base", "--is-ancestor", "refs/heads/dev", relTarget) {
 		return nil
 	}
 	if relExisting := runOut("git", "describe", "--exact-match", "--tags", relTarget); relExisting != "" {
@@ -189,30 +188,60 @@ func (a *app) releasePreflight() error {
 	return nil
 }
 
+// parksIntoRelease: the current branch has work the release takes, in the tree or
+// in commits origin doesn't have yet. cmdPush parks only the current branch, and
+// cutRelease merges dev into the default branch, or tags the default branch alone,
+// so work parked anywhere else stays out of the release.
+func (a *app) parksIntoRelease() bool {
+	if cur := a.currentBranch(); cur != a.mergeTarget() && cur != a.defaultBranch() {
+		return false
+	}
+	return a.commitPending() || isAhead()
+}
+
 // unpushedRelease is the release tag on the tip of the local default branch while
-// origin's copy is behind it or missing: a release cut here whose push failed. A
-// default branch that went its own way from origin's isn't one, since its push
-// would be refused anyway.
-func (a *app) unpushedRelease() string {
+// origin's copy is behind it or missing, or while it is level and only dev's push,
+// the release's last, never went: a release cut here whose push failed. A default
+// branch that went its own way from origin's isn't one, since its push would be
+// refused anyway. devOnly is the level case.
+func (a *app) unpushedRelease() (tag string, devOnly bool) {
 	relMain := a.defaultBranch()
 	if !a.branchExistsLocal(relMain) {
-		return ""
+		return "", false
 	}
 	local := "refs/heads/" + relMain
 	if a.branchExistsRemote(relMain) {
 		// "<behind> <ahead>" of origin's copy.
 		counts := strings.Fields(runOut("git", "rev-list", "--left-right", "--count", "refs/remotes/origin/"+relMain+"..."+local))
-		if len(counts) != 2 || counts[0] != "0" || counts[1] == "0" {
-			return ""
+		if len(counts) != 2 || counts[0] != "0" {
+			return "", false
+		}
+		if devOnly = counts[1] == "0"; devOnly && !a.devPushPending(local) {
+			return "", false
 		}
 	}
 	var tags []string
-	for _, tag := range runLines("git", "-c", "versionsort.suffix=-", "tag", "--list", "--points-at", local, "v[0-9]*", "[0-9]*", "--sort=-v:refname") {
-		if releaseVersionOK(strings.TrimPrefix(tag, "v")) {
-			tags = append(tags, tag)
+	for _, t := range runLines("git", "-c", "versionsort.suffix=-", "tag", "--list", "--points-at", local, "v[0-9]*", "[0-9]*", "--sort=-v:refname") {
+		if releaseVersionOK(strings.TrimPrefix(t, "v")) {
+			tags = append(tags, t)
 		}
 	}
-	return newestReleaseTag(tags)
+	return newestReleaseTag(tags), devOnly
+}
+
+// devPushPending: dev here sits on the release, fast-forwarded to it, and origin's
+// dev is behind it, so the release's last push failed. Read as work, dev's lead made
+// a bare release cut a second tag on the same commit. A dev that moved on since, or
+// one origin's went past, isn't one.
+func (a *app) devPushPending(mainRef string) bool {
+	if a.mergeTarget() != "dev" || !a.branchExistsLocal("dev") || !a.branchExistsRemote("dev") {
+		return false
+	}
+	revs := runLines("git", "rev-parse", "refs/heads/dev", mainRef, "refs/remotes/origin/dev")
+	if len(revs) != 3 || revs[0] != revs[1] || revs[2] == revs[0] {
+		return false
+	}
+	return runOK("git", "merge-base", "--is-ancestor", "refs/remotes/origin/dev", "refs/heads/dev")
 }
 
 // cmdRelease merges dev into main/master --no-ff (if the repo has a dev), tags,

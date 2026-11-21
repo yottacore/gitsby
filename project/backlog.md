@@ -159,7 +159,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 5: release from a feature branch with unpushed work or a dirty tree tags the commit already released
 	- ID: 2026112017135822
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-171358
@@ -170,6 +170,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, with local bare origins. Confirmed.
 	- Possible cause [Bug]: The `parks || isAhead()` shortcut at release.go:152-156 counts parked work that never reaches the release. unpushedRelease checks main only.
 	- Origin: 20260727b item 12, ported in 4918b5b and changed in 7c3281d and 8dfe5ff. No round saw it. It undoes item 12's aim, which was to stop a second tag on one commit.
+	- Closed reason: Done
+	- Actual cause [Bug]: The nothing-new check counted any edit, staged change or unpushed commit on the current branch as work to release. Only dev's and the default branch's reach it, since the release merges dev alone. And after a release whose dev push was refused, dev's lead over origin's counted as new, while the resume check read only the default branch.
+	- Actual fix [Bug]: The current branch's work counts only on dev or the default branch, through parksIntoRelease. The check reads both copies of dev, so a local dev commit still counts from a feature branch. unpushedRelease also takes a level default branch whose tip is tagged, with dev on that tip and origin's dev behind it, and finishes that release by pushing dev.
+	- Test case: test.bash [dfjy3] to [dfjyd].
+	- Verified: [dfjy3] to [dfjy7], [dfjy9], [dfjya] and [dfjyc] fail on the build before the fix, and all 11 pass with it. With the branch check dropped, [dfjy3] to [dfjy7] fail. With the local dev check dropped, [dfjy7] fails. With the dev resume off, [dfjy9], [dfjya] and [dfjyc] fail. With the resume taking a dev that moved on, [dfjyd] fails. The quick gate passed in 3 calls, since all of it ran past 4 minutes at load 10: lint and unit, suite 2265/0, fuzz 310/0 and parity 31/0. gosec 37, as before, none in release.go.
+	- Swept: every work check in src-go, by grep for isAhead(), treeDirty() and indexDiffers(). Only releasePreflight decides whether there is something to release. pushIfOnline, refuseParkPush, pr ok's refusal and repo connect ask about the current branch's own push, which is right for them.
+	- Branch: nov20c-2026112017135822
+	- Commit: c8ab774
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-185827
+	- Decisions:
+		- Only the current branch's own work is read, when it is dev or the default branch. A branch whose park push lands on origin's dev, as under push.default=upstream, isn't counted. There the worst case is a "Nothing new" that changes nothing, and reading the push remote and dev's upstream for it is more code than that case is worth.
+		- On a feature branch, "Nothing new" leaves its commits and edits as they are, with nothing parked or pushed, the same as on a clean one.
+		- The dev resume needs a release tag on the default branch's tip, dev on that tip, and origin's dev behind it. A dev that moved on since cuts the next release, as before. A typed version that differs still cuts its own.
+		- The dev resume says "Release vX is out, but 'dev' never reached origin; finishing it.", since its tag did reach origin. The default branch's case keeps its line.
+		- 1 more git call on every release (a rev-parse in the resume check), and 1 more on the nothing-new path (the local dev check). release isn't in the spawn counts.
 
 - Code Review 20261120 item 6: A ? or # before the @ in a URL gets a token past the host check
 	- ID: 2026112017135807

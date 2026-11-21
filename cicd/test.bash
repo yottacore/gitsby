@@ -2152,6 +2152,47 @@ fRunSuite(){
 	fAssert     "[dfgx3] the same from a feature branch"  fPlanEnds "${cloneA}"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.7.3 && [[ \"\$(git branch --show-current)\" == relend ]]"
 	( cd "${cloneA}" || exit 1; git checkout --quiet dev && git branch --quiet -D relend && git push --quiet origin --delete relend )
 
+	## Work parked on a feature branch never reaches the release, which merges only dev, yet a
+	## commit or an edit there counted as something new, so a bare release tagged the commit
+	## already released. So did dev's lead after a release whose dev push failed.
+	local rf="${work}/$1-relfeat"
+	git init --quiet --bare -b main "${rf}/origin.git"
+	git clone --quiet "${rf}/origin.git" "${rf}/c" 2>/dev/null
+	( cd "${rf}/c" || exit 1; echo a > a.txt && git add a.txt && git commit --quiet -m init && git push --quiet -u origin main
+	  git checkout --quiet -b dev && git push --quiet -u origin dev && echo b > b.txt && git add b.txt && git commit --quiet -m b && git push --quiet
+	  "${gitsby}" -q release v1.0.0 >/dev/null 2>&1; git checkout --quiet -b feat && git push --quiet -u origin feat
+	  echo c > c.txt && git add c.txt && git commit --quiet -m c )
+	fAssertOut  "[dfjy3] a bare release from a feature branch with an unpushed commit has nothing new"  'Nothing new to release since v1\.0\.0'  bash -c "cd '${rf}/c' && '${gitsby}' -q release 2>&1"
+	( cd "${rf}/c" || exit 1; git push --quiet; echo d >> a.txt )
+	fAssertOut  "[dfjy4] the same with an edit in the tree"  'Nothing new to release since v1\.0\.0'  bash -c "cd '${rf}/c' && '${gitsby}' -q release 2>&1"
+	( cd "${rf}/c" || exit 1; echo s > s.txt && git add s.txt )
+	fAssertOut  "[dfjy5] the same under --staged with a staged edit"  'Nothing new to release since v1\.0\.0'  bash -c "cd '${rf}/c' && '${gitsby}' -q release --staged 2>&1"
+	fAssert     "[dfjy6] and none of them cut a tag"  bash -c "cd '${rf}/c' && [[ \"\$(git tag)\" == v1.0.0 ]] && ! git ls-remote --exit-code --tags origin refs/tags/v1.0.1 >/dev/null"
+	## A local dev ahead of origin's is merged by the release, so from elsewhere it still counts.
+	( cd "${rf}/c" || exit 1; git reset --quiet --hard; git checkout --quiet dev && echo e > e.txt && git add e.txt && git commit --quiet -m e && git checkout --quiet feat )
+	fAssert     "[dfjy7] from a feature branch, a local dev commit is still released"  bash -c "cd '${rf}/c' && '${gitsby}' -q release && git ls-tree --name-only v1.0.1 | grep -qx e.txt && [[ \"\$(git branch --show-current)\" == feat ]]"
+	( cd "${rf}/c" || exit 1; git checkout --quiet dev && echo f > f.txt && git add f.txt && git commit --quiet -m f && git push --quiet )
+	cat > "${rf}/origin.git/hooks/pre-receive" <<-'EOF'
+		#!/bin/sh
+		while read -r old new ref; do
+			[ "${ref}" = refs/heads/dev ] && { echo "dev is protected" >&2; exit 1; }
+		done
+		exit 0
+	EOF
+	chmod +x "${rf}/origin.git/hooks/pre-receive"
+	fAssertFail "[dfjy8] a release whose push of dev is refused fails"  bash -c "cd '${rf}/c' && '${gitsby}' -q release v1.1.0"
+	mv "${rf}/origin.git/hooks/pre-receive" "${rf}/pre-receive.off"
+	fAssertOut  "[dfjy9] the next bare release from dev says it finishes that release"  "Release v1\.1\.0 is out, but 'dev' never reached origin; finishing it\."  bash -c "cd '${rf}/c' && '${gitsby}' -q release 2>&1"
+	fAssert     "[dfjya] and pushed dev and cut no second tag"  bash -c "cd '${rf}/c' && [[ \"\$(git tag --points-at v1.1.0^{commit})\" == v1.1.0 && \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" ]] && ! git ls-remote --exit-code --tags origin refs/tags/v1.1.1 >/dev/null"
+	## The same from a feature branch, which also finishes it rather than saying nothing is new.
+	( cd "${rf}/c" || exit 1; echo g > g.txt && git add g.txt && git commit --quiet -m g && git push --quiet && mv "${rf}/pre-receive.off" "${rf}/origin.git/hooks/pre-receive" )
+	fAssertFail "[dfjyb] a second refused push of dev"  bash -c "cd '${rf}/c' && '${gitsby}' -q release v1.2.0"
+	( cd "${rf}/c" || exit 1; mv "${rf}/origin.git/hooks/pre-receive" "${rf}/pre-receive.off"; git checkout --quiet feat )
+	fAssert     "[dfjyc] a bare release from a feature branch then pushes dev, cuts no tag and ends there"  bash -c "cd '${rf}/c' && '${gitsby}' -q release && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" && \"\$(git tag --points-at v1.2.0^{commit})\" == v1.2.0 && \"\$(git branch --show-current)\" == feat ]] && ! git rev-parse -q --verify refs/tags/v1.2.1 >/dev/null"
+	## A dev that gained a commit since the refused push is new work, not that release's push.
+	( cd "${rf}/c" || exit 1; git checkout --quiet dev && mv "${rf}/pre-receive.off" "${rf}/origin.git/hooks/pre-receive"; "${gitsby}" -q release v1.3.0 >/dev/null 2>&1; mv "${rf}/origin.git/hooks/pre-receive" "${rf}/pre-receive.off"; echo h > h.txt && git add h.txt && git commit --quiet -m h )
+	fAssert     "[dfjyd] so a bare release from dev then cuts the next version with it"  bash -c "cd '${rf}/c' && '${gitsby}' -q release && git ls-tree --name-only v1.3.1 | grep -qx h.txt && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" ]]"
+
 	## Tags with no 'v' were invisible to the scan, so release started over at 0.1.0 and pushed it.
 	local bt="${work}/$1-baretag"
 	git init --quiet --bare -b main "${bt}/origin.git"

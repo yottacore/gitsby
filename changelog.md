@@ -91,6 +91,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - After a `release` whose push of the default branch was refused, as by a hook or branch protection, running `release` again finishes it: it pushes the branch and that release's tag, then fast-forwards `dev`. It used to tag the same commit with the next version and push only that, so the first tag never left the machine. Typing the same version again finishes it too.
 
+- A bare `release` on a feature branch no longer counts that branch's unpushed commits or edits as something new. The release merges only `dev`, so they never reach it, and it tagged the commit already released and pushed that tag. It now says there is nothing new, as it does with a clean tree. A `dev` with commits origin's lacks still counts, from any branch.
+
+- After a `release` whose push of `dev` was refused, running `release` again pushes `dev`. It used to tag the same commit with the next version.
+
 - The plan for `release` started on `main` no longer ends with `git checkout main`. The run ends on `dev`, as it always has, and the plan's last step now says so.
 
 - `release` with no version counts on from a release, not from its candidate, when the candidate's suffix follows a dot, as in `v3.0.0.rc1`. git sorts that tag above `v3.0.0`, so the next version came out as `v3.0.0` again and the run stopped on a tag that exists. Finishing a refused push takes the release's tag over its candidate's the same way.
