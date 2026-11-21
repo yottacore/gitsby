@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 14: Every command that stages the tree runs a dry-run add before the plan, in every repo
 	- ID: 2026112017135689
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-171356
@@ -47,6 +47,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, with strace and timed calls on both builds. Confirmed.
 	- Possible cause [Bug]: refuseSparseAdd runs the dry run before it reads core.sparseCheckout.
 	- Origin: be87857 (2026111910222973) and 397c85f (2026111920000538). No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: refuseSparseAdd ran git add --all --dry-run, and read core.sparseCheckout, before it knew the repo was a sparse checkout. git refuses or skips a path only where it has sparse patterns, so outside one both answers were always empty.
+	- Actual fix [Bug]: The rev-parse every run starts with also gives where git keeps this worktree's sparse patterns. Without that file, refuseSparseAdd returns with no spawn. With it, core.sparseCheckout decides, and only then does the dry run go.
+	- Test case: test.bash [dfksq], for each of the 10 commands stagesTree names.
+	- Verified: [dfksq] fails for all 10 commands with 576d891's mutate.go and passes with the fix. The gate's spawn counts are back at their expected values, such as pullcom 21 and br switch 28, 2 fewer each. Quick gate: unit, suite (test.bash 2319/0), fuzz 310/0 with spawn counts, and parity 31/0 passed. Lint: bash -n and shellcheck passed, then markdownlint stopped on a bare URL at backlog.md line 112, which dev has too; gofmt, go vet, staticcheck and golangci-lint run by hand are clean. gosec 37, as before.
+	- Swept: refuseSparseAdd is the only place gitsby asks git about a sparse checkout, by grep for sparse in src-go. Both of its spawns before the plan, the config read and the dry run, now wait on the patterns file.
+	- Decisions: The patterns file gates the config read too, so a repo that never had a sparse checkout pays no spawn. The run's first rev-parse locates it with one more --git-path. git reads no patterns without the file, so add refuses and skips nothing then, checked on git 2.51 with core.sparseCheckout on and no file. A disabled checkout keeps the file and pays only the config read. Skip-worktree bits set by hand with the setting off make add refuse nothing, and git diff doesn't list those files either (checked), so they don't need the dry run.
+	- Branch: nov21-2026112017135689
+	- Commit: 77d0101
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261121-095627
 
 - Code Review 20261120 item 15: Nothing tests the token file fallback's host check
 	- ID: 2026112017135672
@@ -66,7 +77,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 16: The sparse checkout refusal is pinned through sync only
 	- ID: 2026112017135655
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-171356
@@ -77,6 +88,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, by mutation. Confirmed.
 	- Possible cause [Bug]: [dfhkj] runs sync, plus br create off dev, which isn't refused.
 	- Origin: 7bf2c8e, Code Review 20261119 item 23 and 2026111920000538. Its Swept row names 10 commands.
+	- Closed reason: Done
+	- Actual cause [Bug]: The sparse checks ran sync, plus br create off dev, which stagesTree leaves out. Nothing ran the other 8 commands it names.
+	- Actual fix [Bug]: test.bash runs all 10 commands stagesTree names in a sparse checkout with an edited tracked file outside it, each on its own clone and origin, and checks that each refuses before the plan, names the file and stages nothing.
+	- Test case: test.bash [dfksp].
+	- Verified: with stagesTree cut down to pullcom and sync, [dfksp] fails for the other 8 (br merge, br switch, br create and br hotfix off a feature branch, pr create, release, repo create and repo connect), and passes with it whole. Quick gate as on 2026112017135689.
+	- Swept: the 10 cases are stagesTree's whole switch, and cmdCommit's callers, by grep for cmdCommit in src-go: cmdCommitPull in main.go and repo.go's publish.
+	- Decisions: One loop with one ID, as the test ID rule has it for a loop, with the command in each line's label. pr create gets the fake gh, since with no host CLI it stops before the check. A command added to stagesTree needs its own case in the loop. Nothing checks that the two lists match, since that would only be a grep of the source.
+	- Branch: nov21-2026112017135689
+	- Commit: 77d0101
+	- Acceptance signoff: Self-closed: reproduced by mutation, its test fails on the mutation and passes on the fix, and the sweep is answered.
+	- Closed: 20261121-095644
 
 - Code Review 20261120 item 17: No check runs the real publisher with an empty path list
 	- ID: 2026112017135640

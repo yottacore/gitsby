@@ -1725,6 +1725,11 @@ fBuildSites(){
 ## Five sites at least, so a pattern that stops matching can't pass on none.
 fBuildSitesCapped(){ local sites=""; sites="$(fBuildSites)" || return 1
 	[[ $(grep -c . <<< "${sites}") -ge 5 ]] && ! grep -qvE -- '-p "\$\{(BUILD|HEAVY)_JOBS\}"' <<< "${sites}" ;}
+## The sparse checkout cases: a run's exit, output and folder, and its GIT_TRACE file. An empty
+## trace means gitsby ran no git, so it can't say the dry run was skipped.
+fSparseRefused(){ [[ "${1}" == 1 && "${2}" == *"File: out/o.txt"* && "${2}" != *"Going to do"* ]] && grep -qF -- "add --all --dry-run" "${3}/trace" && git -C "${3}/w" diff --cached --quiet; }
+fNoSparseReads(){ [[ -s "${1}" ]] && ! grep -qE -- "add --all --dry-run|core\.sparseCheckout" "${1}"; }
+
 fRunSuite(){
 	fEcho_Clean "suite: ${1} (${gitsby})"
 
@@ -5476,6 +5481,39 @@ GHEOF
 	fAssertOut  "[dfhkj] -q sync with an edited tracked file outside the sparse checkout refuses before the plan, naming it"  'File: out/o\.txt'  bash -c "cd '${sp}/edit/in' && '${gitsby}' -q sync 'sp' 2>&1"
 	fAssert     "[dfhkk] and commits and pushes nothing"  bash -c "cd '${sp}/edit' && rc=0 && out=\"\$('${gitsby}' -q sync 'sp' 2>&1)\" || rc=\$?; [[ \${rc} == 1 ]] && [[ \"\${out}\" != *'Going to do'* ]] && [[ \"\$(git diff --name-only | tr '\\n' ' ')\" == 'in/a.txt out/o.txt ' ]] && git diff --cached --quiet"
 	fAssert     "[dfhkm] an edit and a delete inside the sparse checkout still go out"  bash -c "cd '${sp}/inside' && '${gitsby}' -q sync 'sp' >/dev/null 2>&1 && [[ -z \"\$(git status --porcelain)\" ]] && ! git -C '${sp}/origin.git' ls-tree -r --name-only spfeat | grep -qx in/c\.txt"
+
+	## Every command whose commit stages the whole tree, as stagesTree lists them, refuses that
+	## edit in a sparse checkout. Only sync was run, so dropping any other from the list went
+	## unseen. Outside a sparse checkout none runs the dry run, which costs about what a status
+	## does, or the config read ahead of it. Each case gets its own origin, since the plain run goes through and pushes.
+	## pr create asks for a host CLI first, and the image has none, so it gets the fake gh.
+	local spCase="" spMode="" spD="" spOut="" spWhere="" spPath="" spRc=0 spI=0
+	local -a spArgs=() spRun=()
+	for spCase in 'spfeat pullcom sp' 'spfeat sync sp' 'spfeat br merge' 'spfeat br switch dev' 'spfeat br create spcr' 'spfeat br hotfix sphf' 'spfeat pr create' 'dev release' 'none repo create someone/sp' 'none repo connect @empty'; do
+		read -ra spArgs <<< "${spCase}"; spWhere="${spArgs[0]}"; spI=$((spI + 1))
+		spPath="${PATH}"; [[ "${spArgs[1]}" == pr ]] && spPath="${ghp}"
+		for spMode in sparse plain; do
+			spD="${sp}/all/${spI}-${spMode}"; mkdir -p "${spD}"
+			spRun=("${spArgs[@]:1}"); spRun=("${spRun[@]/#@empty/${spD}/empty.git}")
+			(
+				if [[ "${spWhere}" == none ]]; then
+					git init --quiet --bare -b main "${spD}/empty.git"
+					git init --quiet -b main "${spD}/w" && cd "${spD}/w" || exit 1
+					mkdir in out && echo a > in/a.txt && echo o > out/o.txt && git add in out && git commit --quiet -m init
+				else
+					git clone --quiet --bare "${sp}/origin.git" "${spD}/origin.git" && git clone --quiet -b "${spWhere}" "${spD}/origin.git" "${spD}/w" && cd "${spD}/w" || exit 1
+				fi
+				[[ "${spMode}" == plain ]] || git sparse-checkout set --cone in
+				mkdir -p out && echo changed > out/o.txt
+			) >/dev/null 2>&1
+			spRc=0; spOut="$(cd "${spD}/w" && PATH="${spPath}" GIT_TRACE="${spD}/trace" "${gitsby}" -q --no-fetch "${spRun[@]}" 2>&1)" || spRc=$?
+			if [[ "${spMode}" == sparse ]]; then
+				fAssert "[dfksp] -q ${spArgs[*]:1} in a sparse checkout refuses an edited file outside it before the plan, and stages nothing"  fSparseRefused "${spRc}" "${spOut}" "${spD}"
+			else
+				fAssert "[dfksq] -q ${spArgs[*]:1} outside a sparse checkout runs no dry run of git add, and reads no sparse setting"  fNoSparseReads "${spD}/trace"
+			fi
+		done
+	done
 
 	## A stopped am, range pick, revert or merge was finished under gitsby's message, or left
 	## for its --continue to apply onto the branch gitsby switched to. src's first commit
@@ -10675,3 +10713,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261120 JC: Each installer's --version is the date of its newest History entry, and every PowerShell file outside legacy/ is plain ASCII, [dfjqe] to [dfjqh].
 ##		- 20261120 JC: --release dev takes the newest release, pre-releases included, [dfjr3] to [dfjr9]; [dbfkc] [dbfkd] [dbfks] [dd5cx] [dbfm0] [dbfm1] check what replaced the refusal.
 ##		- 20261120 JC: diff.relative, a textconv driver and diff.ignoreSubmodules=all hide no conflict or staged edit from sync and pullcom run in a subfolder, [dfjwj] to [dfjwp].
+##		- 20261121 JC: Every command that stages the whole tree refuses an edit outside a sparse checkout, and none runs the dry run of git add, or reads core.sparseCheckout, outside one, [dfksp] [dfksq].

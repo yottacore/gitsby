@@ -219,6 +219,8 @@ type app struct {
 	// The same for the folder that holds each linked worktree's git dir, which the
 	// main worktree's git dir holds in turn.
 	worktreesDir string
+	// This worktree's sparse checkout patterns, which only a sparse checkout has.
+	sparseFile string
 
 	// Whether GIT_SSH_COMMAND was already set when the run started. Ours goes into
 	// the same variable a moment later, and the probes have to be able to tell the

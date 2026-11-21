@@ -248,6 +248,9 @@ func (a *app) enterRepo() error {
 	for _, name := range opFiles {
 		args = append(args, "--git-path", name)
 	}
+	// git reads its sparse patterns from here, so without the file add refuses and
+	// skips nothing, and refuseSparseAdd needs no spawn to say so.
+	args = append(args, "--git-path", "info/sparse-checkout")
 	// Last, and shared by every worktree: where each linked one keeps its git dir.
 	args = append(args, "--git-path", "worktrees")
 	out, _ := toolCmd("git", args...).Output()
@@ -258,8 +261,8 @@ func (a *app) enterRepo() error {
 		}
 	}
 	top := ""
-	if len(answers) == 5+len(opFiles) && answers[0] == "true" {
-		top, a.opPaths, a.worktreesDir, answers = answers[3], answers[4:4+len(opFiles)], answers[4+len(opFiles)], answers[:3]
+	if n := len(opFiles); len(answers) == 6+n && answers[0] == "true" {
+		top, a.opPaths, a.sparseFile, a.worktreesDir, answers = answers[3], answers[4:4+n], answers[4+n], answers[5+n], answers[:3]
 	}
 	a.git.contextDir.set(contextOf(top))
 	if len(answers) == 3 {

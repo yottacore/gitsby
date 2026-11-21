@@ -343,8 +343,11 @@ func (a *app) stagesTree() bool {
 // whatever advice.updateSparsePath says, and LC_ALL=C keeps its words readable.
 // Any other failure is left to the real add, since the dry run also fails when
 // another git holds the index lock, and then lists nothing.
+// Outside a sparse checkout add takes every edit and refuses no path, skip-worktree
+// bits set by hand included, so the dry run, which costs about what a status does,
+// is skipped there. So is the config read, where git has no patterns to read.
 func (a *app) refuseSparseAdd() error {
-	if !a.stagesTree() {
+	if !a.stagesTree() || !pathExists(a.sparseFile) || runOut("git", "config", "--type=bool", "core.sparseCheckout") != "true" {
 		return nil
 	}
 	cmd := toolCmd("git", "add", "--all", "--dry-run")
@@ -357,10 +360,7 @@ func (a *app) refuseSparseAdd() error {
 			return nil
 		}
 	}
-	// Outside a sparse checkout add takes every edit, so there is nothing to compare.
-	if runOut("git", "config", "--type=bool", "core.sparseCheckout") == "true" {
-		paths = append(paths, skippedEdits(changedPaths("--ignore-submodules=dirty"), stdout.String())...)
-	}
+	paths = append(paths, skippedEdits(changedPaths("--ignore-submodules=dirty"), stdout.String())...)
 	if len(paths) == 0 {
 		return nil
 	}
