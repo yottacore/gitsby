@@ -3901,6 +3901,24 @@ GHEOF
 	)
 	fAssert "[dfh74] an upstream on another remote refuses, with nothing pushed and no PR" \
 		bash -c "cd '${pnf}' && out=\"\$(PATH='${ghp}' FAKE_GH_LOG='${gh}/prfar4.log' '${gitsby}' -q pr create 'Second' 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"pushes to the remote 'second'\" <<< \"\${out}\" && { [[ ! -f '${gh}/prfar4.log' ]] || ! grep -q '^pr create' '${gh}/prfar4.log'; } && [[ \"\$(git -C '${gh}/prnew/second.git' rev-parse pny)\" != \"\$(git rev-parse pny)\" && \"\$(git ls-remote origin refs/heads/pny | cut -f1)\" == \"\$(git rev-parse origin/dev)\" ]]"
+	## The base follows the branch the push lands on, which pr ok later reads back as the PR's
+	## head and takes its target and back-merge from. It used to follow the current branch's name.
+	(
+		cd "${pnf}" || exit 1
+		git config push.default upstream
+		git push --quiet origin origin/main:refs/heads/hotfix/pnh origin/dev:refs/heads/pnplain
+		git fetch --quiet && git switch --quiet -c pnhf --track origin/hotfix/pnh
+		echo h > h.txt && git add h.txt && git commit --quiet -m "Hot work"
+		git switch --quiet -c hotfix/pnr --track origin/pnplain
+		echo r > r.txt && git add r.txt && git commit --quiet -m "Plain work"
+	)
+	fAssert "[dfm0q] pr create from a branch whose push lands on a hotfix branch bases the PR on the default branch" \
+		bash -c "cd '${pnf}' && git switch --quiet pnhf && PATH='${ghp}' FAKE_GH_LOG='${gh}/prbase1.log' '${gitsby}' -q pr create 'Hot' && grep -q -- '^pr create --base main --head hotfix/pnh ' '${gh}/prbase1.log'"
+	fAssert "[dfm0r] and the plan shows that base, on the line the run announces" \
+		fPlanRan '^ +gh pr create --base main ' bash -c "cd '${pnf}' && git switch --quiet pnhf && PATH='${ghp}' '${gitsby}' -q pr create 'Hot'"
+	fAssert "[dfm0s] a hotfix branch whose push lands on another branch bases it on dev" \
+		bash -c "cd '${pnf}' && git switch --quiet hotfix/pnr && PATH='${ghp}' FAKE_GH_LOG='${gh}/prbase2.log' '${gitsby}' -q pr create 'Plain' && grep -q -- '^pr create --base dev --head pnplain ' '${gh}/prbase2.log'"
+	( cd "${pnf}" && git switch --quiet pnhf && git config --unset push.default )
 
 	## GitHub won't open a pull request from a branch that shares no commit with its base, and
 	## said so only after the park push had published the branch.
@@ -10984,3 +11002,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261121 JC: The token walk has a gitsby.ghTokenFile set by hand, with and without gitsby.host, so the fallback's host check is pinned. [dfh3s] and [dfh3t] run on a dirty tree, and [dfktt] [dfktv] check nothing was committed. 2319 -> 2325.
 ##		- 20261121 JC: The real publisher with an empty path list, with another staged edit, with a failed pull, with a staged edit the pull clashes with, with an untracked file in the way, and with --quiet and no message, [dfkvy] to [dfkw1], [dfkw5], [dfkw3]. A blank answer at the cicd message prompt and --help, [dfkw2] [dfkw4].
 ##		- 20261121 JC: pullcom leaves a submodule out of the commit when it's checked out behind the commit HEAD records, as after a pull that bumped it, [dfkzx] to [dfm01]. br switch and sync don't count it as work, [dfm09] to [dfm0b].
+##		- 20261121 JC: pr create bases the pull request on the branch its push lands on, the head pr ok reads back, in the run and the plan, [dfm0q] to [dfm0s].

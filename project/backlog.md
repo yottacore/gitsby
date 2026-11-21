@@ -33,6 +33,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- pr ok takes the PR's target from its head's name, not the base the git host gives it
+	- ID: 2026112113223086
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261121-132230
+	- Opened by:
+	- Related IDs: 2026112017135624
+	- Steps to reproduce [Bug]: Open a PR from hotfix/x against dev on the git host's web page, then run `gitsby -q pr ok <n>`.
+	- Incorrect behavior [Bug]: The git host merges it into dev. pr ok then reads the head as a hotfix, checks out and pulls main, and back-merges main into dev at exit 0, though the fix never reached main. A plain branch's PR opened against main merges there, and pr ok checks out dev and skips the back-merge.
+	- Expected behavior [Bug]: pr ok takes the target and the back-merge from the base the PR has, or refuses before the plan when the base isn't the one its head's name gives.
+	- Possible cause [Bug]: readPr asks gh, tea and glab for the head and state only. prTarget in pr.go reads the target off the head's name.
+	- Origin: 4918b5b, Go port. Plausible. Found while fixing 2026112017135624, whose pr create now opens every PR on the base pr ok expects, so only a PR opened elsewhere is left.
+
 - After pulling a submodule bump, pullcom commits the submodule back to its old commit
 	- ID: 2026112112175066
 	- Type: Bug
@@ -308,7 +323,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 18: pr create takes the PR's base from the current branch's name while its head is the branch it pushes
 	- ID: 2026112017135624
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171356
@@ -319,6 +334,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, with a fake gh and a stand-in for the git host's merge. Confirmed.
 	- Possible cause [Bug]: `base := a.branchTarget("")` at pr.go:613. refuseUnrelatedPr at pr.go:464 reads the base the same way. pr ok reads only the PR's head, never its base.
 	- Origin: 4918b5b. Code Review 20261119 item 7 (5b4e930) moved the head and left the base. Missed twin.
+	- Closed reason: Done
+	- Actual cause [Bug]: pr create's run, its plan line and its unrelated-history refusal read the base off the current branch's name, while the head was the branch on origin the push lands on. pr ok reads that head back and takes its target and back-merge from it, so the two disagreed whenever the names differed.
+	- Actual fix [Bug]: One helper, prTarget in pr.go, reads the target off the PR's head branch on origin. pr create's gh, tea and glab calls, its plan line and its unrelated-history refusal use it, and so do pr ok's checkout, plan and held-branch check. prCreateArgs and prCreateDisp take no base, so a caller can't pass another. design.md and the changelog say so.
+	- Branch: nov21-2026112017135624
+	- Commit: 953ac24
+	- Test case: test.bash [dfm0q] to [dfm0s]; Go TestPrTarget [dfm0t].
+	- Verified: [dfm0q] to [dfm0s] fail on the build before the fix and pass with it. [dfm0t] fails with prTarget reading the current branch's name, for gh, tea and glab, the plan line, pr ok and the refusal. The quick gate passed with every area: test.bash 2361/0, fuzz 310/0, parity 31/0, spawn counts unchanged. gosec 37, as before, none in the changed lines.
+	- Swept: every branchTarget and isHotfixBranch caller. pr create's run, plan and refuseUnrelatedPr, and pr ok's cmdPrAccept, previewPr and checkoutsAhead now read prTarget. pr ok's isHotfixBranch calls and mergePushesOwn already read the PR's head. br merge, its staged check and refuseUnrelatedMerge read the current branch's name for both the merge and its target, since the merge is local, so they agree and were left alone. goneBranchLeave leaves pr create out, which has no gone-branch warning.
+	- Decisions: pr ok still reads only the PR's head, not its base. A PR opened elsewhere against another base is filed as 2026112113223086. isHotfixBranch(a.pr.headBranch) stays at its 4 sites rather than getting a helper of its own, since each already reads the head.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261121-132243
 
 - Code Review 20261120 item 19: A resumed release started on main with an edited file pushes a commit past the tag
 	- ID: 2026112017135608

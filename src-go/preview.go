@@ -246,7 +246,7 @@ func (a *app) previewBackMerge() {
 func (a *app) previewPr() {
 	if a.pr.sub == "create" {
 		a.preview("sync")
-		a.out.clean(planPad + a.prCreateDisp(a.branchTarget("")))
+		a.out.clean(planPad + a.prCreateDisp())
 		return
 	}
 	a.out.clean(planPad + a.prDisp(a.prApproveArgs()) + " *")
@@ -258,7 +258,7 @@ func (a *app) previewPr() {
 		a.out.clean(planPad + "git fetch --prune origin")
 	}
 	if a.prOkMoves() {
-		target := a.branchTarget(a.pr.headBranch)
+		target := a.prTarget()
 		a.out.clean(planPad + a.checkoutDisp(target))
 		a.out.clean(planPad + a.pullDisp(target))
 	} else {
