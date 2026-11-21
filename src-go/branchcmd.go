@@ -11,7 +11,10 @@
 package main
 
 import (
+	"io/fs"
+	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -78,23 +81,112 @@ func (a *app) checkoutsAhead() []string {
 	return out
 }
 
-// refuseHeldBranch: git won't check out a branch another worktree has, and finds
-// that only at the checkout, after the park push.
+// refuseHeldBranch: git won't check out a branch another worktree has, or is
+// rebasing or bisecting, and finds that only at the checkout, after the park push.
 func (a *app) refuseHeldBranch() error {
 	for _, branch := range a.checkoutsAhead() {
-		if where, ok := a.branchRefs().held[branch]; ok {
-			fix := "Switch that worktree to another branch, then run this again."
-			if !pathExists(where) {
-				// git keeps the branch for a worktree whose folder was deleted by hand.
-				fix = "That folder is gone, so 'git worktree prune' frees the branch. Then run this again."
+		where, ok := a.branchRefs().held[branch]
+		what, fix := "checked out", "Switch that worktree to another branch, then run this again."
+		if !ok {
+			var op string
+			if where, op = a.busyElsewhere(branch); where == "" {
+				continue
 			}
-			return refusalBlock("'"+branch+"' is checked out in another worktree, and this run has to check it out here. Nothing was done.", [][]string{
-				noteLines("File", nativePath(where)),
-				noteLines("Fix", fix),
-			}, nil)
+			what, fix = "being rebased", "Finish the rebase there with 'git rebase --continue', or drop it with 'git rebase --abort'. Then run this again."
+			if op == "bisect" {
+				what, fix = "being bisected", "End the bisect there with 'git bisect reset', then run this again."
+			}
 		}
+		if !pathExists(where) {
+			// git keeps the branch for a worktree whose folder was deleted by hand.
+			fix = "That folder is gone, so 'git worktree prune' frees the branch. Then run this again."
+		}
+		return refusalBlock("'"+branch+"' is "+what+" in another worktree, and this run has to check it out here. Nothing was done.", [][]string{
+			noteLines("File", nativePath(where)),
+			noteLines("Fix", fix),
+		}, nil)
 	}
 	return nil
+}
+
+// busyElsewhere: the folder of another worktree that is rebasing or bisecting
+// branch, and which of the 2. HEAD is detached there, so %(worktreepath) doesn't
+// name it, but git still won't check the branch out anywhere else. Read from the
+// same files git reads, so it costs no spawn.
+func (a *app) busyElsewhere(branch string) (where, op string) {
+	if a.worktreesDir == "" || len(a.opPaths) == 0 {
+		return "", ""
+	}
+	here := filepath.Dir(a.opPaths[0]) // every opFiles entry sits in this worktree's own git dir
+	common := filepath.Dir(a.worktreesDir)
+	gitDirs := []string{common}
+	entries, _ := os.ReadDir(a.worktreesDir) // none until a worktree is added
+	for _, e := range entries {
+		if e.IsDir() {
+			gitDirs = append(gitDirs, filepath.Join(a.worktreesDir, e.Name()))
+		}
+	}
+	for _, dir := range gitDirs {
+		if filepath.Clean(dir) == filepath.Clean(here) {
+			continue
+		}
+		if op = worktreeBusyWith(dir, branch); op != "" {
+			return worktreeFolder(dir, dir == common), op
+		}
+	}
+	return "", ""
+}
+
+// worktreeBusyWith: "rebase" or "bisect" when the worktree whose git dir this is
+// started one from branch, as git's is_worktree_being_rebased and _bisected read
+// it. A rebase-apply with 'applying' in it is an am, which holds no branch.
+func worktreeBusyWith(gitDir, branch string) string {
+	dir := os.DirFS(gitDir)
+	has := func(name string) bool { _, err := fs.Stat(dir, name); return err == nil }
+	from := func(name string) string {
+		b, err := fs.ReadFile(dir, name)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimPrefix(strings.TrimSpace(string(b)), "refs/heads/")
+	}
+	switch {
+	case has("rebase-apply"):
+		if !has("rebase-apply/applying") && from("rebase-apply/head-name") == branch {
+			return "rebase"
+		}
+	case has("rebase-merge"):
+		if from("rebase-merge/head-name") == branch {
+			return "rebase"
+		}
+	}
+	if from("BISECT_START") == branch {
+		return "bisect"
+	}
+	return ""
+}
+
+// worktreeFolder: the work tree a git dir belongs to. The main one's git dir is
+// usually its '.git'. A linked one's names it in its gitdir file, relative to
+// itself under worktree.useRelativePaths.
+func worktreeFolder(gitDir string, main bool) string {
+	dotGit := gitDir
+	if !main {
+		b, err := fs.ReadFile(os.DirFS(gitDir), "gitdir")
+		if err != nil {
+			return gitDir
+		}
+		if dotGit = strings.TrimSpace(string(b)); !filepath.IsAbs(dotGit) {
+			dotGit = filepath.Join(gitDir, dotGit)
+		}
+	}
+	if abs, err := filepath.Abs(dotGit); err == nil {
+		dotGit = abs
+	}
+	if filepath.Base(dotGit) == ".git" {
+		return filepath.Dir(dotGit)
+	}
+	return dotGit
 }
 
 // cmdNewBranch is both 'br create' and 'br hotfix' - one recipe, different base.
@@ -426,7 +518,7 @@ func (a *app) warnHotfixTouchedCode(workBranch, targetBranch string) {
 		base = "refs/remotes/origin/" + targetBranch
 	}
 	// Paths come back from the top of the tree, wherever this runs from.
-	out, ok := runOutOK("git", "diff", "--name-only", base+"...refs/heads/"+workBranch)
+	out, ok := runOutOK("git", diffArgs("--name-only", base+"...refs/heads/"+workBranch)...)
 	switch {
 	case !ok:
 		a.out.clean("")

@@ -66,9 +66,7 @@ func (a *app) settlePrTool() error {
 	a.pr.tool, a.pr.cli = a.originTool()
 	if a.pr.tool == toolGlab && !a.acct.bypassed {
 		// The account's token and host, so glab needs no login of its own.
-		if _, _, err := a.glabTokenEnv(nil); err != nil {
-			return err
-		}
+		a.glabTokenEnv(nil)
 	}
 	if a.pr.tool != toolNone {
 		return nil

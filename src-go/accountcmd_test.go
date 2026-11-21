@@ -2051,3 +2051,61 @@ func TestFixLiteralsPaste(t *testing.T) { // [df35x]
 		}
 	}
 }
+
+// gitsby reads the accounts file itself, so what apply's fragments set is a copy, stale
+// after an account set. Only a key set some other way counts (2026112017135793).
+func TestGitConfigOutsideFragments(t *testing.T) { // [dfjz0]
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	root := filepath.ToSlash(t.TempDir())
+	fragments, repo, global := root+"/accounts", root+"/repo", root+"/.gitconfig"
+	for _, dir := range []string{fragments, repo} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write := func(file, text string) {
+		t.Helper()
+		if err := os.WriteFile(file, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(fragments+"/github.com_old.gitconfig", "[gitsby]\n\tghAccount = fromfragment\n")
+	write(root+"/hand.gitconfig", "[gitsby]\n\tghAccount = fromhand\n")
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_COUNT", "0")
+	if out, err := exec.Command("git", "init", "--quiet", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	t.Chdir(repo)
+	include := "[includeIf \"gitdir/i:" + repo + "/\"]\n\tpath = "
+	for _, c := range []struct {
+		what, global, local, scope, want string
+		scopes                           []string
+	}{
+		{what: "only a fragment's", global: include + fragments + "/github.com_old.gitconfig\n"},
+		{what: "a hand include, then a fragment", global: include + root + "/hand.gitconfig\n" + include + fragments + "/github.com_old.gitconfig\n", scope: "global", want: "fromhand"},
+		{what: "a key set in the global file", global: "[gitsby]\n\tghAccount = plain\n" + include + fragments + "/github.com_old.gitconfig\n", scope: "global", want: "plain"},
+		{what: "the repo's own, over the global", global: include + root + "/hand.gitconfig\n", local: "fromrepo", scope: "local", want: "fromrepo"},
+		{what: "the repo's own, left out of your own scopes", global: include + root + "/hand.gitconfig\n", local: "fromrepo", scope: "global", want: "fromhand", scopes: []string{"global", "system"}},
+	} {
+		write(global, c.global)
+		_ = exec.Command("git", "-C", repo, "config", "--local", "--unset-all", "gitsby.ghAccount").Run() // unset already is fine
+		if c.local != "" {
+			if out, err := exec.Command("git", "-C", repo, "config", "--local", "gitsby.ghAccount", c.local).CombinedOutput(); err != nil {
+				t.Fatalf("%s: %v %s", c.what, err, out)
+			}
+		}
+		if scope, got := gitConfigOutsideFragments(fragments, "gitsby.ghAccount", c.scopes...); scope != c.scope || got != c.want {
+			t.Errorf("%s: got %q from %q, want %q from %q", c.what, got, scope, c.want, c.scope)
+		}
+	}
+	// With no fragment folder known, the fragment's key counts as any other.
+	_ = exec.Command("git", "-C", repo, "config", "--local", "--unset-all", "gitsby.ghAccount").Run() // the last case set it
+	write(global, include+fragments+"/github.com_old.gitconfig\n")
+	if _, got := gitConfigOutsideFragments("", "gitsby.ghAccount"); got != "fromfragment" {
+		t.Errorf("no fragment folder: got %q, want fromfragment", got)
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // origin's url, asked once. A preview alone wanted it half a dozen times, and it
@@ -184,12 +185,12 @@ func sshTakesOptions(program string) bool {
 }
 
 // remoteEnv is the environment every command that reaches origin runs under: no auth
-// prompts, an http low-speed limit, and an ssh connect timeout added to whatever ssh
-// command git would use. Whatever can't take the timeout is left for git to run as
-// it stands: a GIT_SSH_COMMAND the caller chose, one only a shell can read, PuTTY's,
+// prompts, an http low-speed limit, and ssh's time limits added to whatever ssh
+// command git would use. Whatever can't take them is left for git to run as it
+// stands: a GIT_SSH_COMMAND the caller chose, one only a shell can read, PuTTY's,
 // and GIT_SSH, which any GIT_SSH_COMMAND would outrank.
 func (a *app) remoteEnv() []string {
-	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	env := append(toolEnv("git"), "GIT_TERMINAL_PROMPT=0")
 	env = append(env, httpStallEnv()...)
 	if a.userSSHCommand {
 		return env
@@ -204,26 +205,40 @@ func (a *app) remoteEnv() []string {
 	if words, ok := sshWords(cmd); !ok || !sshTakesOptions(words[0]) {
 		return env
 	}
-	return append(env, "GIT_SSH_COMMAND="+cmd+" -o ConnectTimeout=3")
+	return append(env, "GIT_SSH_COMMAND="+cmd+" "+strings.Join(sshStallOptions(), " "))
 }
 
-// An http(s) remote that takes the connection and never answers holds git with no
-// limit of its own, since git sets none. Less than a byte a second for this long
-// gives up. A server busy packing sends a keepalive every 5 s, so this only trips
-// on one that has gone quiet. curl's own 300 s connect limit is all that bounds a
-// TLS handshake that never finishes: the low-speed check starts after it.
-// A var only so a test can wait less.
-var httpStallSeconds = 30
+// A remote that takes the connection and then goes quiet holds git with no limit of
+// its own, since git sets none, over http or ssh. This long without an answer gives
+// up. A server busy packing sends a keepalive every 5 s over http, and sshd answers
+// ssh's own keepalives while git packs, so this only trips on one that has gone
+// quiet. A var only so a test can wait less.
+var stallSeconds = 30
 
-// httpStallEnv is the low-speed limit for the commands that reach origin unseen.
-// Either variable set by the caller leaves both as they are. git reads them over
-// http.lowSpeedLimit and http.lowSpeedTime, so a config value is outranked, the
-// way ssh's ConnectTimeout outranks one in ssh_config.
+// httpStallEnv is the low-speed limit for the commands that reach origin unseen:
+// under a byte a second for stallSeconds. Either variable set by the caller leaves
+// both as they are. git reads them over http.lowSpeedLimit and http.lowSpeedTime,
+// so a config value is outranked, the way ssh's options below outrank ssh_config.
+// curl's own 300 s connect limit is all that bounds a TLS handshake that never
+// finishes: the low-speed check starts after it.
 func httpStallEnv() []string {
 	if os.Getenv("GIT_HTTP_LOW_SPEED_LIMIT") != "" || os.Getenv("GIT_HTTP_LOW_SPEED_TIME") != "" {
 		return nil
 	}
-	return []string{"GIT_HTTP_LOW_SPEED_LIMIT=1", "GIT_HTTP_LOW_SPEED_TIME=" + strconv.Itoa(httpStallSeconds)}
+	return []string{"GIT_HTTP_LOW_SPEED_LIMIT=1", "GIT_HTTP_LOW_SPEED_TIME=" + strconv.Itoa(stallSeconds)}
+}
+
+// ssh's ConnectTimeout, which the login probe's own limit counts in too.
+const sshConnectSeconds = 3
+
+// sshStallOptions are ssh's time limits for the fetch and the probes. ConnectTimeout
+// bounds only the connect and the server's banner. A server that stops after its
+// banner held the fetch until killed: the ServerAlive pair bounds every read after
+// it, the key exchange included, at their product, and after login ends a session
+// whose keepalives go unanswered. They go after the command's own words, since ssh
+// keeps the first value it reads for each option, so a command's own -o wins.
+func sshStallOptions() []string {
+	return []string{"-o", "ConnectTimeout=" + strconv.Itoa(sshConnectSeconds), "-o", "ServerAliveInterval=" + strconv.Itoa(max(1, stallSeconds/3)), "-o", "ServerAliveCountMax=3"}
 }
 
 // The greeting each git host answers an ssh -T with. GitHub says 'Hi <user>!';
@@ -246,7 +261,7 @@ func (a *app) sshLogin(url string) string {
 		delete(a.remote.sshAhead, url)
 		who = pending.wait()
 	} else {
-		who = probeSSHLogin(context.Background(), os.Environ(), url, a.sshArgv())
+		who = probeSSHLogin(context.Background(), os.Environ(), url, a.sshArgv(), sshStallOptions(), sshProbeWait())
 	}
 	if a.remote.sshLogins == nil {
 		a.remote.sshLogins = map[string]string{}
@@ -261,14 +276,24 @@ func (a *app) askSSHLoginAhead(url string) {
 	if _, asked := a.remote.sshLogins[url]; asked || a.remote.sshAhead[url] != nil {
 		return
 	}
-	ctx, env, sshCmd := a.probeContext(), os.Environ(), a.sshArgv()
+	ctx, env, sshCmd, limits, wait := a.probeContext(), os.Environ(), a.sshArgv(), sshStallOptions(), sshProbeWait()
 	if a.remote.sshAhead == nil {
 		a.remote.sshAhead = map[string]*ahead[string]{}
 	}
-	a.remote.sshAhead[url] = startAhead(func() string { return probeSSHLogin(ctx, env, url, sshCmd) })
+	a.remote.sshAhead[url] = startAhead(func() string { return probeSSHLogin(ctx, env, url, sshCmd, limits, wait) })
 }
 
-func probeSSHLogin(ctx context.Context, env []string, url string, sshCmd []string) string {
+// sshProbeWait is all the time the login probe gets. Windows' own OpenSSH (9.5p2)
+// gives up on a server quiet after its banner, says so, and then doesn't exit: it
+// was still running 40 s later, and kept running after the server closed. So the
+// probe ends it itself, a little past ssh's own limits, and an ssh that keeps them
+// ends first.
+// The fetch's ssh is git's to end, and Git for Windows' own ssh exits.
+func sshProbeWait() time.Duration {
+	return time.Duration(sshConnectSeconds+stallSeconds+5) * time.Second
+}
+
+func probeSSHLogin(ctx context.Context, env []string, url string, sshCmd, limits []string, wait time.Duration) string {
 	target := sshConnectTarget(url)
 	// PuTTY's programs take none of the options below, so the answer stays unknown.
 	// Asking plain ssh instead could name an account git never pushes as.
@@ -276,12 +301,16 @@ func probeSSHLogin(ctx context.Context, env []string, url string, sshCmd []strin
 		return "?"
 	}
 	// A copy, since this runs on a look-ahead goroutine and append could write into the caller's array.
-	args := slices.Concat(sshCmd[1:], []string{"-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "--", target})
+	args := slices.Concat(sshCmd[1:], []string{"-T", "-o", "BatchMode=yes"}, limits, []string{"--", target})
+	ctx, stop := context.WithTimeout(ctx, wait)
+	defer stop()
 	// Both streams: ssh writes host-key and missing-identity warnings ahead of the
 	// greeting, so it is not reliably the first line - anchoring to the whole output
 	// answered '?' for exactly the multi-key setups this exists for.
 	probe := toolCmdContext(ctx, sshCmd[0], args...)
 	probe.Env = env
+	// What the ssh command started, such as a ProxyCommand, can hold the output open past the kill.
+	probe.WaitDelay = time.Second
 	// No exit code to read: github.com says hello and then exits 1.
 	out, _ := probe.CombinedOutput()
 	for _, line := range splitLines(string(out)) {

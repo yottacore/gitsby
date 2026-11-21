@@ -248,6 +248,8 @@ func (a *app) enterRepo() error {
 	for _, name := range opFiles {
 		args = append(args, "--git-path", name)
 	}
+	// Last, and shared by every worktree: where each linked one keeps its git dir.
+	args = append(args, "--git-path", "worktrees")
 	out, _ := toolCmd("git", args...).Output()
 	var answers []string
 	for _, line := range splitLines(string(out)) {
@@ -256,8 +258,8 @@ func (a *app) enterRepo() error {
 		}
 	}
 	top := ""
-	if len(answers) == 4+len(opFiles) && answers[0] == "true" {
-		top, a.opPaths, answers = answers[3], answers[4:], answers[:3]
+	if len(answers) == 5+len(opFiles) && answers[0] == "true" {
+		top, a.opPaths, a.worktreesDir, answers = answers[3], answers[4:4+len(opFiles)], answers[4+len(opFiles)], answers[:3]
 	}
 	a.git.contextDir.set(contextOf(top))
 	if len(answers) == 3 {
@@ -428,7 +430,7 @@ func (a *app) preflight() error {
 	if err := a.refuseHeldBranch(); err != nil {
 		return err
 	}
-	if err := a.refuseParkPush(); err != nil {
+	if err := a.refusePlannedPushes(); err != nil {
 		return err
 	}
 	if err := a.refuseGoneBranch(); err != nil {
@@ -476,7 +478,7 @@ func (a *app) preflightBranch() error {
 		if err := a.refuseUnrelatedMerge(); err != nil {
 			return err
 		}
-		// Its delete names the branch the park push goes to. Ahead of refuseParkPush,
+		// Its delete names the branch the park push goes to. Ahead of refusePlannedPushes,
 		// since after its 'sync --direct' the delete would still name dev.
 		if a.hasOrigin() {
 			if _, err := a.parkHead(a.currentBranch()); err != nil {
@@ -601,7 +603,11 @@ func (a *app) settleTarget() (bool, error) {
 		return a.settleRepoClone()
 	case "repo-create", "repo-connect":
 		// Resolve what we're publishing to before the preview, so the plan is real.
-		return false, a.settleRepoConnect()
+		if err := a.settleRepoConnect(); err != nil {
+			return false, err
+		}
+		// Its push onto an origin already set is known only now. It commits first.
+		return false, a.refusePlannedPushes()
 	}
 	return false, nil
 }
@@ -984,19 +990,14 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 				return err
 			}
 		case "glab":
-			gave, elsewhere, err := a.glabTokenEnv(args)
-			if err != nil {
-				return err
-			}
+			gave, elsewhere := a.glabTokenEnv(args)
 			if elsewhere != "" && !a.opt.quiet {
 				a.out.errorf("not acting as the account: glab is pointed at %s, and the account's token is for %s", printable(elsewhere), a.acct.credHost)
 				warned = true
 			}
 			if gave {
 				args = glabScopeAuth(args, a.acct.credHost)
-				if err := a.glabRemoteHost(); err != nil {
-					return err
-				}
+				a.glabRemoteHost()
 			}
 		}
 	}

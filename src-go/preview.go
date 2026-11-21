@@ -39,12 +39,14 @@ func (a *app) preview(what string) {
 		a.preview("commit")
 	case "sync":
 		a.preview("pullcom")
-		// A branch made from origin/main can push there, under push.default=upstream.
-		if target, ok := a.pushTarget(); ok && target != a.currentBranch() {
-			a.out.clean(planPad + "git push (branch '" + a.currentBranch() + "', to '" + target + "') *")
-		} else {
-			a.out.clean(planPad + "git push (branch '" + a.currentBranch() + "') *")
+		// A branch made from origin/main can push there, under push.default=upstream,
+		// and one can push to another remote. Offline there's no park push, but the
+		// line still says where it would go.
+		p, ok := a.parkPush()
+		if !ok {
+			p = a.currentPush("park")
 		}
+		a.out.clean(planPad + p.disp())
 	case "br-create":
 		// From main/dev the dirty tree rides along to the new branch, so there's no
 		// commit here.
@@ -166,7 +168,11 @@ func (a *app) preview(what string) {
 			a.out.clean(planPad + "git remote add -- origin " + maskURL(a.tgt.connectURL))
 			a.out.clean(planPad + "git push -u origin HEAD")
 		case "push":
-			a.out.clean(planPad + "git push -u origin HEAD *")
+			if p, ok := a.pushOf("connect"); ok && !p.first {
+				a.out.clean(planPad + p.disp())
+			} else {
+				a.out.clean(planPad + "git push -u origin HEAD *")
+			}
 		}
 	}
 }

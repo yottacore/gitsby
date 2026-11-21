@@ -2152,6 +2152,47 @@ fRunSuite(){
 	fAssert     "[dfgx3] the same from a feature branch"  fPlanEnds "${cloneA}"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.7.3 && [[ \"\$(git branch --show-current)\" == relend ]]"
 	( cd "${cloneA}" || exit 1; git checkout --quiet dev && git branch --quiet -D relend && git push --quiet origin --delete relend )
 
+	## Work parked on a feature branch never reaches the release, which merges only dev, yet a
+	## commit or an edit there counted as something new, so a bare release tagged the commit
+	## already released. So did dev's lead after a release whose dev push failed.
+	local rf="${work}/$1-relfeat"
+	git init --quiet --bare -b main "${rf}/origin.git"
+	git clone --quiet "${rf}/origin.git" "${rf}/c" 2>/dev/null
+	( cd "${rf}/c" || exit 1; echo a > a.txt && git add a.txt && git commit --quiet -m init && git push --quiet -u origin main
+	  git checkout --quiet -b dev && git push --quiet -u origin dev && echo b > b.txt && git add b.txt && git commit --quiet -m b && git push --quiet
+	  "${gitsby}" -q release v1.0.0 >/dev/null 2>&1; git checkout --quiet -b feat && git push --quiet -u origin feat
+	  echo c > c.txt && git add c.txt && git commit --quiet -m c )
+	fAssertOut  "[dfjy3] a bare release from a feature branch with an unpushed commit has nothing new"  'Nothing new to release since v1\.0\.0'  bash -c "cd '${rf}/c' && '${gitsby}' -q release 2>&1"
+	( cd "${rf}/c" || exit 1; git push --quiet; echo d >> a.txt )
+	fAssertOut  "[dfjy4] the same with an edit in the tree"  'Nothing new to release since v1\.0\.0'  bash -c "cd '${rf}/c' && '${gitsby}' -q release 2>&1"
+	( cd "${rf}/c" || exit 1; echo s > s.txt && git add s.txt )
+	fAssertOut  "[dfjy5] the same under --staged with a staged edit"  'Nothing new to release since v1\.0\.0'  bash -c "cd '${rf}/c' && '${gitsby}' -q release --staged 2>&1"
+	fAssert     "[dfjy6] and none of them cut a tag"  bash -c "cd '${rf}/c' && [[ \"\$(git tag)\" == v1.0.0 ]] && ! git ls-remote --exit-code --tags origin refs/tags/v1.0.1 >/dev/null"
+	## A local dev ahead of origin's is merged by the release, so from elsewhere it still counts.
+	( cd "${rf}/c" || exit 1; git reset --quiet --hard; git checkout --quiet dev && echo e > e.txt && git add e.txt && git commit --quiet -m e && git checkout --quiet feat )
+	fAssert     "[dfjy7] from a feature branch, a local dev commit is still released"  bash -c "cd '${rf}/c' && '${gitsby}' -q release && git ls-tree --name-only v1.0.1 | grep -qx e.txt && [[ \"\$(git branch --show-current)\" == feat ]]"
+	( cd "${rf}/c" || exit 1; git checkout --quiet dev && echo f > f.txt && git add f.txt && git commit --quiet -m f && git push --quiet )
+	cat > "${rf}/origin.git/hooks/pre-receive" <<-'EOF'
+		#!/bin/sh
+		while read -r old new ref; do
+			[ "${ref}" = refs/heads/dev ] && { echo "dev is protected" >&2; exit 1; }
+		done
+		exit 0
+	EOF
+	chmod +x "${rf}/origin.git/hooks/pre-receive"
+	fAssertFail "[dfjy8] a release whose push of dev is refused fails"  bash -c "cd '${rf}/c' && '${gitsby}' -q release v1.1.0"
+	mv "${rf}/origin.git/hooks/pre-receive" "${rf}/pre-receive.off"
+	fAssertOut  "[dfjy9] the next bare release from dev says it finishes that release"  "Release v1\.1\.0 is out, but 'dev' never reached origin; finishing it\."  bash -c "cd '${rf}/c' && '${gitsby}' -q release 2>&1"
+	fAssert     "[dfjya] and pushed dev and cut no second tag"  bash -c "cd '${rf}/c' && [[ \"\$(git tag --points-at v1.1.0^{commit})\" == v1.1.0 && \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" ]] && ! git ls-remote --exit-code --tags origin refs/tags/v1.1.1 >/dev/null"
+	## The same from a feature branch, which also finishes it rather than saying nothing is new.
+	( cd "${rf}/c" || exit 1; echo g > g.txt && git add g.txt && git commit --quiet -m g && git push --quiet && mv "${rf}/pre-receive.off" "${rf}/origin.git/hooks/pre-receive" )
+	fAssertFail "[dfjyb] a second refused push of dev"  bash -c "cd '${rf}/c' && '${gitsby}' -q release v1.2.0"
+	( cd "${rf}/c" || exit 1; mv "${rf}/origin.git/hooks/pre-receive" "${rf}/pre-receive.off"; git checkout --quiet feat )
+	fAssert     "[dfjyc] a bare release from a feature branch then pushes dev, cuts no tag and ends there"  bash -c "cd '${rf}/c' && '${gitsby}' -q release && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" && \"\$(git tag --points-at v1.2.0^{commit})\" == v1.2.0 && \"\$(git branch --show-current)\" == feat ]] && ! git rev-parse -q --verify refs/tags/v1.2.1 >/dev/null"
+	## A dev that gained a commit since the refused push is new work, not that release's push.
+	( cd "${rf}/c" || exit 1; git checkout --quiet dev && mv "${rf}/pre-receive.off" "${rf}/origin.git/hooks/pre-receive"; "${gitsby}" -q release v1.3.0 >/dev/null 2>&1; mv "${rf}/origin.git/hooks/pre-receive" "${rf}/pre-receive.off"; echo h > h.txt && git add h.txt && git commit --quiet -m h )
+	fAssert     "[dfjyd] so a bare release from dev then cuts the next version with it"  bash -c "cd '${rf}/c' && '${gitsby}' -q release && git ls-tree --name-only v1.3.1 | grep -qx h.txt && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" ]]"
+
 	## Tags with no 'v' were invisible to the scan, so release started over at 0.1.0 and pushed it.
 	local bt="${work}/$1-baretag"
 	git init --quiet --bare -b main "${bt}/origin.git"
@@ -2420,6 +2461,68 @@ fRunSuite(){
 	( cd "${tmA}" && git branch --quiet --unset-upstream && echo three > h.txt )
 	fAssert "[dfh40] after --unset-upstream, sync publishes it under its own name" \
 		bash -c "cd '${tmA}' && '${gitsby}' -q sync 'three' && [[ \"\$(git -C '${tmO}' rev-parse feat)\" == \"\$(git rev-parse feat)\" && \"\$(git -C '${tmO}' rev-parse main)\" != \"\$(git rev-parse feat)\" ]]"
+	## Every push of the current branch a command makes is refused before the plan where git
+	## would refuse it, so nothing is committed first. Under simple, a branch tracking one of
+	## another name is one. release and repo connect committed, then had the push refused
+	## (2026112017135749).
+	local ppO="${work}/$1-ppo.git" ppA="${work}/$1-ppa"
+	git init --quiet --bare -b main "${ppO}"
+	git clone --quiet "${ppO}" "${ppA}" 2>/dev/null
+	( cd "${ppA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git push --quiet origin main:refs/heads/feature-x && git fetch --quiet && git checkout --quiet -B feat origin/feature-x )
+	## Refused with nothing done: no commit, the edit still in the tree, no tag, and origin as it
+	## was. $1 is -q, or empty to run it in a pty and answer n at any prompt.
+	fPpRefused(){
+		local quiet="$1" head="" out="" rc=0; shift
+		head="$(git -C "${ppA}" rev-parse HEAD)"
+		echo "$*" >> "${ppA}/f.txt"
+		if [[ -n "${quiet}" ]]; then
+			out="$(cd "${ppA}" && "${gitsby}" "${quiet}" "$@" 2>&1)" && rc=1
+		else
+			out="$(fAnswerPrompt n "cd '${ppA}' && '${gitsby}' $*")"
+		fi
+		[[ "$(git -C "${ppA}" rev-parse HEAD)" == "${head}" && "$(git -C "${ppA}" branch --show-current)" == feat ]] || rc=1
+		git -C "${ppA}" diff --quiet && rc=1
+		[[ -z "$(git -C "${ppA}" tag)" && -z "$(git -C "${ppO}" tag)" ]] || rc=1
+		[[ "$(git -C "${ppO}" rev-parse feature-x)" == "$(git -C "${ppO}" rev-parse main)" ]] || rc=1
+		grep -qF 'Nothing was done' <<< "${out}" || rc=1
+		grep -qF 'Continue?' <<< "${out}" && rc=1
+		git -C "${ppA}" checkout --quiet -- f.txt
+		return "${rc}"
+	}
+	fAssert "[dfk10] sync -q refuses it before committing"       fPpRefused -q sync
+	fAssert "[dfk11] br switch -q too"                           fPpRefused -q br switch main
+	fAssert "[dfk12] br create -q too"                           fPpRefused -q br create next
+	fAssert "[dfk13] br hotfix -q too"                           fPpRefused -q br hotfix fx
+	fAssert "[dfk14] br merge -q too"                            fPpRefused -q br merge
+	fAssert "[dfk15] release -q too, with nothing tagged"        fPpRefused -q release v1.0.0
+	fAssert "[dfk16] repo connect -q too"                        fPpRefused -q repo connect "${ppO}"
+	if ((hasPty)); then
+		fAssert "[dfk17] release asked in person refuses before the plan"  fPpRefused "" release v1.0.0
+	else
+		fSkipBlock "release's refusal in person (no pty)"
+	fi
+	## Where git takes the push, repo connect's plan line names where it goes, which isn't
+	## always 'git push -u origin HEAD'.
+	git -C "${ppA}" config push.default upstream
+	echo two > "${ppA}/g.txt"
+	fAssertPlan "[dfk1a] repo connect's plan names the push that runs"  "^ +git push \(branch 'feat', to 'feature-x'\) \*$"  bash -c "cd '${ppA}' && '${gitsby}' -q repo connect '${ppO}'"
+	fAssert     "[dfk1b] and the run lands there"  bash -c "[[ \"\$(git -C '${ppO}' rev-parse feature-x)\" == \"\$(git -C '${ppA}' rev-parse feat)\" ]] && ! git -C '${ppO}' show-ref --verify --quiet refs/heads/feat"
+	## release from a branch whose push lands on main refuses as br create does, since --direct
+	## isn't release's, and the pull of main would put the work in the release unasked.
+	git -C "${ppA}" config branch.feat.merge refs/heads/main
+	fPpReleaseToMain(){ local out=""
+		echo three >> "${ppA}/g.txt"
+		out="$(cd "${ppA}" && "${gitsby}" -q release v1.0.0 2>&1)" && return 1
+		grep -qF 'sync --direct' <<< "${out}" && [[ -z "$(git -C "${ppA}" tag)" ]] && ! git -C "${ppA}" diff --quiet && [[ "$(git -C "${ppO}" rev-parse main)" != "$(git -C "${ppA}" rev-parse feat)" ]] ;}
+	fAssert     "[dfk1c] release -q from a branch whose push lands on main refuses, naming sync --direct"  fPpReleaseToMain
+	## The park push's plan line names a remote other than origin (2026112017135225).
+	local p2O="${work}/$1-p2o.git" p2U="${work}/$1-p2u.git" p2A="${work}/$1-p2a"
+	git init --quiet --bare -b main "${p2O}"
+	git init --quiet --bare -b main "${p2U}"
+	git clone --quiet "${p2O}" "${p2A}" 2>/dev/null
+	( cd "${p2A}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git remote add up "${p2U}" && git checkout --quiet -b feat && git push --quiet -u up feat && echo two > g.txt )
+	fAssertPlan "[dfk18] the park push's plan line names a remote other than origin"  "^ +git push \(branch 'feat', to 'feat' on 'up'\) \*$"  bash -c "cd '${p2A}' && '${gitsby}' -q sync two"
+	fAssert     "[dfk19] and the run pushes there"  bash -c "[[ \"\$(git -C '${p2U}' rev-parse feat)\" == \"\$(git -C '${p2A}' rev-parse feat)\" ]] && ! git -C '${p2O}' show-ref --verify --quiet refs/heads/feat"
 
 	## A shallow clone fetches only main, so origin's dev never shows, and br merge went into
 	## main. The branch commands refuse until the fetch is widened. A single-branch clone of dev
@@ -2461,6 +2564,35 @@ fRunSuite(){
 	git -C "${wtM}" checkout --quiet main
 	fAssert "[dfh8n] once the other worktree moves off dev, br merge goes through" \
 		bash -c "cd '${wtW}' && '${gitsby}' -q br merge && [[ \"\$(git branch --show-current)\" == dev ]] && git -C '${wtO}' show-ref --verify --quiet refs/heads/dev && ! git -C '${wtO}' show-ref --verify --quiet refs/heads/w"
+
+	## A branch another worktree is rebasing or bisecting is held too, though HEAD is detached
+	## there and %(worktreepath) names only a checked-out one. br switch committed and pushed
+	## feat, then failed at the checkout.
+	local wbO="${work}/$1-wtbo.git" wbM="${work}/$1-wtbm" wbW="${work}/$1-wtbw"
+	git init --quiet --bare -b main "${wbO}"
+	git clone --quiet "${wbO}" "${wbM}" 2>/dev/null
+	(
+		cd "${wbM}" || exit 1
+		echo one > f.txt && git add f.txt && git commit --quiet -m initial && git push --quiet -u origin main
+		git checkout --quiet -b side && echo side > f.txt && git add f.txt && git commit --quiet -m side
+		git checkout --quiet -b dev main && echo d1 > f.txt && git add f.txt && git commit --quiet -m d1
+		echo d2 > g.txt && git add g.txt && git commit --quiet -m d2 && git push --quiet -u origin dev
+		git checkout --quiet -b feat dev && git push --quiet -u origin feat && echo edit > h.txt
+		git worktree add --quiet "${wbW}" dev
+		cd "${wbW}" || exit 1
+		git rebase side || :
+	) >/dev/null 2>&1
+	fWbKept(){ [[ "$(git -C "${wbO}" rev-parse feat)" == "$(git -C "${wbO}" rev-parse dev)" && "$(git -C "${wbM}" branch --show-current)" == feat ]] && grep -qF 'h.txt' <<< "$(git -C "${wbM}" status --porcelain)" ;}
+	fAssert "[dfjzp] br switch -q dev refuses while another worktree is rebasing dev, naming that folder" \
+		bash -c "cd '${wbM}' && out=\"\$('${gitsby}' -q br switch dev 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'dev' is being rebased in another worktree\" <<< \"\${out}\" && grep -qF '${wbW}' <<< \"\${out}\""
+	fAssert "[dfjzq] with nothing committed or pushed, and still on feat"  fWbKept
+	( cd "${wbW}" && git rebase --abort && git bisect start dev main ) >/dev/null 2>&1
+	fAssert "[dfjzr] and while it bisects dev, naming 'git bisect reset'" \
+		bash -c "cd '${wbM}' && out=\"\$('${gitsby}' -q br switch dev 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'dev' is being bisected in another worktree\" <<< \"\${out}\" && grep -qF \"'git bisect reset'\" <<< \"\${out}\""
+	fAssert "[dfjzs] with nothing committed or pushed then either"  fWbKept
+	( cd "${wbW}" && git bisect reset && git checkout --quiet --detach ) >/dev/null 2>&1
+	fAssert "[dfjzt] once that worktree is done with dev, br switch dev goes through and parks the edit" \
+		bash -c "cd '${wbM}' && '${gitsby}' -q br switch dev >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == dev ]] && git -C '${wbO}' cat-file -e feat:h.txt"
 	fStagedChecks "$1"
 
 	## A command that still means something locally runs offline and says what it skipped; one
@@ -5245,6 +5377,7 @@ GHEOF
 	fAssertOut "[dfg1r] release with only a dirty submodule has nothing new"  'Nothing new to release since v0\.1\.0'  bash -c "cd '${smd}/top' && '${gitsby}' -q release 2>&1"
 	fAssert    "[dfg1s] and cuts no tag"  bash -c "cd '${smd}/top' && ! git rev-parse -q --verify refs/tags/v0.1.1 >/dev/null"
 	fAssert    "[dfg1t] a submodule moved to another commit is still committed"  bash -c "cd '${smd}/top' && git checkout --quiet smfeat && ( cd child && git add --all && git commit --quiet -m moved ) && '${gitsby}' -q pullcom 'bump' && [[ -z \"\$(git status --porcelain)\" ]] && git log -1 --pretty=%s | grep -qx bump"
+	fAssert    "[dfjwp] and with diff.ignoreSubmodules=all too"  bash -c "cd '${smd}/top' && git config diff.ignoreSubmodules all && ( cd child && git commit --quiet --allow-empty -m again ) && '${gitsby}' -q pullcom 'bump2'; rc=\$?; git config --unset diff.ignoreSubmodules; [[ \${rc} == 0 && -z \"\$(git status --porcelain)\" ]] && git log -1 --pretty=%s | grep -qx bump2"
 
 	## status.showUntrackedFiles=no hides untracked files from status, but 'git add --all' still
 	## takes them. Read from status, the plan said clean and the guards let them through.
@@ -5271,6 +5404,40 @@ GHEOF
 	fAssertOut  "[dfh4m] the plan lists the hidden untracked file"  '^    \?\? untracked\.txt$'  bash -c "cd '${hu}/work' && '${gitsby}' -q status 2>&1"
 	fAssertOut  "[dfh4n] br switch off dev with only a hidden untracked file refuses"  "Working tree has changes on 'dev'"  bash -c "cd '${hu}/work' && '${gitsby}' -q br switch hufeat 2>&1"
 	fAssert     "[dfh4p] repo connect with no commits and only hidden untracked files publishes them"  bash -c "cd '${hu}/fresh' && '${gitsby}' -q repo connect '${hu}/fresh.git' >/dev/null 2>&1 && git -C '${hu}/fresh.git' ls-tree -r --name-only main | grep -qx f\.txt"
+
+	## diff.relative cut gitsby's git diff reads to the folder it ran from, so from sub/ a
+	## conflicted autostash reapply outside it went unseen, and the markers were committed and
+	## pushed at exit 0. An edit outside it was "Nothing to commit.", and so was one a textconv
+	## driver showed no change for.
+	local dr="${work}/$1-diffconfig"
+	mkdir -p "${dr}"
+	git init --quiet --bare -b main "${dr}/origin.git"
+	git clone --quiet "${dr}/origin.git" "${dr}/mine" 2>/dev/null
+	(
+		cd "${dr}/mine" || exit 1
+		mkdir sub && printf 'line1\nline2\nline3\n' > shared.txt && echo s > sub/s.txt
+		git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b drfeat && git push --quiet -u origin drfeat
+	)
+	git clone --quiet -b drfeat "${dr}/origin.git" "${dr}/theirs" 2>/dev/null
+	( cd "${dr}/theirs" && printf 'line1\nTHEIRS\nline3\n' > shared.txt && git commit --quiet -am theirs && git push --quiet )
+	git clone --quiet -b drfeat "${dr}/origin.git" "${dr}/outside" 2>/dev/null
+	(
+		cd "${dr}/mine" || exit 1
+		git config diff.relative true
+		printf 'line1\nMINE\nline3\n' > shared.txt && echo s2 > sub/s.txt
+		cd sub || exit 1
+		rc=0; "${gitsby}" -q sync 'dr' > "${dr}/sync.out" 2>&1 || rc=$?
+		echo "${rc}" > "${dr}/sync.rc"
+		cd "${dr}/outside" || exit 1
+		git config diff.relative true
+		git config diff.same.textconv 'echo same <' && echo 'shared.txt diff=same' > .git/info/attributes
+		echo edited > shared.txt
+	)
+	fAssert     "[dfjwj] -q sync from sub/ with diff.relative refuses a conflicted autostash reapply outside it"  bash -c "[[ \"\$(cat '${dr}/sync.rc')\" == 1 ]]"
+	fAssert     "[dfjwk] and names the file in its refusal"  grep -qx '    shared\.txt' "${dr}/sync.out"
+	fAssert     "[dfjwm] and commits and pushes no conflict markers"  bash -c "cd '${dr}/mine' && ! git log -p | grep -q '<<<<<<<' && ! git -C '${dr}/origin.git' log -p drfeat | grep -q '<<<<<<<' && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]]"
+	fAssert     "[dfjwn] pullcom from sub/ commits an edit outside it, which a textconv driver shows no change for"  bash -c "cd '${dr}/outside/sub' && '${gitsby}' -q pullcom 'dr out' && [[ -z \"\$(git status --porcelain)\" ]] && git log -1 --pretty=%s | grep -qx 'dr out'"
 
 	## In a sparse checkout, 'git add --all' stages what is inside it and then exits 1 over a
 	## file outside it, so the run stopped after the plan and the pull with the index half staged.
@@ -5358,6 +5525,33 @@ GHEOF
 	fAssertOut  "[dfh5b] a stopped rebase is named as one, not as a detached HEAD"  "A 'git rebase' is in progress here"  bash -c "cd '${po}/rebase' && '${gitsby}' -q --no-fetch br switch dev 2>&1"
 	fAssertOut  "[dfh5c] a bisect without checkout refuses pullcom, naming 'git bisect reset'"  '^ +git bisect reset$'  bash -c "cd '${po}/bisect' && '${gitsby}' -q --no-fetch pullcom wip 2>&1"
 	fAssert     "[dfh5d] status still answers during a stopped range pick"  bash -c "cd '${po}/picked' && '${gitsby}' --no-fetch status"
+
+	## repo connect and repo create commit the tree before they push, and finished a resolved
+	## merge or am -3 under gitsby's message and published it. Clones of feat with origin
+	## dropped, so each would publish to an empty remote, and one with origin kept for push mode.
+	for c in cnmerge cnam3 crmerge cnpush; do
+		git clone --quiet -b feat "${po}/origin.git" "${po}/${c}" 2>/dev/null
+	done
+	git init --quiet --bare -b main "${po}/cn.git"
+	(
+		for c in cnmerge cnam3 crmerge; do
+			cd "${po}/${c}" || exit 1
+			git branch --quiet src origin/src && git remote remove origin
+		done
+		cd "${po}/cnmerge" || exit 1
+		git merge src || :; echo x > f.txt; git add f.txt
+		cd "${po}/cnam3" || exit 1
+		git am -3 "${po}/p/0001-c1.patch" "${po}/p/0002-c2.patch" || :; echo x > f.txt; git add f.txt
+		cd "${po}/crmerge" || exit 1
+		git merge src || :; echo x > f.txt; git add f.txt
+		cd "${po}/cnpush" || exit 1
+		git merge origin/src || :; echo x > f.txt; git add f.txt
+	) >/dev/null 2>&1
+	fAssertOut  "[dfjzh] a resolved merge with no origin refuses repo connect, naming the merge"  "A 'git merge' is in progress here"  bash -c "cd '${po}/cnmerge' && '${gitsby}' -q repo connect '${po}/cn.git' 2>&1"
+	fAssert     "[dfjzj] and commits nothing, adds no origin and leaves the remote empty"  bash -c "cd '${po}/cnmerge' && [[ \"\$(git log -1 --pretty=%s)\" == feat1 && -z \"\$(git remote)\" && -z \"\$(git -C '${po}/cn.git' for-each-ref)\" ]] && git rev-parse -q --verify MERGE_HEAD"
+	fAssert     "[dfjzk] a resolved am -3 refuses repo connect, naming its --abort, with patch 1 still pending"  bash -c "cd '${po}/cnam3' && out=\"\$('${gitsby}' -q repo connect '${po}/cn.git' 2>&1)\"; [[ \$? != 0 ]] && grep -qE '^ +git am --abort\$' <<< \"\${out}\" && [[ \"\$(git log -1 --pretty=%s)\" == feat1 && -z \"\$(git -C '${po}/cn.git' for-each-ref)\" ]] && test -d \"\$(git rev-parse --git-path rebase-apply)\""
+	fAssert     "[dfjzm] a resolved merge refuses repo create before gh makes the repo"  bash -c "cd '${po}/crmerge' && out=\"\$(PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${po}/created.git' FAKE_GH_LOG='${po}/create.log' '${gitsby}' -q repo create me/proj 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"A 'git merge' is in progress here\" <<< \"\${out}\" && [[ ! -e '${po}/created.git' && \"\$(git log -1 --pretty=%s)\" == feat1 ]] && git rev-parse -q --verify MERGE_HEAD"
+	fAssert     "[dfjzn] with origin set, a resolved merge refuses repo connect, and origin's feat is kept"  bash -c "cd '${po}/cnpush' && ! '${gitsby}' -q repo connect >/dev/null 2>&1 && [[ \"\$(git -C '${po}/origin.git' rev-parse feat)\" == \"\$(git rev-parse HEAD)\" && \"\$(git log -1 --pretty=%s)\" == feat1 ]] && git rev-parse -q --verify MERGE_HEAD"
 
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"
@@ -6061,8 +6255,20 @@ GHEOF
 	fAssert "[db00x] and the sibling tree gets the other one"        bash -c "cd '${acHome}' && env ${acEnv} git config gitsby.ghAccount | grep -qx homeacct"
 	## The key reaches that repo only through the fragment the global config includes, so that is
 	## the config to name, with the key spelled as git takes it.
-	fAssertOut "[dd80c] and status says it came from the global git config"  "From: The gitsby\.ghAccount key in your global git config\.$" \
+	## Off since 2026-11-20: gitsby no longer reads the keys account apply's fragments set, since
+	## they are a copy of the accounts file that goes stale after account set (2026112017135793).
+	## The account block is named instead ([dfjyr]), and a key from a hand-written include in the
+	## global config is still named as the global config's ([dfjys]).
+	# fAssertOut "[dd80c] and status says it came from the global git config"  "From: The gitsby\.ghAccount key in your global git config\.$" \
+	# 	bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	fAssertOut "[dfjyr] and status names the account block, not the key apply's fragment sets"  "From: An account block named 'home'" \
 		bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	printf '[gitsby]\n\tghAccount = handacct\n' > "${ac}/hand-include.gitconfig"
+	local acHandKey="includeIf.gitdir:${acCanon}/trees/home/.path"
+	git config --file "${ac}/home/.gitconfig" "${acHandKey}" "${acCanon}/hand-include.gitconfig"
+	fAssertOut "[dfjys] a gitsby.ghAccount key from an include written by hand is named as the global git config's"  "From: The gitsby\.ghAccount key in your global git config\.$" \
+		bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	git config --file "${ac}/home/.gitconfig" --unset "${acHandKey}"
 	fAssert "[db00y] re-applying does not duplicate the rules"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 2 ]]"
 	fAssert "[db00z] and leaves a hand-written includeIf alone"  bash -c "grep -q 'hand/written' '${ac}/home/.gitconfig'"
 	## Removing an account from the config has to remove its rule, or it silently keeps applying.
@@ -6163,6 +6369,31 @@ GHEOF
 	fAssertFail "[df1s8] and a login holding shell text runs nothing"  test -e "${ac}/credhome/CANARY"
 	fAssertFail "[df31s] a fill no helper answers fails, with no askpass asked" \
 		bash -c "printf 'protocol=https\nhost=nobody.example\n\n' | env ${acCredEnv} git credential fill"
+	## account set changes the accounts file and not the fragments apply wrote from it, so gitsby went
+	## on acting as the fragment's old login, with the old email and token, until apply ran again
+	## (2026112017135793). gitsby reads the file itself and leaves out what a fragment sets.
+	mkdir -p "${ac}/sethome" "${ac}/trees/setw"
+	git init --quiet "${ac}/trees/setw/proj"
+	: > "${ac}/sethome/.gitconfig"
+	printf 'tok_set_old\n' > "${ac}/sethome/old.tok"; printf 'tok_set_new\n' > "${ac}/sethome/new.tok"; chmod 600 "${ac}/sethome/"*.tok
+	printf 'account: sw\n\tpath: %s/trees/setw\n\tghaccount: workacct\n\tname: Set Person\n\temail: old@example.test\n\ttokenfile: %s/sethome/old.tok\n' "${acCanon}" "${acCanon}" > "${ac}/set.shcl"
+	local acSetG="env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL ${acNoDiscovery} HOME='${ac}/sethome' GIT_CONFIG_GLOBAL='${ac}/sethome/.gitconfig' PATH='${ac}/bin:${PATH}' GIT_TERMINAL_PROMPT=0 '${gitsby}' -q -NoFetch --config '${ac}/set.shcl'"
+	local acSetW="${ac}/trees/setw/proj"
+	bash -c "cd '${acSetW}' && ${acSetG} whoami > '${ac}/set-before.txt' 2>&1; ${acSetG} account apply" >/dev/null 2>&1
+	fAssert "[dfjyt] whoami reads the same after account apply as before it"  bash -c "cd '${acSetW}' && ${acSetG} whoami 2>&1 | diff '${ac}/set-before.txt' - >/dev/null"
+	fAssertOut "[dfjyv] account set says plain git keeps the old values until account apply runs again"  "^\[ Plain git still uses what the last account apply wrote\. Run '.*account apply' to update it\. \]$" \
+		bash -c "cd '${acSetW}' && ${acSetG} account set sw ghaccount newlogin 2>&1"
+	bash -c "cd '${acSetW}' && ${acSetG} account set sw email new@example.test && ${acSetG} account set sw tokenfile '${acCanon}/sethome/new.tok'" >/dev/null 2>&1
+	fAssertOut "[dfjyw] and whoami goes by the file, not the fragment: the new login"  '^Account \.+: newlogin' \
+		bash -c "cd '${acSetW}' && ${acSetG} whoami 2>&1"
+	fAssertOut "[dfjyy] the new email"  '^Author \.+: Set Person <new@example\.test>$'  bash -c "cd '${acSetW}' && ${acSetG} whoami 2>&1"
+	fAssertOut "[dfjyz] and the new token"  '^password=tok_set_new$' \
+		bash -c "cd '${acSetW}' && printf 'protocol=https\nhost=github.com\n\n' | ${acSetG} raw git credential fill"
+	## The fragment still names the old token file under gitsby.ghTokenFile, the fallback gitsby
+	## reads once the account's own file gives nothing.
+	bash -c "cd '${acSetW}' && ${acSetG} account unset sw tokenfile" >/dev/null 2>&1
+	fAssertOut "[dfjyx] and with its token file unset, no token from the one the fragment still names"  '^Account \.+: newlogin - no access token used$' \
+		bash -c "cd '${acSetW}' && ${acSetG} whoami 2>&1"
 	## An account nested in another's folder. git includes both fragments there, so each key only
 	## the outer one set came from it: its token file, its name and its ssh key.
 	mkdir -p "${ac}/nesthome" "${ac}/trees/outer/nested"
@@ -8593,6 +8824,28 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dd5g3] a tree that diverged from origin and doesn't merge clean stops the run"  fGateRanSaying 1 'diverged from origin: 3 local, 1 remote, and they don.t merge clean'
 		fAssert "[dfjmd] and is left as it was, its uncommitted edit included" \
 			bash -c "[[ \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(git -C '${gateDir}' diff --name-only HEAD -- notes.txt upstream.txt)\" == notes.txt && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == wip && -z \"\$(git -C '${gateDir}' stash list)\" ]] && ! git -C '${gateDir}' rev-parse -q --verify MERGE_HEAD"
+		## Commits that merge clean, under an edit in the tree that clashes with origin's. git
+		## makes the merge, can't put the edit back, and still exits 0.
+		git -C "${gateDir}" reset --quiet --hard '@{u}'
+		echo local > "${gateDir}/local.txt" && git -C "${gateDir}" add local.txt && git -C "${gateDir}" commit --quiet -m local -- local.txt
+		fGateUpstream five notes.txt
+		echo clash >> "${gateDir}/notes.txt"
+		echo staged >> "${gateDir}/local.txt" && git -C "${gateDir}" add local.txt
+		syncHead="$(git -C "${gateDir}" rev-parse HEAD)"
+		fGateOnly sync
+		fAssert "[dfk07] stage 0 stops when an uncommitted edit clashes with what it merged in"  fGateRanSaying 1 'uncommitted edits clash with origin in notes.txt, so the merge was backed out'
+		fAssert "[dfk08] and backs the merge out, with the edits put back and the staged one still staged" \
+			bash -c "[[ \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == clash && \"\$(git -C '${gateDir}' diff --cached --name-only)\" == local.txt && \"\$(git -C '${gateDir}' diff --name-only)\" == notes.txt && -z \"\$(git -C '${gateDir}' stash list)\" && -z \"\$(git -C '${gateDir}' ls-files -u)\" ]]"
+		## The same over a fast-forward, with a stash entry of the user's that has to stay.
+		git -C "${gateDir}" reset --quiet --hard '@{u}'
+		echo older >> "${gateDir}/upstream.txt" && git -C "${gateDir}" stash push --quiet -m older
+		fGateUpstream six notes.txt
+		echo clash >> "${gateDir}/notes.txt"
+		syncHead="$(git -C "${gateDir}" rev-parse HEAD)"
+		fGateOnly sync
+		fAssert "[dfk09] and when one clashes with what it fast-forwarded over"  fGateRanSaying 1 'uncommitted edits clash with origin in notes.txt, so the merge was backed out'
+		fAssert "[dfk0a] and backs that out too, with the edit put back and the older stash entry left alone" \
+			bash -c "[[ \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == clash && \"\$(git -C '${gateDir}' diff --name-only HEAD)\" == notes.txt && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' && -z \"\$(git -C '${gateDir}' ls-files -u)\" ]]"
 		git -C "${gateDir}" remote set-url origin "${work}/gate-pipe-nowhere.git"
 		fGateOnly sync
 		fAssert "[dd5g4] an origin it can't reach is a warning, not a stop"  fGateRanSaying 0 "WARNING: can't reach origin"
@@ -9634,34 +9887,66 @@ GHEOF
 	## 2026111016332206, then 2026111910223247 and 2026111910223233), so a new path goes in these
 	## lists. A Gitea account nested in a github.com one's folder, an Enterprise one and a GitLab one,
 	## each with its own token file. raw tea keeps its token on GITEA_INSTANCE_URL, and tig and
-	## lazygit go through git's helper.
+	## lazygit go through git's helper. Since 2026112017135196 the run holds one grant, and each host
+	## CLI gets its variable in its own environment, so the walk has a case for each gh or glab
+	## child git starts: the helpers 'gh auth setup-git' and glab write, for hosts the run isn't
+	## about, asked by raw git and by gitsby's own git through core.fsmonitor. gh's store holds
+	## walkstore on the Enterprise host alone, and answers for GH_HOST's host when none is named.
 	local tw="${fg}/tokwalk"
 	mkdir -p "${tw}/home" "${tw}/bin" "${tw}/ghcfg"
 	fStub "${tw}/bin/gh" <<'GHEOF'
 #!/usr/bin/env bash
+if [[ " $* " == *" --user "* ]]; then
+	h="${GH_HOST:-github.com}"
+	[[ " $* " =~ \ --hostname\ ([^ ]+) ]] && h="${BASH_REMATCH[1]}"
+	[[ "${h}" == ghe.walk.test ]] && echo tok_walk_ghestore
+	exit 0
+fi
 line="$* gh=${GH_TOKEN:-} ghe=${GH_ENTERPRISE_TOKEN:-}"
 [[ -n "${TW_LOG:-}" ]] && echo "${line}" >> "${TW_LOG}"
 echo "${line}"
 GHEOF
 	fStub "${tw}/bin/glab" <<'GLEOF'
 #!/usr/bin/env bash
-echo "$* gl=${GITLAB_TOKEN:-}"
+line="$* gl=${GITLAB_TOKEN:-}"
+[[ -n "${TW_LOG:-}" ]] && echo "${line}" >> "${TW_LOG}"
+echo "${line}"
 GLEOF
+	fStub "${tw}/bin/tea" <<'TEAEOF'
+#!/usr/bin/env bash
+[[ "$1" == --version ]] && { echo 'Version: 0.11.0'; exit 0; }
+echo "$* tea=${GITEA_TOKEN:-} gh=${GH_TOKEN:-} ghe=${GH_ENTERPRISE_TOKEN:-}"
+TEAEOF
+	## git runs it for any command that reads the index, and it asks git for another host's
+	## credentials. Only the helper's lines are read, since gitsby's own gh and glab calls get the token.
+	fStub "${tw}/bin/twfsmon" <<'FSEOF'
+#!/usr/bin/env bash
+printf 'protocol=https\nhost=%s\n\n' "${TW_ASK}" | git credential fill >/dev/null 2>&1
+exit 1
+FSEOF
 	local twItem
-	for twItem in gh/proj gh/gt/proj ghe/proj gl/proj; do git init --quiet "${tw}/trees/${twItem}"; done
+	for twItem in gh/proj gh/gt/proj ghe/proj gl/proj bad/proj; do git init --quiet "${tw}/trees/${twItem}"; done
 	git -C "${tw}/trees/gh/proj" remote add origin https://github.com/acme/proj.git
 	git -C "${tw}/trees/gh/gt/proj" remote add origin https://gitea.walk.test/acme/proj.git
 	git -C "${tw}/trees/ghe/proj" remote add origin https://ghe.walk.test/acme/proj.git
 	git -C "${tw}/trees/gl/proj" remote add origin https://gitlab.walk.test/acme/proj.git
-	for twItem in gh gt ghe gl; do printf 'tok_walk_%s\n' "${twItem}" > "${tw}/home/${twItem}.tok"; chmod 600 "${tw}/home/${twItem}.tok"; done
+	git -C "${tw}/trees/bad/proj" remote add origin https://github.com/acme/proj.git
+	git init --quiet -b main "${tw}/trees/gl/feat"; git -C "${tw}/trees/gl/feat" remote add origin https://gitlab.walk.test/acme/proj.git
+	( cd "${tw}/trees/gl/feat" || exit 1; echo a > a.txt; git add a.txt; git commit --quiet -m init; git update-ref refs/remotes/origin/main HEAD
+		git switch --quiet -c glwalk; echo b > b.txt; git add b.txt; git commit --quiet -m b )
+	for twItem in gh gt ghe gl bad; do printf 'tok_walk_%s\n' "${twItem}" > "${tw}/home/${twItem}.tok"; chmod 600 "${tw}/home/${twItem}.tok"; done
 	: > "${tw}/home/.gitconfig"
-	printf 'account: wgh\n\tpath: %s\n\ttokenfile: %s\n\naccount: wgt\n\tpath: %s\n\thost: gitea.walk.test\n\tuser: gtuser\n\ttokenfile: %s\n\naccount: wghe\n\tpath: %s\n\thost: ghe.walk.test\n\ttokenfile: %s\n\naccount: wgl\n\tpath: %s\n\thost: gitlab.walk.test\n\ttokenfile: %s\n' \
+	printf 'account: wgh\n\tpath: %s\n\tghaccount: walkstore\n\ttokenfile: %s\n\naccount: wgt\n\tpath: %s\n\thost: gitea.walk.test\n\tuser: gtuser\n\ttokenfile: %s\n\naccount: wghe\n\tpath: %s\n\thost: ghe.walk.test\n\ttokenfile: %s\n\naccount: wgl\n\tpath: %s\n\thost: gitlab.walk.test\n\ttokenfile: %s\n\naccount: wbad\n\tpath: %s\n\thost: https://gitea.walk.test\n\tuser: gtuser\n\ttokenfile: %s\n' \
 		"$(fWinPath "${tw}/trees/gh")" "$(fWinPath "${tw}/home/gh.tok")" "$(fWinPath "${tw}/trees/gh/gt")" "$(fWinPath "${tw}/home/gt.tok")" \
-		"$(fWinPath "${tw}/trees/ghe")" "$(fWinPath "${tw}/home/ghe.tok")" "$(fWinPath "${tw}/trees/gl")" "$(fWinPath "${tw}/home/gl.tok")" > "${tw}/walk.shcl"
+		"$(fWinPath "${tw}/trees/ghe")" "$(fWinPath "${tw}/home/ghe.tok")" "$(fWinPath "${tw}/trees/gl")" "$(fWinPath "${tw}/home/gl.tok")" \
+		"$(fWinPath "${tw}/trees/bad")" "$(fWinPath "${tw}/home/bad.tok")" > "${tw}/walk.shcl"
 	local twEnv="${acNoDiscovery} HOME='${tw}/home' GIT_CONFIG_GLOBAL='${tw}/home/.gitconfig' GH_CONFIG_DIR='${tw}/ghcfg' PATH='${tw}/bin:${fgPath}' GIT_TERMINAL_PROMPT=0 TW_LOG='${tw}/gh.log'"
 	local twG="env ${twEnv} '${gitsby}' -q -NoFetch --config '${tw}/walk.shcl'"
 	local twGhe="GH_HOST=ghe.walk.test"
+	local twFsmon; twFsmon="GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0='$(fWinPath "${tw}/bin/twfsmon")'"
 	bash -c "cd '${tw}/trees/gh/proj' && ${twG} account apply" >/dev/null 2>&1
+	git config --file "${tw}/home/.gitconfig" credential.https://ghe2.walk.test.helper '!gh auth git-credential'
+	git config --file "${tw}/home/.gitconfig" credential.https://gitlab2.walk.test.helper '!glab auth git-credential'
 	local -a twWhat=(
 		"plain git asked for github.com in the nested Gitea account's folder"
 		"raw git, the same"
@@ -9673,8 +9958,19 @@ GLEOF
 		"raw gh auth token for a ghe.com tenant, on github.com"
 		"raw gh with GH_HOST on a ghe.com tenant, in a github.com repo"
 		"raw glab api for another host"
+		"raw git asked for a second Enterprise host gh's own helper serves, on Enterprise"
+		"gitsby's own git asking for that host through gh's helper, on Enterprise"
+		"pr create's own git asking for another GitLab host through glab's helper"
+		"raw gh api with a URL whose ?@ names the account's host, on Enterprise"
+		"raw gh api with a URL whose #@ names the account's host, on Enterprise"
+		"raw glab api with a URL whose ?@ names the account's host"
+		"raw git asked for github.com by an account whose host was ignored"
+		"plain git, the same"
+		"raw gh there"
+		"raw tea in a github.com account's folder, with GITEA_INSTANCE_URL set"
 	)
-	local -a twWhere=( gh/gt/proj gh/gt/proj gh/gt/proj ghe/proj ghe/proj ghe/proj ghe/proj gh/proj gh/proj gl/proj )
+	local -a twWhere=( gh/gt/proj gh/gt/proj gh/gt/proj ghe/proj ghe/proj ghe/proj ghe/proj gh/proj gh/proj gl/proj
+		ghe/proj ghe/proj gl/feat ghe/proj ghe/proj gl/proj bad/proj bad/proj bad/proj gh/proj )
 	local -a twRun=(
 		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
 		"printf 'protocol=https\nhost=github.com\n\n' | ${twG} raw git credential fill"
@@ -9686,6 +9982,16 @@ GLEOF
 		"${twG} raw gh auth token --hostname acme.ghe.com"
 		"GH_HOST=acme.ghe.com ${twG} raw gh api user"
 		"${twG} raw glab api --hostname gitlab.com user"
+		": > '${tw}/gh.log'; printf 'protocol=https\nhost=ghe2.walk.test\n\n' | ${twGhe} ${twG} raw git credential fill; cat '${tw}/gh.log'"
+		": > '${tw}/gh.log'; ${twGhe} ${twFsmon} TW_ASK=ghe2.walk.test ${twG} status >/dev/null; grep '^auth git-credential' '${tw}/gh.log' || echo tok_walk_helper_never_asked"
+		": > '${tw}/gh.log'; ${twFsmon} TW_ASK=gitlab2.walk.test ${twG} pr create T </dev/null >/dev/null; grep '^auth git-credential' '${tw}/gh.log' || echo tok_walk_helper_never_asked"
+		"${twGhe} ${twG} raw gh api 'http://127.0.0.1:9?@ghe.walk.test/x'"
+		"${twGhe} ${twG} raw gh api 'http://127.0.0.1:9#@ghe.walk.test/x'"
+		"${twG} raw glab api 'http://127.0.0.1:9?@gitlab.walk.test/x'"
+		"printf 'protocol=https\nhost=github.com\n\n' | ${twG} raw git credential fill"
+		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
+		"${twG} raw gh auth token"
+		"GITEA_INSTANCE_URL=https://gitea.walk.test ${twG} raw tea whoami"
 	)
 	for twItem in "${!twRun[@]}"; do
 		fAssertNotOut "[dfh5s] no token for a host it isn't for: ${twWhat[twItem]}"  'tok_walk_' \
@@ -9700,9 +10006,11 @@ GLEOF
 		"pr on Enterprise"
 		"raw gh auth token for github.com"
 		"raw glab api"
+		"pr's glab on GitLab"
+		"raw tea in the Gitea folder"
 	)
-	twWhere=( gh/gt/proj gh/proj gh/gt/proj ghe/proj ghe/proj ghe/proj gh/proj gl/proj )
-	local -a twWant=( gt gh gt ghe ghe ghe gh gl )
+	twWhere=( gh/gt/proj gh/proj gh/gt/proj ghe/proj ghe/proj ghe/proj gh/proj gl/proj gl/proj gh/gt/proj )
+	local -a twWant=( gt gh gt ghe ghe ghe gh gl gl gt )
 	twRun=(
 		"printf 'protocol=https\nhost=gitea.walk.test\n\n' | env ${twEnv} git credential fill"
 		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
@@ -9712,10 +10020,23 @@ GLEOF
 		": > '${tw}/gh.log'; ${twGhe} ${twG} pr; cat '${tw}/gh.log'"
 		"${twG} raw gh auth token --hostname github.com"
 		"${twG} raw glab api user"
+		": > '${tw}/gh.log'; ${twG} pr; cat '${tw}/gh.log'"
+		"${twG} raw tea whoami"
 	)
 	for twItem in "${!twRun[@]}"; do
 		fAssertOut "[dfh5t] and the token still goes to its own host: ${twWhat[twItem]}"  "tok_walk_${twWant[twItem]}" \
 			bash -c "cd '${tw}/trees/${twWhere[twItem]}' && ${twRun[twItem]}"
+	done
+	## gh answers 'auth token --user' for GH_HOST's host when none is named, so a github.com account
+	## took the token gh holds for its login on Enterprise.
+	twWhat=( "raw git" "plain git" )
+	twRun=(
+		"printf 'protocol=https\nhost=github.com\n\n' | ${twGhe} ${twG} raw git credential fill"
+		"printf 'protocol=https\nhost=github.com\n\n' | env ${twGhe} ${twEnv} git credential fill"
+	)
+	for twItem in "${!twRun[@]}"; do
+		fAssertNotOut "[dfjxg] gh's store is asked for the account's own host: ${twWhat[twItem]}"  'tok_walk_ghestore' \
+			bash -c "cd '${tw}/trees/gh/proj' && ${twRun[twItem]}"
 	done
 	## A Gitea account has no GitHub login, and the line used to read only that one.
 	fAssertOut "[ddk69] raw names the Gitea account it acts as"  'acting as giteauser' \
@@ -10353,3 +10674,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261120 JC: pr create refuses a branch that shares no history with its base through gh and tea, and leaves it to the git host through glab and in a shallow clone, [dfjg8] to [dfjgc].
 ##		- 20261120 JC: Each installer's --version is the date of its newest History entry, and every PowerShell file outside legacy/ is plain ASCII, [dfjqe] to [dfjqh].
 ##		- 20261120 JC: --release dev takes the newest release, pre-releases included, [dfjr3] to [dfjr9]; [dbfkc] [dbfkd] [dbfks] [dd5cx] [dbfm0] [dbfm1] check what replaced the refusal.
+##		- 20261120 JC: diff.relative, a textconv driver and diff.ignoreSubmodules=all hide no conflict or staged edit from sync and pullcom run in a subfolder, [dfjwj] to [dfjwp].

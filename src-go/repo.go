@@ -481,7 +481,7 @@ func (a *app) showFilesToPublish() {
 	// A cwd nothing can name makes the probe list nothing; the confirm then shows an
 	// empty list instead of dying, on a machine already in deeper trouble.
 	wd, _ := os.Getwd()
-	env := append(os.Environ(), "GIT_DIR="+probeDir, "GIT_WORK_TREE="+wd)
+	env := append(toolEnv("git"), "GIT_DIR="+probeDir, "GIT_WORK_TREE="+wd)
 	initCmd := toolCmd("git", "init", "--quiet")
 	initCmd.Env = env
 	_ = initCmd.Run()

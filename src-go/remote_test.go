@@ -13,6 +13,8 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -250,6 +252,10 @@ func TestCloneDestDir(t *testing.T) { // [dbfrx]
 	}
 }
 
+// What remoteEnv adds to an ssh command it may extend. Spelled out, not read from
+// sshStallOptions, so a change to the limits shows here.
+const sshStallWords = " -o ConnectTimeout=3 -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
+
 // The connect timeout used to be skipped whenever GIT_SSH_COMMAND was set at all -
 // including when the account selector had just set it from a config sshKey. So the
 // multi-account setups the timeout was written for were the ones that lost it, and
@@ -258,7 +264,7 @@ func TestRemoteEnvKeepsTheConnectTimeoutOnOurOwnSSHCommand(t *testing.T) { // [d
 	t.Setenv("GIT_SSH_COMMAND", "ssh -i /keys/work -o IdentitiesOnly=yes")
 
 	ours := &app{}
-	want := "GIT_SSH_COMMAND=ssh -i /keys/work -o IdentitiesOnly=yes -o ConnectTimeout=3"
+	want := "GIT_SSH_COMMAND=ssh -i /keys/work -o IdentitiesOnly=yes" + sshStallWords
 	if !hasEnv(ours.remoteEnv(), want) {
 		t.Errorf("remoteEnv() dropped the connect timeout from our own ssh command")
 	}
@@ -312,9 +318,9 @@ func TestRemoteReachesGiveUpOnAStalledHTTPRemote(t *testing.T) { // [dfhez]
 
 	url := "http://" + listener.Addr().String() + "/stalled.git"
 	runGit(t, clone, "remote", "set-url", "origin", url)
-	saved := httpStallSeconds
-	httpStallSeconds = 2
-	t.Cleanup(func() { httpStallSeconds = saved })
+	saved := stallSeconds
+	stallSeconds = 2
+	t.Cleanup(func() { stallSeconds = saved })
 	t.Chdir(clone)
 	p, _, _ := testPrinter()
 	a := newApp(p)
@@ -350,7 +356,12 @@ func TestRemoteReachesGiveUpOnAStalledHTTPRemote(t *testing.T) { // [dfhez]
 		case <-time.After(30 * time.Second):
 			t.Errorf("the %s was still waiting on a stalled remote after 30 s", reach.name)
 			release()
-			<-done
+			// A client that ignores the close too would hold the whole binary here.
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Fatalf("the %s was still waiting 10 s after the remote closed", reach.name)
+			}
 			return
 		}
 	}
@@ -384,6 +395,201 @@ func TestRemoteEnvHTTPStallLimit(t *testing.T) { // [dfhf0]
 	}
 }
 
+// An ssh server that sends its banner and then nothing held the fetch until killed:
+// ConnectTimeout ends at the banner. Each way the run reaches an ssh origin unseen
+// has to give up on its own, the login probe included.
+func TestRemoteReachesGiveUpOnAStalledSSHRemote(t *testing.T) { // [dfk1m]
+	if !inPath("ssh") {
+		t.Skip("no ssh on PATH")
+	}
+	_, clone := gitTestRepo(t)
+	for _, name := range []string{"GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skip("no loopback listener:", err)
+	}
+	var mu sync.Mutex
+	var held []net.Conn
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			_, _ = conn.Write([]byte("SSH-2.0-OpenSSH_9.9\r\n")) // a failed write only ends that ssh sooner
+			mu.Lock()
+			held = append(held, conn)
+			mu.Unlock()
+		}
+	}()
+	// Closing lets an ssh that never gave up see the end, so a failure ends too.
+	// Windows' own ssh ignores that as well, so the wait after it is bounded.
+	release := func() {
+		_ = listener.Close()
+		mu.Lock()
+		for _, conn := range held {
+			_ = conn.Close()
+		}
+		mu.Unlock()
+	}
+	t.Cleanup(release)
+
+	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+	url := "ssh://git@127.0.0.1:" + port + "/stalled.git"
+	runGit(t, clone, "remote", "set-url", "origin", url)
+	saved := stallSeconds
+	stallSeconds = 3
+	t.Cleanup(func() { stallSeconds = saved })
+	t.Chdir(clone)
+	p, _, _ := testPrinter()
+	a := newApp(p)
+
+	for _, reach := range []struct {
+		name string
+		run  func()
+	}{
+		{"fetch", func() {
+			a.fetchRemote()
+			if !a.isOffline() {
+				t.Error("the fetch of a stalled remote didn't read as offline")
+			}
+		}},
+		{"ls-remote --heads", func() {
+			if _, asked := a.askOriginHeads(); asked {
+				t.Error("askOriginHeads() answered from a stalled remote")
+			}
+		}},
+		{"probe", func() {
+			if got, _ := a.probeRemote(url); got != repoUnknown {
+				t.Errorf("probeRemote() = %v on a stalled remote, want unknown", got)
+			}
+		}},
+		// The login probe's target carries no port, so the port rides in the ssh
+		// command, as 'ssh -p' would give it. Last, since that command stays set.
+		{"login probe", func() {
+			_ = os.Setenv("GIT_SSH_COMMAND", "ssh -p "+port) // t.Cleanup above puts the old value back
+			if got := newApp(p).sshLogin("git@127.0.0.1:stalled.git"); got != "?" {
+				t.Errorf("sshLogin() = %q on a stalled remote, want ?", got)
+			}
+		}},
+		{"login probe asked ahead", func() {
+			b := newApp(p)
+			defer b.endProbes()
+			b.askSSHLoginAhead("git@127.0.0.1:stalled.git")
+			if got := b.sshLogin("git@127.0.0.1:stalled.git"); got != "?" {
+				t.Errorf("sshLogin() asked ahead = %q on a stalled remote, want ?", got)
+			}
+		}},
+	} {
+		done := make(chan struct{})
+		go func() {
+			reach.run()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(30 * time.Second):
+			t.Errorf("the %s was still waiting on a stalled remote after 30 s", reach.name)
+			release()
+			// A client that ignores the close too would hold the whole binary here.
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Fatalf("the %s was still waiting 10 s after the remote closed", reach.name)
+			}
+			return
+		}
+	}
+}
+
+// Windows' own ssh gave up on a stalled server and never exited, so the login probe
+// waited on it past every limit ssh was given. The probe ends an ssh like that
+// itself, the look-ahead included, and a child the ssh left holding its output too.
+func TestSSHLoginProbeEndsAnSSHThatIgnoresItsLimits(t *testing.T) { // [dfk3h]
+	fakeTool(t, "ssh", "sleep 600") // a child, not exec, so the kill leaves the output held
+	for _, name := range []string{"GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saved := stallSeconds
+	stallSeconds = 1
+	t.Cleanup(func() { stallSeconds = saved })
+	const url = "git@127.0.0.1:stalled.git"
+	p, _, _ := testPrinter()
+	b := newApp(p)
+	defer b.endProbes()
+	limit := sshProbeWait() + 10*time.Second
+	done := make(chan [2]string, 1)
+	start := time.Now()
+	go func() {
+		b.askSSHLoginAhead(url)
+		direct := newApp(p).sshLogin(url)
+		done <- [2]string{direct, b.sshLogin(url)}
+	}()
+	select {
+	case got := <-done:
+		if got != [2]string{"?", "?"} {
+			t.Errorf("sshLogin() and sshLogin() asked ahead = %q against an ssh that never ends, want ?", got)
+		}
+		if took := time.Since(start); took > limit {
+			t.Errorf("the login probes took %v, past %v", took, limit)
+		}
+	case <-time.After(limit):
+		t.Fatalf("the login probe was still waiting on an ssh that never ends after %v", limit)
+	}
+}
+
+// The limits reach ssh as ssh reads them, and a command's own value for one of
+// them wins, since ssh keeps the first. Read back through ssh -G, so this follows
+// ssh's own rule rather than a copy of it.
+func TestSSHStallOptionsAsSSHReadsThem(t *testing.T) { // [dfk1n]
+	if !inPath("ssh") {
+		t.Skip("no ssh on PATH")
+	}
+	for _, name := range []string{"GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		core string
+		want []string
+	}{
+		{"", []string{"connecttimeout 3", "serveraliveinterval 10", "serveralivecountmax 3"}},
+		{"ssh -o ServerAliveInterval=60 -o ConnectTimeout=9", []string{"connecttimeout 9", "serveraliveinterval 60", "serveralivecountmax 3"}},
+	} {
+		a := &app{}
+		a.git.coreSSHCommand.set(tc.core)
+		var words []string
+		for _, entry := range a.remoteEnv() {
+			if cmd, ok := strings.CutPrefix(entry, "GIT_SSH_COMMAND="); ok {
+				words = strings.Fields(cmd)
+			}
+		}
+		if len(words) < 2 {
+			t.Fatalf("remoteEnv() with core.sshCommand %q set no ssh command", tc.core)
+		}
+		out, err := toolCmd("ssh", slices.Concat(words[1:], []string{"-F", "/dev/null", "-G", "--", "stall.example.test"})...).Output()
+		if err != nil {
+			t.Fatalf("ssh -G on %q: %v", words, err)
+		}
+		lines := splitLines(string(out))
+		for _, want := range tc.want {
+			if !slices.Contains(lines, want) {
+				t.Errorf("ssh reads remoteEnv's command for core.sshCommand %q without %q", tc.core, want)
+			}
+		}
+	}
+}
+
 // A blank ssh command split into nothing, and the probe read its first word, which
 // crashed every push compared against an account.
 func TestGitSSHCommandBlank(t *testing.T) { // [dcnp4]
@@ -393,7 +599,7 @@ func TestGitSSHCommandBlank(t *testing.T) { // [dcnp4]
 		if got := a.gitSSHCommand(); got != "ssh" {
 			t.Errorf("gitSSHCommand() with %q = %q, want ssh", blank, got)
 		}
-		if !hasEnv(a.remoteEnv(), "GIT_SSH_COMMAND=ssh -o ConnectTimeout=3") {
+		if !hasEnv(a.remoteEnv(), "GIT_SSH_COMMAND=ssh"+sshStallWords) {
 			t.Errorf("remoteEnv() with %q kept the blank command", blank)
 		}
 	}
@@ -425,7 +631,7 @@ func TestRemoteEnvAddsTheConnectTimeoutToTheRepoSSHCommand(t *testing.T) { // [d
 	}
 	a := &app{}
 	a.git.coreSSHCommand.set("ssh -i /keys/repo -o IdentitiesOnly=yes")
-	if !hasEnv(a.remoteEnv(), "GIT_SSH_COMMAND=ssh -i /keys/repo -o IdentitiesOnly=yes -o ConnectTimeout=3") {
+	if !hasEnv(a.remoteEnv(), "GIT_SSH_COMMAND=ssh -i /keys/repo -o IdentitiesOnly=yes"+sshStallWords) {
 		t.Errorf("remoteEnv() dropped the repo's own ssh command from the fetch")
 	}
 }
@@ -495,7 +701,7 @@ func TestRemoteEnvLeavesGITSSHToGit(t *testing.T) { // [dfg26]
 	// git reads core.sshCommand ahead of GIT_SSH, so that one still gets the timeout.
 	a = &app{}
 	a.git.coreSSHCommand.set("ssh -i /keys/repo")
-	if !hasEnv(a.remoteEnv(), "GIT_SSH_COMMAND=ssh -i /keys/repo -o ConnectTimeout=3") {
+	if !hasEnv(a.remoteEnv(), "GIT_SSH_COMMAND=ssh -i /keys/repo"+sshStallWords) {
 		t.Errorf("remoteEnv() dropped the timeout from a core.sshCommand that outranks GIT_SSH")
 	}
 }

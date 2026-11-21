@@ -33,218 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Code Review 20261120 item 46: A submodule whose remote is gone makes pullcom skip the pull as if origin were unreachable
-	- ID: 2026112017151559
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171515
-	- Opened by:
-	- Steps to reproduce [Bug]: Clone a repo with a submodule. Move the submodule's remote away, have origin's dev bump the gitlink, and run `gitsby -q pullcom` on dev.
-	- Incorrect behavior [Bug]: The fetch of origin works, but the submodule fetch fails, so gitsby warns that the remote is unreachable, skips the pull, and prints Done at exit 0. dev stays behind 1.
-	- Expected behavior [Bug]: The pull runs, since origin answered. A failed submodule fetch is named for what it is.
-	- Reproduced [Bug]: 2026-11-20 on b23, git 2.51, local bare repos. Confirmed.
-	- Possible cause [Bug]: The fetch at remote.go:310 follows fetch.recurseSubmodules, which defaults to on-demand, and any failure sets offline.
-	- Origin: 3d22222 (Go port). No round saw it.
-
-- Code Review 20261120 item 1: With diff.relative or a textconv driver, an autostash conflict is committed and pushed
-	- ID: 2026112017135886
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261120-171358
-	- Opened by:
-	- Steps to reproduce [Bug]: Set `diff.relative=true`. Edit a file that origin's branch also changed, and a file in `sub/`. From `sub/`, run `gitsby -q sync -m work`.
-	- Incorrect behavior [Bug]: The autostash restore conflicts, the conflict check sees nothing, and the conflict markers are committed and pushed at exit 0. From `sub/`, pullcom says "Nothing to commit." while an edit outside the folder stays staged, and br switch takes that edit to dev. A textconv driver whose output doesn't change hides an edit the same way.
-	- Expected behavior [Bug]: The conflict check and the commit decision see the whole repo, whatever the diff settings.
-	- Reproduced [Bug]: 2026-11-20 on b23, git 2.51, with controls that don't have the setting. Confirmed.
-	- Possible cause [Bug]: The decisions read plain `git diff`, which follows diff config: mutate.go:155, :33, :43 and :745, and release.go:154.
-	- Sweep: staged.go:66 changedPaths, refuseSparseAdd, branchcmd.go:429 and show.go:111.
-	- Origin: cfb6d90 (Go port) and 9f53a91 (--staged). No round saw it. Same class as Code Review 20261119 item 2, whose sweep covered git status only.
-
-- Code Review 20261120 item 2: With an Enterprise account, gh's own credential helper gives the token to any other Enterprise host
-	- ID: 2026112017135870
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261120-171358
-	- Opened by:
-	- Steps to reproduce [Bug]: Set GH_HOST to the Enterprise host an account names, with a token file. Have the helpers `gh auth setup-git` writes for a second host in the global config, and a submodule on that host. Run `gitsby -q pullcom`.
-	- Incorrect behavior [Bug]: The second host gets the account's token from gh's helper, and gitsby exits 0. `raw git credential fill` for that host returns the token too. Plain git with the same config gets nothing.
-	- Expected behavior [Bug]: No gh or glab token variable reaches a git child.
-	- Reproduced [Bug]: 2026-11-20 on b23, with real gh 2.96, a fake token and a local TLS listener. Confirmed.
-	- Possible cause [Bug]: account.go:488 sets GH_ENTERPRISE_TOKEN for the whole run, and gh reads it for every Enterprise host. settlePrTool's GITLAB_TOKEN at pr.go:69 works the same way, by reading.
-	- Sweep: pr.go:69 GITLAB_TOKEN, and every other setEnv of a tool's token.
-	- Origin: d5d8cfa, nov19 (2026111016332206). Regression, and a missed twin of Code Review 20261119 item 5, whose Swept row says git is scoped to the host already.
-
-- Code Review 20261120 item 3: A github.com account gets gh's Enterprise token when gh has the same login there
-	- ID: 2026112017135855
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261120-171358
-	- Opened by:
-	- Steps to reproduce [Bug]: Log gh in as `jim` on an Enterprise host. Give an account `ghaccount: jim` and no host. In a github.com repo in its folder, run `gitsby raw git credential fill` for github.com, then plain `git credential fill` after `account apply`.
-	- Incorrect behavior [Bug]: Both return the Enterprise token for github.com. With gh logged in on both hosts and GH_HOST on the Enterprise one, the right github.com token goes unused.
-	- Expected behavior [Bug]: The token for the account's own host, or none.
-	- Reproduced [Bug]: 2026-11-20 on b23, real gh 2.96 with a fake hosts.yml. Confirmed.
-	- Possible cause [Bug]: `gh auth token --user` without `--hostname`, at account.go:190 (probeGhToken) and accountcmd.go:876 (the helper's gh step).
-	- Origin: 8da8951 (Go port) and 08e7452 (2026110810100400). No round saw it. 2026111016332206's Swept row took GH_HOST as picking the host, which holds only for an Enterprise account.
-
-- Code Review 20261120 item 4: An account whose host is ignored falls back to github.com, and its Gitea token goes there
-	- ID: 2026112017135838
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261120-171358
-	- Opened by:
-	- Steps to reproduce [Bug]: Write `host: https://gitea.example.test` or `host: gitea.example.test:3000` by hand, with `user` and `tokenfile`. In a github.com repo inside its folder, run `gitsby raw git credential fill` for github.com, then `account apply` and plain git.
-	- Incorrect behavior [Bug]: The Gitea token comes back for github.com, and raw gh gets it as GH_TOKEN. apply writes a github.com helper with the Gitea token file. The only sign is an "Ignored keys" line.
-	- Expected behavior [Bug]: An account whose host was ignored gets no token or helper on any host.
-	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
-	- Possible cause [Bug]: config.go:755-758 blanks the bad value, and hostOf at config.go:908 then gives github.com.
-	- Origin: 8d3f857 (2026-08-26) and 6abd24c. No round saw it.
-
-- Code Review 20261120 item 5: release from a feature branch with unpushed work or a dirty tree tags the commit already released
-	- ID: 2026112017135822
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-171358
-	- Opened by:
-	- Steps to reproduce [Bug]: After `release v1.0.0`, create feat and push it. Make a commit on it, or leave a file edited. Run `gitsby -q release`.
-	- Incorrect behavior [Bug]: It tags v1.0.1 on the v1.0.0 commit, pushes the tag and exits 0. A clean feat says "Nothing new to release". When the dev push failed after main and the tag went out, a bare release from dev also cuts v1.0.1 on the same commit.
-	- Expected behavior [Bug]: "Nothing new" for the feature branch runs, and the failed dev push finished as a resume.
-	- Reproduced [Bug]: 2026-11-20 on b23, with local bare origins. Confirmed.
-	- Possible cause [Bug]: The `parks || isAhead()` shortcut at release.go:152-156 counts parked work that never reaches the release. unpushedRelease checks main only.
-	- Origin: 20260727b item 12, ported in 4918b5b and changed in 7c3281d and 8dfe5ff. No round saw it. It undoes item 12's aim, which was to stop a second tag on one commit.
-
-- Code Review 20261120 item 6: A ? or # before the @ in a URL gets a token past the host check
-	- ID: 2026112017135807
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-171358
-	- Opened by:
-	- Steps to reproduce [Bug]: With GH_HOST on the account's Enterprise host, run `gitsby raw gh api 'http://127.0.0.1:PORT?@ghe.example.test/x'`. The same with `#@`, and through `raw glab api`.
-	- Incorrect behavior [Bug]: The local listener gets the account's token from gh and from glab. An origin written the same way shows and resolves as github.com, while git fetches from 127.0.0.1.
-	- Expected behavior [Bug]: The host ends at the first `/`, `?` or `#`, as net/url and git read it.
-	- Reproduced [Bug]: 2026-11-20 on b23, with real gh 2.96, glab 1.53 and a local listener. Confirmed.
-	- Possible cause [Bug]: splitRemoteURL at githost.go:100 ends the host only at `/`.
-	- Origin: 9333159. It became a token check in 20e7cae (Code Review 20261110b item 1) and 22554f6 (Code Review 20261119 item 5). No round saw it.
-
-- Code Review 20261120 item 7: After account set changes ghaccount, gitsby goes on acting as the old login until account apply
-	- ID: 2026112017135793
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-171357
-	- Opened by:
-	- Steps to reproduce [Bug]: Run apply with `ghaccount: oldlogin`, then `account set work ghaccount newlogin` and `account set work email new@example.test`. Run `whoami` and `raw git credential fill`.
-	- Incorrect behavior [Bug]: whoami says oldlogin, from the gitsby.ghAccount key in the global git config, with the old email and the old token. account set doesn't mention apply.
-	- Expected behavior [Bug]: gitsby goes by the accounts file. design.md lets the git config key win only for a single repo that answers for itself, and apply's fragments aren't that.
-	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
-	- Possible cause [Bug]: account.go:49-58 reads the key from any global config file, the fragments included.
-	- Origin: 4918b5b and 1ae9d85 (2026-08-19). Not a regression, and no round saw it.
-
-- Code Review 20261120 item 8: repo connect and repo create finish a stopped merge or am under gitsby's message
-	- ID: 2026112017135778
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-171357
-	- Opened by:
-	- Steps to reproduce [Bug]: With commits and no origin, run `git merge side`, resolve and add. Then run `gitsby -q repo connect <empty bare repo>`. Or stop a `git am -3` partway and resolve it.
-	- Incorrect behavior [Bug]: It commits the merge, or patch 1, as "gitsby <stamp>" and pushes it. The am case drops the patch's author and message and leaves rebase-apply behind.
-	- Expected behavior [Bug]: Refused, as the other commands refuse a pending operation.
-	- Reproduced [Bug]: 2026-11-20 on b23 for repo connect, both cases. repo create only by reading. Confirmed.
-	- Possible cause [Bug]: The gate at mutate.go:132 lets the repo commands through on the premise that they never commit onto existing history, but cmdConnect commits at repo.go:400. design.md:197 states the same premise.
-	- Origin: 5177ad4, nov19b, Code Review 20261119 item 3. Missed twin.
-
-- Code Review 20261120 item 9: Stage 0 passes with conflict markers in the tree when its autostash restore conflicts
-	- ID: 2026112017135764
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-171357
-	- Opened by:
-	- Steps to reproduce [Bug]: Diverge from origin, and leave an edit in a file that origin's commit also changes. Run `cicd.bash -y --no-container` with every later stage turned off.
-	- Incorrect behavior [Bug]: git makes the merge, prints "Applying autostash resulted in conflicts" and exits 0. Stage 0 says PASS, the run exits 0, and the tree has the file as `UU` with markers. The edit is only in the stash. The fast-forward path does the same.
-	- Expected behavior [Bug]: The run stops before building, with the merge backed out and the edit back in the tree, per 2026112013542571.
-	- Reproduced [Bug]: 2026-11-20 on b23, the real stage 0 in a clone with a local bare origin. Confirmed.
-	- Possible cause [Bug]: cicd.bash:1134 and :1142 trust git's exit status after `--autostash`.
-	- Origin: 0633cc1 (2026112013542571) for the merge path, and b463d2b (2026-08-12) for the fast-forward path. Missed twin of 2026111910223074. No round saw it.
-
-- Code Review 20261120 item 10: release and repo connect commit the tree, then refuse the push and say nothing was done
-	- ID: 2026112017135749
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-171357
-	- Opened by:
-	- Steps to reproduce [Bug]: Under push.default=simple, run `git checkout -B feat origin/feature-x`, edit a file, and run `gitsby -q release v1.0.0`. Do the same with `gitsby -q repo connect <same url>`.
-	- Incorrect behavior [Bug]: It commits "gitsby <stamp>" onto feat, then refuses the push with "... Nothing was done." The plan shows the push with no warning. repo connect's plan line says `git push -u origin HEAD`, which isn't what runs.
-	- Expected behavior [Bug]: Refused before the plan, as design.md:206 and Code Review 20261119 item 1's decision say for simple.
-	- Reproduced [Bug]: 2026-11-20 on b23, with -q and at the prompt. Confirmed.
-	- Possible cause [Bug]: parkPushes at mutate.go:697 leaves release and repo connect out. pushDest.refusal at mutate.go:690 always says "Nothing was done", also when it's reached after a commit, a merge or a tag.
-	- Origin: 1c8c364 and ca1f916, nov19b, Code Review 20261119 item 1. Missed twin, since its Swept row lists release's park push.
-
-- Code Review 20261120 item 11: A branch another worktree is rebasing or bisecting isn't refused, so the run pushes and then fails
-	- ID: 2026112017135735
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-171357
-	- Opened by:
-	- Steps to reproduce [Bug]: Run `git worktree add ../wt dev`, then in wt stop a `git rebase -i` at an edit, or start a bisect. In the main worktree on feat with an edit, run `gitsby -q br switch dev`.
-	- Incorrect behavior [Bug]: It commits and pushes feat, then fails at the checkout with "'dev' is already used by worktree", exit 1.
-	- Expected behavior [Bug]: Refused before the plan, as for a worktree that has the branch checked out.
-	- Reproduced [Bug]: 2026-11-20 on b23, with a rebase and with a bisect. Confirmed.
-	- Possible cause [Bug]: `%(worktreepath)` names only a worktree whose HEAD is the branch. git also refuses a branch that another worktree is rebasing or bisecting.
-	- Origin: 6f277d3, nov19b, Code Review 20261119 item 13. Missed twin.
-
-- Code Review 20261120 item 12: An ssh origin that stalls after its banner hangs the fetch with no time limit
-	- ID: 2026112017135720
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-171357
-	- Opened by:
-	- Steps to reproduce [Bug]: Run a 127.0.0.1 listener that sends an SSH banner and then nothing. Point origin at it with an ssh:// URL and run `gitsby -q pullcom`.
-	- Incorrect behavior [Bug]: It waits at `git fetch` until it's killed. A server that sends nothing at all ends at the 3 second connect timeout.
-	- Expected behavior [Bug]: The fetch gives up after a few seconds, as an http stall does since Code Review 20261119 item 11.
-	- Reproduced [Bug]: 2026-11-20 on b23, OpenSSH 10.3p1. Confirmed. The identity probe at remote.go:279 has the same arguments, by reading.
-	- Possible cause [Bug]: The ssh arguments at remote.go:207 set ConnectTimeout only. ServerAliveInterval and ServerAliveCountMax would end the stall.
-	- Origin: 3d22222 (Go port). Missed twin of Code Review 20261119 item 11, whose sweep covered http only.
-
-- Code Review 20261120 item 13: 2 Go tests fail on Windows, so the next full run fails at stage 7
-	- ID: 2026112017135704
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-171357
-	- Opened by:
-	- Steps to reproduce [Bug]: Build the Windows Go test binary and run it on vm925w beside the sources, as stage 7 does.
-	- Incorrect behavior [Bug]: [dfhjk] TestOld2xNoticeOneReading fails, since chmod doesn't lock a folder on Windows. It fails as root too. [dfh8b] TestRefuseHeldBranch fails 4 runs out of 4 when it renames the worktree folder, with "being used by another process".
-	- Expected behavior [Bug]: Both pass or skip on Windows, as the other tests that lock a folder with chmod skip on Windows and as root.
-	- Reproduced [Bug]: 2026-11-20 on vm925w, and [dfhjk] under Wine on b23. Confirmed.
-	- Possible cause [Bug]: cfgformat_test.go:783 lacks the `isWindows() || os.Geteuid() == 0` skip. branch_test.go:380 renames a folder Windows still has open.
-	- Origin: bcc3cb2, nov19c (2026111910223002), and 6f277d3, nov19b (2026111910223119). Both rounds ran chosen Windows tests, never the whole binary.
-
 - Code Review 20261120 item 14: Every command that stages the tree runs a dry-run add before the plan, in every repo
 	- ID: 2026112017135689
 	- Type: Bug
@@ -305,6 +93,52 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: [dfjme] and [dfjmf] use the stub, and [dfjmg] passes a.txt.
 	- Origin: 0633cc1 (2026112013542584). No round saw it.
 
+- With Windows' own OpenSSH as the ssh command, a fetch from an ssh origin that stalls after its banner waits until killed
+	- ID: 2026112021513016
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-215130
+	- Opened by:
+	- Related IDs: 2026112021204523, 2026112017135720
+	- Steps to reproduce [Bug]: On vm925w, point a GIT_SSH_COMMAND of C:/Windows/System32/OpenSSH/ssh.exe with gitsby's three ssh options at a 127.0.0.1 listener that sends an SSH banner and then nothing, and run git ls-remote on it, as gitsby's fetch does with a core.sshCommand naming that ssh.exe. People set that to use Windows' ssh-agent.
+	- Incorrect behavior [Bug]: ssh prints that the connection timed out after about 3 s, but neither it nor git exits. git ls-remote was still running when killed at 28 s.
+	- Expected behavior [Bug]: The fetch gives up within its 30 s limit, as it does with Git for Windows' own ssh, which exits at the timeout.
+	- Reproduced [Bug]: 2026-11-20 on vm925w, OpenSSH_for_Windows_9.5p2, git 2.55.0.windows.5, with GIT_SSH_COMMAND naming that ssh.exe. Confirmed. The same ssh run alone, with stdin NUL, a pipe held open, a closed pipe or -n, was still running at 25 s, and kept running 20 s after the server closed the connection.
+	- Possible cause [Bug]: Windows' OpenSSH doesn't exit after it reports the timeout, so git waits on it. The fix is upstream. gitsby can't put a time limit on a whole fetch, since a large one can run long. Killing git on Windows also leaves its ssh running.
+	- Origin: Win32-OpenSSH. gitsby's limits from adcef33 (2026112017135720) reach that ssh; it ignores them by not exiting.
+	- Note: Upstream issue text drafted in private/claude_simple/upstream/2026112021513016/.
+
+- The ssh identity probe asks port 22 for an ssh:// origin on another port
+	- ID: 2026112020462137
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-204621
+	- Opened by:
+	- Steps to reproduce [Bug]: Point origin at ssh://git@host:2222/o/r.git, where only port 2222 serves git, with no ssh_config entry for the host. Run gitsby status.
+	- Incorrect behavior [Bug]: The SSH line's account probe runs ssh -T git@host with no -p, so it asks port 22. The SSH line's ssh -G read has no port either, so a Match on the port isn't seen.
+	- Expected behavior [Bug]: The probe and the ssh -G read connect to the port the URL names, as git's fetch does.
+	- Possible cause [Bug]: sshConnectTarget in remote.go drops the port, and neither caller passes -p. TestSSHConnectTarget pins the target without it.
+	- Origin: Plausible, read only. Found while working 2026112017135720.
+
+- Code Review 20261120 item 46: A submodule whose remote is gone makes pullcom skip the pull as if origin were unreachable
+	- ID: 2026112017151559
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171515
+	- Opened by:
+	- Steps to reproduce [Bug]: Clone a repo with a submodule. Move the submodule's remote away, have origin's dev bump the gitlink, and run `gitsby -q pullcom` on dev.
+	- Incorrect behavior [Bug]: The fetch of origin works, but the submodule fetch fails, so gitsby warns that the remote is unreachable, skips the pull, and prints Done at exit 0. dev stays behind 1.
+	- Expected behavior [Bug]: The pull runs, since origin answered. A failed submodule fetch is named for what it is.
+	- Reproduced [Bug]: 2026-11-20 on b23, git 2.51, local bare repos. Confirmed.
+	- Possible cause [Bug]: The fetch at remote.go:310 follows fetch.recurseSubmodules, which defaults to on-demand, and any failure sets offline.
+	- Origin: 3d22222 (Go port). No round saw it.
+
 - Code Review 20261120 item 18: pr create takes the PR's base from the current branch's name while its head is the branch it pushes
 	- ID: 2026112017135624
 	- Type: Bug
@@ -364,21 +198,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, the plan against a fake glab's log. Confirmed.
 	- Possible cause [Bug]: prCreateDisp at pr.go:630 has one form for every tool.
 	- Origin: 197677f. No round saw it.
-
-- Code Review 20261120 item 22: raw tea in a GitHub account's folder gets GH_TOKEN
-	- ID: 2026112017135562
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171355
-	- Opened by:
-	- Steps to reproduce [Bug]: In a GitHub account's folder, with GITEA_INSTANCE_URL set, run `gitsby raw tea` with a fake tea.
-	- Incorrect behavior [Bug]: tea gets an empty GITEA_TOKEN plus GH_TOKEN. tea 0.11 and later builds its login from GH_TOKEN in that case, so the GitHub token goes to the Gitea URL.
-	- Expected behavior [Bug]: design.md's table says raw tea gets GITEA_TOKEN only.
-	- Reproduced [Bug]: The environment on b23 with a fake tea. tea 0.11 wasn't run, since 0.9.2 is installed. Plausible.
-	- Possible cause [Bug]: main.go:981 leaves GH_TOKEN and GH_ENTERPRISE_TOKEN in tea's environment.
-	- Origin: tea's own change, read from its source. No round saw it.
 
 - Code Review 20261120 item 23: [dbhg7] passes with the refusal it checks taken out
 	- ID: 2026112017135548
@@ -498,6 +317,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The plan names the merge.
 	- Reproduced [Bug]: 2026-11-20, by reading. Confirmed.
 	- Origin: d0cc3da. 0633cc1 (2026112013542571) left it.
+	- 20261120: also sweep contributing.md:231, which still says the pipeline stops if the branch has diverged; that went stale with 0633cc1 (found under 2026112017135764).
 
 - Code Review 20261120 item 31: design.md says a later candidate is installed only with --tag
 	- ID: 2026112017135430
@@ -711,156 +531,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: No. Read only. Plausible.
 	- Origin: 46156d6 (2026111919473452).
 
-- Code Review 20261120 item 45: The park push's plan line leaves out a remote other than origin
-	- ID: 2026112017135225
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171352
-	- Opened by:
-	- Steps to reproduce [Bug]: Have feat track up/feat on a second remote, edit a file, and run `gitsby br switch dev`.
-	- Incorrect behavior [Bug]: The plan says `git push (branch 'feat')`, and the run is `git push up HEAD:refs/heads/feat`.
-	- Expected behavior [Bug]: The plan names the remote when it isn't origin. style-guide_ui-ux.md:98 says a plan that differs from what runs is a bug.
-	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
-	- Possible cause [Bug]: preview.go:43 names a ref of another name but never another remote.
-	- Origin: ca1f916, nov19b, Code Review 20261119 item 1.
-
-- Code Review 20261120 enhancement 1: One list of each command's pushes, read by preflight, the plan and the run
-	- ID: 2026112017135211
-	- Type: Enhancement
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171352
-	- Opened by:
-	- Requirements [Feature]: Which guard covers which push has been fixed one command list at a time: 2026111016332380 (directPush), Code Review 20261119 item 1 (parkPushes), item 9 (pushesGoneBranch), item 17 (mergePushesOwn), and item 10 here. Give each command one plannedPushes list, with each push's branch, destination and kind, and have the guards, the plan and the run read it. Item 18's PR base is the same kind of problem, so give pr create and pr ok one target helper.
-	- Decisions: Answered 2026-11-20: fix it with items 10 and 45 as one change, though defects are still open.
-	- Origin: Repeat class, 5 command-list fixes since 2026-11-10.
-
-- Code Review 20261120 enhancement 2: One token grant per run, given only to the child that needs it
-	- ID: 2026112017135196
-	- Type: Enhancement
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171351
-	- Opened by:
-	- Requirements [Feature]: Token to the wrong host has had 4 fixes, one site at a time, and items 2, 3, 4, 6 and 22 here are 5 more paths. Hold one grant per run, a host and a token. git children get only GITSBY_HOST_TOKEN and the helper. gh, glab and tea each get their own variable in their own environment, never the process's. Read every host from text through net/url, pass --hostname to every gh auth token call, and give an account whose host was ignored no token. The walk test gets a case for every gh or glab child git can start.
-	- Decisions: Answered 2026-11-20: fix it with items 2, 3, 4, 6 and 22 as one change, though defects are still open.
-	- Origin: Repeat class: Code Review 20261110b item 1, Code Review 20261119 items 4 and 5, and the 5 here.
-
-- Code Review 20261120 enhancement 3: Decide from plumbing, so user git config can't blind gitsby's reads
-	- ID: 2026112017135182
-	- Type: Enhancement
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171351
-	- Opened by:
-	- Requirements [Feature]: User config has blinded gitsby's own reads 4 times, each fixed at one site: status.showUntrackedFiles (Code Review 20261119 item 2), add's translated messages (item 23), and diff.relative and textconv (item 1 here). Read decisions through diff-index, diff-files and ls-files -u, or one helper that adds --no-relative, --no-textconv and --no-ext-diff. A Go test like [dfh4h] fails on any plain git diff read in src-go without them.
-	- Decisions: Answered 2026-11-20: fix it with item 1 as one change, though defects are still open.
-	- Origin: Repeat class.
-
-- Code Review 20261120 enhancement 4: Every park push runs the full branch query again
-	- ID: 2026112017135167
-	- Type: Enhancement
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171351
-	- Opened by:
-	- Requirements [Feature]: At 5,000 local and 5,000 remote branches, sync went from 694 to 894 ms, pr create from 707 to 961, br create off a feature branch from 1074 to 1292, and br merge from 1161 to 1390. pushDest now reads branchRefs, about 8 times heavier than its old query of heads only, and the commit step clears the cache, so the query runs twice. Read the push fields for the current branch alone, or keep them across the commit.
-	- Origin: ca1f916, nov19b (Code Review 20261119 item 1). Spawn counts didn't change. Measured on 5af785f and 576d891.
-
-- Code Review 20261120 enhancement 5: Every command reads %(worktreepath), read-only ones included
-	- ID: 2026112017135153
-	- Type: Enhancement
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171351
-	- Opened by:
-	- Requirements [Feature]: At 200 worktrees, status went from 17 to 25 ms, whoami from 13 to 21, sync from 57 to 85 and br create from 45 to 64. Only refuseHeldBranch reads the field. Query it only when checkoutsAhead isn't empty.
-	- Origin: d757dc3 (Code Review 20261119 item 13). Measured on 5af785f and 576d891.
-
-- Code Review 20261120 enhancement 6: 28 places start a sentence in lower case after a label and colon
-	- ID: 2026112017135139
-	- Type: Enhancement
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171351
-	- Opened by:
-	- Requirements [Feature]: Directive 2026-11-20: after an introductory word or label and its colon, the next sentence starts with a capital. 7 are in the docs, such as README.md:96 "No version: the next one" and design.md:436 "Accepted cost: the gate". 21 are in src-go, such as 7 "WARNING: remote unreachable; ..." lines and usage.go:45 and :75. A label followed by a command or a path doesn't count. Lines a person wrote stay as they are.
-	- Origin: New directive, not a regression. Counted by grep, then read.
-
-- Installers: --release dev installs the newest release, pre-releases included
-	- ID: 2026112015351403
-	- Type: Enhancement
-	- Status: Closed
-	- Closed reason: Done
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-153514
-	- Closed: 20261120-153514
-	- Requirements: The installer directives want --release dev|stable, as zuid has it. dev takes the newest release of either kind. A full release ranks above pre-releases of its own version. --release dev with --tag is refused.
-	- Decisions: Answered 2026-11-20: yes to --release dev, no to dropping --arch, which stays as design.md records it.
-	- Branch: release-dev
-	- Test case: [dfjr3] to [dfjr9]. [dbfkc] [dbfkd] [dbfks] [dd5cx] [dbfm0] [dbfm1] now check what replaced the old refusal. All failed on the old installers.
-
-- CICD process gaps: dogfood builds don't go to the synced app folders, and there's no dogfood script
-	- ID: 2026112013542597
-	- Type: Enhancement
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-135425
-	- Opened by:
-	- Requirements: The shared CICD rules put each build in the synced app folder for its OS, and a dogfood_gitsby.ps1 with launchers copies the newest into a GFS-rotated versions folder, with a link to it as the program. Stage 5 copies each build straight into the synced tool folders on PATH instead, and run-latest.ps1 is a different design.
-	- Progress log:
-		- 2026-11-20: Waiting for answers. Moving it changes which gitsby every box finds on PATH, and every session's git commands go through it.
-		- 2026-11-20: Answered no, so it closes as Won't fix.
-	- Closed reason: Won't fix
-	- Decisions: Answered 2026-11-20: no. Dogfood stays a single executable in the synced tool folder on PATH, with no versions folder or rotation.
-	- Test case: n/a, nothing changes.
-	- Closed: 20261120-141207
-
-- CICD process gaps: publish commits every pending edit in the tree, another session's included
-	- ID: 2026112013542584
-	- Type: Bug
-	- Status: Closed
-	- Closed reason: Done
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-135425
-	- Opened by:
-	- Incorrect behavior: Stage 8's publisher stages the whole tree, so a run commits whatever else is edited there.
-	- Expected behavior: Publish commits only the tracked files the run itself changed. Here that's the demo gif, and only when it matched HEAD when the run started.
-	- Actual fix: config.bash names the files a run may rewrite. cicd.bash notes which of them were already edited at the start and hands the publisher the rest that changed. The publisher commits only those, as the copy in a sister project does.
-	- Branch: sync-publish
-	- Test case: test.bash [dfjme], [dfjmf] and [dfjmg].
-	- Acceptance signoff: Self-closed: all 3 failed against the old cicd.bash and publisher, and pass now.
-	- Closed: 20261120-135440
-	- Commit: 0633cc1
-
-- CICD process gaps: stage 0 stops on any branch that diverged from origin
-	- ID: 2026112013542571
-	- Type: Enhancement
-	- Status: Closed
-	- Closed reason: Done
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261120-135425
-	- Opened by:
-	- Requirements: Per the shared CICD rules, a diverged branch merges origin in with --no-ff when it merges clean, and the run then tests the merged tree. A merge that conflicts is backed out with the tree as it was, uncommitted edits included, and the run stops.
-	- Decisions: This supersedes the earlier call, under the 20260812 accounts and arguments item, that stage 0 stops on any divergence.
-	- Branch: sync-publish
-	- Test case: test.bash [dfjmb], [dfjmc], [dd5g3] (now the conflict case) and [dfjmd].
-	- Acceptance signoff: Self-closed: each check failed against the old stage 0 or a planted fault, and passes now.
-	- Closed: 20261120-135440
-	- Commit: 0633cc1
-
 - Code Review 20261119 item 24: [daf7x] passes with the code it checks taken out
 	- ID: 2026111910222957
 	- Type: Bug
@@ -950,6 +620,93 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, by a script over the backlog. Confirmed.
 	- Possible cause [Bug]: backlog-check has no rule for it.
 	- Origin: The 4 items, closed by hand over several rounds. No round saw it.
+
+- Stage 7's Go test runs on other boxes have no time limit, so one hung test holds the stage
+	- ID: 2026112021514129
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-215141
+	- Opened by:
+	- Related IDs: 2026112021204523
+	- Requirements [Feature]: The Windows run in cicd/remote-tests.bash starts the test binary with no -test.timeout and no outer timeout, and the binary's own default is none. [dfk1m] hung there with no output until the run was stopped. Pass -test.timeout to every remote Go test run, so a hung test fails with every goroutine's stack. test.bash's asserts on those command lines change with it.
+
+- Put an ssh client in the cicd image, so the ssh stall tests run in the quick gate
+	- ID: 2026112020462150
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-204621
+	- Opened by:
+	- Requirements [Feature]: The image has no ssh, so Go tests [dfk1m] and [dfk1n] skip in the container run and pass only in the --no-container arm. Add openssh-client to cicd/container/Dockerfile. The edit rebuilds the image, about 8 minutes once.
+	- Note: The literal asserts in [dbfvz], [dcnp4], [deyth] and [dfg26] check the ssh options in the container meanwhile.
+
+- Code Review 20261120 enhancement 1: One list of each command's pushes, read by preflight, the plan and the run
+	- ID: 2026112017135211
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171352
+	- Opened by:
+	- Requirements [Feature]: Which guard covers which push has been fixed one command list at a time: 2026111016332380 (directPush), Code Review 20261119 item 1 (parkPushes), item 9 (pushesGoneBranch), item 17 (mergePushesOwn), and item 10 here. Give each command one plannedPushes list, with each push's branch, destination and kind, and have the guards, the plan and the run read it. Item 18's PR base is the same kind of problem, so give pr create and pr ok one target helper.
+	- Decisions: Answered 2026-11-20: fix it with items 10 and 45 as one change, though defects are still open.
+	- Origin: Repeat class, 5 command-list fixes since 2026-11-10.
+	- Branch: nov20c-2026112017135211
+	- Test case: test.bash [dfk10] to [dfk1c]; Go TestPlannedPushesEveryCommand [dfk0z] and TestPlannedPushDisp [dfk0y].
+	- Progress log:
+		- 20261120: The core is in, with items 10 (2026112017135749) and 45 (2026112017135225). Each command's pushes of the branch it stands on are one list, plannedPushes in mutate.go, with each push's branch, remote, ref and kind. The refusal before the plan, the --direct and gone-branch checks, and the plan's push line read it, and the step builds its push the same way. [dfk0z] walks the usages table, so a new mutating command fails until it's put on the list or named as one that doesn't push.
+		- The pushes of other branches, and the one target helper for pr create and pr ok, are child 2026112020293534. The helper comes with item 18's fix (2026112017135624).
+	- Commit: ccb0c7f
+
+- Put the pushes of other branches on the push list: br merge's target, the hotfix back-merge, and release's default branch and dev
+	- ID: 2026112020293534
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-202935
+	- Opened by:
+	- Parent ID: 2026112017135211
+	- Related IDs: 2026112017135624
+	- Requirements [Feature]: The push list holds only pushes of the branch a command stands on. br merge's push of its target, the hotfix back-merge's push of dev (br merge and pr ok), and release's pushes of the default branch and dev are still refused by git only at the step, after the merge or the tag. Add them to the list, so a push git would refuse is refused before the plan, mergePushesOwn reads its targets from it, and the plan's 'git push *' lines name where each goes. Give pr create and pr ok one target helper, through item 18's fix (2026112017135624).
+	- Estimated effort: Avg
+	- Progress log: Open questions for the design: a target that isn't local yet has no push fields to read until the checkout makes it, so where remote.pushDefault sends it would mean copying git's rule. The atomic push names origin and the target's own name, and release pushes dev only when it has an upstream.
+
+- Code Review 20261120 enhancement 4: Every park push runs the full branch query again
+	- ID: 2026112017135167
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171351
+	- Opened by:
+	- Requirements [Feature]: At 5,000 local and 5,000 remote branches, sync went from 694 to 894 ms, pr create from 707 to 961, br create off a feature branch from 1074 to 1292, and br merge from 1161 to 1390. pushDest now reads branchRefs, about 8 times heavier than its old query of heads only, and the commit step clears the cache, so the query runs twice. Read the push fields for the current branch alone, or keep them across the commit.
+	- Origin: ca1f916, nov19b (Code Review 20261119 item 1). Spawn counts didn't change. Measured on 5af785f and 576d891.
+
+- Code Review 20261120 enhancement 5: Every command reads %(worktreepath), read-only ones included
+	- ID: 2026112017135153
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171351
+	- Opened by:
+	- Requirements [Feature]: At 200 worktrees, status went from 17 to 25 ms, whoami from 13 to 21, sync from 57 to 85 and br create from 45 to 64. Only refuseHeldBranch reads the field. Query it only when checkoutsAhead isn't empty.
+	- Origin: d757dc3 (Code Review 20261119 item 13). Measured on 5af785f and 576d891.
+
+- Code Review 20261120 enhancement 6: 28 places start a sentence in lower case after a label and colon
+	- ID: 2026112017135139
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171351
+	- Opened by:
+	- Requirements [Feature]: Directive 2026-11-20: after an introductory word or label and its colon, the next sentence starts with a capital. 7 are in the docs, such as README.md:96 "No version: the next one" and design.md:436 "Accepted cost: the gate". 21 are in src-go, such as 7 "WARNING: remote unreachable; ..." lines and usage.go:45 and :75. A label followed by a command or a path doesn't count. Lines a person wrote stay as they are.
+	- Origin: New directive, not a regression. Counted by grep, then read.
 
 - Code Review 20261119 enhancement 1: Comments are wrapped at a fixed column
 	- ID: 2026111910222759
@@ -1051,6 +808,114 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every `raw` tool shares `cmdPassthrough`, git included. 2026-10-22: `rawActive` has one reader, `cmdPassthrough`, and the variable is unset in all 4 hermetic suites. Other commands still run gh and tea by bare name, so a gh link to gitsby gives a confusing error there; logged as 2026102111572785. Not a loop, since only `raw` hands over.
 	- Acceptance signoff: Hand test on b28l, run in the 2026-10-23 round as asked.
 	- Closed: 20261023-195424
+
+- Code Review 20261120 item 1: With diff.relative or a textconv driver, an autostash conflict is committed and pushed
+	- ID: 2026112017135886
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261120-171358
+	- Opened by:
+	- Steps to reproduce [Bug]: Set `diff.relative=true`. Edit a file that origin's branch also changed, and a file in `sub/`. From `sub/`, run `gitsby -q sync -m work`.
+	- Incorrect behavior [Bug]: The autostash restore conflicts, the conflict check sees nothing, and the conflict markers are committed and pushed at exit 0. From `sub/`, pullcom says "Nothing to commit." while an edit outside the folder stays staged, and br switch takes that edit to dev. A textconv driver whose output doesn't change hides an edit the same way.
+	- Expected behavior [Bug]: The conflict check and the commit decision see the whole repo, whatever the diff settings.
+	- Reproduced [Bug]: 2026-11-20 on b23, git 2.51, with controls that don't have the setting. Confirmed.
+	- Possible cause [Bug]: The decisions read plain `git diff`, which follows diff config: mutate.go:155, :33, :43 and :745, and release.go:154.
+	- Sweep: staged.go:66 changedPaths, refuseSparseAdd, branchcmd.go:429 and show.go:111.
+	- Origin: cfb6d90 (Go port) and 9f53a91 (--staged). No round saw it. Same class as Code Review 20261119 item 2, whose sweep covered git status only.
+	- Closed reason: Done
+	- Actual cause [Bug]: Every git diff gitsby read for a decision followed the user's diff config. diff.relative cut it to the folder gitsby ran from, and a textconv driver whose output didn't change made 'diff --cached --quiet' say the index matched HEAD.
+	- Actual fix [Bug]: One helper, diffArgs in mutate.go, starts every git diff with --no-relative, --no-textconv, --no-ext-diff and --ignore-submodules=none. The conflict check, the commit decisions, the --staged checks, the hotfix note and the incoming list all go through it.
+	- Test case: Go [dfjwf] TestDiffReadsIgnoreDiffConfig, [dfjwh] TestDiffReadsSeeSubmoduleMove and [dfjwg] TestDiffReadsUseDiffArgs; test.bash [dfjwj] to [dfjwn] and [dfjwp].
+	- Verified: [dfjwj], [dfjwk], [dfjwm], [dfjwn] and [dfjwp] fail on the build before the fix (test.bash 2235/5) and pass with it. [dfjwf] fails with --no-relative dropped, or with both --no-textconv and --no-ext-diff dropped. [dfjwh] fails with --ignore-submodules=none dropped, or put after the caller's options. The quick gate with every area passed: test.bash 2240/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Swept: every git diff in src-go, by grep for '"git", "diff"' and '[]string{"diff"': cmdCommit (2), refuseConflicts and commitPending in mutate.go, releasePreflight, changedPaths (which refuseSparseAdd and stagedPreflight use), warnHotfixTouchedCode and showIncoming. [dfjwg] fails on any new one. Read only, left alone: the 3 git diff reads in cicd.bash and release.bash run from the repo root and list names, which a textconv driver doesn't change.
+	- Decisions: Flags on one helper rather than plumbing. diff-index needs a HEAD, which a new repo doesn't have, and ls-files lists only the current folder unless given ':/', so each site would need its own guard. --no-relative needs git 2.28 by its release notes (not run on an older git), one release past the 2.27 that pull --autostash on a merge already needs. --ignore-submodules=none goes past the item's list, since diff.ignoreSubmodules=all hid a submodule move that add stages and git commit takes, and design.md counts a moved submodule as work. On git 2.51 either --no-textconv or --no-ext-diff alone clears the textconv case; both stay.
+	- Branch: nov20c-2026112017135886
+	- Commit: 7265edf
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-180535
+
+- Code Review 20261120 item 2: With an Enterprise account, gh's own credential helper gives the token to any other Enterprise host
+	- ID: 2026112017135870
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261120-171358
+	- Opened by:
+	- Steps to reproduce [Bug]: Set GH_HOST to the Enterprise host an account names, with a token file. Have the helpers `gh auth setup-git` writes for a second host in the global config, and a submodule on that host. Run `gitsby -q pullcom`.
+	- Incorrect behavior [Bug]: The second host gets the account's token from gh's helper, and gitsby exits 0. `raw git credential fill` for that host returns the token too. Plain git with the same config gets nothing.
+	- Expected behavior [Bug]: No gh or glab token variable reaches a git child.
+	- Reproduced [Bug]: 2026-11-20 on b23, with real gh 2.96, a fake token and a local TLS listener. Confirmed.
+	- Possible cause [Bug]: account.go:488 sets GH_ENTERPRISE_TOKEN for the whole run, and gh reads it for every Enterprise host. settlePrTool's GITLAB_TOKEN at pr.go:69 works the same way, by reading.
+	- Sweep: pr.go:69 GITLAB_TOKEN, and every other setEnv of a tool's token.
+	- Origin: d5d8cfa, nov19 (2026111016332206). Regression, and a missed twin of Code Review 20261119 item 5, whose Swept row says git is scoped to the host already.
+	- Closed reason: Done
+	- Related IDs: 2026112017135196
+	- Actual cause [Bug]: selectAccount put the token in gh's variable for the whole run, so every git child had it, and the helper 'gh auth setup-git' writes sent it to any Enterprise host git asked about. pr's GITLAB_TOKEN reached git the same way.
+	- Actual fix [Bug]: Through enhancement 2026112017135196's grant. No gh, glab or tea variable goes into gitsby's own environment, so git gets only GITSBY_HOST_TOKEN.
+	- Branch: nov20c-2026112017135196
+	- Commit: 9695856
+	- Test case: test.bash [dfh5s]: raw git asked for a second Enterprise host gh's helper serves, gitsby's own git asking the same through core.fsmonitor, and pr create's git asking another GitLab host through glab's helper. Go [dfjxb], [dfjxc].
+	- Verified: those 3 cases fail on the unfixed build and pass after. Not run with real gh 2.96.
+	- Swept: pr.go's GITLAB_TOKEN, raw glab's 3 variables, raw tea's 2, and gh's 2 all go through the grant now. Every other setEnv sets no token.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-183612
+
+- Code Review 20261120 item 3: A github.com account gets gh's Enterprise token when gh has the same login there
+	- ID: 2026112017135855
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261120-171358
+	- Opened by:
+	- Steps to reproduce [Bug]: Log gh in as `jim` on an Enterprise host. Give an account `ghaccount: jim` and no host. In a github.com repo in its folder, run `gitsby raw git credential fill` for github.com, then plain `git credential fill` after `account apply`.
+	- Incorrect behavior [Bug]: Both return the Enterprise token for github.com. With gh logged in on both hosts and GH_HOST on the Enterprise one, the right github.com token goes unused.
+	- Expected behavior [Bug]: The token for the account's own host, or none.
+	- Reproduced [Bug]: 2026-11-20 on b23, real gh 2.96 with a fake hosts.yml. Confirmed.
+	- Possible cause [Bug]: `gh auth token --user` without `--hostname`, at account.go:190 (probeGhToken) and accountcmd.go:876 (the helper's gh step).
+	- Origin: 8da8951 (Go port) and 08e7452 (2026110810100400). No round saw it. 2026111016332206's Swept row took GH_HOST as picking the host, which holds only for an Enterprise account.
+	- Closed reason: Done
+	- Related IDs: 2026112017135196
+	- Actual cause [Bug]: gh answers 'auth token --user' for the host GH_HOST names when no --hostname is given.
+	- Actual fix [Bug]: probeGhToken takes the account's host and passes --hostname, and the token cache is keyed by host and login. The fragment helper passes --hostname with the host git asked about, which has already matched gitsby.host. account list asks only for an account on a GitHub host.
+	- Branch: nov20c-2026112017135196
+	- Commit: 9695856
+	- Test case: test.bash [dfjxg] for raw git and plain git, Go [dfjxf] for both calls.
+	- Verified: [dfjxg] fails on the unfixed build for both and passes after. Plain git needs account apply run again, which the changelog says.
+	- Swept: every 'auth token' in src-go: probeGhToken and the fragment helper.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-183612
+
+- Code Review 20261120 item 4: An account whose host is ignored falls back to github.com, and its Gitea token goes there
+	- ID: 2026112017135838
+	- Type: Bug
+	- Status: Closed
+		- The token fix is pinned. Left for a look: the identity block's new Why and Fix lines for an ignored host, shown by 'gitsby whoami' in such an account's folder.
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261120-171358
+	- Opened by:
+	- Steps to reproduce [Bug]: Write `host: https://gitea.example.test` or `host: gitea.example.test:3000` by hand, with `user` and `tokenfile`. In a github.com repo inside its folder, run `gitsby raw git credential fill` for github.com, then `account apply` and plain git.
+	- Incorrect behavior [Bug]: The Gitea token comes back for github.com, and raw gh gets it as GH_TOKEN. apply writes a github.com helper with the Gitea token file. The only sign is an "Ignored keys" line.
+	- Expected behavior [Bug]: An account whose host was ignored gets no token or helper on any host.
+	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
+	- Possible cause [Bug]: config.go:755-758 blanks the bad value, and hostOf at config.go:908 then gives github.com.
+	- Origin: 8d3f857 (2026-08-26) and 6abd24c. No round saw it.
+	- Related IDs: 2026112017135196
+	- Actual cause [Bug]: The ignored value was blanked, and hostOf read a blank host as github.com.
+	- Actual fix [Bug]: The config records an ignored host, and hostOf gives no host for that account, so it serves no host and gets no token. Its fragment sets no token file, ghAccount, username or helper. The identity block says the host was ignored and how to set it.
+	- Branch: nov20c-2026112017135196
+	- Commit: 9695856
+	- Test case: Go [dfjxe], test.bash [dfh5s] (raw git, plain git and raw gh in its folder).
+	- Verified: [dfjxe] and the 3 walk cases fail on the unfixed build and pass after.
+	- Swept: hostOf's callers: accountHost, fragmentNames (the file is named '_<login>' now), fragmentKeys, fragmentHelperFor, loginOf, account list's gh store check, and the identity block's notes.
+	- Closed reason: Done
+	- Closed: 20261120
+	- Acceptance signoff: 20261120, closed under the standing close rule; a changed message alone is no reason to wait
+	- 20261120: the Why line was cut to 2 sentences before the close: 'That block's host isn't a plain host name, so it was ignored. A block with no host gets no token anywhere.'
 
 - Code Review 20261119 item 1: sync, br switch and br create push to origin's main when the branch tracks origin/main
 	- ID: 2026111910223293
@@ -2535,6 +2400,299 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: 2026-10-05, all 3 choices answered.
 	- Closed: 2026-10-05
 
+- Go test [dfk1m] hangs on Windows, so stage 7's Go test run doesn't end
+	- ID: 2026112021204523
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-212045
+	- Opened by:
+	- Related IDs: 2026112017135720, 2026112017135704
+	- Steps to reproduce [Bug]: Build the Windows Go test binary from nov20c and run TestRemoteReachesGiveUpOnAStalledSSHRemote on vm925w, which has Windows OpenSSH on PATH.
+	- Incorrect behavior [Bug]: The test was still running when the run was stopped at 300 s. Its own limit is 30 s per reach. No subtest line showed, so which reach waits isn't known yet.
+	- Expected behavior [Bug]: Each reach gives up within its limit on Windows too, or the test skips there with the reason.
+	- Reproduced [Bug]: 2026-11-20 on vm925w, once, from e0ef618. With it skipped, the rest of the binary passed there: 294 ok, 32 skipped, none failed. Confirmed.
+	- Possible cause [Bug]: Not known. Windows OpenSSH may not act on ServerAliveInterval against a server that sent its banner, which would mean the fetch itself still hangs on Windows. Or the listener's held connections keep something open there.
+	- Origin: adcef33, nov20c (2026112017135720). Its tests ran on b23 only.
+	- Actual cause [Bug]: The login probe runs PATH's ssh, which on Windows is Windows' own OpenSSH 9.5p2. Against a server quiet after its banner, it reports the timeout and then doesn't exit, and it doesn't end when the server closes either. So [dfk1m]'s 30 s guard fired, and its wait after closing the listener had no limit, which held the binary. The fetch, ls-remote and repo probe passed there, since Git for Windows runs its own ssh (OpenSSH 10.5p1), which exits at the timeout.
+	- Actual fix [Bug]: The login probe runs ssh under its own limit, ssh's connect timeout plus stallSeconds plus 5 s, 38 s in a run, and stops waiting for output a second after the kill, for a child the ssh command left. [dfk1m] and its http twin [dfhez] now wait at most 10 s after closing the listener, so a client that ignores the close fails rather than holding the binary.
+	- Branch: nov20c-2026112017135720-fix
+	- Commit: 87bce73
+	- Test case: Go [dfk3h] TestSSHLoginProbeEndsAnSSHThatIgnoresItsLimits, both login probe paths against a fake ssh that never ends and leaves a child holding its output. It skips on Windows, where the fakes are shell scripts. Go [dfk1m] on vm925w covers Windows' own ssh.
+	- Verified: On vm925w, [dfk1m] from the unfixed build hung in the login probe, per its goroutine stacks at -test.timeout, and the fixed build passed it in 32 s, with [dfhez] and [dfk1n] passing too. [dfk3h] fails with the limit taken out and with the output wait taken out, and passes with both. The quick gate's lint and unit areas passed, and unit with --no-container ran [dfk1m], [dfk1n], [dfk3h] and [dfhez], all passing. gosec 37, unchanged.
+	- Swept: every ssh gitsby runs over the network itself is probeSSHLogin, called from sshLogin and askSSHLoginAhead, and both pass the limit. The ssh -G reads in show.go and account.go read config only. The fetch, ls-remote and repo probe run ssh through git. With Windows' own ssh named as the ssh command, those wait too, filed as 2026112021513016. The tests that wait on a reach after closing a listener are [dfhez] and [dfk1m], and both are bounded.
+	- Decisions: A limit on the probe's process rather than a Windows skip, since the product's login probe hung there too. One limit on every platform, since an ssh that keeps its own limits ends first. No limit on the whole fetch, which can run long. The probe's limit is read on the calling goroutine, per askSSHLoginAhead's rule. Stage 7's missing time limit is filed as 2026112021514129.
+	- Acceptance signoff: Self-closed: reproduced on vm925w, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-215223
+	- Closed reason: Done
+
+- Code Review 20261120 item 5: release from a feature branch with unpushed work or a dirty tree tags the commit already released
+	- ID: 2026112017135822
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-171358
+	- Opened by:
+	- Steps to reproduce [Bug]: After `release v1.0.0`, create feat and push it. Make a commit on it, or leave a file edited. Run `gitsby -q release`.
+	- Incorrect behavior [Bug]: It tags v1.0.1 on the v1.0.0 commit, pushes the tag and exits 0. A clean feat says "Nothing new to release". When the dev push failed after main and the tag went out, a bare release from dev also cuts v1.0.1 on the same commit.
+	- Expected behavior [Bug]: "Nothing new" for the feature branch runs, and the failed dev push finished as a resume.
+	- Reproduced [Bug]: 2026-11-20 on b23, with local bare origins. Confirmed.
+	- Possible cause [Bug]: The `parks || isAhead()` shortcut at release.go:152-156 counts parked work that never reaches the release. unpushedRelease checks main only.
+	- Origin: 20260727b item 12, ported in 4918b5b and changed in 7c3281d and 8dfe5ff. No round saw it. It undoes item 12's aim, which was to stop a second tag on one commit.
+	- Closed reason: Done
+	- Actual cause [Bug]: The nothing-new check counted any edit, staged change or unpushed commit on the current branch as work to release. Only dev's and the default branch's reach it, since the release merges dev alone. And after a release whose dev push was refused, dev's lead over origin's counted as new, while the resume check read only the default branch.
+	- Actual fix [Bug]: The current branch's work counts only on dev or the default branch, through parksIntoRelease. The check reads both copies of dev, so a local dev commit still counts from a feature branch. unpushedRelease also takes a level default branch whose tip is tagged, with dev on that tip and origin's dev behind it, and finishes that release by pushing dev.
+	- Test case: test.bash [dfjy3] to [dfjyd].
+	- Verified: [dfjy3] to [dfjy7], [dfjy9], [dfjya] and [dfjyc] fail on the build before the fix, and all 11 pass with it. With the branch check dropped, [dfjy3] to [dfjy7] fail. With the local dev check dropped, [dfjy7] fails. With the dev resume off, [dfjy9], [dfjya] and [dfjyc] fail. With the resume taking a dev that moved on, [dfjyd] fails. The quick gate passed in 3 calls, since all of it ran past 4 minutes at load 10: lint and unit, suite 2265/0, fuzz 310/0 and parity 31/0. gosec 37, as before, none in release.go.
+	- Swept: every work check in src-go, by grep for isAhead(), treeDirty() and indexDiffers(). Only releasePreflight decides whether there is something to release. pushIfOnline, refuseParkPush, pr ok's refusal and repo connect ask about the current branch's own push, which is right for them.
+	- Branch: nov20c-2026112017135822
+	- Commit: c8ab774
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-185827
+	- Decisions:
+		- Only the current branch's own work is read, when it is dev or the default branch. A branch whose park push lands on origin's dev, as under push.default=upstream, isn't counted. There the worst case is a "Nothing new" that changes nothing, and reading the push remote and dev's upstream for it is more code than that case is worth.
+		- On a feature branch, "Nothing new" leaves its commits and edits as they are, with nothing parked or pushed, the same as on a clean one.
+		- The dev resume needs a release tag on the default branch's tip, dev on that tip, and origin's dev behind it. A dev that moved on since cuts the next release, as before. A typed version that differs still cuts its own.
+		- The dev resume says "Release vX is out, but 'dev' never reached origin; finishing it.", since its tag did reach origin. The default branch's case keeps its line.
+		- 1 more git call on every release (a rev-parse in the resume check), and 1 more on the nothing-new path (the local dev check). release isn't in the spawn counts.
+
+- Code Review 20261120 item 6: A ? or # before the @ in a URL gets a token past the host check
+	- ID: 2026112017135807
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-171358
+	- Opened by:
+	- Steps to reproduce [Bug]: With GH_HOST on the account's Enterprise host, run `gitsby raw gh api 'http://127.0.0.1:PORT?@ghe.example.test/x'`. The same with `#@`, and through `raw glab api`.
+	- Incorrect behavior [Bug]: The local listener gets the account's token from gh and from glab. An origin written the same way shows and resolves as github.com, while git fetches from 127.0.0.1.
+	- Expected behavior [Bug]: The host ends at the first `/`, `?` or `#`, as net/url and git read it.
+	- Reproduced [Bug]: 2026-11-20 on b23, with real gh 2.96, glab 1.53 and a local listener. Confirmed.
+	- Possible cause [Bug]: splitRemoteURL at githost.go:100 ends the host only at `/`.
+	- Origin: 9333159. It became a token check in 20e7cae (Code Review 20261110b item 1) and 22554f6 (Code Review 20261119 item 5). No round saw it.
+	- Closed reason: Done
+	- Related IDs: 2026112017135196
+	- Actual cause [Bug]: splitRemoteURL ended the host only at '/', and took the last '@' before it.
+	- Actual fix [Bug]: A '<scheme>://' URL's host comes from net/url, which ends it at the first '/', '?' or '#'. One net/url won't parse is cut at the same places. Every reader of a URL host goes through it, the gh and glab host lists and sameService included.
+	- Branch: nov20c-2026112017135196
+	- Commit: 9695856
+	- Test case: Go [dfjxd], test.bash [dfh5s]'s '?@' and '#@' cases for raw gh and raw glab.
+	- Verified: [dfjxd] and the 3 walk cases fail on the unfixed build and pass after. An IPv6 host in brackets also reads right now.
+	- Swept: splitRemoteURL's callers: parseRemoteText, glabURLHost, glabHostName and glabRepoArg. The scp-like form has no query part.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-183612
+
+- Code Review 20261120 item 7: After account set changes ghaccount, gitsby goes on acting as the old login until account apply
+	- ID: 2026112017135793
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-171357
+	- Opened by:
+	- Steps to reproduce [Bug]: Run apply with `ghaccount: oldlogin`, then `account set work ghaccount newlogin` and `account set work email new@example.test`. Run `whoami` and `raw git credential fill`.
+	- Incorrect behavior [Bug]: whoami says oldlogin, from the gitsby.ghAccount key in the global git config, with the old email and the old token. account set doesn't mention apply.
+	- Expected behavior [Bug]: gitsby goes by the accounts file. design.md lets the git config key win only for a single repo that answers for itself, and apply's fragments aren't that.
+	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
+	- Possible cause [Bug]: account.go:49-58 reads the key from any global config file, the fragments included.
+	- Origin: 4918b5b and 1ae9d85 (2026-08-19). Not a regression, and no round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: account apply writes the account's ghaccount and tokenfile into its fragment as gitsby.ghAccount and gitsby.ghTokenFile, and gitsby read both from git config with the fragments included. The fragment's key outranked the folder rule, so after account set the old login won, and the account block was dropped for naming another login, with its email and token.
+	- Actual fix [Bug]: gitsby leaves out what the fragments set when it reads gitsby.ghAccount, gitsby.ghTokenFile and gitsby.host, through one reader, gitConfigOutsideFragments. A key set by hand, in a repo, a global file or an include of your own, still counts. account set and unset say plain git keeps the old values until account apply runs again, when the global config includes any fragment. design.md, accounts.md and the changelog say so.
+	- Decisions: Leave the fragment's entries out and take the last one left, rather than drop the key whenever the fragment's is the one git settles on, so an apply changes nothing gitsby resolves, which [dfjyt] checks. The token file fallback and its host key go the same way, since the fragment's copy names the old token file after account unset. Fragments are told by being under the accounts file's own fragment folder, as apply's cleanup tells them. A note on account set rather than running apply for it, since apply writes your global git config.
+	- Test case: test.bash [dfjyr], [dfjys], [dfjyt], [dfjyv], [dfjyw], [dfjyx], [dfjyy], [dfjyz]. Go [dfjz0].
+	- Verified: test.bash [dfjyr] and [dfjyt] to [dfjyz] fail on the unfixed build (test.bash 2264/8; the eighth, [dd5ft], is the Go test file not compiling against the old code) and pass after. [dfjys] passes both ways, as it pins kept behavior. With only the token file reader put back, [dfjyx]'s case gets the old token file. [dfjz0] fails with the fragment check taken out. Quick gate passed, all areas: test.bash 2272/0, fuzz 310/0, parity 31/0. gosec on src-go: 37, as before. Not run on Windows.
+	- Swept: every gitsby.* key read from git config in src-go: gitsby.ghAccount in resolveAccount, gitsby.ghTokenFile and gitsby.host through configOwnScope. The fragment helper's own reads are plain git's, and valueOutsideFragments already left the fragments out.
+	- Branch: nov20c-2026112017135793
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-190927
+	- Progress log: 20261120: [dd80c] (status names the global git config for the key apply's fragment sets) is commented out. It pinned gitsby reading that key, which this item ends. Its display rule is kept by [dfjys], for a key from an include written by hand.
+	- Commit: db581a9
+
+- Code Review 20261120 item 8: repo connect and repo create finish a stopped merge or am under gitsby's message
+	- ID: 2026112017135778
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-171357
+	- Opened by:
+	- Steps to reproduce [Bug]: With commits and no origin, run `git merge side`, resolve and add. Then run `gitsby -q repo connect <empty bare repo>`. Or stop a `git am -3` partway and resolve it.
+	- Incorrect behavior [Bug]: It commits the merge, or patch 1, as "gitsby <stamp>" and pushes it. The am case drops the patch's author and message and leaves rebase-apply behind.
+	- Expected behavior [Bug]: Refused, as the other commands refuse a pending operation.
+	- Reproduced [Bug]: 2026-11-20 on b23 for repo connect, both cases. repo create only by reading. Confirmed.
+	- Possible cause [Bug]: The gate at mutate.go:132 lets the repo commands through on the premise that they never commit onto existing history, but cmdConnect commits at repo.go:400. design.md:197 states the same premise.
+	- Origin: 5177ad4, nov19b, Code Review 20261119 item 3. Missed twin.
+	- Closed reason: Done
+	- Actual cause [Bug]: The pending-op gate let every repo and account command through, on the premise that none commits onto existing history. repo create and repo connect commit the whole tree before they push it, so a resolved merge or am -3 went out under gitsby's message.
+	- Actual fix [Bug]: The gate names its exceptions now: repo clone, repo url and the account commands. Every other mutating command refuses before the plan, repo create and repo connect included, and so will a new one. design.md and the changelog say so.
+	- Branch: nov20c-2026112017135778
+	- Commit: 486c987
+	- Test case: Go [dfjzg] TestPendingOpEveryCommitter. test.bash [dfjzh] to [dfjzn].
+	- Swept: every mutating command, by [dfjzg], which settles each entry of the usages table and expects the refusal from all but the 5 exceptions. It checked 17. repo clone works outside this tree, repo url only re-spells origin, and the account commands write config only.
+	- Decisions: Named by exception, as pushesToRemote is, so a new mutating command refuses until it's listed. The refusal text is the shared one, unchanged.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-194643
+	- Verified: [dfjzh] to [dfjzn] fail on the build before the fix and pass with it, repo create's [dfjzm] through the fake gh. [dfjzg] fails with the old gate, naming repo create and repo connect. The quick gate with every area passed before a last change to the file reads in worktreeBusyWith and worktreeFolder. After it, lint, go test, test.bash 2282/0, fuzz 310/0 and spawn counts passed in one gate call that hit its time limit as parity closed, and parity passed 31/0 rerun alone. gosec 37, as before.
+
+- Code Review 20261120 item 9: Stage 0 passes with conflict markers in the tree when its autostash restore conflicts
+	- ID: 2026112017135764
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-171357
+	- Opened by:
+	- Steps to reproduce [Bug]: Diverge from origin, and leave an edit in a file that origin's commit also changes. Run `cicd.bash -y --no-container` with every later stage turned off.
+	- Incorrect behavior [Bug]: git makes the merge, prints "Applying autostash resulted in conflicts" and exits 0. Stage 0 says PASS, the run exits 0, and the tree has the file as `UU` with markers. The edit is only in the stash. The fast-forward path does the same.
+	- Expected behavior [Bug]: The run stops before building, with the merge backed out and the edit back in the tree, per 2026112013542571.
+	- Reproduced [Bug]: 2026-11-20 on b23, the real stage 0 in a clone with a local bare origin. Confirmed.
+	- Possible cause [Bug]: cicd.bash:1134 and :1142 trust git's exit status after `--autostash`.
+	- Origin: 0633cc1 (2026112013542571) for the merge path, and b463d2b (2026-08-12) for the fast-forward path. Missed twin of 2026111910223074. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: git exits 0 when --autostash can't put the edits back after a merge or fast-forward. It only warns, leaves markers in the tree and keeps the edits in a new stash entry, and stage 0 trusted the exit status.
+	- Actual fix [Bug]: Both stage 0 merges go through one function, fSyncMerge in cicd.bash. A new stash entry after the merge means the restore failed. It then resets to the commit it started from, pops that entry with --index, and stops the run naming the clashing files.
+	- Test case: test.bash [dfk07] to [dfk0a].
+	- Verified: [dfk07] to [dfk0a] fail on the unfixed cicd.bash (suite 2282/4) and pass with the fix. [dfk08] fails with --index dropped from the pop. The quick gate with every area passed: test.bash 2286/0, fuzz 310/0, parity 31/0.
+	- Swept: every --autostash in the repo's scripts, by grep: only the two stage 0 merges, both fixed. The publisher pops its own stash and checks the pop's status. Its index loss is item 27. The Go pulls already check after --autostash (2026111910223074).
+	- Decisions: The new stash entry is the signal, since that is where git leaves the edits. The unmerged paths only name the files in the message. The reset goes to the commit stage 0 started from, where the stash applies clean, and --index keeps staged edits staged. A stash entry the user already had is left alone, pinned by [dfk0a].
+	- Branch: nov20c-2026112017135764
+	- Commit: 6d96733
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-200611
+
+- Code Review 20261120 item 10: release and repo connect commit the tree, then refuse the push and say nothing was done
+	- ID: 2026112017135749
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-171357
+	- Opened by:
+	- Steps to reproduce [Bug]: Under push.default=simple, run `git checkout -B feat origin/feature-x`, edit a file, and run `gitsby -q release v1.0.0`. Do the same with `gitsby -q repo connect <same url>`.
+	- Incorrect behavior [Bug]: It commits "gitsby <stamp>" onto feat, then refuses the push with "... Nothing was done." The plan shows the push with no warning. repo connect's plan line says `git push -u origin HEAD`, which isn't what runs.
+	- Expected behavior [Bug]: Refused before the plan, as design.md:206 and Code Review 20261119 item 1's decision say for simple.
+	- Reproduced [Bug]: 2026-11-20 on b23, with -q and at the prompt. Confirmed.
+	- Possible cause [Bug]: parkPushes at mutate.go:697 leaves release and repo connect out. pushDest.refusal at mutate.go:690 always says "Nothing was done", also when it's reached after a commit, a merge or a tag.
+	- Origin: 1c8c364 and ca1f916, nov19b, Code Review 20261119 item 1. Missed twin, since its Swept row lists release's park push.
+	- Actual cause [Bug]: The refusal before the plan read its own list of park-push commands, which left out release and repo connect. Both committed the tree, then had the push refused at the step, whose text said nothing was done. repo connect's plan line was a fixed 'git push -u origin HEAD', whatever ran.
+	- Actual fix [Bug]: Every push of the current branch a command makes is on one list (plannedPushes in mutate.go), which the refusals before the plan, the --direct and gone-branch checks and the plan's push line read, and the step builds the same way. release and repo connect are on it, so they refuse before the plan where git would refuse the push. release from a branch whose push lands on main or dev refuses as br create does, naming sync --direct. repo connect's plan line names the push that runs. The step's own refusal, now reached only after a commit, a merge or a tag, no longer says nothing was done. design.md and the changelog say so.
+	- Branch: nov20c-2026112017135211
+	- Test case: test.bash [dfk10] to [dfk1c]; Go TestPlannedPushesEveryCommand [dfk0z] and TestPlannedPushDisp [dfk0y].
+	- Verified: [dfk15] to [dfk17] and [dfk1a] fail on the build before the fix and pass with it. [dfk1c] pushed the feature branch to main and tagged it at exit 0 on the old build, and refuses on the new one. [dfk10] to [dfk14] pass on both, since those commands were already refused. [dfk0z] fails with release or repo connect taken off the list, and [dfk0y] fails with the step's refusal saying nothing was done. The quick gate passed with every area: test.bash 2299/0, fuzz 310/0, parity 31/0, spawn counts unchanged. gosec 37, as before, none in the changed lines.
+	- Swept: every reader of the old command list and pushTarget: directPush, directTarget, pushesGoneBranch, the preflight refusal and the sync plan line. Every pushCurrent caller: the park pushes and repo connect's are on the list. br merge's target, release's default branch and dev, and the hotfix back-merge push other branches, and are child 2026112020293534. parkHead still reads pushDest, since br merge and pr create ask it with nothing to push and offline too.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-202950
+	- Closed reason: Done
+	- Decisions:
+		- The run builds its push with the same function the list uses, rather than reading the list made before the commit, since the commit drops the cached refs.
+		- release from a feature branch whose push lands on main or dev is refused rather than given --direct, which stays sync's and br switch's, per 2026111016332380. Before, it pushed the work to main ahead of the release merge.
+		- repo connect's first publish keeps 'git push -u origin HEAD', which is what runs.
+		- The --direct and gone-branch checks stay on park pushes, so repo connect isn't asked about either.
+	- Commit: ccb0c7f
+
+- Code Review 20261120 item 11: A branch another worktree is rebasing or bisecting isn't refused, so the run pushes and then fails
+	- ID: 2026112017135735
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-171357
+	- Opened by:
+	- Steps to reproduce [Bug]: Run `git worktree add ../wt dev`, then in wt stop a `git rebase -i` at an edit, or start a bisect. In the main worktree on feat with an edit, run `gitsby -q br switch dev`.
+	- Incorrect behavior [Bug]: It commits and pushes feat, then fails at the checkout with "'dev' is already used by worktree", exit 1.
+	- Expected behavior [Bug]: Refused before the plan, as for a worktree that has the branch checked out.
+	- Reproduced [Bug]: 2026-11-20 on b23, with a rebase and with a bisect. Confirmed.
+	- Possible cause [Bug]: `%(worktreepath)` names only a worktree whose HEAD is the branch. git also refuses a branch that another worktree is rebasing or bisecting.
+	- Origin: 6f277d3, nov19b, Code Review 20261119 item 13. Missed twin.
+	- Closed reason: Done
+	- Actual cause [Bug]: refuseHeldBranch read only %(worktreepath), which names a worktree whose HEAD is the branch. A worktree stopped in a rebase of the branch, or bisecting from it, has a detached HEAD, and git still won't check the branch out anywhere else.
+	- Actual fix [Bug]: refuseHeldBranch also reads each other worktree's rebase-merge, rebase-apply and BISECT_START, as git does, and refuses before the plan, naming the folder and the rebase's --continue and --abort, or git bisect reset. The worktrees folder comes from one more --git-path in enterRepo's rev-parse, so no spawn was added. design.md and the changelog say so.
+	- Branch: nov20c-2026112017135778
+	- Commit: 486c987
+	- Test case: Go [dfjzf] TestRefuseBusyBranch. test.bash [dfjzp] to [dfjzt].
+	- Swept: every command that checks a branch out lists it in checkoutsAhead and goes through refuseHeldBranch: br create, br hotfix, br switch, br merge, pr ok and release. br merge deletes only the branch it stands on. br prune's branch -D is left to git, which refuses a busy branch by its source (not run), and its non-fatal handling names that branch and keeps the remote copy. No other call writes an existing branch ref, by grep for update-ref, branch -f, checkout -B and fetch refspecs.
+	- Decisions: The files are read as git's is_worktree_being_rebased and is_worktree_being_bisected read them, rather than through git worktree list, which doesn't name a detached worktree's branch and costs a spawn. An am in another worktree holds no branch, as in git. The reads go through os.DirFS, which keeps them inside each git dir.
+	- Note: No test fails without the rebase-apply/applying check, since git am writes no head-name. It stays, to match git.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-194643
+	- Verified: [dfjzp] to [dfjzs] fail on the build before the fix and pass with it, and [dfjzt] passes on both. [dfjzf] fails 5 of its cases with the file check turned off. The quick gate with every area passed before a last change to the file reads in worktreeBusyWith and worktreeFolder. After it, lint, go test, test.bash 2282/0, fuzz 310/0 and spawn counts passed in one gate call that hit its time limit as parity closed, and parity passed 31/0 rerun alone. gosec 37, as before.
+
+- Code Review 20261120 item 12: An ssh origin that stalls after its banner hangs the fetch with no time limit
+	- ID: 2026112017135720
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-171357
+	- Opened by:
+	- Steps to reproduce [Bug]: Run a 127.0.0.1 listener that sends an SSH banner and then nothing. Point origin at it with an ssh:// URL and run `gitsby -q pullcom`.
+	- Incorrect behavior [Bug]: It waits at `git fetch` until it's killed. A server that sends nothing at all ends at the 3 second connect timeout.
+	- Expected behavior [Bug]: The fetch gives up after a few seconds, as an http stall does since Code Review 20261119 item 11.
+	- Reproduced [Bug]: 2026-11-20 on b23, OpenSSH 10.3p1. Confirmed. The identity probe at remote.go:279 has the same arguments, by reading.
+	- Possible cause [Bug]: The ssh arguments at remote.go:207 set ConnectTimeout only. ServerAliveInterval and ServerAliveCountMax would end the stall.
+	- Origin: 3d22222 (Go port). Missed twin of Code Review 20261119 item 11, whose sweep covered http only.
+	- Closed reason: Done
+	- Actual cause [Bug]: ssh's ConnectTimeout bounds only the connect and the server's banner. gitsby set nothing for what comes after, and ssh sets no limit of its own, so the fetch and the login probe waited on a quiet server until killed.
+	- Actual fix [Bug]: The fetch, origin/HEAD healing, br prune's ls-remote, the repo probe and the login probe add ServerAliveInterval=10 and ServerAliveCountMax=3 after ConnectTimeout=3. A server quiet for 30 s, the key exchange included, ends the wait, the same limit an http fetch has. pullcom on such an origin warns that the fetch failed after 30 s and goes on.
+	- Branch: nov20c-2026112017135720
+	- Commit: adcef33
+	- Test case: Go test [dfk1m] TestRemoteReachesGiveUpOnAStalledSSHRemote, the fetch, ls-remote, repo probe and both login probe paths against a listener that sends a banner and then nothing. Go test [dfk1n] TestSSHStallOptionsAsSSHReadsThem, remoteEnv's command read back through ssh -G, with a command's own values kept.
+		- 2026-11-20: [dbfvz], [dcnp4], [deyth] and [dfg26] asserted the ssh command with ' -o ConnectTimeout=3' added. They now assert ' -o ConnectTimeout=3 -o ServerAliveInterval=10 -o ServerAliveCountMax=3', spelled out once in the test file. Nothing else they check changed.
+	- Verified: [dfk1m] fails with the ServerAlive options taken out, the fetch still waiting at 30 s, and fails with either login probe caller passing ConnectTimeout alone. [dfk1n] fails with the options taken out, and with them put ahead of the command's own. Both pass with the fix. The built binary's pullcom on a banner-only ssh origin ended at 30 s with the offline warning. The quick gate passed with every area. [dfk1m] and [dfk1n] skip in the container, which has no ssh, and passed in the unit area with --no-container. gosec 37, unchanged.
+	- Swept: every spawn that reaches a remote over ssh outside a step. fetch and set-head in fetchRemote, ls-remote --heads in askOriginHeads and ls-remote in probeRemote all read remoteEnv. probeSSHLogin is called from sshLogin and askSSHLoginAhead, and both pass the limits. The ssh -G reads in show.go and account.go read config only. Push, pull and clone run as steps.
+	- Decisions: One stallSeconds, 30, for http and ssh, so both transports give up alike. ServerAliveInterval is a third of it. The options go after the command's own words, since ssh keeps the first value it reads, so a value the ssh command sets itself wins. One in ssh_config is outranked, as ConnectTimeout already was. Push, pull and clone stay as git runs them, per 2026111910223148. The look-ahead probe reads its limits on the calling goroutine, per askSSHLoginAhead's rule.
+	- Note: Found while working it, filed as 2026112020462137 (the probe drops an ssh:// port) and 2026112020462150 (no ssh in the cicd image).
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-205352
+
+- Code Review 20261120 item 13: 2 Go tests fail on Windows, so the next full run fails at stage 7
+	- ID: 2026112017135704
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-171357
+	- Opened by:
+	- Steps to reproduce [Bug]: Build the Windows Go test binary and run it on vm925w beside the sources, as stage 7 does.
+	- Incorrect behavior [Bug]: [dfhjk] TestOld2xNoticeOneReading fails, since chmod doesn't lock a folder on Windows. It fails as root too. [dfh8b] TestRefuseHeldBranch fails 4 runs out of 4 when it renames the worktree folder, with "being used by another process".
+	- Expected behavior [Bug]: Both pass or skip on Windows, as the other tests that lock a folder with chmod skip on Windows and as root.
+	- Reproduced [Bug]: 2026-11-20 on vm925w, and [dfhjk] under Wine on b23. Confirmed.
+	- Possible cause [Bug]: cfgformat_test.go:783 lacks the `isWindows() || os.Geteuid() == 0` skip. branch_test.go:380 renames a folder Windows still has open.
+	- Origin: bcc3cb2, nov19c (2026111910223002), and 6f277d3, nov19b (2026111910223119). Both rounds ran chosen Windows tests, never the whole binary.
+	- Closed reason: Done
+	- Actual cause [Bug]: [dfhjk] locked its folder with chmod in both cases, and on Windows chmod doesn't lock a folder, so the file was converted. [dfh8b] called t.Chdir(clone) while in linked. t.Chdir keeps the folder it leaves open until its test ends, so it can go back, and Windows won't rename an open folder. Nothing else held it: no git process was left, and a GC changed nothing.
+	- Actual fix [Bug]: [dfhjk] runs its 2 cases as subtests, and the unwritable-folder one skips on Windows and as root, as the other chmod tests do. [dfh8b] runs its cases from linked in a subtest of their own, so linked is let go before the rename. Its twin [dfjzf], added this round, renamed linked with the cwd still there, and each of its asks is now a subtest for the same reason.
+	- Test case: Go [dfhjk] TestOld2xNoticeOneReading, [dfh8b] TestRefuseHeldBranch and [dfjzf] TestRefuseBusyBranch, on vm925w. Linux renames an open folder, so no check here can fail on it.
+	- Verified: on vm925w, the build before the fix failed all 3, and the fixed build (e0ef618) passed all 3, with the unwritable-folder case of [dfhjk] skipped. The whole fixed binary with its sources there, [dfk1m] skipped, passed: 294 ok, 32 skipped. Quick gate with every area passed: test.bash 2299/0, fuzz 310/0, parity 31/0.
+	- Swept: every os.Chmod of a folder in src-go's tests (cfgformat_test.go 165, 368, 677 skip on Windows and root; accountcmd_test.go 1857 skips as root and passed on vm925w), and every test with 2 or more t.Chdir calls (TestEnterRepoSettlesTopLevel, TestDefaultBranchBesideSameNamedTag, TestRefuseNarrowFetch, TestRawNestChain). Only [dfh8b] and [dfjzf] rename or remove a folder they were in, per grep of os.Rename and os.RemoveAll in *_test.go.
+	- Decisions: [dfhjk] keeps its first case on Windows, since only the second needs a locked folder. Subtests rather than os.Chdir, so the tests keep using t.Chdir and its restore. A retry on the rename was ruled out, since the folder stayed held for 15 s.
+	- Note: The whole Windows binary hung at [dfk1m], filed as 2026112021204523.
+	- Branch: nov20c-2026112017135704
+	- Commit: e0ef618
+	- Acceptance signoff: Self-closed: all 3 tests failed on vm925w before the fix and pass after.
+	- Closed: 20261120-212100
+
+- CICD process gaps: publish commits every pending edit in the tree, another session's included
+	- ID: 2026112013542584
+	- Type: Bug
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-135425
+	- Opened by:
+	- Incorrect behavior: Stage 8's publisher stages the whole tree, so a run commits whatever else is edited there.
+	- Expected behavior: Publish commits only the tracked files the run itself changed. Here that's the demo gif, and only when it matched HEAD when the run started.
+	- Actual fix: config.bash names the files a run may rewrite. cicd.bash notes which of them were already edited at the start and hands the publisher the rest that changed. The publisher commits only those, as the copy in a sister project does.
+	- Branch: sync-publish
+	- Test case: test.bash [dfjme], [dfjmf] and [dfjmg].
+	- Acceptance signoff: Self-closed: all 3 failed against the old cicd.bash and publisher, and pass now.
+	- Closed: 20261120-135440
+	- Commit: 0633cc1
+
 - Code Review 20261119 item 11: A stalled https remote hangs every command
 	- ID: 2026111910223148
 	- Type: Bug
@@ -3859,6 +4017,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
 	- Closed: 2026-09-30
 
+- CICD process gaps: stage 0 stops on any branch that diverged from origin
+	- ID: 2026112013542571
+	- Type: Enhancement
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261120-135425
+	- Opened by:
+	- Requirements: Per the shared CICD rules, a diverged branch merges origin in with --no-ff when it merges clean, and the run then tests the merged tree. A merge that conflicts is backed out with the tree as it was, uncommitted edits included, and the run stops.
+	- Decisions: This supersedes the earlier call, under the 20260812 accounts and arguments item, that stage 0 stops on any divergence.
+	- Branch: sync-publish
+	- Test case: test.bash [dfjmb], [dfjmc], [dd5g3] (now the conflict case) and [dfjmd].
+	- Acceptance signoff: Self-closed: each check failed against the old stage 0 or a planted fault, and passes now.
+	- Closed: 20261120-135440
+	- Commit: 0633cc1
+
 - Demo: add a br merge scene, and hold screens long enough to read
 	- ID: 2026111010125300
 	- Type: Enhancement
@@ -4872,6 +5047,58 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- Code Review 20261120 item 22: raw tea in a GitHub account's folder gets GH_TOKEN
+	- ID: 2026112017135562
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171355
+	- Opened by:
+	- Steps to reproduce [Bug]: In a GitHub account's folder, with GITEA_INSTANCE_URL set, run `gitsby raw tea` with a fake tea.
+	- Incorrect behavior [Bug]: tea gets an empty GITEA_TOKEN plus GH_TOKEN. tea 0.11 and later builds its login from GH_TOKEN in that case, so the GitHub token goes to the Gitea URL.
+	- Expected behavior [Bug]: design.md's table says raw tea gets GITEA_TOKEN only.
+	- Reproduced [Bug]: The environment on b23 with a fake tea. tea 0.11 wasn't run, since 0.9.2 is installed. Plausible.
+	- Possible cause [Bug]: main.go:981 leaves GH_TOKEN and GH_ENTERPRISE_TOKEN in tea's environment.
+	- Origin: tea's own change, read from its source. No round saw it.
+	- Closed reason: Done
+	- Related IDs: 2026112017135196
+	- Actual cause [Bug]: selectAccount's GH_TOKEN was in the process's environment, which tea inherited.
+	- Actual fix [Bug]: Through the grant: tea gets GITEA_TOKEN and GITEA_INSTANCE_URL only, and only for a non-GitHub account.
+	- Branch: nov20c-2026112017135196
+	- Commit: 9695856
+	- Test case: test.bash [dfh5s] (raw tea in a github.com account's folder), [dfh5t] (raw tea in the Gitea folder still gets its token).
+	- Verified: pinned by the [dfh5s] case, whose fake tea gets the account's GH_TOKEN on the unfixed build, and not after. tea 0.11 still not run. A caller's own GH_TOKEN still reaches tea, as under plain tea.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-183612
+
+- Code Review 20261120 item 45: The park push's plan line leaves out a remote other than origin
+	- ID: 2026112017135225
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171352
+	- Opened by:
+	- Steps to reproduce [Bug]: Have feat track up/feat on a second remote, edit a file, and run `gitsby br switch dev`.
+	- Incorrect behavior [Bug]: The plan says `git push (branch 'feat')`, and the run is `git push up HEAD:refs/heads/feat`.
+	- Expected behavior [Bug]: The plan names the remote when it isn't origin. style-guide_ui-ux.md:98 says a plan that differs from what runs is a bug.
+	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
+	- Possible cause [Bug]: preview.go:43 names a ref of another name but never another remote.
+	- Origin: ca1f916, nov19b, Code Review 20261119 item 1.
+	- Closed reason: Done
+	- Actual cause [Bug]: The plan's push line named a target of another name, but never the remote, while the step pushes to the push remote that pushRemote, remote.pushDefault or the upstream sets.
+	- Actual fix [Bug]: The line comes from the push list's entry, the one the step's arguments come from, and names the remote when it isn't origin, as `git push (branch 'feat', to 'feat' on 'up') *`. That covers sync and every command whose plan shows the park push.
+	- Branch: nov20c-2026112017135211
+	- Test case: test.bash [dfk18] [dfk19]; Go TestPlannedPushDisp [dfk0y].
+	- Verified: [dfk18] fails on the build before the fix and passes with it. [dfk19] passes on both, since the push already went to up. [dfk0y] checks each line against the step's own arguments, over 10 push setups. The quick gate passed with every area: test.bash 2299/0, fuzz 310/0, parity 31/0.
+	- Swept: every plan line for a push of the current branch: the sync line, which br switch, br create, br hotfix, br merge, pr create and release show, and repo connect's. The 'git push *' lines for br merge's target, the back-merge and release's default branch and dev push other branches, and are child 2026112020293534.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-203013
+	- Decisions:
+		- Another remote is named as "to '<branch>' on '<remote>'", always with the branch, so the line reads the same whether or not the name changes. A push to origin under its own name keeps the line parity pins against v2.1.0.
+	- Commit: ccb0c7f
 
 - pr create from a branch that shares no history with dev pushes it, then the git host refuses the pull request
 	- ID: 2026112007483630
@@ -7797,6 +8024,84 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddf4q] and [ddf4r] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- Code Review 20261120 enhancement 2: One token grant per run, given only to the child that needs it
+	- ID: 2026112017135196
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171351
+	- Opened by:
+	- Requirements [Feature]: Token to the wrong host has had 4 fixes, one site at a time, and items 2, 3, 4, 6 and 22 here are 5 more paths. Hold one grant per run, a host and a token. git children get only GITSBY_HOST_TOKEN and the helper. gh, glab and tea each get their own variable in their own environment, never the process's. Read every host from text through net/url, pass --hostname to every gh auth token call, and give an account whose host was ignored no token. The walk test gets a case for every gh or glab child git can start.
+	- Decisions: Answered 2026-11-20: fix it with items 2, 3, 4, 6 and 22 as one change, though defects are still open.
+		- GITSBY_HOST_TOKEN goes to gh, glab and tea too, since they clone with git, and the helper gitsby sets answers only for the grant's host.
+		- The walk reaches gitsby's own git through core.fsmonitor, set in the caller's GIT_CONFIG_COUNT, since status and pr create read the index after the grant and pr's other git calls start nothing.
+		- The walk's wgh account got 'ghaccount: walkstore', and its fake gh answers 'auth token --user' from a store that holds that login on the Enterprise host alone, so [dfh5t]'s outer-folder case now goes through the helper's gh step before the token file.
+		- Left alone: a child of gh, such as the git that 'raw gh repo clone' starts, has gh's own variable, as under plain gh.
+	- Origin: Repeat class: Code Review 20261110b item 1, Code Review 20261119 items 4 and 5, and the 5 here.
+	- Closed reason: Done
+	- Actual fix: One grant per run, a host and a token, held in gitsby and never put in its own environment. toolCmd and the handover give each child its part: git, tig, lazygit and the host CLIs get GITSBY_HOST_TOKEN for the helper gitsby sets, and gh, glab and tea each get their own variable in their own environment. Items 2, 3, 4, 6 and 22 went in with it.
+	- Branch: nov20c-2026112017135196
+	- Commit: 9695856
+	- Test case: Go [dfjxb] (which tool gets which variable) and [dfjxc] (the spawn sites, run). test.bash [dfh5s] and [dfh5t], whose walk now has a case for gh's and glab's helpers asked by raw git and by gitsby's own git, and [dfjxg].
+	- Verified: on the unfixed build the 12 new walk cases fail (the rig over test.bash's walk, 20/12) and pass after (32/0). [dfjxb] and [dfjxc] fail with grantEnv handing every tool's variables to every child. Quick gate passed, all areas: test.bash 2254/0, fuzz 310/0, parity 31/0. gosec on src-go: 37, the same files and rules as before. Not run with real gh or glab, or on Windows.
+	- Swept: every setEnv and os.Setenv in src-go: none sets a token variable now (GIT_CONFIG_*, GITSBY_HOST_USER, GIT_SSH_COMMAND and GITSBY_RAW_ACTIVE are left). Every cmd.Env site: remoteEnv, refuseSparseAdd, the untracked probe in repo.go and probeGhLogin take the grant, and the ssh probe doesn't. Every gh auth token call: probeGhToken and the fragment helper.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261120-183549
+	- Progress log:
+		- 20261120: asserts moved from the process's environment to the grant, by its tool: [ddk63] (GITEA_TOKEN and GITEA_INSTANCE_URL for tea), [df4w5] (glab's 3 variables; with no token given, old 'before', new nothing), [dea3n] (GITLAB_HOST and GITLAB_API_HOST; old 'before', new nothing), and [ddg76] (the token cache, now keyed by host and login).
+
+- Code Review 20261120 enhancement 3: Decide from plumbing, so user git config can't blind gitsby's reads
+	- ID: 2026112017135182
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171351
+	- Opened by:
+	- Requirements [Feature]: User config has blinded gitsby's own reads 4 times, each fixed at one site: status.showUntrackedFiles (Code Review 20261119 item 2), add's translated messages (item 23), and diff.relative and textconv (item 1 here). Read decisions through diff-index, diff-files and ls-files -u, or one helper that adds --no-relative, --no-textconv and --no-ext-diff. A Go test like [dfh4h] fails on any plain git diff read in src-go without them.
+	- Decisions: Answered 2026-11-20: fix it with item 1 as one change, though defects are still open.
+	- Origin: Repeat class.
+	- Closed reason: Done
+	- Done: Every git diff in src-go goes through one helper, diffArgs in mutate.go, which adds --no-relative, --no-textconv, --no-ext-diff and --ignore-submodules=none. design.md says so under pullcom and sync. Item 1 (2026112017135886) has the reasons for flags over plumbing.
+	- Test case: Go [dfjwg] TestDiffReadsUseDiffArgs, with [dfjwf] and [dfjwh] for what the flags do.
+	- Verified: [dfjwg] fails on the tree before the change, naming all 8 old calls, and passes after.
+	- Branch: nov20c-2026112017135886
+	- Commit: 7265edf
+	- Acceptance signoff: Self-closed: its test failed before the change and passes after.
+	- Closed: 20261120-180535
+
+- Installers: --release dev installs the newest release, pre-releases included
+	- ID: 2026112015351403
+	- Type: Enhancement
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-153514
+	- Closed: 20261120-153514
+	- Requirements: The installer directives want --release dev|stable, as zuid has it. dev takes the newest release of either kind. A full release ranks above pre-releases of its own version. --release dev with --tag is refused.
+	- Decisions: Answered 2026-11-20: yes to --release dev, no to dropping --arch, which stays as design.md records it.
+	- Branch: release-dev
+	- Test case: [dfjr3] to [dfjr9]. [dbfkc] [dbfkd] [dbfks] [dd5cx] [dbfm0] [dbfm1] now check what replaced the old refusal. All failed on the old installers.
+
+- CICD process gaps: dogfood builds don't go to the synced app folders, and there's no dogfood script
+	- ID: 2026112013542597
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-135425
+	- Opened by:
+	- Requirements: The shared CICD rules put each build in the synced app folder for its OS, and a dogfood_gitsby.ps1 with launchers copies the newest into a GFS-rotated versions folder, with a link to it as the program. Stage 5 copies each build straight into the synced tool folders on PATH instead, and run-latest.ps1 is a different design.
+	- Progress log:
+		- 2026-11-20: Waiting for answers. Moving it changes which gitsby every box finds on PATH, and every session's git commands go through it.
+		- 2026-11-20: Answered no, so it closes as Won't fix.
+	- Closed reason: Won't fix
+	- Decisions: Answered 2026-11-20: no. Dogfood stays a single executable in the synced tool folder on PATH, with no versions folder or rotation.
+	- Test case: n/a, nothing changes.
+	- Closed: 20261120-141207
 
 - Conflict advice after a --staged run drops --staged
 	- ID: 2026111918550541

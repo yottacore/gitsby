@@ -108,7 +108,7 @@ func (a *app) showIncoming() {
 	var lines []string
 	// Three dots diff from the merge base, so commits of our own that the upstream
 	// lacks don't show up reversed, as if the pull would undo them.
-	if out, _ := toolCmd("git", "diff", "--name-status", "HEAD...@{u}").Output(); len(out) > 0 {
+	if out, _ := toolCmd("git", diffArgs("--name-status", "HEAD...@{u}")...).Output(); len(out) > 0 {
 		lines = nameStatusColumns(string(out))
 	}
 	a.showLines(lines)
@@ -453,6 +453,11 @@ func (a *app) showAccountOtherHost() {
 		a.showAccountFix("Declare an account for "+host+" in "+a.accountFileRef()+
 			", then name that one here. To start one:",
 			"  "+meName+" account set <name> host "+host)
+	case a.cfg.hostIgnored(a.acct.name):
+		a.showAccountNote("Why", "That block's host isn't a plain host name, so it was ignored. A block with no host gets no token anywhere.")
+		a.showAccountKept()
+		a.showAccountFix("Set its host to a plain host name, such as this repo's:",
+			"  "+meName+" account set "+a.acct.name+" host "+host)
 	case a.cfg.value(a.acct.name, "host") == "":
 		// An account that never named a host is TAKEN to be a github.com one, for the
 		// configs written before the key existed. Said in the same words as a host

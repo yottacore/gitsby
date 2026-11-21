@@ -37,14 +37,15 @@ type acctRule struct {
 type config struct {
 	loaded   bool
 	values   map[string]string
-	paths    []acctRule     // 'path' rules: absolute folder claims only; anything else is in unknown
-	segments []acctRule     // 'pathContains' rules: machine-free folder-name runs
-	unknown  []string       // named but not understood - reported, never silent
-	order    []string       // accounts in declaration order, for ones with keys but no folder rule
-	file     string         // named by the identity block when the file held keys nothing reads
-	doc      *shcl.Document // the file as parsed, for 'account set' to edit; nil for a flat file or none
-	flat     bool           // the old 'key = value' layout: read as it always was, rewritten by the first edit
-	raw      string         // the file as read, so an edit can tell it changed since
+	paths    []acctRule      // 'path' rules: absolute folder claims only; anything else is in unknown
+	segments []acctRule      // 'pathContains' rules: machine-free folder-name runs
+	unknown  []string        // named but not understood - reported, never silent
+	badHost  map[string]bool // accounts whose 'host' was ignored, which then bank nowhere
+	order    []string        // accounts in declaration order, for ones with keys but no folder rule
+	file     string          // named by the identity block when the file held keys nothing reads
+	doc      *shcl.Document  // the file as parsed, for 'account set' to edit; nil for a flat file or none
+	flat     bool            // the old 'key = value' layout: read as it always was, rewritten by the first edit
+	raw      string          // the file as read, so an edit can tell it changed since
 
 	migration *formatMigration // set when the file was in an older SHCL format
 	newer     int              // the SHCL format the file names, when newer than this build's; 0 otherwise
@@ -755,6 +756,12 @@ func (c *config) absorb(acct, field, value, key string) {
 		if (field == "host" || field == "user") && value != "" && !hostWordOK.MatchString(value) {
 			c.unknown = append(c.unknown, key+" (not a plain "+field+" name)")
 			value = ""
+			if field == "host" {
+				if c.badHost == nil {
+					c.badHost = map[string]bool{}
+				}
+				c.badHost[strings.ToLower(acct)] = true
+			}
 		}
 		if field == "protocol" {
 			value = c.protocolValue(key, value)
@@ -905,11 +912,22 @@ func pathUnder(target, root string) bool {
 }
 
 // hostOf is the git host an account banks with: github.com unless it names another.
+// Nothing for one whose host was ignored, which names no host its token is for, so
+// it gets no token anywhere. Taken as github.com, its Gitea token went there
+// (2026112017135838).
 func (c *config) hostOf(name string) string {
 	if host := c.value(name, "host"); host != "" {
 		return host
 	}
+	if c.hostIgnored(name) {
+		return ""
+	}
 	return "github.com"
+}
+
+// hostIgnored: the account named a host that wasn't a plain host name.
+func (c *config) hostIgnored(name string) bool {
+	return name != "" && c.badHost[strings.ToLower(name)]
 }
 
 // loginOf is the login an account's own file entries give for its host. 'user' is

@@ -65,6 +65,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - After `account apply`, a folder inside another account's folder no longer hands its token to the outer account's host. With a gitea.com account's folder inside a github.com one's, plain git and `raw git` there answered github.com with the gitea.com token. Each fragment now names its account's host, and the helper answers only for that host. Run `account apply` again to rewrite the fragments.
 
+- `gh` and `glab` no longer get the account's token through git. Gitsby put it in their variables for the whole run, so git had them too, and the helper `gh auth setup-git` writes handed an Enterprise token to any other Enterprise host git asked it about, a submodule's included. Now only `gh`, `glab` and `tea` get their own variable, and git gets Gitsby's own.
+
+- A github.com account no longer takes the token gh holds for the same login on an Enterprise host. Gitsby and the helper `account apply` writes asked gh for the login's token without naming a host, so gh answered for the host `GH_HOST` names. Run `account apply` again to rewrite the helper.
+
+- An account whose `host` was ignored, such as `https://gitea.example` or `gitea.example:3000`, no longer counts as a github.com one. Its token went to github.com, and `account apply` wrote a github.com helper with its token file. It now gets no token anywhere, and the identity block says why.
+
+- A URL with a `?` or `#` before an `@`, such as `http://127.0.0.1:8080?@ghe.example/x`, is read as git reads it, with the host ending at the `?` or `#`. `raw gh api` and `raw glab api` took the host after the `@` as the account's own and sent it the token.
+
+- `raw tea` in a GitHub account's folder no longer gets the GitHub token in `GH_TOKEN`. tea 0.11 and later use that one when `GITEA_INSTANCE_URL` is set and `GITEA_TOKEN` isn't.
+
 - `raw gh` and `pr` no longer hand the account's token to some other host. gh reads `GH_ENTERPRISE_TOKEN` for every Enterprise host and `GH_TOKEN` for github.com and every `*.ghe.com` host, so `raw gh auth token --hostname evil.example` printed the Enterprise token. A run that names another host, with `--hostname`, `-R`, a URL, `GH_HOST` or `GH_REPO`, now gets no token in gh's variables, and `raw gh` says so. git still gets the token for the account's own host.
 
 - `raw git -C <folder>` acts as the account of the repo git works in. It acted as the account of the folder it was started in, so a commit or push into another account's repo went out with the wrong name, email and token. The same goes for `--git-dir` and `GIT_DIR`, `raw tig -C`, and `raw lazygit -p`, `-w` and `-g`. With `GIT_DIR` set, every other command now takes its account from that repo too. `whoami`, `status` and the rest went by the folder they were run in.
@@ -81,6 +91,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - After a `release` whose push of the default branch was refused, as by a hook or branch protection, running `release` again finishes it: it pushes the branch and that release's tag, then fast-forwards `dev`. It used to tag the same commit with the next version and push only that, so the first tag never left the machine. Typing the same version again finishes it too.
 
+- A bare `release` on a feature branch no longer counts that branch's unpushed commits or edits as something new. The release merges only `dev`, so they never reach it, and it tagged the commit already released and pushed that tag. It now says there is nothing new, as it does with a clean tree. A `dev` with commits origin's lacks still counts, from any branch.
+
+- After a `release` whose push of `dev` was refused, running `release` again pushes `dev`. It used to tag the same commit with the next version.
+
 - The plan for `release` started on `main` no longer ends with `git checkout main`. The run ends on `dev`, as it always has, and the plan's last step now says so.
 
 - `release` with no version counts on from a release, not from its candidate, when the candidate's suffix follows a dot, as in `v3.0.0.rc1`. git sorts that tag above `v3.0.0`, so the next version came out as `v3.0.0` again and the run stopped on a tag that exists. Finishing a refused push takes the release's tag over its candidate's the same way.
@@ -92,6 +106,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `pr create` on a branch that tracks one of another name, as `push.default=upstream` pushes it, opens the pull request from the branch it pushed to. It named the current branch, so the pull request came from an older branch of that name on origin, at exit 0. A branch that pushes to a remote other than origin is refused before the plan, since the pull request opens on origin, and `git branch --unset-upstream` lets it publish there under its own name.
 
 - `br merge` on a branch that tracks one of another name deletes that branch from origin once it's merged. It named the current branch, so the branch it pushed to stayed on origin, and the leased delete of an older branch of that name warned that it had commits the merge didn't, which wasn't so. Where its push goes to another remote, to a ref that isn't a branch, or to `main` or `dev`, it's refused before the plan.
+
+- `release` and `repo connect` on a branch that git won't push, such as one tracking a branch of another name under `push.default=simple`, refuse before the plan, as `sync` does. They committed the tree first, then stopped at the push with a message saying nothing was done. `release` from a branch whose push lands on `main` or `dev` refuses too, naming `sync --direct`. The plan's push line names the remote when it isn't origin, and `repo connect`'s line names the push that runs.
 
 - `br merge` warns before its push of `dev` sends commits made on `dev` itself, the way `sync` there does, and with `-q` it refuses. So does a hotfix's merge back into `dev`, from `br merge` and `pr ok`. They used to go to origin's `dev` with the merge, at exit 0.
 
@@ -107,7 +123,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - With `status.showUntrackedFiles=no` set, untracked files count as work. The plan said the tree was clean, then `sync` on `dev` committed them and pushed them straight to origin at exit 0, past the direct-push refusal. `br switch` off `main` or `dev`, `pr ok`, `release` and `repo connect` read them the same way now.
 
-- `pullcom`, `sync`, `br switch`, `br merge`, `br create`, `br hotfix`, `br prune`, `pr create`, `pr ok` and `release` refuse while a merge, `git am`, cherry-pick, revert, rebase or bisect is stopped partway, and name the commands that finish it and drop it. They used to commit the half-done work under their own message, or switch branches and leave the rest of a cherry-pick range or patch series to apply onto the next branch. A stopped rebase was refused only as a detached HEAD.
+- `pullcom`, `sync`, `br switch`, `br merge`, `br create`, `br hotfix`, `br prune`, `pr create`, `pr ok`, `release`, `repo create` and `repo connect` refuse while a merge, `git am`, cherry-pick, revert, rebase or bisect is stopped partway, and name the commands that finish it and drop it. They used to commit the half-done work under their own message, or switch branches and leave the rest of a cherry-pick range or patch series to apply onto the next branch. A stopped rebase was refused only as a detached HEAD.
 
 - In a sparse checkout, a command that commits the whole tree refuses before its plan when a new or edited file sits outside the checkout, and names the file. `git add --all` used to stage the rest and then fail over a new file, after the pull, with the index left half staged. An edited one was left out without a word, and the command said Done.
 
@@ -135,7 +151,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - In a clone that fetches only some of origin's branches, as `git clone --depth 1` and `--single-branch` make, `br create`, `br hotfix`, `br switch`, `br merge`, `br prune`, `pr create`, `pr ok` and `release` refuse while origin's `dev` can't be seen, and name `git remote set-branches origin '*'`. `br merge` used to go into `main` there and push it, passing over origin's `dev`. `br create`, `br hotfix` and `br switch` also refuse a branch the fetch doesn't bring in. `pullcom` and `sync` work as before.
 
-- `br create`, `br hotfix`, `br switch`, `br merge`, `pr ok` and `release` refuse before anything runs when a branch they check out is checked out in another worktree, and name it. They used to commit and push first, then stop at the checkout. A worktree folder deleted by hand still holds its branch, and the refusal names `git worktree prune` for it.
+- `br create`, `br hotfix`, `br switch`, `br merge`, `pr ok` and `release` refuse before anything runs when a branch they check out is checked out in another worktree, or being rebased or bisected there, and name it. They used to commit and push first, then stop at the checkout. A worktree folder deleted by hand still holds its branch, and the refusal names `git worktree prune` for it.
 
 - `pr ok` run from a branch other than the PR's, with an upstream of its own, says in its plan that it pulls that branch and stays on it, which is what it does. The plan said it would check out and pull the branch the PR merges into.
 
@@ -160,6 +176,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The fetch before a command, and the other checks that reach origin, give up on an http or https remote that takes the connection and then sends nothing for 30 seconds. They used to wait until stopped. One that never finishes its TLS handshake still takes curl's 5 minutes. A push, pull or clone is left to git, as is a limit set in `GIT_HTTP_LOW_SPEED_LIMIT` or `GIT_HTTP_LOW_SPEED_TIME`.
 
 - On Windows, Gitsby no longer runs a `git.bat` or `git.cmd` that comes ahead of `git.exe` on PATH, nor any other batch file for a tool it runs. Windows hands a batch file to cmd, which reads the arguments again by its own rules, so `br switch` to a branch named `x&ver` ran `ver`, and a `%NAME%` in an argument was replaced. Gitsby now passes over a batch file and takes the next one on PATH, and when there is no other, the "Not found in path" error names the batch file.
+
+- After `account set` changed an account's login, email or token file, Gitsby went on acting as the old login, with the old email and token, until `account apply` ran again. It read the copy `account apply` had written for plain git. It now goes by the accounts file, and `account set` says when plain git needs `account apply` again.
 
 ## v3.0.0-beta.1 - 2026-11-08
 

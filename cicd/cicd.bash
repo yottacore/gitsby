@@ -1110,6 +1110,22 @@ if [[ -n "${LINT_LOG_DIR:-}" && -z "${GITSBY_CICD_IN_CONTAINER:-}" ]] && mkdir -
 	trap 'fRunTmpDone "$?"; exec 1>&- 2>&-; wait "${teePid}" 2>/dev/null' EXIT
 fi
 
+## Stage 0's merge of '@{u}', with the merge options in $@. Returns 1 when git's merge fails.
+## git exits 0 when --autostash can't put the edits back, with markers in the tree and the edits
+## only in a new stash entry, so that entry is the signal. Back out to where it started, where the
+## stash applies clean, and stop.
+fSyncMerge(){
+	local pre="" stashWas="" clash=""
+	pre="$(git rev-parse HEAD)"; stashWas="$(git rev-parse -q --verify refs/stash || true)"
+	git merge "$@" '@{u}' || return 1
+	[[ "$(git rev-parse -q --verify refs/stash || true)" != "${stashWas}" ]] || return 0
+	clash="$(git diff --no-relative --name-only --diff-filter=U | paste -sd ' ')"
+	if ! { git reset --quiet --hard "${pre}" && git stash pop --quiet --index; }; then
+		fDie "uncommitted edits clash with origin, and putting them back failed. They're in stash@{0}."
+	fi
+	fDie "uncommitted edits clash with origin in ${clash:-the tree}, so the merge was backed out and the edits put back. Commit or reconcile them before building."
+}
+
 ## Stage 0: remote sync. The publish stage pulls too, but that is after everything
 ## has been built and tested - so a change merged upstream meanwhile would be pushed
 ## having been validated by nothing. Refreshing first means the rest of the run tests
@@ -1131,7 +1147,7 @@ if ((doSync)); then
 			## Diverged. A merge that goes in clean is tested with the rest. One that doesn't is
 			## backed out, the stash put back with it, and the run stops before building anything.
 			fEcho_Clean "merging ${behind} commit(s) from origin into ${ahead} local"
-			if ! git merge --no-ff --no-edit --autostash '@{u}'; then
+			if ! fSyncMerge --no-ff --no-edit --autostash; then
 				git rev-parse -q --verify MERGE_HEAD >/dev/null && git merge --abort
 				fDie "diverged from origin: ${ahead} local, ${behind} remote, and they don't merge clean. Reconcile before building."
 			fi
@@ -1139,7 +1155,7 @@ if ((doSync)); then
 			## Only behind, so this can only be a fast-forward. --autostash carries a dirty
 			## tree over it rather than refusing, and puts it back afterward.
 			fEcho_Clean "fast-forwarding ${behind} commit(s) from origin"
-			git merge --ff-only --autostash '@{u}' || fDie "fast-forward from origin failed"
+			fSyncMerge --ff-only --autostash || fDie "fast-forward from origin failed"
 		fi
 	fi
 	fStepEnd
@@ -1535,3 +1551,4 @@ fEcho_Clean
 ##		- 2026-11-10 JC: The demo build takes the newest tag's version only in the shape 'gitsby release' takes, through fIsReleaseVersion.
 ##		- 2026-11-20 JC: The demo's tag scan is fReleaseTags, so a candidate suffixed after a dot no longer stamps the demo over its own release.
 ##		- 2026-11-20 JC: Stage 0 merges a diverged origin with --no-ff when it merges clean, and backs the merge out and stops when it doesn't. Publish commits only the tracked files the run changed, so another session's edits stay out of its commit.
+##		- 2026-11-20 JC: Stage 0 also stops when the edits it carried over clash with what came in, which git reports at exit 0. The merge or fast-forward is backed out and the edits put back.

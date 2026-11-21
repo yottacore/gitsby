@@ -334,35 +334,39 @@ func TestRefuseHeldBranch(t *testing.T) { // [dfh8b]
 	// pr ok moves off a branch that tracks the PR's own, or that tracks nothing.
 	runGit(t, linked, "push", "-q", "-u", "origin", "w")
 	runGit(t, linked, "branch", "-q", "solo", "w")
-	t.Chdir(linked)
-	tests := []struct{ name, branch, cmd, sub, arg, head, want string }{
-		{"br merge", "w", "br-merge", "", "", "", "dev"},
-		{"br switch", "w", "br-switch", "", "", "", "dev"},
-		{"br switch to main", "w", "br-switch", "", "main", "", ""},
-		{"br create", "w", "br-create", "", "next", "", "dev"},
-		{"br hotfix", "w", "br-hotfix", "", "hotfix/x", "", ""},
-		{"release", "w", "release", "", "", "", "dev"},
-		{"pr ok of this branch", "w", "pr", "ok", "", "w", "dev"},
-		{"pr ok of another branch", "w", "pr", "ok", "", "other", ""},
-		{"pr ok from a branch with no upstream", "solo", "pr", "ok", "", "other", "dev"},
-		{"pr create checks nothing out", "w", "pr", "create", "", "", ""},
-		{"sync checks nothing out", "w", "sync", "", "", "", ""},
-		{"a hotfix's back-merge", "hotfix/h", "br-merge", "", "", "", "dev"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			runGit(t, linked, "checkout", "-q", tc.branch)
-			a := newApp(newPrinter())
-			a.cmd.name, a.cmd.arg, a.pr.sub, a.pr.headBranch = tc.cmd, tc.arg, tc.sub, tc.head
-			err := a.refuseHeldBranch()
-			switch {
-			case tc.want == "" && err != nil:
-				t.Errorf("refused: %v", err)
-			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), "'"+tc.want+"' is checked out in another worktree")):
-				t.Errorf("got %v, want %q named", err, tc.want)
-			}
-		})
-	}
+	// t.Chdir keeps the folder it left open until its test ends, and Windows
+	// won't rename an open folder, so linked's cases get their own subtest.
+	t.Run("from the linked worktree", func(t *testing.T) {
+		t.Chdir(linked)
+		tests := []struct{ name, branch, cmd, sub, arg, head, want string }{
+			{"br merge", "w", "br-merge", "", "", "", "dev"},
+			{"br switch", "w", "br-switch", "", "", "", "dev"},
+			{"br switch to main", "w", "br-switch", "", "main", "", ""},
+			{"br create", "w", "br-create", "", "next", "", "dev"},
+			{"br hotfix", "w", "br-hotfix", "", "hotfix/x", "", ""},
+			{"release", "w", "release", "", "", "", "dev"},
+			{"pr ok of this branch", "w", "pr", "ok", "", "w", "dev"},
+			{"pr ok of another branch", "w", "pr", "ok", "", "other", ""},
+			{"pr ok from a branch with no upstream", "solo", "pr", "ok", "", "other", "dev"},
+			{"pr create checks nothing out", "w", "pr", "create", "", "", ""},
+			{"sync checks nothing out", "w", "sync", "", "", "", ""},
+			{"a hotfix's back-merge", "hotfix/h", "br-merge", "", "", "", "dev"},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				runGit(t, linked, "checkout", "-q", tc.branch)
+				a := newApp(newPrinter())
+				a.cmd.name, a.cmd.arg, a.pr.sub, a.pr.headBranch = tc.cmd, tc.arg, tc.sub, tc.head
+				err := a.refuseHeldBranch()
+				switch {
+				case tc.want == "" && err != nil:
+					t.Errorf("refused: %v", err)
+				case tc.want != "" && (err == nil || !strings.Contains(err.Error(), "'"+tc.want+"' is checked out in another worktree")):
+					t.Errorf("got %v, want %q named", err, tc.want)
+				}
+			})
+		}
+	})
 	// From the main worktree, dev is its own, and w is the one held.
 	runGit(t, linked, "checkout", "-q", "w")
 	t.Chdir(clone)
@@ -391,4 +395,99 @@ func TestRefuseHeldBranch(t *testing.T) { // [dfh8b]
 	if err := a.refuseHeldBranch(); err != nil {
 		t.Errorf("br switch w after the prune: refused: %v", err)
 	}
+}
+
+// git won't check out a branch another worktree is rebasing or bisecting either,
+// though HEAD is detached there and %(worktreepath) doesn't name it. Each state is
+// made by real git, read through enterRepo as a run reads it.
+func TestRefuseBusyBranch(t *testing.T) { // [dfjzf]
+	_, clone := gitTestRepo(t)
+	commit := func(dir, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte(body+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, dir, "add", "f.txt")
+		runGit(t, dir, "commit", "-q", "-m", body)
+	}
+	mayFail := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		_ = cmd.Run() // the stop is the point
+	}
+	runGit(t, clone, "checkout", "-q", "-b", "side")
+	commit(clone, "side")
+	runGit(t, clone, "checkout", "-q", "-b", "dev", "main")
+	commit(clone, "d1")
+	commit(clone, "d2")
+	runGit(t, clone, "checkout", "-q", "main")
+	linked := filepath.Join(filepath.Dir(clone), "linked")
+	runGit(t, clone, "worktree", "add", "-q", linked, "dev")
+	realLinked, _ := filepath.EvalSymlinks(linked)
+	realClone, _ := filepath.EvalSymlinks(clone)
+	sub := filepath.Join(clone, "sub")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Each ask is a subtest, so its t.Chdir lets go of the folder it left when
+	// the ask is done. Windows won't rename an open folder, as below.
+	ask := func(from, branch string) (err error) {
+		t.Helper()
+		t.Run(filepath.Base(from), func(t *testing.T) {
+			t.Chdir(from)
+			a := newApp(newPrinter())
+			a.cmd = command{name: "br-switch", arg: branch, mutating: true}
+			if err := a.enterRepo(); err != nil || a.worktreesDir == "" {
+				t.Fatalf("enterRepo from %s: worktreesDir %q, %v", from, a.worktreesDir, err)
+			}
+			err = a.refuseHeldBranch()
+		})
+		return err
+	}
+	want := func(state string, err error, what, folder string) {
+		t.Helper()
+		switch {
+		case what == "" && err != nil:
+			t.Errorf("%s: refused: %v", state, err)
+		case what != "" && (err == nil || !strings.Contains(err.Error(), "'dev' is "+what+" in another worktree") || !strings.Contains(err.Error(), nativePath(folder))):
+			t.Errorf("%s: got %v, want dev named as %s in %s", state, err, what, folder)
+		}
+	}
+	mayFail(linked, "rebase", "side")
+	want("rebase in a linked worktree", ask(clone, "dev"), "being rebased", realLinked)
+	want("the same, from a subfolder", ask(sub, "dev"), "being rebased", realLinked)
+	want("another branch", ask(clone, "side"), "", "")
+	runGit(t, linked, "rebase", "--abort")
+	runGit(t, linked, "checkout", "-q", "--detach")
+	want("nothing stopped, dev free", ask(clone, "dev"), "", "")
+	runGit(t, linked, "checkout", "-q", "dev")
+	mayFail(linked, "rebase", "--apply", "side")
+	want("apply rebase", ask(clone, "dev"), "being rebased", realLinked)
+	runGit(t, linked, "rebase", "--abort")
+	runGit(t, linked, "bisect", "start", "dev", "main")
+	want("bisect", ask(clone, "dev"), "being bisected", realLinked)
+	runGit(t, linked, "bisect", "reset")
+	// An am holds no branch, so git checks dev out and so does gitsby.
+	runGit(t, linked, "checkout", "-q", "--detach")
+	runGit(t, linked, "format-patch", "-q", "-o", "../p", "main..side")
+	mayFail(linked, "am", "../p/0001-side.patch")
+	want("am in a linked worktree", ask(clone, "dev"), "", "")
+	runGit(t, linked, "am", "--abort")
+	// The main worktree rebasing dev, asked from the linked one.
+	runGit(t, clone, "checkout", "-q", "dev")
+	mayFail(clone, "rebase", "side")
+	want("rebase in the main worktree", ask(linked, "dev"), "being rebased", realClone)
+	runGit(t, clone, "rebase", "--abort")
+	runGit(t, clone, "checkout", "-q", "main")
+	// A worktree folder deleted by hand mid-rebase still holds dev, and prune frees it.
+	runGit(t, linked, "checkout", "-q", "dev")
+	mayFail(linked, "rebase", "side")
+	if err := os.Rename(linked, linked+"-moved"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ask(clone, "dev"); err == nil || !strings.Contains(err.Error(), "git worktree prune") {
+		t.Errorf("rebasing worktree's folder gone = %v, want 'git worktree prune'", err)
+	}
+	runGit(t, clone, "worktree", "prune")
+	want("after the prune", ask(clone, "dev"), "", "")
 }

@@ -100,6 +100,152 @@ func TestPushArgs(t *testing.T) { // [df52f]
 	}
 }
 
+// The plan's push line names where the step sends it: the remote when it isn't
+// origin, and the branch when it isn't the current one's name. Checked against the
+// step's own arguments, so the two can't drift. An empty want is a push git would
+// refuse, which names only the branch, since nothing goes.
+func TestPlannedPushDisp(t *testing.T) { // [dfk0y]
+	origin, clone := gitTestRepo(t)
+	runGit(t, clone, "checkout", "-q", "-b", "feat")
+	runGit(t, clone, "push", "-q", "-u", "origin", "feat")
+	runGit(t, clone, "push", "-q", "origin", "feat:up")
+	runGit(t, clone, "remote", "add", "fork", origin)
+	runGit(t, clone, "fetch", "-q", "fork")
+	runGit(t, clone, "branch", "-q", "lone")
+	t.Chdir(clone)
+	tests := []struct {
+		name   string
+		config [][2]string
+		branch string
+		want   string
+	}{
+		{"plain", nil, "feat", "git push (branch 'feat') *"},
+		{"no upstream", nil, "lone", "git push (branch 'lone') *"},
+		{"no upstream, push remote", [][2]string{{"remote.pushDefault", "fork"}}, "lone", "git push (branch 'lone') *"},
+		{"push remote", [][2]string{{"branch.feat.pushRemote", "fork"}}, "feat", "git push (branch 'feat', to 'feat' on 'fork') *"},
+		{"upstream on another remote", [][2]string{{"branch.feat.remote", "fork"}}, "feat", "git push (branch 'feat', to 'feat' on 'fork') *"},
+		{"upstream by another name, upstream", [][2]string{{"branch.feat.merge", "refs/heads/up"}, {"push.default", "upstream"}}, "feat", "git push (branch 'feat', to 'up') *"},
+		{"upstream by another name, simple", [][2]string{{"branch.feat.merge", "refs/heads/up"}}, "feat", ""},
+		{"refspec that renames", [][2]string{{"remote.origin.push", "refs/heads/feat:refs/heads/other"}}, "feat", "git push (branch 'feat', to 'other') *"},
+		{"refspec to a ref that isn't a branch", [][2]string{{"remote.origin.push", "refs/heads/feat:refs/for/main"}}, "feat", "git push (branch 'feat', to 'refs/for/main') *"},
+		{"push remote and a renaming refspec", [][2]string{{"branch.feat.pushRemote", "fork"}, {"remote.fork.push", "refs/heads/feat:refs/heads/other"}}, "feat", "git push (branch 'feat', to 'other' on 'fork') *"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runGit(t, clone, "checkout", "-q", tc.branch)
+			for _, kv := range tc.config {
+				runGit(t, clone, "config", kv[0], kv[1])
+			}
+			a := newApp(newPrinter())
+			p := a.currentPush("park")
+			args, err := a.pushArgs()
+			for _, kv := range tc.config {
+				runGit(t, clone, "config", "--unset", kv[0])
+			}
+			runGit(t, clone, "config", "branch.feat.remote", "origin")
+			runGit(t, clone, "config", "branch.feat.merge", "refs/heads/feat")
+			if tc.want == "" {
+				// preflight refused what it could, so the step's refusal comes after a
+				// commit, a merge or a tag.
+				if err == nil || strings.Contains(err.Error(), "Nothing was done") || p.disp() != "git push (branch 'feat') *" {
+					t.Errorf("disp() = %q, pushArgs() = %q, %v, want a refusal that doesn't say nothing was done", p.disp(), args, err)
+				}
+				return
+			}
+			if got := p.disp(); got != tc.want || err != nil {
+				t.Errorf("disp() = %q, %v, want %q", got, err, tc.want)
+			}
+			// What the step sends, read off its arguments.
+			remote, target := "origin", tc.branch
+			if !slices.Contains(args, "-u") {
+				remote, target = args[len(args)-2], strings.TrimPrefix(strings.TrimPrefix(args[len(args)-1], "HEAD:"), "refs/heads/")
+			}
+			named := ""
+			switch {
+			case remote != "origin":
+				named = ", to '" + target + "' on '" + remote + "'"
+			case target != tc.branch:
+				named = ", to '" + target + "'"
+			}
+			if p.disp() != "git push (branch '"+tc.branch+"'"+named+") *" {
+				t.Errorf("disp() = %q, but the step is git %q", p.disp(), args)
+			}
+		})
+	}
+}
+
+// Every mutating command that pushes the branch it stands on lists that push in
+// plannedPushes, which the guards before the plan read. One left out commits and
+// then has git refuse the push, as release and repo connect did. noPush is the
+// rest, so a new command fails here until it's put on one side.
+func TestPlannedPushesEveryCommand(t *testing.T) { // [dfk0z]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "checkout", "-q", "-b", "feat")
+	runGit(t, clone, "push", "-q", "-u", "origin", "feat")
+	t.Chdir(clone)
+	want := map[string]string{"sync": "park", "br-switch": "park", "br-create": "park", "br-hotfix": "park", "br-merge": "park", "pr create": "park", "release": "park", "repo-create": "connect", "repo-connect": "connect"}
+	noPush := map[string]bool{"pullcom": true, "br-prune": true, "pr ok": true, "repo-clone": true, "repo-url": true, "account-apply": true, "account-set": true, "account-unset": true}
+	seen := map[string]bool{}
+	for _, u := range usages {
+		if u.cmd == "raw" {
+			continue
+		}
+		var cmd command
+		settled := false
+		for _, tail := range [][]string{nil, {"ssh"}, {"x", "y"}, {"x", "y", "z"}} {
+			opt, got, _, err := parseArgs(append(strings.Fields(u.cmd), tail...))
+			if err == nil {
+				if got, err = collapseCommand(got); err == nil {
+					got, err = sortCommand(got, &opt)
+				}
+			}
+			if err == nil && (!settled || got.mutating) {
+				cmd, settled = got, true
+			}
+			if settled && cmd.mutating {
+				break
+			}
+		}
+		if !settled || !cmd.mutating {
+			continue
+		}
+		key := cmd.name
+		a := newApp(newPrinter())
+		a.cmd = cmd
+		if cmd.name == "pr" {
+			a.pr.sub = strings.Fields(u.cmd)[1]
+			key += " " + a.pr.sub
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if err := a.enterRepo(); err != nil {
+			t.Fatal(err)
+		}
+		// repo create and connect settle this after preflight. An origin already set
+		// is the push case.
+		a.tgt.connectMode = "push"
+		var kinds []string
+		for _, p := range a.plannedPushes() {
+			kinds = append(kinds, p.kind)
+		}
+		switch {
+		case want[key] != "" && !slices.Equal(kinds, []string{want[key]}):
+			t.Errorf("%s: plannedPushes kinds = %q, want %q", key, kinds, want[key])
+		case want[key] == "" && !noPush[key]:
+			t.Errorf("%s: a mutating command in neither list; say whether it pushes the current branch", key)
+		case want[key] == "" && len(kinds) > 0:
+			t.Errorf("%s: plannedPushes kinds = %q, want none", key, kinds)
+		}
+	}
+	for key := range want {
+		if !seen[key] {
+			t.Errorf("%s: no longer settles from usages", key)
+		}
+	}
+}
+
 // pr create names the branch on origin its park push sends the work to, and refuses
 // where that isn't one, since the PR opens on origin. An empty want is a refusal.
 func TestPrCreateHead(t *testing.T) { // [dfh76]
@@ -342,6 +488,131 @@ func TestStatusNamesUntracked(t *testing.T) { // [dfh4h]
 	}
 }
 
+// diff.relative cut every git diff to the folder gitsby ran from, and a textconv
+// driver whose output didn't change hid a staged edit from --quiet. So from sub/ an
+// autostash conflict outside it went unseen and its markers were committed, and an
+// edit staged outside it was "Nothing to commit".
+func TestDiffReadsIgnoreDiffConfig(t *testing.T) { // [dfjwf]
+	_, clone := gitTestRepo(t)
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(clone, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(clone, "sub"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	write("f.txt", "base\n")
+	write("sub/s.txt", "s\n")
+	runGit(t, clone, "add", "f.txt", "sub/s.txt")
+	runGit(t, clone, "commit", "-q", "-m", "base")
+	runGit(t, clone, "config", "diff.relative", "true")
+	runGit(t, clone, "config", "diff.same.textconv", "echo same <")
+	write(".git/info/attributes", "f.txt diff=same\n")
+	t.Chdir(filepath.Join(clone, "sub"))
+
+	write("f.txt", "staged\n")
+	runGit(t, clone, "add", "f.txt")
+	a := newApp(newPrinter())
+	a.opt.staged = true
+	if !indexDiffers() || !a.commitPending() {
+		t.Errorf("an edit staged outside sub/: indexDiffers() = %v, commitPending() = %v, want both true", indexDiffers(), a.commitPending())
+	}
+	if got := changedPaths("--cached", "HEAD"); !slices.Contains(got, "f.txt") {
+		t.Errorf("changedPaths(--cached HEAD) = %q, want f.txt in it", got)
+	}
+	if got := changedPaths("HEAD"); !slices.Contains(got, "f.txt") {
+		t.Errorf("changedPaths(HEAD) = %q, want f.txt in it", got)
+	}
+
+	// A real conflict on f.txt, outside the folder this runs from.
+	runGit(t, clone, "commit", "-q", "-m", "ours")
+	runGit(t, clone, "checkout", "-q", "-b", "other", "HEAD~1")
+	write("f.txt", "theirs\n")
+	runGit(t, clone, "commit", "-q", "-am", "theirs")
+	runGit(t, clone, "checkout", "-q", "main")
+	merge := exec.Command("git", "merge", "-q", "other")
+	merge.Dir = clone
+	if merge.Run() == nil {
+		t.Fatal("the merge didn't conflict")
+	}
+	a = newApp(newPrinter())
+	if err := a.refuseConflicts("nothing was committed", "gitsby sync"); err == nil {
+		t.Error("refuseConflicts saw no conflict outside sub/")
+	}
+}
+
+// diff.ignoreSubmodules=all hid a submodule moved to another commit from git diff,
+// though 'git add --all' stages it and git commit takes it, so the commit step said
+// "Nothing to commit." and left it staged.
+func TestDiffReadsSeeSubmoduleMove(t *testing.T) { // [dfjwh]
+	origin, clone := gitTestRepo(t)
+	child := filepath.Join(filepath.Dir(origin), "child")
+	runGit(t, filepath.Dir(origin), "init", "-q", "-b", "main", child)
+	runGit(t, child, "commit", "-q", "--allow-empty", "-m", "c1")
+	runGit(t, clone, "-c", "protocol.file.allow=always", "submodule", "-q", "add", child, "child")
+	runGit(t, clone, "commit", "-q", "-m", "add child")
+	runGit(t, filepath.Join(clone, "child"), "commit", "-q", "--allow-empty", "-m", "c2")
+	runGit(t, clone, "config", "diff.ignoreSubmodules", "all")
+	runGit(t, clone, "add", "child")
+	t.Chdir(clone)
+	if !indexDiffers() {
+		t.Error("indexDiffers() = false with the submodule's move staged")
+	}
+	if got := changedPaths("--cached", "HEAD"); !slices.Contains(got, "child") {
+		t.Errorf("changedPaths(--cached HEAD) = %q, want child in it", got)
+	}
+	// The sparse check's own --ignore-submodules=dirty still wins over the helper's.
+	if err := os.WriteFile(filepath.Join(clone, "child", "dirt.txt"), []byte("d\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, clone, "reset", "-q")
+	runGit(t, filepath.Join(clone, "child"), "reset", "-q", "--hard", "HEAD~1")
+	if got := changedPaths("--ignore-submodules=dirty"); len(got) != 0 {
+		t.Errorf("changedPaths(--ignore-submodules=dirty) = %q with only untracked files in the submodule, want none", got)
+	}
+}
+
+// Every git diff read in src-go goes through diffArgs, so no new one can come back
+// blind to the conflict or the edit [dfjwf] makes.
+func TestDiffReadsUseDiffArgs(t *testing.T) { // [dfjwg]
+	files, err := filepath.Glob("*.go")
+	if err != nil || len(files) < 10 {
+		t.Fatalf("found %d sources: %v", len(files), err)
+	}
+	call := regexp.MustCompile(`("git",\s*|\[\]string\{)"diff"`)
+	helper, found := 0, 0
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if strings.Contains(line, "diffArgs(") && !strings.Contains(line, "func diffArgs(") {
+				found++
+			}
+			if !call.MatchString(line) {
+				continue
+			}
+			if strings.Contains(line, `"diff", "--no-relative", "--no-textconv", "--no-ext-diff", "--ignore-submodules=none"`) {
+				helper++
+				continue
+			}
+			t.Errorf("%s:%d runs git diff without diffArgs: %s", file, i+1, strings.TrimSpace(line))
+		}
+	}
+	if helper != 1 {
+		t.Errorf("found %d diffArgs bodies, want 1", helper)
+	}
+	if found < 5 {
+		t.Errorf("found %d diffArgs calls, want at least 5; the pattern no longer matches the source", found)
+	}
+}
+
 // A stopped am, pick, revert, merge, rebase or bisect was finished under gitsby's
 // message, or left for its --continue to apply onto the branch gitsby switched to.
 // Each state is made by real git, and named before anything else runs.
@@ -441,6 +712,72 @@ func TestPendingOpNamed(t *testing.T) { // [dfh53]
 		if err := a.refusePendingOp(); err != nil {
 			t.Errorf("%s: status refused: %v", tc.state, err)
 		}
+	}
+}
+
+// Every mutating command refuses over a stopped operation, but for the few named
+// as never committing, pulling, switching or merging here. repo create and connect
+// commit the tree first, and finished a resolved merge or am under gitsby's message.
+func TestPendingOpEveryCommitter(t *testing.T) { // [dfjzg]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "checkout", "-q", "-b", "side")
+	if err := os.WriteFile(filepath.Join(clone, "f.txt"), []byte("side\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, clone, "add", "f.txt")
+	runGit(t, clone, "commit", "-q", "-m", "side")
+	runGit(t, clone, "checkout", "-q", "main")
+	runGit(t, clone, "merge", "-q", "--no-ff", "--no-commit", "side")
+	t.Chdir(clone)
+	seen := map[string]bool{}
+	for _, u := range usages {
+		if u.cmd == "raw" {
+			continue // handed to the tool before any of this runs
+		}
+		// The fewest words each takes, and with a transport repo url mutates.
+		var cmd command
+		settled := false
+		for _, tail := range [][]string{nil, {"ssh"}, {"x", "y"}, {"x", "y", "z"}} {
+			opt, got, _, err := parseArgs(append(strings.Fields(u.cmd), tail...))
+			if err == nil {
+				if got, err = collapseCommand(got); err == nil {
+					got, err = sortCommand(got, &opt)
+				}
+			}
+			if err == nil && (!settled || got.mutating) {
+				cmd, settled = got, true
+			}
+			if settled && cmd.mutating {
+				break
+			}
+		}
+		if !settled {
+			t.Fatalf("%s: no argument list settles", u.cmd)
+		}
+		if !cmd.mutating || seen[cmd.name+" "+cmd.arg] {
+			continue
+		}
+		seen[cmd.name+" "+cmd.arg] = true
+		a := newApp(newPrinter())
+		a.cmd = cmd
+		if err := a.enterRepo(); err != nil {
+			t.Fatal(err)
+		}
+		err := a.refusePendingOp()
+		switch {
+		case pendingOpFree(cmd.name) && err != nil:
+			t.Errorf("%s: refused: %v", u.cmd, err)
+		case !pendingOpFree(cmd.name) && (err == nil || !strings.Contains(err.Error(), "A 'git merge' is in progress here.")):
+			t.Errorf("%s: refusePendingOp = %v, want the merge named", u.cmd, err)
+		}
+	}
+	for _, name := range []string{"repo-create", "repo-connect", "pullcom", "br-switch", "release"} {
+		if pendingOpFree(name) {
+			t.Errorf("%s passes over a stopped operation", name)
+		}
+	}
+	if len(seen) < 15 {
+		t.Errorf("checked %d mutating commands, want at least 15; usages no longer settles them", len(seen))
 	}
 }
 
