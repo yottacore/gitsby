@@ -33,6 +33,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Stage 0 brings staged edits back unstaged after a merge that goes in clean
+	- ID: 2026112110520434
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261121-105204
+	- Opened by:
+	- Related IDs: 2026112017135488, 2026112017135764
+	- Steps to reproduce [Bug]: Stage an edit and edit the file again, on a tree behind or diverged from origin, where the merge goes in clean. Run stage 0.
+	- Incorrect behavior [Bug]: The edits come back, but the index no longer holds the staged copy.
+	- Expected behavior [Bug]: Staged edits stay staged, as they do when fSyncMerge backs a merge out, and as the publisher keeps them since 2026112017135488.
+	- Reproduced [Bug]: 2026-11-21 on b23, by a git 2.51 probe of git merge --no-ff --autostash. Stage 0 itself not run.
+	- Possible cause [Bug]: git applies its autostash without --index. fSyncMerge keeps --autostash, and the new stash entry it leaves is the signal item 9 chose for a failed restore.
+	- Origin: b463d2b (2026-08-12) for the fast-forward, 0633cc1 for the merge. Found in the sweep for 2026112017135488. Confirmed for git, Plausible for stage 0.
+	- Note: A fix that stashes by hand and pops with --index changes the signal in 2026112017135764's Decisions, so it needs an Against: line.
+
 - Code Review 20261120 item 14: Every command that stages the tree runs a dry-run add before the plan, in every repo
 	- ID: 2026112017135689
 	- Type: Bug
@@ -114,7 +131,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 17: No check runs the real publisher with an empty path list
 	- ID: 2026112017135640
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-171356
@@ -125,6 +142,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, by mutation on the fixture. Confirmed.
 	- Possible cause [Bug]: [dfjme] and [dfjmf] use the stub, and [dfjmg] passes a.txt.
 	- Origin: 0633cc1 (2026112013542584). No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: No check ran the real publisher with the path list set and empty. [dfjme] and [dfjmf] run a stub, and [dfjmg] passes a.txt.
+	- Actual fix [Bug]: test.bash runs the real publisher with an empty list, as cicd.bash calls it on a run that changed none of PUBLISH_PATHS. The publisher itself didn't change.
+	- Test case: test.bash [dfkvy].
+	- Verified: [dfkvy] fails with the publisher's two -v tests read as -n, the mutation the item names, and passes on the tree. The quick gate with every area passed: test.bash 2333/0, fuzz 310/0.
+	- Swept: by grep, the publisher tells set from unset only in those two -v tests, and the one case covers both. cicd.bash is its only caller, and always sets it.
+	- Branch: nov21-2026112017135640
+	- Commit: 7e79b53
+	- Acceptance signoff: Self-closed: its test fails on the mutation the item names and passes on the tree.
+	- Closed: 20261121-105300
 
 - With Windows' own OpenSSH as the ssh command, a fetch from an ssh origin that stalls after its banner waits until killed
 	- ID: 2026112021513016
@@ -309,7 +336,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 27: The publisher brings other staged edits back unstaged
 	- ID: 2026112017135488
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171354
@@ -320,6 +347,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, the real publisher with a stub gitsby. Confirmed.
 	- Possible cause [Bug]: A plain `git stash pop` at n8git_backup-and-publish:341 and :357. Stage 0's autostash merge does the same, by a git probe.
 	- Origin: bbb90b5 (2026-07-25), and the claim in 0633cc1 (2026112013542584). No round saw it.
+	- Closed reason: Done
+	- Related IDs: 2026112110520434
+	- Actual cause [Bug]: Both of the publisher's pops were a plain git stash pop, which brings staged edits back unstaged and drops an edit that is only staged.
+	- Actual fix [Bug]: Both pops go through fStashPop, which pops with --index. When the pull changed a staged file in the same place, --index puts nothing back, and the publisher stops with the edits all still in the stash. Nothing is committed or pushed.
+	- Decisions: An index clash stops the run rather than falling back to a plain pop, since a plain pop drops an edit that is only staged (git 2.51 probe). It is told from an untracked file in the way by the stash having a staged part, so that case keeps fStashPopFailed's message.
+	- Test case: test.bash [dfkvz], [dfkw0], [dfkw1] and [dfkw5].
+	- Verified: [dfkvz], [dfkw0] and [dfkw1] fail on the old publisher and pass on the fix. [dfkw5] fails with the staged-part check taken out. The quick gate with every area passed: test.bash 2333/0, fuzz 310/0.
+	- Swept: every stash pop and --autostash in the repo's scripts and Go source, by grep. fSyncMerge in cicd.bash already pops with --index when it backs a merge out. The Go pulls take no --autostash under --staged (staged.go), and commit the whole tree otherwise. Stage 0's --autostash on a merge that goes in clean brings staged edits back unstaged too, filed as 2026112110520434.
+	- Branch: nov21-2026112017135640
+	- Commit: 2493028
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261121-105300
 
 - Code Review 20261120 item 28: Stage 6 replaces a demo gif that was already edited when the run started
 	- ID: 2026112017135473
@@ -339,7 +378,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 29: The publish prompt says a blank message opens the editor, but the publisher writes one itself
 	- ID: 2026112017135459
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171354
@@ -350,6 +389,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
 	- Possible cause [Bug]: The cicd text is older than the publisher's automatic message.
 	- Origin: bbce553 (2026-07-22) and bcdf93c, then bbb90b5. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: The prompt, the plan line, --help and two comments in cicd.bash, and a comment in config.bash, date from when a blank answer let git open the editor. The publisher writes its own message under --quiet since bbb90b5, and cicd.bash always passes --quiet.
+	- Actual fix [Bug]: They say a blank answer gets an automatic message. What runs didn't change.
+	- Decisions: The text changed rather than the behavior, since cicd.bash's help says the run finishes unattended after its one prompt, and an editor at the end of a long run would hold it.
+	- Test case: test.bash [dfkw2], [dfkw3] and [dfkw4].
+	- Verified: on the old cicd.bash, --list printed 'blank = editor' and the [dfkw4] help check failed. Both pass now. [dfkw3] runs the publisher with --quiet, no message and GIT_EDITOR=false, and passes on both, since that part didn't change. The quick gate with every area passed: test.bash 2333/0, fuzz 310/0.
+	- Swept: every 'editor' in cicd/, README.md and project/, by grep. The 7 in cicd.bash and 1 in config.bash are fixed. README's How to develop says only that the run prompts once.
+	- Branch: nov21-2026112017135640
+	- Commit: 555160d
+	- Acceptance signoff: Self-closed: the plan and help checks failed on the old text and pass now, and nothing else changed.
+	- Closed: 20261121-105300
 
 - Code Review 20261120 item 30: The run's plan says stage 0 only fast-forwards
 	- ID: 2026112017135444

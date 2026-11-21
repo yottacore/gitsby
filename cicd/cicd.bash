@@ -40,7 +40,7 @@
 ##	  Options:
 ##	   -q, --quiet         quiet + unattended (no prompt); the publish step runs quiet too
 ##	   -y, --yes           unattended (no prompt) but not quiet
-##	   -m, --message MSG   publish hands-off with this commit message (no editor)
+##	   -m, --message MSG   the publish step's commit message, so the run doesn't ask for one
 ##	       --msg MSG       alias for --message
 ##	   --no-sync           skip the remote sync stage
 ##	   --no-lint           skip the lint stage
@@ -82,7 +82,7 @@
 ##	  k, m or g, such as 24g, and 1g at least, or none. The default is a third of the RAM, 4g to
 ##	  32g. A step over it exits 137.
 ##	- If neither -q/-y nor -m is given, the run prompts once for a commit message
-##	  (blank = git editor; Ctrl+C aborts the whole run), then finishes unattended.
+##	  (blank = automatic message; Ctrl+C aborts the whole run), then finishes unattended.
 ##	- Reuse: copy the cicd/ directory into another project and edit config.bash.
 
 ##	History: At bottom of script.
@@ -422,7 +422,7 @@ declare -a harnessQuiet=(); ((quiet)) && harnessQuiet=("-q")
 skipNote="(skipped)"; ((! quick)) || skipNote="(skipped --quick)"
 
 ## Publish commit message: -m wins, then config, then a default when unattended.
-## Empty -> publish interactively (git commit opens an editor); when interactive
+## Empty -> the publisher writes one, since it runs with --quiet; when interactive
 ## we offer to capture a message at the preflight prompt below.
 publishMsg=""
 if   [[ -n "${cliMessage}" ]];              then publishMsg="${cliMessage}"
@@ -1059,7 +1059,7 @@ if ((${#GIT_PUBLISH[@]} == 0)); then
 elif [[ -n "${publishMsg}" ]]; then
 	fEcho_Clean "Publish (last) ......: ${GIT_PUBLISH[*]} (hands-off: \"${publishMsg}\")"
 else
-	fEcho_Clean "Publish (last) ......: ${GIT_PUBLISH[*]} (will prompt for message; blank = editor)"
+	fEcho_Clean "Publish (last) ......: ${GIT_PUBLISH[*]} (will prompt for message; blank = automatic message)"
 fi
 fEcho_Clean
 fEcho_Clean "Fail-fast: any error aborts before the next step."
@@ -1090,7 +1090,7 @@ if ((! assumeYes)); then
 	## is the natural place to bail on the common (publish) path - Ctrl+C here
 	## aborts; there is no separate "Proceed? [y/N]" (removed to cut friction).
 	if ((${#GIT_PUBLISH[@]})) && [[ -z "${publishMsg}" ]]; then
-		read -r -p "Publish commit message (blank = editor; Ctrl+C aborts): " typedMessage
+		read -r -p "Publish commit message (blank = automatic message; Ctrl+C aborts): " typedMessage
 		fEcho_ResetBlankCounter
 		[[ -n "${typedMessage}" ]] && publishMsg="${typedMessage}"
 	fi
@@ -1463,7 +1463,7 @@ fStepEnd
 
 ## Stage 8: backup + publish.
 ## Always run the publisher quiet: cicd already gave the initial prompt, so skip
-## its redundant continue-prompt. With no message it still lets git open the editor.
+## its redundant continue-prompt. With no -m it writes the message itself.
 pubFlags=(--quiet)
 ## What the run changed of PUBLISH_PATHS, one per line. The publisher commits only those.
 fPublishPaths(){
@@ -1480,8 +1480,6 @@ else
 	fStep publish
 	pubPaths="$(fPublishPaths)"
 	fEcho_Clean "the run changed $(grep -c . <<< "${pubPaths}") tracked file(s)${pubPaths:+: ${pubPaths//$'\n'/, }}"
-	## Hands-off: the publisher fills the empty commit message from -m so `git
-	## commit` won't open an editor.
 	[[ -z "${publishMsg}" ]] || { fEcho_Clean "hands-off publish (commit message: \"${publishMsg}\")"; pubFlags+=(-m "${publishMsg}"); }
 	GIT_BACKUP_AND_PUBLISH_PATHS="${pubPaths}" "${GIT_PUBLISH[@]}" "${pubFlags[@]}"
 	fStepEnd
@@ -1552,3 +1550,4 @@ fEcho_Clean
 ##		- 2026-11-20 JC: The demo's tag scan is fReleaseTags, so a candidate suffixed after a dot no longer stamps the demo over its own release.
 ##		- 2026-11-20 JC: Stage 0 merges a diverged origin with --no-ff when it merges clean, and backs the merge out and stops when it doesn't. Publish commits only the tracked files the run changed, so another session's edits stay out of its commit.
 ##		- 2026-11-20 JC: Stage 0 also stops when the edits it carried over clash with what came in, which git reports at exit 0. The merge or fast-forward is backed out and the edits put back.
+##		- 2026-11-21 JC: The message prompt, the plan and --help say a blank answer gets an automatic message, which the publisher writes under --quiet. They said it opened the editor.

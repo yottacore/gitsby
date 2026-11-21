@@ -1329,17 +1329,38 @@ fGateNoDrift(){ fGateStatus 0 --no-container --gate && ! grep -qE 'tool versions
 ## demogif publish), the rest passed on. Its exit status goes to ${gateRc}, output in ${gateOut},
 ## and the calls log starts empty.
 fGateOnly(){
-	local keep=" $1 " s
 	local -a skip=()
+	mapfile -t skip < <(fGateSkips "$1")
 	shift
-	for s in sync lint test fuzz parity dogfood demogif remote publish; do [[ "${keep}" == *" ${s} "* ]] || skip+=("--no-${s}"); done
 	: > "${gateCalls}"; gateRc=0
 	fGateRun -y --no-container "${skip[@]}" "$@" </dev/null >"${gateOut}" 2>&1 || gateRc=$?
+}
+## fGateOnly without -y, so the run asks for the publish message, answered with the line in $1.
+fGateOnlyAnswering(){
+	local answer="$1"
+	local -a skip=()
+	mapfile -t skip < <(fGateSkips "$2")
+	shift 2
+	: > "${gateCalls}"; gateRc=0
+	fGateRun --no-container "${skip[@]}" "$@" <<< "${answer}" >"${gateOut}" 2>&1 || gateRc=$?
+}
+## The --no-<stage> options for every stage not named in $1.
+fGateSkips(){
+	local keep=" $1 " s
+	for s in sync lint test fuzz parity dogfood demogif remote publish; do [[ "${keep}" == *" ${s} "* ]] || printf '%s\n' "--no-${s}"; done
 }
 ## After fGateOnly: the run exited $1, and every extended regex after it matches the calls log.
 fGateRanCalling(){ local want="$1"; shift; [[ "${gateRc}" == "${want}" ]] && fGateCalled "$@" ;}
 ## After fGateOnly: the run exited $1, and its output matches the extended regex $2.
 fGateRanSaying(){ [[ "${gateRc}" == "$1" ]] && grep -qE -- "$2" "${gateOut}" ;}
+## The real publisher in ${pubDir}/repo, its backup off and the stubs first on PATH, with the
+## options in $@. GIT_BACKUP_AND_PUBLISH_PATHS goes on the call. Status in ${pubRc}, output in
+## ${pubDir}/out.
+fPubRun(){
+	pubRc=0
+	( cd "${pubDir}/repo" || exit 1; GIT_BACKUP_AND_PUBLISH_NOBACKUP=1 PATH="${pubDir}/bin:${PATH}" \
+		bash "${root}/cicd/utility/n8git_backup-and-publish" "$@" ) </dev/null >"${pubDir}/out" 2>&1 || pubRc=$?
+}
 ## A commit pushed to the pipeline fixture's origin from a second clone, adding the line $1 to the
 ## file $2, upstream.txt when left out.
 fGateUpstream(){
@@ -8672,6 +8693,48 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			bash "${root}/cicd/utility/n8git_backup-and-publish" -q -m pub ) </dev/null >/dev/null 2>&1 || true
 		fAssert "[dfjmg] the publisher commits and pushes only the files it's told, and leaves the other edit in the tree" \
 			bash -c "[[ \"\$(git -C '${pubDir}/repo' show --name-only --format= HEAD)\" == a.txt && \"\$(git -C '${pubDir}/repo' diff --name-only)\" == b.txt && \"\$(git -C '${pubDir}/repo' rev-parse HEAD)\" == \"\$(git -C '${pubDir}/origin.git' rev-parse main)\" && -z \"\$(git -C '${pubDir}/repo' stash list)\" ]]"
+		## cicd.bash hands it an empty list on every run that changed none of PUBLISH_PATHS, which
+		## [dfjmf] pins. Set and empty is nothing to commit, not unset's whole tree.
+		local pubHead="" pubRc=0; pubHead="$(git -C "${pubDir}/repo" rev-parse HEAD)"
+		echo a3 >> "${pubDir}/repo/a.txt"
+		GIT_BACKUP_AND_PUBLISH_PATHS='' fPubRun -q -m pub
+		fAssert "[dfkvy] and told an empty list, commits nothing, with both edits left in the tree" \
+			bash -c "[[ '${pubRc}' == 0 && \"\$(git -C '${pubDir}/repo' rev-parse HEAD)\" == '${pubHead}' && \"\$(git -C '${pubDir}/origin.git' rev-parse main)\" == '${pubHead}' && \"\$(git -C '${pubDir}/repo' diff --name-only | paste -sd ' ')\" == 'a.txt b.txt' && -z \"\$(git -C '${pubDir}/repo' stash list)\" ]]"
+		## Its stash has to come back with --index, or another staged edit comes back unstaged.
+		git -C "${pubDir}/repo" add b.txt && echo b3 >> "${pubDir}/repo/b.txt"
+		GIT_BACKUP_AND_PUBLISH_PATHS=a.txt fPubRun -q -m pub
+		fAssert "[dfkvz] and leaves another staged edit staged, with a later edit of it in the tree" \
+			bash -c "[[ '${pubRc}' == 0 && \"\$(git -C '${pubDir}/repo' show --name-only --format= HEAD)\" == a.txt && \"\$(git -C '${pubDir}/repo' show :b.txt)\" == \$'b\\nb2' && \"\$(tail -n 1 '${pubDir}/repo/b.txt')\" == b3 && \"\$(git -C '${pubDir}/repo' rev-parse HEAD)\" == \"\$(git -C '${pubDir}/origin.git' rev-parse main)\" && -z \"\$(git -C '${pubDir}/repo' stash list)\" ]]"
+		## A pull that fails, since origin moved on under a local commit.
+		git clone --quiet "${pubDir}/origin.git" "${pubDir}/other" 2>/dev/null
+		printf 'c\n' > "${pubDir}/other/c.txt" && git -C "${pubDir}/other" add c.txt && git -C "${pubDir}/other" commit --quiet -m c && git -C "${pubDir}/other" push --quiet 2>/dev/null
+		echo a4 >> "${pubDir}/repo/a.txt" && git -C "${pubDir}/repo" commit --quiet -m local -- a.txt
+		GIT_BACKUP_AND_PUBLISH_PATHS=a.txt fPubRun -q -m pub
+		fAssert "[dfkw0] and when its pull fails, puts the staged edit back staged" \
+			bash -c "[[ '${pubRc}' != 0 && \"\$(git -C '${pubDir}/repo' show :b.txt)\" == \$'b\\nb2' && \"\$(tail -n 1 '${pubDir}/repo/b.txt')\" == b3 && -z \"\$(git -C '${pubDir}/repo' stash list)\" ]] && grep -qF 'git pull --ff-only failed. The working tree is as it was.' '${pubDir}/out'"
+		## A staged edit that the pull changes in the same place. --index can't put it back, and a
+		## plain pop would drop it, since the tree holds none of it.
+		git -C "${pubDir}/repo" fetch --quiet && git -C "${pubDir}/repo" reset --quiet --hard origin/main
+		printf 'c\nmine\n' > "${pubDir}/repo/c.txt" && git -C "${pubDir}/repo" add c.txt && printf 'c\n' > "${pubDir}/repo/c.txt"
+		printf 'c\ntheirs\n' > "${pubDir}/other/c.txt" && git -C "${pubDir}/other" commit --quiet -m theirs -- c.txt && git -C "${pubDir}/other" push --quiet 2>/dev/null
+		GIT_BACKUP_AND_PUBLISH_PATHS=a.txt fPubRun -q -m pub
+		fAssert "[dfkw1] and when the pull clashes with a staged edit, stops with the stash kept and nothing committed" \
+			bash -c "[[ '${pubRc}' != 0 && \"\$(git -C '${pubDir}/repo' rev-parse HEAD)\" == \"\$(git -C '${pubDir}/other' rev-parse HEAD)\" && \"\$(git -C '${pubDir}/repo' rev-parse HEAD)\" == \"\$(git -C '${pubDir}/origin.git' rev-parse main)\" && \"\$(git -C '${pubDir}/repo' show 'stash@{0}^2:c.txt')\" == \$'c\\nmine' && \"\$(git -C '${pubDir}/repo' stash list --format=%s)\" == 'On main: auto-stash' ]] && grep -qF 'staged edits clash with what the pull brought in' '${pubDir}/out'"
+		git -C "${pubDir}/repo" stash drop --quiet
+		## An untracked file in the way of a pulled one also fails the pop with the tracked files
+		## untouched. With nothing staged, that's not the clash above.
+		echo mine > "${pubDir}/repo/u.txt"
+		echo theirs > "${pubDir}/other/u.txt" && git -C "${pubDir}/other" add u.txt && git -C "${pubDir}/other" commit --quiet -m u && git -C "${pubDir}/other" push --quiet 2>/dev/null
+		GIT_BACKUP_AND_PUBLISH_PATHS=a.txt fPubRun -q -m pub
+		fAssert "[dfkw5] and an untracked file in the way is named as that, not as a staged clash" \
+			bash -c "[[ '${pubRc}' != 0 && \"\$(git -C '${pubDir}/repo' show 'stash@{0}^3:u.txt')\" == mine ]] && grep -qF \"these untracked files weren't put back\" '${pubDir}/out' && ! grep -qF 'staged edits clash' '${pubDir}/out'"
+		git -C "${pubDir}/repo" stash drop --quiet
+		## cicd.bash runs it with --quiet and, after a blank answer at its prompt, no -m. It writes
+		## the message itself, and never opens the editor.
+		echo a5 >> "${pubDir}/repo/a.txt"
+		GIT_EDITOR=false GIT_AUTO_MESSAGE='' GIT_BACKUP_AND_PUBLISH_MESSAGE='' GIT_BACKUP_AND_PUBLISH_PATHS=a.txt fPubRun --quiet
+		fAssert "[dfkw3] and with --quiet and no message, commits under one of its own rather than opening the editor" \
+			bash -c "[[ '${pubRc}' == 0 && \"\$(git -C '${pubDir}/repo' show --name-only --format= HEAD)\" == a.txt && \"\$(git -C '${pubDir}/repo' rev-parse HEAD)\" == \"\$(git -C '${pubDir}/origin.git' rev-parse main)\" ]] && grep -qxE 'pubscope [0-9]{8}-[0-9]{6}' <<< \"\$(git -C '${pubDir}/repo' log -1 --format=%s)\""
 		gateDir="${work}/gate"
 
 		## The stages the gate leaves out, on a fixture of their own that becomes a git repo with a
@@ -8837,6 +8900,12 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dd5fy] -m hands its message to the publisher"  fGateRanCalling 0 '^n8git_backup-and-publish --quiet -m hands off$'
 		fGateOnly publish --message='hands off'
 		fAssert "[dd5fz] and so does --message="  fGateRanCalling 0 '^n8git_backup-and-publish --quiet -m hands off$'
+		## A blank answer leaves the message to the publisher, which writes one under --quiet ([dfkw3]).
+		fGateOnlyAnswering '' publish
+		fAssert "[dfkw2] a blank answer at the message prompt is an automatic message, as the plan says" \
+			bash -c "[[ '${gateRc}' == 0 ]] && grep -qxF 'n8git_backup-and-publish --quiet' '${gateCalls}' && grep -qxF 'Publish (last) ......: cicd/utility/n8git_backup-and-publish (will prompt for message; blank = automatic message)' '${gateOut}'"
+		fAssert "[dfkw4] and --help says so, with no editor anywhere in it" \
+			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qF '(blank = automatic message; Ctrl+C aborts the whole run)' <<< \"\$out\" && ! grep -qi editor <<< \"\$out\""
 		## Stage 0 against a real origin: behind, behind with an edit in the tree, diverged, and gone.
 		git init --quiet --bare -b main "${gateOrigin}"
 		git -C "${gateDir}" remote add origin "${gateOrigin}"
@@ -10744,3 +10813,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261120 JC: diff.relative, a textconv driver and diff.ignoreSubmodules=all hide no conflict or staged edit from sync and pullcom run in a subfolder, [dfjwj] to [dfjwp].
 ##		- 20261121 JC: Every command that stages the whole tree refuses an edit outside a sparse checkout, and none runs the dry run of git add, or reads core.sparseCheckout, outside one, [dfksp] [dfksq].
 ##		- 20261121 JC: The token walk has a gitsby.ghTokenFile set by hand, with and without gitsby.host, so the fallback's host check is pinned. [dfh3s] and [dfh3t] run on a dirty tree, and [dfktt] [dfktv] check nothing was committed. 2319 -> 2325.
+##		- 20261121 JC: The real publisher with an empty path list, with another staged edit, with a failed pull, with a staged edit the pull clashes with, with an untracked file in the way, and with --quiet and no message, [dfkvy] to [dfkw1], [dfkw5], [dfkw3]. A blank answer at the cicd message prompt and --help, [dfkw2] [dfkw4].

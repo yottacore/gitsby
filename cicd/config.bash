@@ -360,8 +360,8 @@ GIT_PUBLISH=(cicd/utility/n8git_backup-and-publish)
 PUBLISH_PATHS=("${DEMOGIF_OUT}")
 
 ## Set a non-empty commit message to publish hands-off (suppresses the prompt and
-## supplies the message so `git commit` won't open an editor). Left empty, publish
-## prompts once at preflight unless -m/--message or -q is given (see cicd.bash).
+## supplies the message). Left empty, publish prompts once at preflight unless
+## -m/--message or -q is given, and a blank answer gets an automatic message (see cicd.bash).
 PUBLISH_AUTO_MESSAGE=""
 
 

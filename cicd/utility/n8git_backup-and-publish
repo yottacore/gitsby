@@ -60,7 +60,8 @@ fAbout(){ { ((doQuietly)) || ((wasShown_About)); } && return; wasShown_About=1;
 	#           X-------------------------------------------------------------------------------X
 	fEcho_Clean "Backs up a github directory to a versioned archive, and publishes changes, ie:"
 	fEcho_Clean "  • rar {flags} ../versions/{version}.rar  ../*"
-	fEcho_Clean "  • git stash push --include-untracked &&  git pull --ff-only  &&  git stash pop"
+	fEcho_Clean "  • git stash push --include-untracked &&  git pull --ff-only  &&"
+	fEcho_Clean "    git stash pop --index"
 	fEcho_Clean "  • git add --all  &&  git commit"
 	fEcho_Clean "  • git push origin"
 	#           X-------------------------------------------------------------------------------X
@@ -338,8 +339,7 @@ fMain(){
 		## stash back first: left there, the next run finds a clean tree and
 		## publishes without the work.
 		if ! fGitRemote pull --ff-only; then
-			if ((didStash)) && ! git stash pop; then
-				fStashPopFailed "git pull --ff-only failed, and putting the stashed work back failed too"
+			if ((didStash)) && ! fStashPop "git pull --ff-only failed, and putting the stashed work back failed too"; then
 				return 1
 			fi
 			fThrowError "git pull --ff-only failed. The working tree is as it was. Nothing was committed or pushed."
@@ -353,9 +353,8 @@ fMain(){
 	## untracked one fails it too, with that file only in the stash. Catch it,
 	## say what to do, and stop before anything gets staged, committed, or pushed.
 	if ((didStash)); then
-		fEcho; fEcho "git stash pop ..."
-		if ! git stash pop; then
-			fStashPopFailed "stash pop failed after pull"
+		fEcho; fEcho "git stash pop --index ..."
+		if ! fStashPop "stash pop failed after pull"; then
 			return 1
 		fi
 	fi
@@ -489,6 +488,20 @@ fStashLeftBehind(){
 		mapfile -t haves < <(printf '%s\n' "${paths[@]}" | git hash-object --stdin-paths)
 		for i in "${!paths[@]}"; do [[ "${haves[i]:-}" == "${wants[i]}" ]] || printf '%s\n' "${paths[i]}"; done
 	)
+}
+
+## 'git stash pop' that keeps staged edits staged. A plain pop brings them back unstaged,
+## and drops an edit that is only staged. --index refuses, with the tree and the stash left
+## as they were, when the pull changed a staged file in the same place. A stash with nothing
+## staged that fails with the tree untouched is an untracked file in the way, which
+## fStashPopFailed names. $1 says what failed.
+fStashPop(){
+	git stash pop --index && return 0
+	if ! git diff --quiet 'stash@{0}^' 'stash@{0}^2' && git diff --quiet && git diff --cached --quiet && [[ -z "$(git ls-files --unmerged)" ]]; then
+		fThrowError "${1}: staged edits clash with what the pull brought in, so nothing was put back. It's all still in 'stash@{0}' (auto-stash), and 'git diff stash@{0}^ stash@{0}^2' shows the staged part. Put the edits back, then 'git stash drop', and re-run. Nothing was committed or pushed."
+		return 1
+	fi
+	fStashPopFailed "${1}"
 }
 
 ## After a failed 'git stash pop'. Dropping the stash is the advice only when
@@ -836,3 +849,5 @@ fMain  "${@}"
 ##		  deletes their only copy.
 ##		- 20261119: GIT_BACKUP_AND_PUBLISH_PATHS commits only the tracked files it
 ##		  names, so a cicd run leaves other edits in the tree alone.
+##		- 20261121: The stash comes back with --index, so other staged edits stay
+##		  staged. A staged edit the pull clashes with stops the run, stash kept.
