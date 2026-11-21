@@ -33,6 +33,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- The ssh identity probe and the ssh -G read cut a bracketed IPv6 host in an ssh:// origin at its first colon
+	- ID: 2026112111542213
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261121-115422
+	- Opened by:
+	- Related IDs: 2026112020462137
+	- Steps to reproduce [Bug]: Point origin at ssh://git@[::1]:2222/o/r.git. Run gitsby status.
+	- Incorrect behavior [Bug]: sshTarget gives '[' as the host, so the probe asks ssh about git@[ and the SSH line reads no config. sshPort gives no port either.
+	- Expected behavior [Bug]: The probe and the ssh -G read ask about ::1 on port 2222, as git's fetch does.
+	- Possible cause [Bug]: sshTarget, sshConnectTarget and sshPort in remote.go split the authority at its first colon, with no case for brackets.
+	- Origin: Plausible, read only. Found while working 2026112020462137.
+
 - Stage 0 brings staged edits back unstaged after a merge that goes in clean
 	- ID: 2026112110520434
 	- Type: Bug
@@ -168,7 +183,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - With Windows' own OpenSSH as the ssh command, a fetch from an ssh origin that stalls after its banner waits until killed
 	- ID: 2026112021513016
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-215130
@@ -184,11 +199,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Upstream: PowerShell/Win32-OpenSSH#1427, commented 20261121 (<https://github.com/PowerShell/Win32-OpenSSH/issues/1427#issuecomment-7066202716>)
 	- 20261121: the hang is Win32-OpenSSH#1427, an async write to stderr that never completes when stderr is a pipe. Checked on vm925w: with stderr to a file, ssh.exe exits 255 at 3 seconds; with stderr to a pipe it was killed at 20 seconds, whatever stdout is. Commented there rather than filing a new issue.
 	- 20261121: a possible workaround on gitsby's side is to give that ssh a file for stderr, read back afterwards. Not tried.
+	- Note: the 3 seconds above was with ServerAliveInterval=1, as in the upstream draft. With gitsby's options, ssh.exe with stderr to a file or NUL ends at 30 s on a stalled server.
+	- Closed reason: Done
+	- Actual cause [Bug]: Windows' own OpenSSH 9.5p2 never exits once it has written a line to a stderr that is a pipe, whatever the server does next: a stall, a close, or a refused login. To NUL or a file it exits on its limits. gitsby's fetch gives git NUL, so it ended at 30 s all along. The repo probe gave git a pipe, so it waited until killed. The login probe gave ssh a pipe, so it waited for its own 38 s limit on any server that made ssh write a line.
+	- Actual fix [Bug]: On Windows, the repo probe and the login probe read what git and ssh said back from a temp file rather than a pipe (errSink in remote.go). design.md says so under the ssh identity notes.
+	- Branch: nov21-2026112021513016
+	- Commit: b205e4a
+	- Test case: Go [dfkxx] TestRemoteReachesEndWithWindowsOwnSSH, on Windows with Windows' own ssh as core.sshCommand: the fetch, the repo probe and both login probe paths, against a server that closes at once and one quiet after its banner, each ending inside the login probe's own limit. It skips elsewhere. Go [dfkxw] TestErrSinkFileReadsLikeThePipe, the file path forced on: the same answers as the pipe, and no file left.
+	- Verified: On vm925w (OpenSSH_for_Windows 9.5p2, git 2.55.0.windows.5), [dfkxx] fails on a build with the file path turned off, with the repo probe and both login probes still waiting at 9 s against both servers. It passes with the file path, in 13 s. [dfk1m] passes there in 16 s, down from 32 s.
+	- Verified: In a rig run on vm925w, ssh.exe alone and under git ls-remote, with stderr to NUL or a file, ended at 30 s on a stalled server, and at once on a closed one or a refused login. With stderr to a pipe, every case was still running at 10 to 12 s.
+	- Verified: [dfkxw] fails with the file read taken out, with the removal taken out, and with the file never made. The quick gate passed with every area: test.bash 2339/0, fuzz 310/0, parity 31/0. gosec 37, unchanged.
+	- Swept: every command that reaches a remote and whose output gitsby reads, by grep for Stderr, Output and CombinedOutput beside remoteEnv and probeSSHLogin. probeRemote and probeSSHLogin use errSink. The fetch and set-head in fetchRemote run with NUL. askOriginHeads and the steps pass gitsby's own stderr through. gh and tea calls go over https, not ssh.
+	- Decisions: A workaround rather than Won't fix. The pipe that triggers the hang was gitsby's own, a temp file costs little, and the hang came from any line ssh wrote, not only a stall.
+	- Decisions: Windows only, behind errToFile, so other platforms keep the pipe. [dfkxw] runs the file path on every platform. If the temp file can't be made, the pipe is used.
+	- Decisions: A command that writes to gitsby's own stderr is left alone, since it gets what git run by hand would. Fixing that case for git run by hand is the upstream issue's job.
+	- Acceptance signoff: Self-closed: reproduced on vm925w, its test failed before the fix and passes after, and the sweep is answered.
+	- Closed: 20261121-115347
 
 - The ssh identity probe asks port 22 for an ssh:// origin on another port
 	- ID: 2026112020462137
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-204621
@@ -198,6 +229,19 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The probe and the ssh -G read connect to the port the URL names, as git's fetch does.
 	- Possible cause [Bug]: sshConnectTarget in remote.go drops the port, and neither caller passes -p. TestSSHConnectTarget pins the target without it.
 	- Origin: Plausible, read only. Found while working 2026112017135720.
+	- Reproduced [Bug]: 2026-11-21 on b23, with a logging stand-in for ssh: [dfkxv] fails with the port left out, which gives the old arguments. Confirmed.
+	- Closed reason: Done
+	- Actual cause [Bug]: sshConnectTarget gives only '[user@]host', and neither the login probe nor the ssh -G read added the URL's port.
+	- Actual fix [Bug]: sshDest in remote.go gives the URL's port as -p, then '--' and the target. The login probe, the SSH line's ssh -G read and the alias lookup all end their ssh call with it, so the last two still share one read. The port goes after the ssh command's own words, where git puts it.
+	- Branch: nov21-2026112021513016
+	- Commit: b205e4a
+	- Test case: Go [dfkxt] TestSSHDestCarriesThePort. Go [dfkxv] TestSSHCallsGoToTheURLsPort, the login probe and the ssh -G read through a logging stand-in for ssh, with one -G read for the alias lookup and the SSH line.
+	- Verified: [dfkxt] and [dfkxv] fail with the port left out of sshDest and pass with it. [df053] still counts one -G read. [dfkxx] on vm925w reaches its listener through the URL's port. The quick gate passed with every area.
+	- Swept: every ssh gitsby runs about a remote. probeSSHLogin, from sshLogin and askSSHLoginAhead, and sshConfigText, from readSSHConfig (the SSH line) and resolveSSHHost (parseRemote), all take sshDest. sshConnectTarget is now called only by sshDest and its own test.
+	- Decisions: Digits only for the port, since git can't connect with anything else. An scp-like URL has no port to give, as in git. [dbfrr] TestSSHConnectTarget still pins the target without the port, since the port now goes apart from it.
+	- Note: Examined and left alone: an ssh:// URL with a bracketed IPv6 host, which sshTarget cuts at its first colon. Filed as 2026112111542213.
+	- Acceptance signoff: Self-closed: reproduced with a stand-in, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261121-115347
 
 - Code Review 20261120 item 46: A submodule whose remote is gone makes pullcom skip the pull as if origin were unreachable
 	- ID: 2026112017151559

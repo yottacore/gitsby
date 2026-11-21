@@ -90,11 +90,12 @@ func (a *app) probeRemote(url string) (repoExistence, string) {
 	// stopped being enough once '--' ended gitsby's own options.
 	probe := toolCmd("git", "ls-remote", "--", url)
 	probe.Env = a.remoteEnv()
-	var errText bytes.Buffer
-	probe.Stderr = &errText
+	said := newErrSink()
+	defer said.close()
+	probe.Stderr = said.writer()
 	out, err := probe.Output()
 	if err != nil {
-		return lsRemoteFailure(errText.String(), err)
+		return lsRemoteFailure(said.text(), err)
 	}
 	if strings.TrimRight(string(out), "\r\n") != "" {
 		return repoNonEmpty, ""

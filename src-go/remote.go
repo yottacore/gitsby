@@ -10,9 +10,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"os"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -118,6 +121,39 @@ func sshConnectTarget(url string) string {
 		return user + "@" + host
 	}
 	return host
+}
+
+// sshPort is the port an ssh:// remote names, or nothing. git hands it to ssh as
+// '-p', after the ssh command's own words, and so does every ssh gitsby runs about
+// that remote. Digits only, since git can't connect with anything else either.
+func sshPort(url string) string {
+	if !strings.HasPrefix(url, "ssh://") {
+		return ""
+	}
+	authority := url[len("ssh://"):]
+	if slash := strings.IndexByte(authority, '/'); slash >= 0 {
+		authority = authority[:slash]
+	}
+	authority = authority[strings.LastIndexByte(authority, '@')+1:]
+	_, port, found := strings.Cut(authority, ":")
+	if !found || port == "" || strings.Trim(port, "0123456789") != "" {
+		return ""
+	}
+	return port
+}
+
+// sshDest ends every ssh call about a remote: the port, if the URL names one, then
+// '--' and the connect target. Nothing for a remote that isn't ssh. One helper, so
+// the login probe and the ssh -G read can't disagree about where they connect.
+func sshDest(url string) []string {
+	target := sshConnectTarget(url)
+	if target == "" {
+		return nil
+	}
+	if port := sshPort(url); port != "" {
+		return []string{"-p", port, "--", target}
+	}
+	return []string{"--", target}
 }
 
 // gitSSHCommand is the ssh command git would run, so probes ask as the key git pushes
@@ -284,24 +320,22 @@ func (a *app) askSSHLoginAhead(url string) {
 }
 
 // sshProbeWait is all the time the login probe gets. Windows' own OpenSSH (9.5p2)
-// gives up on a server quiet after its banner, says so, and then doesn't exit: it
-// was still running 40 s later, and kept running after the server closed. So the
-// probe ends it itself, a little past ssh's own limits, and an ssh that keeps them
-// ends first.
-// The fetch's ssh is git's to end, and Git for Windows' own ssh exits.
+// never exits once it has written to a stderr that is a pipe, which errSink keeps
+// it from. Any ssh that ignores its limits some other way, the probe ends itself,
+// a little past ssh's own limits, and an ssh that keeps them ends first.
 func sshProbeWait() time.Duration {
 	return time.Duration(sshConnectSeconds+stallSeconds+5) * time.Second
 }
 
 func probeSSHLogin(ctx context.Context, env []string, url string, sshCmd, limits []string, wait time.Duration) string {
-	target := sshConnectTarget(url)
+	dest := sshDest(url)
 	// PuTTY's programs take none of the options below, so the answer stays unknown.
 	// Asking plain ssh instead could name an account git never pushes as.
-	if target == "" || !inPath("ssh") || len(sshCmd) == 0 || !sshTakesOptions(sshCmd[0]) {
+	if len(dest) == 0 || !inPath("ssh") || len(sshCmd) == 0 || !sshTakesOptions(sshCmd[0]) {
 		return "?"
 	}
 	// A copy, since this runs on a look-ahead goroutine and append could write into the caller's array.
-	args := slices.Concat(sshCmd[1:], []string{"-T", "-o", "BatchMode=yes"}, limits, []string{"--", target})
+	args := slices.Concat(sshCmd[1:], []string{"-T", "-o", "BatchMode=yes"}, limits, dest)
 	ctx, stop := context.WithTimeout(ctx, wait)
 	defer stop()
 	// Both streams: ssh writes host-key and missing-identity warnings ahead of the
@@ -311,9 +345,12 @@ func probeSSHLogin(ctx context.Context, env []string, url string, sshCmd, limits
 	probe.Env = env
 	// What the ssh command started, such as a ProxyCommand, can hold the output open past the kill.
 	probe.WaitDelay = time.Second
+	said := newErrSink()
+	defer said.close()
+	probe.Stdout, probe.Stderr = said.writer(), said.writer()
 	// No exit code to read: github.com says hello and then exits 1.
-	out, _ := probe.CombinedOutput()
-	for _, line := range splitLines(string(out)) {
+	_ = probe.Run()
+	for _, line := range splitLines(said.text()) {
 		for _, greeting := range sshGreetingREs {
 			if m := greeting.FindStringSubmatch(line); m != nil {
 				return m[1]
@@ -321,6 +358,56 @@ func probeSSHLogin(ctx context.Context, env []string, url string, sshCmd, limits
 		}
 	}
 	return "?"
+}
+
+// Windows' own OpenSSH (9.5p2) never exits once it has written a line to a stderr
+// that is a pipe, whatever the server does next: Win32-OpenSSH#1427, an async write
+// that never completes. To NUL or a file it exits as it should. git hands ssh its
+// own stderr, so where gitsby reads what a remote reach said, on Windows it reads it
+// back from a temp file rather than a pipe. The fetch's stderr is NUL already, and
+// one gitsby passes its own stderr to gets what git would get run by hand.
+// A var so a test can take the file path anywhere.
+var errToFile = runtime.GOOS == "windows"
+
+// errSink is where a command that reaches a remote writes what it says.
+type errSink struct {
+	buf  bytes.Buffer
+	file *os.File
+}
+
+// newErrSink makes the temp file under errToFile. Without one it falls back to the pipe.
+func newErrSink() *errSink {
+	sink := &errSink{}
+	if errToFile {
+		sink.file, _ = os.CreateTemp("", "gitsby-said-*.txt")
+	}
+	return sink
+}
+
+func (sink *errSink) writer() io.Writer {
+	if sink.file != nil {
+		return sink.file
+	}
+	return &sink.buf
+}
+
+// text is what the command said, read once it has ended.
+func (sink *errSink) text() string {
+	if sink.file == nil {
+		return sink.buf.String()
+	}
+	if _, err := sink.file.Seek(0, io.SeekStart); err != nil {
+		return ""
+	}
+	said, _ := io.ReadAll(sink.file) // what was read so far is all there is to go on
+	return string(said)
+}
+
+func (sink *errSink) close() {
+	if sink.file != nil {
+		_ = sink.file.Close()
+		_ = os.Remove(sink.file.Name()) // a child the kill missed can hold it on Windows; the temp folder keeps it then
+	}
 }
 
 // fetchRemote fetches with --prune and heals origin/HEAD, missing on git < 2.47 or stale

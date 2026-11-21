@@ -203,7 +203,7 @@ func TestSSHConfigAskedOnce(t *testing.T) { // [df053]
 	if got := parseRemote(url).host; got != "gitea.example.test" {
 		t.Errorf("parseRemote(%q).host = %q, want the alias resolved", url, got)
 	}
-	if got := readSSHConfig(sshConnectTarget(url)); got.user != "git" || got.host != "gitea.example.test" {
+	if got := readSSHConfig(sshDest(url)); got.user != "git" || got.host != "gitea.example.test" {
 		t.Errorf("readSSHConfig = %+v, want git at gitea.example.test", got)
 	}
 	parseRemote(url)
