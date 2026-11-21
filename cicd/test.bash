@@ -2626,6 +2626,22 @@ fRunSuite(){
 	( cd "${wbW}" && git bisect reset && git checkout --quiet --detach ) >/dev/null 2>&1
 	fAssert "[dfjzt] once that worktree is done with dev, br switch dev goes through and parks the edit" \
 		bash -c "cd '${wbM}' && '${gitsby}' -q br switch dev >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == dev ]] && git -C '${wbO}' cat-file -e feat:h.txt"
+
+	## prune passes over a locked worktree, so one whose folder is gone keeps its branch after it.
+	## The refusal named prune alone, and the next run refused the same way.
+	local wlO="${work}/$1-wtlo.git" wlM="${work}/$1-wtlm" wlW="${work}/$1-wtl w"
+	git init --quiet --bare -b main "${wlO}"
+	git clone --quiet "${wlO}" "${wlM}" 2>/dev/null
+	(
+		cd "${wlM}" || exit 1
+		echo one > f.txt && git add f.txt && git commit --quiet -m initial && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev && git checkout --quiet main
+		git worktree add --quiet "${wlW}" dev && git worktree lock "${wlW}" && mv "${wlW}" "${wlW}-moved"
+	) >/dev/null 2>&1
+	fAssert "[dfkyq] br switch -q dev refuses for a locked worktree whose folder is gone, naming unlock then prune" \
+		bash -c "cd '${wlM}' && out=\"\$('${gitsby}' -q br switch dev 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"git worktree unlock '${wlW}'\" <<< \"\${out}\" && grep -qE '^ +git worktree prune\$' <<< \"\${out}\" && [[ \"\$(git branch --show-current)\" == main ]]"
+	fAssert "[dfkyr] and once those 2 run, br switch dev goes through" \
+		bash -c "cd '${wlM}' && git worktree unlock '${wlW}' && git worktree prune && '${gitsby}' -q br switch dev >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fStagedChecks "$1"
 
 	## A command that still means something locally runs offline and says what it skipped; one
@@ -3308,6 +3324,54 @@ fRunSuite(){
 	fAssertNotOut "[dcmn9] and does not send you off to repo create"         'repo create'                   bash -c "${cnOffRun}"
 	fAssert       "[dcmna] and nothing was set up"                           bash -c "[[ ! -e '${cnOff}/plain/.git' ]]"
 	fAssertOut    "[dcmnb] a remote that isn't there still says so"          "doesn.t exist, or you have no access"  bash -c "cd '${cn}/proj2' && '${gitsby}' -q repo connect '${cn}/nosuch.git'"
+	## A shallow clone's push to a new repo is refused ('shallow update not allowed'), and a push
+	## into the branch a repo with a working tree has checked out is too. Both were found only after
+	## the commit and the remote add, and the rerun, with origin set, failed the same way.
+	local cnSh="${cn}/shallow"
+	mkdir -p "${cnSh}"
+	git init --quiet --bare -b main "${cnSh}/src.git"
+	git clone --quiet "${cnSh}/src.git" "${cnSh}/srcw" 2>/dev/null
+	( cd "${cnSh}/srcw" && for i in 1 2; do echo "${i}" > "f${i}.txt" && git add --all && git commit --quiet -m "c${i}"; done && git push --quiet origin main )
+	git clone --quiet --depth 1 "file://${cnSh}/src.git" "${cnSh}/cut" 2>/dev/null
+	git clone --quiet --depth 1 "file://${cnSh}/src.git" "${cnSh}/kept" 2>/dev/null
+	git clone --quiet "${cnSh}/src.git" "${cnSh}/full" 2>/dev/null
+	git clone --quiet "${cnSh}/src.git" "${cnSh}/full2" 2>/dev/null
+	git init --quiet --bare -b main "${cnSh}/new.git"
+	git init --quiet -b main "${cnSh}/worktree"
+	git init --quiet -b main "${cnSh}/instead"
+	git -C "${cnSh}/instead" config receive.denyCurrentBranch updateInstead
+	mkdir -p "${cnSh}/bin"
+	fStub "${cnSh}/bin/gh" <<-EOF
+		#!/usr/bin/env bash
+		echo "\$1" >> '${cnSh}/gh-ran'; exit 1
+	EOF
+	( cd "${cnSh}/cut" && git remote remove origin && echo new > new.txt )
+	( cd "${cnSh}/full" && git remote remove origin && echo new > new.txt )
+	( cd "${cnSh}/full2" && git remote remove origin && echo new > new.txt )
+	## Refused, with the new file left uncommitted, no origin added and nothing in the new repo.
+	fCnShRefused(){
+		local out="" rc=0
+		out="$(cd "${cnSh}/$1" && "${gitsby}" -q repo connect "$2" 2>&1)" || rc=$?
+		((rc != 0)) || return 1
+		grep -qF "$3" <<< "${out}" || return 1
+		! grep -qF 'Going to do' <<< "${out}" || return 1
+		[[ "$(git -C "${cnSh}/$1" rev-list --count HEAD)" == "$4" && -z "$(git -C "${cnSh}/new.git" for-each-ref)" ]] || return 1
+		grep -qF 'new.txt' <<< "$(git -C "${cnSh}/$1" status --porcelain)" && ! git -C "${cnSh}/$1" remote get-url origin >/dev/null 2>&1
+	}
+	fAssert "[dfkys] repo connect -q from a shallow clone refuses before the plan, naming --unshallow, with nothing committed or added" \
+		fCnShRefused cut "${cnSh}/new.git" 'git fetch --unshallow' 1
+	fAssertOut "[dfkyt] and so does a rerun whose origin a refused push left set"  'git fetch --unshallow' \
+		bash -c "cd '${cnSh}/cut' && git remote add origin '${cnSh}/new.git' && '${gitsby}' -q repo connect 2>&1; git remote remove origin"
+	fAssert "[dfkyv] a shallow clone that keeps its origin still pushes new work through repo connect" \
+		bash -c "cd '${cnSh}/kept' && git checkout --quiet -b more && echo k > k.txt && '${gitsby}' -q repo connect >/dev/null 2>&1 && git -C '${cnSh}/src.git' cat-file -e more:k.txt"
+	fAssert "[dfkyw] repo connect -q to a repo with its branch checked out refuses before the plan, with nothing committed or added" \
+		fCnShRefused full "${cnSh}/worktree" 'git init --bare' 2
+	fAssertOut "[dfkz9] and so does a rerun whose origin a refused push left set"  'git init --bare' \
+		bash -c "cd '${cnSh}/full' && git remote add origin '${cnSh}/worktree' && '${gitsby}' -q repo connect 2>&1; git remote remove origin"
+	fAssert "[dfkza] repo create from a shallow clone refuses the same way, before asking gh about the repo" \
+		bash -c "cd '${cnSh}/cut' && out=\"\$(PATH='${cnSh}/bin':\"\${PATH}\" '${gitsby}' -q repo create me/proj 2>&1)\"; grep -qF 'git fetch --unshallow' <<< \"\${out}\" && ! grep -qx repo '${cnSh}/gh-ran' 2>/dev/null"
+	fAssert "[dfkyx] and goes through where receive.denyCurrentBranch is updateInstead" \
+		bash -c "cd '${cnSh}/full2' && '${gitsby}' -q repo connect '${cnSh}/instead' >/dev/null 2>&1 && [[ -f '${cnSh}/instead/new.txt' ]]"
 	## 127.0.0.1 port 1 is refused on this machine, not sent anywhere; the proxies are unset so it stays that way.
 	fAssertNotOut "[dcmnc] a credential in an unreachable url is not printed"  'tok_s3cret' \
 		bash -c "cd '${cnOff}/plain' && env -u https_proxy -u HTTPS_PROXY -u ALL_PROXY -u all_proxy '${gitsby}' -q repo connect 'https://me:tok_s3cret@127.0.0.1:1/me/proj.git'"
@@ -5411,6 +5475,36 @@ GHEOF
 	fAssert    "[dfg1s] and cuts no tag"  bash -c "cd '${smd}/top' && ! git rev-parse -q --verify refs/tags/v0.1.1 >/dev/null"
 	fAssert    "[dfg1t] a submodule moved to another commit is still committed"  bash -c "cd '${smd}/top' && git checkout --quiet smfeat && ( cd child && git add --all && git commit --quiet -m moved ) && '${gitsby}' -q pullcom 'bump' && [[ -z \"\$(git status --porcelain)\" ]] && git log -1 --pretty=%s | grep -qx bump"
 	fAssert    "[dfjwp] and with diff.ignoreSubmodules=all too"  bash -c "cd '${smd}/top' && git config diff.ignoreSubmodules all && ( cd child && git commit --quiet --allow-empty -m again ) && '${gitsby}' -q pullcom 'bump2'; rc=\$?; git config --unset diff.ignoreSubmodules; [[ \${rc} == 0 && -z \"\$(git status --porcelain)\" ]] && git log -1 --pretty=%s | grep -qx bump2"
+
+	## fetch.recurseSubmodules defaults to on-demand, so once origin's dev moves a submodule, the
+	## fetch also fetches the submodule, and exits 1 when its remote is gone. Taken as offline,
+	## that skipped the pull though origin had answered.
+	local smg="${work}/$1-submodulegone"
+	mkdir -p "${smg}"
+	git init --quiet --bare -b main "${smg}/child.git"
+	git clone --quiet "${smg}/child.git" "${smg}/childwork" 2>/dev/null
+	git init --quiet --bare -b main "${smg}/origin.git"
+	git clone --quiet "${smg}/origin.git" "${smg}/theirs" 2>/dev/null
+	(
+		cd "${smg}/childwork" || exit 1
+		echo c > c.txt && git add --all && git commit --quiet -m child && git push --quiet origin main
+		cd "${smg}/theirs" || exit 1
+		echo a > a.txt && git add --all
+		git -c protocol.file.allow=always submodule --quiet add "${smg}/child.git" child
+		git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git -c protocol.file.allow=always clone --quiet --recurse-submodules -b dev "${smg}/origin.git" "${smg}/mine" 2>/dev/null
+		cd "${smg}/mine" && git config protocol.file.allow always
+		cd "${smg}/childwork" && echo d >> c.txt && git commit --quiet -am more && git push --quiet origin main
+		cd "${smg}/theirs/child" && git pull --quiet origin main
+		cd "${smg}/theirs" && git add child && git commit --quiet -m bump && git push --quiet origin dev
+		mv "${smg}/child.git" "${smg}/child.moved"
+		cd "${smg}/mine" || exit 1
+		rc=0; "${gitsby}" -q pullcom 'gone' > "${smg}/pullcom.out" 2>&1 || rc=$?
+		echo "${rc}" > "${smg}/pullcom.rc"
+	)
+	fAssert     "[dfkym] pullcom pulls when only a submodule's fetch fails"  bash -c "cd '${smg}/mine' && [[ \"\$(cat ../pullcom.rc)\" == 0 ]] && git merge-base --is-ancestor \"\$(git -C '${smg}/origin.git' rev-parse dev)\" HEAD"
+	fAssert     "[dfkyn] and names the submodule fetch rather than offline"  bash -c "cd '${smg}' && grep -qF \"fetching a submodule failed\" pullcom.out && ! grep -qE 'offline|unreachable' pullcom.out"
 
 	## status.showUntrackedFiles=no hides untracked files from status, but 'git add --all' still
 	## takes them. Read from status, the plan said clean and the guards let them through.

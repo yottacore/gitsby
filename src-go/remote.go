@@ -370,8 +370,8 @@ func probeSSHLogin(ctx context.Context, env []string, url string, sshCmd, limits
 // that is a pipe, whatever the server does next: Win32-OpenSSH#1427, an async write
 // that never completes. To NUL or a file it exits as it should. git hands ssh its
 // own stderr, so where gitsby reads what a remote reach said, on Windows it reads it
-// back from a temp file rather than a pipe. The fetch's stderr is NUL already, and
-// one gitsby passes its own stderr to gets what git would get run by hand.
+// back from a temp file rather than a pipe. One gitsby passes its own stderr to gets
+// what git would get run by hand.
 // A var so a test can take the file path anywhere.
 var errToFile = runtime.GOOS == "windows"
 
@@ -387,6 +387,16 @@ func newErrSink() *errSink {
 	if errToFile {
 		sink.file, _ = os.CreateTemp("", "gitsby-said-*.txt")
 	}
+	return sink
+}
+
+// newErrFile is an errSink that is a temp file on every system, for the
+// pre-command fetch, whose stderr was NUL before it was read. A pipe would make
+// the run wait on anything the fetch left running that holds it open, such as a
+// ProxyCommand, and NUL never did.
+func newErrFile() *errSink {
+	sink := &errSink{}
+	sink.file, _ = os.CreateTemp("", "gitsby-said-*.txt") // without one it falls back to the pipe
 	return sink
 }
 
@@ -430,11 +440,22 @@ func (a *app) fetchRemote() {
 	// Named, not implied: a bare 'git fetch' follows the current branch's own
 	// tracking remote, and every existence check afterwards reads origin.
 	fetch := toolCmd("git", "fetch", "--quiet", "--prune", "origin")
-	fetch.Env = env
+	// LC_ALL=C so submoduleFetchFailed can read what it said.
+	fetch.Env = append(slices.Clip(env), "LC_ALL=C")
+	said := newErrFile()
+	defer said.close()
+	fetch.Stderr = said.writer()
 	if fetch.Run() != nil {
-		a.remote.offline = true
-		a.out.status("WARNING: git fetch failed (offline?); remote info may be stale.")
-		return
+		// fetch.recurseSubmodules defaults to on-demand, so a submodule whose own
+		// remote is gone fails the fetch after origin's refs are in. git fetches
+		// submodules only once origin's fetch has worked, so that failure isn't
+		// offline, and the pull still has what it needs.
+		if !submoduleFetchFailed(said.text()) {
+			a.remote.offline = true
+			a.out.status("WARNING: git fetch failed (offline?); remote info may be stale.")
+			return
+		}
+		a.out.status("WARNING: origin was fetched, but fetching a submodule failed, so it may lack the commits origin's branches point at. 'git submodule update' fetches them once its remote answers.")
 	}
 	// Healing queries the remote again, so only when there is nothing to read:
 	// git < 2.47 never wrote one. A ref left stale by an upstream rename survives,
@@ -446,6 +467,12 @@ func (a *app) fetchRemote() {
 		_ = setHead.Run() // best effort: with nothing written, the default branch reads as unknown
 		a.git.originHead.forget()
 	}
+}
+
+// submoduleFetchFailed: whether a failed fetch got as far as the submodules, from
+// the heading git prints, under LC_ALL=C, over the ones whose fetch failed.
+func submoduleFetchFailed(said string) bool {
+	return slices.Contains(splitLines(said), "Errors during submodule fetch:")
 }
 
 // askOriginHeads asks origin where its branches point, for br prune's delete check. One

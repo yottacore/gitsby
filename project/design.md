@@ -222,7 +222,7 @@ The rule for every path that hands out a token. The token goes only to the host 
 
 - A branch checked out in another worktree is refused before the plan by every command that checks it out (2026-11-19). git refuses that checkout, and it comes after the commit and the park push, so the run stopped half done. `release` ended on `dev` with nothing tagged.
 	- `br create`, `br hotfix`, `br switch`, `br merge`, `pr ok` and `release` ask, each for the branches it checks out. `br prune` already skipped a branch it couldn't delete.
-	- A worktree whose folder was deleted by hand still holds its branch, so the refusal names `git worktree prune` there.
+	- A worktree whose folder was deleted by hand still holds its branch, so the refusal names `git worktree prune` there. `git worktree prune` passes over a locked worktree, so for a locked one the refusal names mounting the folder again, or `git worktree unlock` and then prune (2026-11-21).
 	- A branch another worktree is rebasing or bisecting is held too, since git refuses to check it out the same way (2026-11-20). HEAD is detached there, so git's list of checked-out branches doesn't name it. gitsby reads that worktree's `rebase-merge`, `rebase-apply` and `BISECT_START` as git does, which costs no spawn.
 
 - `--staged` commits the index only, and its pulls go without `--autostash` (2026-10-05).
@@ -266,6 +266,7 @@ The rule for every path that hands out a token. The token goes only to the host 
 	- All three use the same preview-then-confirm flow as every other mutating command.
 	- Creating a remote is the one irreversible, outward-facing thing here, so it was given its own verb rather than left as a side effect of connecting. `repo connect` now refuses a target that doesn't exist and names `repo create`; `repo create` refuses one that does and names `repo connect`.
 	- `repo connect` refuses remotes that already have history rather than auto-merging: forgiving means not destroying either side. Reconciling unrelated histories stays raw-git territory.
+	- Both refuse before the plan in a shallow clone, when the remote has none of the history yet, since git refuses a push of cut-off history there. That counts an origin with no branches, such as one a refused push left set. `repo connect` also refuses a local repo with a working tree whose checked-out branch is the one it would push, unless that repo's `receive.denyCurrentBranch` allows it (2026-11-21).
 	- `owner/name` targets go through gh (honoring gh's git_protocol setting); plain URLs never touch gh, and can only be connected to, never created.
 
 - Pull requests are subcommands of one noun (`pr`, `pr create`, `pr <number>`, `pr ok <number>`) rather than separate top-level verbs.
@@ -402,6 +403,7 @@ The rule for every path that hands out a token. The token goes only to the host 
 	- A command that means something locally runs and reports what it skipped: `pullcom` commits, `br create` and `br hotfix` make the branch, `br switch` switches, `br merge` merges. Each one names `sync` as the way to publish afterward.
 	- A command that exists to publish refuses before the plan is shown: `sync`, `pr create`, `pr ok`, `release`. Reporting success having sent nothing is worse than a hard failure, and failing halfway through on raw git output is worse than refusing up front.
 	- Offline is the state the pre-command fetch discovers, not a flag you pass. `--no-fetch` declines the incoming round trip - a reasonable thing to want against a reachable remote - so it does not stop a push. The cost is that it also declines the check, so a push while genuinely offline fails with git's own message.
+	- A fetch that reached origin and then failed on a submodule, under git's on-demand default for `fetch.recurseSubmodules`, isn't offline. git fetches submodules only after origin's fetch has worked, and names the ones that failed under a heading gitsby reads with `LC_ALL=C`. The run warns and goes on (2026-11-21).
 	- `--offline` was accepted as an undocumented third spelling of `--no-fetch`, which made the word promise something the option never did. Among the options - leave it, make that one spelling refuse outgoing traffic too, or drop it - we decided to drop it and refuse it by name, pointing at `--no-fetch`. A flag that stops the pushes would only let someone simulate a state the fetch already discovers on its own, and nothing but the source ever documented the spelling.
 	- Two places need more than a skipped push. `br merge` holds back the remote branch delete until the merge is published, because until then origin's copy is its only ref to that work. It keeps the local branch too, since `br prune` looks for what to clear among local branches. The hotfix back-merge normally merges `origin/<default>` (correct after `pr ok`, which lands server-side); offline that ref is the stale one, so it falls back to the local branch.
 

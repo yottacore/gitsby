@@ -33,6 +33,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- After pulling a submodule bump, pullcom commits the submodule back to its old commit
+	- ID: 2026112112175066
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261121-121750
+	- Opened by:
+	- Steps to reproduce [Bug]: Clone a repo with a submodule. Have origin's dev move the submodule to a newer commit, then run `gitsby -q pullcom` on dev.
+	- Incorrect behavior [Bug]: The pull moves the gitlink, but the submodule's own checkout stays where it was. `git add --all` then stages the old commit, and pullcom commits it, undoing origin's bump. The next sync pushes that.
+	- Expected behavior [Bug]: A gitlink the pull just moved isn't committed back. The submodule is updated, or left for the user with a note.
+	- Reproduced [Bug]: 2026-11-21 on b23, git 2.51, local bare repos. Confirmed.
+	- Possible cause [Bug]: cmdPull merges with no submodule update, and cmdCommit stages a submodule moved off its gitlink as new work, per 2026111016332293.
+	- Origin: Go port. Found while working 2026112017151559. No round saw it.
+
 - The ssh identity probe and the ssh -G read cut a bracketed IPv6 host in an ssh:// origin at its first colon
 	- ID: 2026112111542213
 	- Type: Bug
@@ -256,7 +271,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 46: A submodule whose remote is gone makes pullcom skip the pull as if origin were unreachable
 	- ID: 2026112017151559
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171515
@@ -267,6 +282,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, git 2.51, local bare repos. Confirmed.
 	- Possible cause [Bug]: The fetch at remote.go:310 follows fetch.recurseSubmodules, which defaults to on-demand, and any failure sets offline.
 	- Origin: 3d22222 (Go port). No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: The pre-command fetch follows fetch.recurseSubmodules, on-demand by default, so once origin's branch moves a submodule it fetches that submodule too, and exits 1 when its remote is gone. Any failure set offline, though origin's refs were already in.
+	- Actual fix [Bug]: fetchRemote reads the fetch's stderr under LC_ALL=C, through a temp file. git's 'Errors during submodule fetch:' heading means origin's fetch worked, since git fetches submodules only after it does. Then the run warns that a submodule's fetch failed, names 'git submodule update', and isn't offline. design.md and the changelog say so.
+	- Test case: test.bash [dfkym] and [dfkyn].
+	- Verified: [dfkym] and [dfkyn] fail on the build before the fix and pass with it. Quick gate with every area: lint and unit passed, test.bash 2348/0, fuzz 310/0, parity 31/0.
+	- Swept: fetchRemote is the one git fetch in src-go, by grep, and the only place that sets offline. A pull of an upstream on another remote fetches through git pull as a step, so its failure is git's own output.
+	- Decisions: The warning names no submodule, since git lists submodule names rather than paths and a path goes on a File: line. Read from git's text rather than retrying the fetch with --recurse-submodules=no, which would double the wait when truly offline. A git that words the heading another way falls back to offline, as before. Once the pull runs, it meets 2026112112175066, as the case with the submodule's remote in place does today.
+	- Branch: nov21-2026112017151559
+	- Commit: 867360f
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261121-123934
 
 - Code Review 20261120 item 18: pr create takes the PR's base from the current branch's name while its head is the branch it pushes
 	- ID: 2026112017135624
@@ -357,7 +383,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 24: For a locked worktree whose folder is gone, the refusal suggests git worktree prune, which does nothing
 	- ID: 2026112017135532
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171355
@@ -368,11 +394,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
 	- Possible cause [Bug]: branchcmd.go:87-89 doesn't read the lock.
 	- Origin: 6f277d3, nov19b, Code Review 20261119 item 13.
+	- Closed reason: Done
+	- Actual cause [Bug]: refuseHeldBranch named prune for any worktree whose folder is gone. git worktree prune passes over a locked worktree, so the branch stayed held.
+	- Actual fix [Bug]: worktreeLocked in branchcmd.go finds the worktree's git dir by its gitdir file and reads git's 'locked' file there, only once the folder is gone. Then the Fix lines name mounting or putting back the folder, or 'git worktree unlock <folder>' and then 'git worktree prune'. design.md and the changelog say so.
+	- Test case: test.bash [dfkyq] and [dfkyr]; Go [dfkyp] TestRefuseHeldBranchLocked.
+	- Verified: [dfkyq] and [dfkyp] fail on the build before the fix and pass with it. [dfkyr] passes on both, and runs the 2 named commands. Quick gate as on 2026112017151559.
+	- Swept: the one site that names prune, by grep for 'worktree prune' in src-go. The checked-out, rebasing and bisecting refusals all reach it, since the lock is looked up by folder.
+	- Decisions: The unlock line quotes the folder with shellQuote, as other Fix lines quote a path. An unlocked worktree's refusal is unchanged.
+	- Branch: nov21-2026112017151559
+	- Commit: b3c57c3
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261121-123934
 
 - Code Review 20261120 item 25: repo connect from a shallow clone commits and adds origin, then the push is refused
 	- ID: 2026112017135517
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171355
@@ -383,6 +420,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, both cases. Confirmed.
 	- Possible cause [Bug]: settleRepoConnect at repo.go:287 doesn't check for a shallow repo or a local target that isn't bare.
 	- Origin: 115bb7d and aa044ac (Go port). No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: settleRepoConnect checked only whether the target existed and was empty. git refuses a shallow clone's push to a repo with none of its history, and a push into the branch a non-bare repo has checked out, and both were found at the push, after the commit and the remote add.
+	- Actual fix [Bug]: refuseShallowPublish refuses repo connect and repo create in a shallow clone, naming 'git fetch --unshallow', when the target is new or origin has no branches. refuseCheckedOutTarget refuses a local target with a working tree whose checked-out branch is the one the push goes to, unless its receive.denyCurrentBranch allows the push. Both run before the plan. design.md and the changelog say so.
+	- Test case: test.bash [dfkys] to [dfkyx], [dfkz9] and [dfkza].
+	- Verified: [dfkys], [dfkyt], [dfkyw], [dfkz9] and [dfkza] fail on the build before the fix and pass with it. [dfkyv] and [dfkyx] pass on both. Quick gate as on 2026112017151559, then lint, unit, fuzz and parity again after [dfkz9] and [dfkza], and test.bash 2350/0.
+	- Swept: all 3 connect modes: add and create refuse a shallow clone before the probe or gh, and push mode does when origin has no branches. A local target is checked in add mode and in push mode with an origin with no branches, such as one a refused push left set.
+	- Decisions: A shallow clone is refused even where a local target sets receive.shallowUpdate, which git hosts don't offer. A target given as a file:// URL isn't checked for a working tree. The refusals sit in the sentence with the target, as the other repo connect refusals do.
+	- Branch: nov21-2026112017151559
+	- Commit: 4342a52
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261121-123934
 
 - Code Review 20261120 item 26: install.ps1 picks a different release than install.bash when a tag has a dot suffix or 4 numbers
 	- ID: 2026112017135503

@@ -397,6 +397,48 @@ func TestRefuseHeldBranch(t *testing.T) { // [dfh8b]
 	}
 }
 
+// prune passes over a locked worktree, so for one whose folder is gone the refusal
+// names unlocking it first. An unlocked one with its folder gone still gets prune alone.
+func TestRefuseHeldBranchLocked(t *testing.T) { // [dfkyp]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "branch", "-q", "dev")
+	locked := filepath.Join(filepath.Dir(clone), "locked")
+	plain := filepath.Join(filepath.Dir(clone), "plain")
+	runGit(t, clone, "worktree", "add", "-q", locked, "dev")
+	runGit(t, clone, "worktree", "add", "-q", "-b", "w", plain, "dev")
+	runGit(t, clone, "worktree", "lock", locked)
+	for _, dir := range []string{locked, plain} {
+		if err := os.Rename(dir, dir+"-moved"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(clone)
+	ask := func(branch string) error {
+		t.Helper()
+		a := newApp(newPrinter())
+		a.cmd = command{name: "br-switch", arg: branch, mutating: true}
+		if err := a.enterRepo(); err != nil || a.worktreesDir == "" {
+			t.Fatalf("enterRepo: worktreesDir %q, %v", a.worktreesDir, err)
+		}
+		return a.refuseHeldBranch()
+	}
+	if err := ask("dev"); err == nil || !strings.Contains(err.Error(), "git worktree unlock") {
+		t.Errorf("br switch dev with its locked worktree's folder gone = %v, want 'git worktree unlock'", err)
+	}
+	if err := ask("w"); err == nil || strings.Contains(err.Error(), "unlock") || !strings.Contains(err.Error(), "git worktree prune") {
+		t.Errorf("br switch w with its unlocked worktree's folder gone = %v, want prune alone", err)
+	}
+	runGit(t, clone, "worktree", "prune")
+	if err := ask("dev"); err == nil {
+		t.Error("br switch dev after a prune that skips the locked worktree: not refused")
+	}
+	runGit(t, clone, "worktree", "unlock", locked)
+	runGit(t, clone, "worktree", "prune")
+	if err := ask("dev"); err != nil {
+		t.Errorf("br switch dev after unlock and prune: refused: %v", err)
+	}
+}
+
 // git won't check out a branch another worktree is rebasing or bisecting either,
 // though HEAD is detached there and %(worktreepath) doesn't name it. Each state is
 // made by real git, read through enterRepo as a run reads it.

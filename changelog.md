@@ -179,6 +179,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - After `account set` changed an account's login, email or token file, Gitsby went on acting as the old login, with the old email and token, until `account apply` ran again. It read the copy `account apply` had written for plain git. It now goes by the accounts file, and `account set` says when plain git needs `account apply` again.
 
+- When origin answers but the fetch of a submodule fails, as when the submodule's own remote has moved, Gitsby says so and goes on with the pull. It used to take the failure as being offline, so `pullcom` skipped the pull and said Done with the branch still behind.
+
+- For a branch held by a locked worktree whose folder is gone, the refusal names mounting the folder again, or `git worktree unlock` and then `git worktree prune`. It used to name prune alone, which passes over a locked worktree, so the next run refused the same way.
+
+- `repo connect` and `repo create` refuse before anything runs in a shallow clone, naming `git fetch --unshallow`, since git refuses to push its cut-off history to a new repo. `repo connect` also refuses a local repo with a working tree that has the branch it would push checked out. Both used to commit and add the remote, and then the push failed, on every rerun too.
+
 ## v3.0.0-beta.1 - 2026-11-08
 
 ### Notes
