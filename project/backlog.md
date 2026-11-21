@@ -735,6 +735,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened: 20261120-171352
 	- Opened by:
 	- Requirements [Feature]: Which guard covers which push has been fixed one command list at a time: 2026111016332380 (directPush), Code Review 20261119 item 1 (parkPushes), item 9 (pushesGoneBranch), item 17 (mergePushesOwn), and item 10 here. Give each command one plannedPushes list, with each push's branch, destination and kind, and have the guards, the plan and the run read it. Item 18's PR base is the same kind of problem, so give pr create and pr ok one target helper.
+	- Decisions: Answered 2026-11-20: fix it with items 10 and 45 as one change, though defects are still open.
 	- Origin: Repeat class, 5 command-list fixes since 2026-11-10.
 
 - Code Review 20261120 enhancement 2: One token grant per run, given only to the child that needs it
@@ -746,6 +747,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened: 20261120-171351
 	- Opened by:
 	- Requirements [Feature]: Token to the wrong host has had 4 fixes, one site at a time, and items 2, 3, 4, 6 and 22 here are 5 more paths. Hold one grant per run, a host and a token. git children get only GITSBY_HOST_TOKEN and the helper. gh, glab and tea each get their own variable in their own environment, never the process's. Read every host from text through net/url, pass --hostname to every gh auth token call, and give an account whose host was ignored no token. The walk test gets a case for every gh or glab child git can start.
+	- Decisions: Answered 2026-11-20: fix it with items 2, 3, 4, 6 and 22 as one change, though defects are still open.
 	- Origin: Repeat class: Code Review 20261110b item 1, Code Review 20261119 items 4 and 5, and the 5 here.
 
 - Code Review 20261120 enhancement 3: Decide from plumbing, so user git config can't blind gitsby's reads
@@ -757,6 +759,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Opened: 20261120-171351
 	- Opened by:
 	- Requirements [Feature]: User config has blinded gitsby's own reads 4 times, each fixed at one site: status.showUntrackedFiles (Code Review 20261119 item 2), add's translated messages (item 23), and diff.relative and textconv (item 1 here). Read decisions through diff-index, diff-files and ls-files -u, or one helper that adds --no-relative, --no-textconv and --no-ext-diff. A Go test like [dfh4h] fails on any plain git diff read in src-go without them.
+	- Decisions: Answered 2026-11-20: fix it with item 1 as one change, though defects are still open.
 	- Origin: Repeat class.
 
 - Code Review 20261120 enhancement 4: Every park push runs the full branch query again
