@@ -1847,5 +1847,10 @@ func (a *app) cmdAccountSet() error {
 			noteLines("File", nativePath(t.file)))
 	}
 	a.out.statusNotes("Wrote the accounts file.", noteLines("File", nativePath(t.file)))
+	// gitsby reads the file itself, but plain git reads the fragments, which keep the
+	// old values until apply writes them again (2026112017135793).
+	if len(a.cfg.accountManagedIncludes()) > 0 {
+		a.out.status("Plain git still uses what the last account apply wrote. Run '" + meName + " account apply' to update it.")
+	}
 	return nil
 }

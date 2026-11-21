@@ -6137,8 +6137,20 @@ GHEOF
 	fAssert "[db00x] and the sibling tree gets the other one"        bash -c "cd '${acHome}' && env ${acEnv} git config gitsby.ghAccount | grep -qx homeacct"
 	## The key reaches that repo only through the fragment the global config includes, so that is
 	## the config to name, with the key spelled as git takes it.
-	fAssertOut "[dd80c] and status says it came from the global git config"  "From: The gitsby\.ghAccount key in your global git config\.$" \
+	## Off since 2026-11-20: gitsby no longer reads the keys account apply's fragments set, since
+	## they are a copy of the accounts file that goes stale after account set (2026112017135793).
+	## The account block is named instead ([dfjyr]), and a key from a hand-written include in the
+	## global config is still named as the global config's ([dfjys]).
+	# fAssertOut "[dd80c] and status says it came from the global git config"  "From: The gitsby\.ghAccount key in your global git config\.$" \
+	# 	bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	fAssertOut "[dfjyr] and status names the account block, not the key apply's fragment sets"  "From: An account block named 'home'" \
 		bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	printf '[gitsby]\n\tghAccount = handacct\n' > "${ac}/hand-include.gitconfig"
+	local acHandKey="includeIf.gitdir:${acCanon}/trees/home/.path"
+	git config --file "${ac}/home/.gitconfig" "${acHandKey}" "${acCanon}/hand-include.gitconfig"
+	fAssertOut "[dfjys] a gitsby.ghAccount key from an include written by hand is named as the global git config's"  "From: The gitsby\.ghAccount key in your global git config\.$" \
+		bash -c "cd '${acHome}' && env ${acEnv} '${gitsby}' -q -NoFetch status"
+	git config --file "${ac}/home/.gitconfig" --unset "${acHandKey}"
 	fAssert "[db00y] re-applying does not duplicate the rules"  bash -c "cd '${acWork}' && env ${acEnv} '${gitsby}' -q account apply >/dev/null && [[ \"\$(grep -c 'gitsby/accounts' '${ac}/home/.gitconfig')\" == 2 ]]"
 	fAssert "[db00z] and leaves a hand-written includeIf alone"  bash -c "grep -q 'hand/written' '${ac}/home/.gitconfig'"
 	## Removing an account from the config has to remove its rule, or it silently keeps applying.
@@ -6239,6 +6251,31 @@ GHEOF
 	fAssertFail "[df1s8] and a login holding shell text runs nothing"  test -e "${ac}/credhome/CANARY"
 	fAssertFail "[df31s] a fill no helper answers fails, with no askpass asked" \
 		bash -c "printf 'protocol=https\nhost=nobody.example\n\n' | env ${acCredEnv} git credential fill"
+	## account set changes the accounts file and not the fragments apply wrote from it, so gitsby went
+	## on acting as the fragment's old login, with the old email and token, until apply ran again
+	## (2026112017135793). gitsby reads the file itself and leaves out what a fragment sets.
+	mkdir -p "${ac}/sethome" "${ac}/trees/setw"
+	git init --quiet "${ac}/trees/setw/proj"
+	: > "${ac}/sethome/.gitconfig"
+	printf 'tok_set_old\n' > "${ac}/sethome/old.tok"; printf 'tok_set_new\n' > "${ac}/sethome/new.tok"; chmod 600 "${ac}/sethome/"*.tok
+	printf 'account: sw\n\tpath: %s/trees/setw\n\tghaccount: workacct\n\tname: Set Person\n\temail: old@example.test\n\ttokenfile: %s/sethome/old.tok\n' "${acCanon}" "${acCanon}" > "${ac}/set.shcl"
+	local acSetG="env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL ${acNoDiscovery} HOME='${ac}/sethome' GIT_CONFIG_GLOBAL='${ac}/sethome/.gitconfig' PATH='${ac}/bin:${PATH}' GIT_TERMINAL_PROMPT=0 '${gitsby}' -q -NoFetch --config '${ac}/set.shcl'"
+	local acSetW="${ac}/trees/setw/proj"
+	bash -c "cd '${acSetW}' && ${acSetG} whoami > '${ac}/set-before.txt' 2>&1; ${acSetG} account apply" >/dev/null 2>&1
+	fAssert "[dfjyt] whoami reads the same after account apply as before it"  bash -c "cd '${acSetW}' && ${acSetG} whoami 2>&1 | diff '${ac}/set-before.txt' - >/dev/null"
+	fAssertOut "[dfjyv] account set says plain git keeps the old values until account apply runs again"  "^\[ Plain git still uses what the last account apply wrote\. Run '.*account apply' to update it\. \]$" \
+		bash -c "cd '${acSetW}' && ${acSetG} account set sw ghaccount newlogin 2>&1"
+	bash -c "cd '${acSetW}' && ${acSetG} account set sw email new@example.test && ${acSetG} account set sw tokenfile '${acCanon}/sethome/new.tok'" >/dev/null 2>&1
+	fAssertOut "[dfjyw] and whoami goes by the file, not the fragment: the new login"  '^Account \.+: newlogin' \
+		bash -c "cd '${acSetW}' && ${acSetG} whoami 2>&1"
+	fAssertOut "[dfjyy] the new email"  '^Author \.+: Set Person <new@example\.test>$'  bash -c "cd '${acSetW}' && ${acSetG} whoami 2>&1"
+	fAssertOut "[dfjyz] and the new token"  '^password=tok_set_new$' \
+		bash -c "cd '${acSetW}' && printf 'protocol=https\nhost=github.com\n\n' | ${acSetG} raw git credential fill"
+	## The fragment still names the old token file under gitsby.ghTokenFile, the fallback gitsby
+	## reads once the account's own file gives nothing.
+	bash -c "cd '${acSetW}' && ${acSetG} account unset sw tokenfile" >/dev/null 2>&1
+	fAssertOut "[dfjyx] and with its token file unset, no token from the one the fragment still names"  '^Account \.+: newlogin - no access token used$' \
+		bash -c "cd '${acSetW}' && ${acSetG} whoami 2>&1"
 	## An account nested in another's folder. git includes both fragments there, so each key only
 	## the outer one set came from it: its token file, its name and its ssh key.
 	mkdir -p "${ac}/nesthome" "${ac}/trees/outer/nested"

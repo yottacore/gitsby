@@ -216,7 +216,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 7: After account set changes ghaccount, gitsby goes on acting as the old login until account apply
 	- ID: 2026112017135793
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-171357
@@ -227,6 +227,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
 	- Possible cause [Bug]: account.go:49-58 reads the key from any global config file, the fragments included.
 	- Origin: 4918b5b and 1ae9d85 (2026-08-19). Not a regression, and no round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: account apply writes the account's ghaccount and tokenfile into its fragment as gitsby.ghAccount and gitsby.ghTokenFile, and gitsby read both from git config with the fragments included. The fragment's key outranked the folder rule, so after account set the old login won, and the account block was dropped for naming another login, with its email and token.
+	- Actual fix [Bug]: gitsby leaves out what the fragments set when it reads gitsby.ghAccount, gitsby.ghTokenFile and gitsby.host, through one reader, gitConfigOutsideFragments. A key set by hand, in a repo, a global file or an include of your own, still counts. account set and unset say plain git keeps the old values until account apply runs again, when the global config includes any fragment. design.md, accounts.md and the changelog say so.
+	- Decisions: Leave the fragment's entries out and take the last one left, rather than drop the key whenever the fragment's is the one git settles on, so an apply changes nothing gitsby resolves, which [dfjyt] checks. The token file fallback and its host key go the same way, since the fragment's copy names the old token file after account unset. Fragments are told by being under the accounts file's own fragment folder, as apply's cleanup tells them. A note on account set rather than running apply for it, since apply writes your global git config.
+	- Test case: test.bash [dfjyr], [dfjys], [dfjyt], [dfjyv], [dfjyw], [dfjyx], [dfjyy], [dfjyz]. Go [dfjz0].
+	- Verified: test.bash [dfjyr] and [dfjyt] to [dfjyz] fail on the unfixed build (test.bash 2264/8; the 8th, [dd5ft], is the Go test file not compiling against the old code) and pass after. [dfjys] passes both ways, as it pins kept behavior. With only the token file reader put back, [dfjyx]'s case gets the old token file. [dfjz0] fails with the fragment check taken out. Quick gate passed, all areas: test.bash 2272/0, fuzz 310/0, parity 31/0. gosec on src-go: 37, as before. Not run on Windows.
+	- Swept: every gitsby.* key read from git config in src-go: gitsby.ghAccount in resolveAccount, gitsby.ghTokenFile and gitsby.host through configOwnScope. The fragment helper's own reads are plain git's, and valueOutsideFragments already left the fragments out.
+	- Branch: nov20c-2026112017135793
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-190927
+	- Progress log: 20261120: [dd80c] (status names the global git config for the key apply's fragment sets) is commented out. It pinned gitsby reading that key, which this item ends. Its display rule is kept by [dfjys], for a key from an include written by hand.
+	- Commit: db581a9
 
 - Code Review 20261120 item 8: repo connect and repo create finish a stopped merge or am under gitsby's message
 	- ID: 2026112017135778

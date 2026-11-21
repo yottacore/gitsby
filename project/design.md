@@ -352,6 +352,7 @@ The rule for every path that hands out a token. The token goes only to the host 
 			- Where the file can't be replaced, it is read converted for that run, and `account set` refuses. An edit would mix the two formats in one file.
 			- The tests use files the old format's own writer made. The last gitsby build on SHCL 2.x is compiled from its commit, writes a file, and the current build has to list every account the way it did. The 2.x module is in go.mod for the tests only and never reaches the binary.
 	- `gitsby.ghAccount` in git config still works and still wins, for a single repo that wants to answer for itself.
+		- What `account apply`'s fragments set is left out, for this key and for `gitsby.ghTokenFile`. A fragment copies the accounts file, which gitsby reads itself, so all it can add is a value `account set` has changed since. Only plain git reads the fragments, and `account set` says to run `account apply` again for it. Decided 2026-11-20.
 	- `gitsby.ghTokenFile` in git config still works, but only as a fallback. The account's own `tokenfile` comes first, as it did in 2.1.0.
 		- The accounts file is where an account is set up, and `account list` shows what it holds. A key left in a global git config from an older setup would otherwise override every account's token without showing up there.
 		- `account apply` writes each account's `tokenfile` into that account's git config fragment under this key, so the two agree unless one was set by hand.

@@ -175,6 +175,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - On Windows, Gitsby no longer runs a `git.bat` or `git.cmd` that comes ahead of `git.exe` on PATH, nor any other batch file for a tool it runs. Windows hands a batch file to cmd, which reads the arguments again by its own rules, so `br switch` to a branch named `x&ver` ran `ver`, and a `%NAME%` in an argument was replaced. Gitsby now passes over a batch file and takes the next one on PATH, and when there is no other, the "Not found in path" error names the batch file.
 
+- After `account set` changed an account's login, email or token file, Gitsby went on acting as the old login, with the old email and token, until `account apply` ran again. It read the copy `account apply` had written for plain git. It now goes by the accounts file, and `account set` says when plain git needs `account apply` again.
+
 ## v3.0.0-beta.1 - 2026-11-08
 
 ### Notes

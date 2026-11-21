@@ -47,7 +47,7 @@ func (a *app) resolveAccount(dir, url string) error {
 	// git config answers for the repo we stand in, so not for a clone's destination,
 	// which has no config yet. The folder rules below are matched against any path.
 	if dir == a.contextDir() {
-		scope, fromGit, _ := strings.Cut(runOut("git", "config", "--show-scope", "--get", "gitsby.ghAccount"), "\t")
+		scope, fromGit := gitConfigOutsideFragments(a.cfg.includeDir(), "gitsby.ghAccount")
 		if fromGit != "" {
 			// Led by "the" so the sentence form doesn't capitalize the key.
 			a.acct.ghWho, a.acct.source, a.acct.explicit = fromGit, "the gitsby.ghAccount key in "+gitScopeText(scope), true
@@ -435,8 +435,8 @@ func (a *app) accountToken(host string) (string, tokenSource, string) {
 	// The older git config key is GitHub's, so it answers only for a run that named a
 	// GitHub login, and only once the account's own file gave nothing.
 	if a.acct.ghWho != "" {
-		file := a.git.ownTokenFile.get(func() string { return configOwnScope("gitsby.ghTokenFile") })
-		if token := readTokenFile(file); token != "" && ownTokenFileServes(host) {
+		file := a.git.ownTokenFile.get(func() string { return configOwnScope(a.cfg.includeDir(), "gitsby.ghTokenFile") })
+		if token := readTokenFile(file); token != "" && ownTokenFileServes(a.cfg.includeDir(), host) {
 			return token, tokenFromFile, file
 		}
 	}
@@ -447,8 +447,8 @@ func (a *app) accountToken(host string) (string, tokenSource, string) {
 // writes it for an account on any host, with gitsby.host beside it, so a run naming a
 // GitHub login in a Gitea account's folder read the Gitea token. Unset is a key set by
 // hand, which only ever meant GitHub. Backlog 2026111910223247.
-func ownTokenFileServes(host string) bool {
-	if tokenHost := configOwnScope("gitsby.host"); tokenHost != "" {
+func ownTokenFileServes(fragments, host string) bool {
+	if tokenHost := configOwnScope(fragments, "gitsby.host"); tokenHost != "" {
 		return sameService(host, tokenHost)
 	}
 	return isGitHubHost(host)
@@ -473,18 +473,34 @@ func worldReadable(file string) string {
 // configOwnScope reads a git config key from your own config only, never the repo's. For
 // the token file: it names any file, whose contents go to every child, and a repo can
 // come from a stranger.
-func configOwnScope(key string) string {
-	value := ""
-	for _, line := range runLines("git", "config", "--show-scope", "--get-all", key) {
-		scope, rest, found := strings.Cut(line, "\t")
-		if !found {
+func configOwnScope(fragments, key string) string {
+	_, value := gitConfigOutsideFragments(fragments, key, "global", "system")
+	return value
+}
+
+// gitConfigOutsideFragments is git's answer for a key, last one winning as git settles
+// a scalar, from the scopes given or any, and its scope. Whatever account apply's
+// fragments in 'fragments' set is left out. They copy the accounts file, which gitsby
+// reads itself, so all they can add is a stale value: after 'account set' changed a
+// login, the fragment's old one won until the next apply (2026112017135793). So an
+// apply changes nothing gitsby resolves, and a key set by hand still counts.
+func gitConfigOutsideFragments(fragments, key string, scopes ...string) (scope, value string) {
+	canonDir := ""
+	if fragments != "" {
+		canonDir = canonPath(fragments)
+	}
+	fields := strings.Split(runOut("git", "config", "--show-scope", "--show-origin", "--null", "--get-all", key), "\x00")
+	for i := 0; i+2 < len(fields); i += 3 {
+		s, origin := fields[i], fields[i+1]
+		if len(scopes) > 0 && !slices.Contains(scopes, s) {
 			continue
 		}
-		if scope == "global" || scope == "system" {
-			value = rest // last one wins, the same way git settles a scalar
+		if file, isFile := strings.CutPrefix(origin, "file:"); isFile && canonDir != "" && pathUnder(canonPath(file), canonDir) {
+			continue
 		}
+		scope, value = s, fields[i+2]
 	}
-	return value
+	return scope, value
 }
 
 // setEnv fails only on a name no process can hold, so a failure here means

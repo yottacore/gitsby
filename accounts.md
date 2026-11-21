@@ -150,6 +150,8 @@ Over https, each account's file also gets a credential helper. gh's own helper o
 
 When one account's folder sits inside another's, git reads both files there, and git can't unset a key from the later one. So each key the inner account leaves unset that the outer one sets, such as its `name`, `tokenfile` or `sshkey`, goes into the inner account's file with the value your global git config gives it. Where that gives none, the key is empty, or plain `ssh` in place of an ssh key. Run `gitsby account apply` again after changing one of those in your global git config. An empty email doesn't stop git the way an empty name does, so an inner account with no email, under an outer one with an email, commits there with an empty address. `account apply` warns about it, and `whoami` flags it. Give the inner account an email, or set one in your global git config.
 
+These files are for plain git. Gitsby reads the accounts file itself, so after `account set` it goes by the new value at once, while plain git keeps the old one until `gitsby account apply` runs again. `account set` says so when there are files to update.
+
 It is safe to re-run: it replaces only the entries it wrote before, leaves any you wrote by hand alone, and drops rules for accounts you have since removed.
 
 ## Scripts
