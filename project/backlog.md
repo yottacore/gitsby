@@ -269,7 +269,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 9: Stage 0 passes with conflict markers in the tree when its autostash restore conflicts
 	- ID: 2026112017135764
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-171357
@@ -280,6 +280,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, the real stage 0 in a clone with a local bare origin. Confirmed.
 	- Possible cause [Bug]: cicd.bash:1134 and :1142 trust git's exit status after `--autostash`.
 	- Origin: 0633cc1 (2026112013542571) for the merge path, and b463d2b (2026-08-12) for the fast-forward path. Missed twin of 2026111910223074. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: git exits 0 when --autostash can't put the edits back after a merge or fast-forward. It only warns, leaves markers in the tree and keeps the edits in a new stash entry, and stage 0 trusted the exit status.
+	- Actual fix [Bug]: Both stage 0 merges go through one function, fSyncMerge in cicd.bash. A new stash entry after the merge means the restore failed. It then resets to the commit it started from, pops that entry with --index, and stops the run naming the clashing files.
+	- Test case: test.bash [dfk07] to [dfk0a].
+	- Verified: [dfk07] to [dfk0a] fail on the unfixed cicd.bash (suite 2282/4) and pass with the fix. [dfk08] fails with --index dropped from the pop. The quick gate with every area passed: test.bash 2286/0, fuzz 310/0, parity 31/0.
+	- Swept: every --autostash in the repo's scripts, by grep: only the two stage 0 merges, both fixed. The publisher pops its own stash and checks the pop's status. Its index loss is item 27. The Go pulls already check after --autostash (2026111910223074).
+	- Decisions: The new stash entry is the signal, since that is where git leaves the edits. The unmerged paths only name the files in the message. The reset goes to the commit stage 0 started from, where the stash applies clean, and --index keeps staged edits staged. A stash entry the user already had is left alone, pinned by [dfk0a].
+	- Branch: nov20c-2026112017135764
+	- Commit: 6d96733
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-200611
 
 - Code Review 20261120 item 10: release and repo connect commit the tree, then refuse the push and say nothing was done
 	- ID: 2026112017135749

@@ -8762,6 +8762,28 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dd5g3] a tree that diverged from origin and doesn't merge clean stops the run"  fGateRanSaying 1 'diverged from origin: 3 local, 1 remote, and they don.t merge clean'
 		fAssert "[dfjmd] and is left as it was, its uncommitted edit included" \
 			bash -c "[[ \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(git -C '${gateDir}' diff --name-only HEAD -- notes.txt upstream.txt)\" == notes.txt && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == wip && -z \"\$(git -C '${gateDir}' stash list)\" ]] && ! git -C '${gateDir}' rev-parse -q --verify MERGE_HEAD"
+		## Commits that merge clean, under an edit in the tree that clashes with origin's. git
+		## makes the merge, can't put the edit back, and still exits 0.
+		git -C "${gateDir}" reset --quiet --hard '@{u}'
+		echo local > "${gateDir}/local.txt" && git -C "${gateDir}" add local.txt && git -C "${gateDir}" commit --quiet -m local -- local.txt
+		fGateUpstream five notes.txt
+		echo clash >> "${gateDir}/notes.txt"
+		echo staged >> "${gateDir}/local.txt" && git -C "${gateDir}" add local.txt
+		syncHead="$(git -C "${gateDir}" rev-parse HEAD)"
+		fGateOnly sync
+		fAssert "[dfk07] stage 0 stops when an uncommitted edit clashes with what it merged in"  fGateRanSaying 1 'uncommitted edits clash with origin in notes.txt, so the merge was backed out'
+		fAssert "[dfk08] and backs the merge out, with the edits put back and the staged one still staged" \
+			bash -c "[[ \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == clash && \"\$(git -C '${gateDir}' diff --cached --name-only)\" == local.txt && \"\$(git -C '${gateDir}' diff --name-only)\" == notes.txt && -z \"\$(git -C '${gateDir}' stash list)\" && -z \"\$(git -C '${gateDir}' ls-files -u)\" ]]"
+		## The same over a fast-forward, with a stash entry of the user's that has to stay.
+		git -C "${gateDir}" reset --quiet --hard '@{u}'
+		echo older >> "${gateDir}/upstream.txt" && git -C "${gateDir}" stash push --quiet -m older
+		fGateUpstream six notes.txt
+		echo clash >> "${gateDir}/notes.txt"
+		syncHead="$(git -C "${gateDir}" rev-parse HEAD)"
+		fGateOnly sync
+		fAssert "[dfk09] and when one clashes with what it fast-forwarded over"  fGateRanSaying 1 'uncommitted edits clash with origin in notes.txt, so the merge was backed out'
+		fAssert "[dfk0a] and backs that out too, with the edit put back and the older stash entry left alone" \
+			bash -c "[[ \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == clash && \"\$(git -C '${gateDir}' diff --name-only HEAD)\" == notes.txt && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' && -z \"\$(git -C '${gateDir}' ls-files -u)\" ]]"
 		git -C "${gateDir}" remote set-url origin "${work}/gate-pipe-nowhere.git"
 		fGateOnly sync
 		fAssert "[dd5g4] an origin it can't reach is a warning, not a stop"  fGateRanSaying 0 "WARNING: can't reach origin"
