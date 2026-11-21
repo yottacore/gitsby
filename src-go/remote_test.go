@@ -356,7 +356,12 @@ func TestRemoteReachesGiveUpOnAStalledHTTPRemote(t *testing.T) { // [dfhez]
 		case <-time.After(30 * time.Second):
 			t.Errorf("the %s was still waiting on a stalled remote after 30 s", reach.name)
 			release()
-			<-done
+			// A client that ignores the close too would hold the whole binary here.
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Fatalf("the %s was still waiting 10 s after the remote closed", reach.name)
+			}
 			return
 		}
 	}
@@ -423,6 +428,7 @@ func TestRemoteReachesGiveUpOnAStalledSSHRemote(t *testing.T) { // [dfk1m]
 		}
 	}()
 	// Closing lets an ssh that never gave up see the end, so a failure ends too.
+	// Windows' own ssh ignores that as well, so the wait after it is bounded.
 	release := func() {
 		_ = listener.Close()
 		mu.Lock()
@@ -490,9 +496,53 @@ func TestRemoteReachesGiveUpOnAStalledSSHRemote(t *testing.T) { // [dfk1m]
 		case <-time.After(30 * time.Second):
 			t.Errorf("the %s was still waiting on a stalled remote after 30 s", reach.name)
 			release()
-			<-done
+			// A client that ignores the close too would hold the whole binary here.
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Fatalf("the %s was still waiting 10 s after the remote closed", reach.name)
+			}
 			return
 		}
+	}
+}
+
+// Windows' own ssh gave up on a stalled server and never exited, so the login probe
+// waited on it past every limit ssh was given. The probe ends an ssh like that
+// itself, the look-ahead included, and a child the ssh left holding its output too.
+func TestSSHLoginProbeEndsAnSSHThatIgnoresItsLimits(t *testing.T) { // [dfk3h]
+	fakeTool(t, "ssh", "sleep 600") // a child, not exec, so the kill leaves the output held
+	for _, name := range []string{"GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saved := stallSeconds
+	stallSeconds = 1
+	t.Cleanup(func() { stallSeconds = saved })
+	const url = "git@127.0.0.1:stalled.git"
+	p, _, _ := testPrinter()
+	b := newApp(p)
+	defer b.endProbes()
+	limit := sshProbeWait() + 10*time.Second
+	done := make(chan [2]string, 1)
+	start := time.Now()
+	go func() {
+		b.askSSHLoginAhead(url)
+		direct := newApp(p).sshLogin(url)
+		done <- [2]string{direct, b.sshLogin(url)}
+	}()
+	select {
+	case got := <-done:
+		if got != [2]string{"?", "?"} {
+			t.Errorf("sshLogin() and sshLogin() asked ahead = %q against an ssh that never ends, want ?", got)
+		}
+		if took := time.Since(start); took > limit {
+			t.Errorf("the login probes took %v, past %v", took, limit)
+		}
+	case <-time.After(limit):
+		t.Fatalf("the login probe was still waiting on an ssh that never ends after %v", limit)
 	}
 }
 

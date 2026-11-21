@@ -33,10 +33,38 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- Stage 7's Go test runs on other boxes have no time limit, so one hung test holds the stage
+	- ID: 2026112021514129
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-215141
+	- Opened by:
+	- Related IDs: 2026112021204523
+	- Requirements [Feature]: The Windows run in cicd/remote-tests.bash starts the test binary with no -test.timeout and no outer timeout, and the binary's own default is none. [dfk1m] hung there with no output until the run was stopped. Pass -test.timeout to every remote Go test run, so a hung test fails with every goroutine's stack. test.bash's asserts on those command lines change with it.
+
+- With Windows' own OpenSSH as the ssh command, a fetch from an ssh origin that stalls after its banner waits until killed
+	- ID: 2026112021513016
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-215130
+	- Opened by:
+	- Related IDs: 2026112021204523, 2026112017135720
+	- Steps to reproduce [Bug]: On vm925w, point a GIT_SSH_COMMAND of C:/Windows/System32/OpenSSH/ssh.exe with gitsby's three ssh options at a 127.0.0.1 listener that sends an SSH banner and then nothing, and run git ls-remote on it, as gitsby's fetch does with a core.sshCommand naming that ssh.exe. People set that to use Windows' ssh-agent.
+	- Incorrect behavior [Bug]: ssh prints that the connection timed out after about 3 s, but neither it nor git exits. git ls-remote was still running when killed at 28 s.
+	- Expected behavior [Bug]: The fetch gives up within its 30 s limit, as it does with Git for Windows' own ssh, which exits at the timeout.
+	- Reproduced [Bug]: 2026-11-20 on vm925w, OpenSSH_for_Windows_9.5p2, git 2.55.0.windows.5, with GIT_SSH_COMMAND naming that ssh.exe. Confirmed. The same ssh run alone, with stdin NUL, a pipe held open, a closed pipe or -n, was still running at 25 s, and kept running 20 s after the server closed the connection.
+	- Possible cause [Bug]: Windows' OpenSSH doesn't exit after it reports the timeout, so git waits on it. The fix is upstream. gitsby can't put a time limit on a whole fetch, since a large one can run long. Killing git on Windows also leaves its ssh running.
+	- Origin: Win32-OpenSSH. gitsby's limits from adcef33 (2026112017135720) reach that ssh; it ignores them by not exiting.
+	- Note: Upstream issue text drafted in private/claude_simple/upstream/2026112021513016/.
+
 - Go test [dfk1m] hangs on Windows, so stage 7's Go test run doesn't end
 	- ID: 2026112021204523
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-212045
@@ -48,6 +76,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on vm925w, once, from e0ef618. With it skipped, the rest of the binary passed there: 294 ok, 32 skipped, none failed. Confirmed.
 	- Possible cause [Bug]: Not known. Windows OpenSSH may not act on ServerAliveInterval against a server that sent its banner, which would mean the fetch itself still hangs on Windows. Or the listener's held connections keep something open there.
 	- Origin: adcef33, nov20c (2026112017135720). Its tests ran on b23 only.
+	- Actual cause [Bug]: The login probe runs PATH's ssh, which on Windows is Windows' own OpenSSH 9.5p2. Against a server quiet after its banner, it reports the timeout and then doesn't exit, and it doesn't end when the server closes either. So [dfk1m]'s 30 s guard fired, and its wait after closing the listener had no limit, which held the binary. The fetch, ls-remote and repo probe passed there, since Git for Windows runs its own ssh (OpenSSH 10.5p1), which exits at the timeout.
+	- Actual fix [Bug]: The login probe runs ssh under its own limit, ssh's connect timeout plus stallSeconds plus 5 s, 38 s in a run, and stops waiting for output a second after the kill, for a child the ssh command left. [dfk1m] and its http twin [dfhez] now wait at most 10 s after closing the listener, so a client that ignores the close fails rather than holding the binary.
+	- Branch: nov20c-2026112017135720-fix
+	- Commit: 87bce73
+	- Test case: Go [dfk3h] TestSSHLoginProbeEndsAnSSHThatIgnoresItsLimits, both login probe paths against a fake ssh that never ends and leaves a child holding its output. It skips on Windows, where the fakes are shell scripts. Go [dfk1m] on vm925w covers Windows' own ssh.
+	- Verified: On vm925w, [dfk1m] from the unfixed build hung in the login probe, per its goroutine stacks at -test.timeout, and the fixed build passed it in 32 s, with [dfhez] and [dfk1n] passing too. [dfk3h] fails with the limit taken out and with the output wait taken out, and passes with both. The quick gate's lint and unit areas passed, and unit with --no-container ran [dfk1m], [dfk1n], [dfk3h] and [dfhez], all passing. gosec 37, unchanged.
+	- Swept: every ssh gitsby runs over the network itself is probeSSHLogin, called from sshLogin and askSSHLoginAhead, and both pass the limit. The ssh -G reads in show.go and account.go read config only. The fetch, ls-remote and repo probe run ssh through git. With Windows' own ssh named as the ssh command, those wait too, filed as 2026112021513016. The tests that wait on a reach after closing a listener are [dfhez] and [dfk1m], and both are bounded.
+	- Decisions: A limit on the probe's process rather than a Windows skip, since the product's login probe hung there too. One limit on every platform, since an ssh that keeps its own limits ends first. No limit on the whole fetch, which can run long. The probe's limit is read on the calling goroutine, per askSSHLoginAhead's rule. Stage 7's missing time limit is filed as 2026112021514129.
+	- Acceptance signoff: Self-closed: reproduced on vm925w, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261120-215223
+	- Closed reason: Done
 
 - Put an ssh client in the cicd image, so the ssh stall tests run in the quick gate
 	- ID: 2026112020462150

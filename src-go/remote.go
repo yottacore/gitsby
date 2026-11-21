@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // origin's url, asked once. A preview alone wanted it half a dozen times, and it
@@ -227,6 +228,9 @@ func httpStallEnv() []string {
 	return []string{"GIT_HTTP_LOW_SPEED_LIMIT=1", "GIT_HTTP_LOW_SPEED_TIME=" + strconv.Itoa(stallSeconds)}
 }
 
+// ssh's ConnectTimeout, which the login probe's own limit counts in too.
+const sshConnectSeconds = 3
+
 // sshStallOptions are ssh's time limits for the fetch and the probes. ConnectTimeout
 // bounds only the connect and the server's banner. A server that stops after its
 // banner held the fetch until killed: the ServerAlive pair bounds every read after
@@ -234,7 +238,7 @@ func httpStallEnv() []string {
 // whose keepalives go unanswered. They go after the command's own words, since ssh
 // keeps the first value it reads for each option, so a command's own -o wins.
 func sshStallOptions() []string {
-	return []string{"-o", "ConnectTimeout=3", "-o", "ServerAliveInterval=" + strconv.Itoa(max(1, stallSeconds/3)), "-o", "ServerAliveCountMax=3"}
+	return []string{"-o", "ConnectTimeout=" + strconv.Itoa(sshConnectSeconds), "-o", "ServerAliveInterval=" + strconv.Itoa(max(1, stallSeconds/3)), "-o", "ServerAliveCountMax=3"}
 }
 
 // The greeting each git host answers an ssh -T with. GitHub says 'Hi <user>!';
@@ -257,7 +261,7 @@ func (a *app) sshLogin(url string) string {
 		delete(a.remote.sshAhead, url)
 		who = pending.wait()
 	} else {
-		who = probeSSHLogin(context.Background(), os.Environ(), url, a.sshArgv(), sshStallOptions())
+		who = probeSSHLogin(context.Background(), os.Environ(), url, a.sshArgv(), sshStallOptions(), sshProbeWait())
 	}
 	if a.remote.sshLogins == nil {
 		a.remote.sshLogins = map[string]string{}
@@ -272,14 +276,24 @@ func (a *app) askSSHLoginAhead(url string) {
 	if _, asked := a.remote.sshLogins[url]; asked || a.remote.sshAhead[url] != nil {
 		return
 	}
-	ctx, env, sshCmd, limits := a.probeContext(), os.Environ(), a.sshArgv(), sshStallOptions()
+	ctx, env, sshCmd, limits, wait := a.probeContext(), os.Environ(), a.sshArgv(), sshStallOptions(), sshProbeWait()
 	if a.remote.sshAhead == nil {
 		a.remote.sshAhead = map[string]*ahead[string]{}
 	}
-	a.remote.sshAhead[url] = startAhead(func() string { return probeSSHLogin(ctx, env, url, sshCmd, limits) })
+	a.remote.sshAhead[url] = startAhead(func() string { return probeSSHLogin(ctx, env, url, sshCmd, limits, wait) })
 }
 
-func probeSSHLogin(ctx context.Context, env []string, url string, sshCmd, limits []string) string {
+// sshProbeWait is all the time the login probe gets. Windows' own OpenSSH (9.5p2)
+// gives up on a server quiet after its banner, says so, and then doesn't exit: it
+// was still running 40 s later, and kept running after the server closed. So the
+// probe ends it itself, a little past ssh's own limits, and an ssh that keeps them
+// ends first.
+// The fetch's ssh is git's to end, and Git for Windows' own ssh exits.
+func sshProbeWait() time.Duration {
+	return time.Duration(sshConnectSeconds+stallSeconds+5) * time.Second
+}
+
+func probeSSHLogin(ctx context.Context, env []string, url string, sshCmd, limits []string, wait time.Duration) string {
 	target := sshConnectTarget(url)
 	// PuTTY's programs take none of the options below, so the answer stays unknown.
 	// Asking plain ssh instead could name an account git never pushes as.
@@ -288,11 +302,15 @@ func probeSSHLogin(ctx context.Context, env []string, url string, sshCmd, limits
 	}
 	// A copy, since this runs on a look-ahead goroutine and append could write into the caller's array.
 	args := slices.Concat(sshCmd[1:], []string{"-T", "-o", "BatchMode=yes"}, limits, []string{"--", target})
+	ctx, stop := context.WithTimeout(ctx, wait)
+	defer stop()
 	// Both streams: ssh writes host-key and missing-identity warnings ahead of the
 	// greeting, so it is not reliably the first line - anchoring to the whole output
 	// answered '?' for exactly the multi-key setups this exists for.
 	probe := toolCmdContext(ctx, sshCmd[0], args...)
 	probe.Env = env
+	// What the ssh command started, such as a ProxyCommand, can hold the output open past the kill.
+	probe.WaitDelay = time.Second
 	// No exit code to read: github.com says hello and then exits 1.
 	out, _ := probe.CombinedOutput()
 	for _, line := range splitLines(string(out)) {
