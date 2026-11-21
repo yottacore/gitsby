@@ -2502,6 +2502,35 @@ fRunSuite(){
 	git -C "${wtM}" checkout --quiet main
 	fAssert "[dfh8n] once the other worktree moves off dev, br merge goes through" \
 		bash -c "cd '${wtW}' && '${gitsby}' -q br merge && [[ \"\$(git branch --show-current)\" == dev ]] && git -C '${wtO}' show-ref --verify --quiet refs/heads/dev && ! git -C '${wtO}' show-ref --verify --quiet refs/heads/w"
+
+	## A branch another worktree is rebasing or bisecting is held too, though HEAD is detached
+	## there and %(worktreepath) names only a checked-out one. br switch committed and pushed
+	## feat, then failed at the checkout.
+	local wbO="${work}/$1-wtbo.git" wbM="${work}/$1-wtbm" wbW="${work}/$1-wtbw"
+	git init --quiet --bare -b main "${wbO}"
+	git clone --quiet "${wbO}" "${wbM}" 2>/dev/null
+	(
+		cd "${wbM}" || exit 1
+		echo one > f.txt && git add f.txt && git commit --quiet -m initial && git push --quiet -u origin main
+		git checkout --quiet -b side && echo side > f.txt && git add f.txt && git commit --quiet -m side
+		git checkout --quiet -b dev main && echo d1 > f.txt && git add f.txt && git commit --quiet -m d1
+		echo d2 > g.txt && git add g.txt && git commit --quiet -m d2 && git push --quiet -u origin dev
+		git checkout --quiet -b feat dev && git push --quiet -u origin feat && echo edit > h.txt
+		git worktree add --quiet "${wbW}" dev
+		cd "${wbW}" || exit 1
+		git rebase side || :
+	) >/dev/null 2>&1
+	fWbKept(){ [[ "$(git -C "${wbO}" rev-parse feat)" == "$(git -C "${wbO}" rev-parse dev)" && "$(git -C "${wbM}" branch --show-current)" == feat ]] && grep -qF 'h.txt' <<< "$(git -C "${wbM}" status --porcelain)" ;}
+	fAssert "[dfjzp] br switch -q dev refuses while another worktree is rebasing dev, naming that folder" \
+		bash -c "cd '${wbM}' && out=\"\$('${gitsby}' -q br switch dev 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'dev' is being rebased in another worktree\" <<< \"\${out}\" && grep -qF '${wbW}' <<< \"\${out}\""
+	fAssert "[dfjzq] with nothing committed or pushed, and still on feat"  fWbKept
+	( cd "${wbW}" && git rebase --abort && git bisect start dev main ) >/dev/null 2>&1
+	fAssert "[dfjzr] and while it bisects dev, naming 'git bisect reset'" \
+		bash -c "cd '${wbM}' && out=\"\$('${gitsby}' -q br switch dev 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"'dev' is being bisected in another worktree\" <<< \"\${out}\" && grep -qF \"'git bisect reset'\" <<< \"\${out}\""
+	fAssert "[dfjzs] with nothing committed or pushed then either"  fWbKept
+	( cd "${wbW}" && git bisect reset && git checkout --quiet --detach ) >/dev/null 2>&1
+	fAssert "[dfjzt] once that worktree is done with dev, br switch dev goes through and parks the edit" \
+		bash -c "cd '${wbM}' && '${gitsby}' -q br switch dev >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == dev ]] && git -C '${wbO}' cat-file -e feat:h.txt"
 	fStagedChecks "$1"
 
 	## A command that still means something locally runs offline and says what it skipped; one
@@ -5434,6 +5463,33 @@ GHEOF
 	fAssertOut  "[dfh5b] a stopped rebase is named as one, not as a detached HEAD"  "A 'git rebase' is in progress here"  bash -c "cd '${po}/rebase' && '${gitsby}' -q --no-fetch br switch dev 2>&1"
 	fAssertOut  "[dfh5c] a bisect without checkout refuses pullcom, naming 'git bisect reset'"  '^ +git bisect reset$'  bash -c "cd '${po}/bisect' && '${gitsby}' -q --no-fetch pullcom wip 2>&1"
 	fAssert     "[dfh5d] status still answers during a stopped range pick"  bash -c "cd '${po}/picked' && '${gitsby}' --no-fetch status"
+
+	## repo connect and repo create commit the tree before they push, and finished a resolved
+	## merge or am -3 under gitsby's message and published it. Clones of feat with origin
+	## dropped, so each would publish to an empty remote, and one with origin kept for push mode.
+	for c in cnmerge cnam3 crmerge cnpush; do
+		git clone --quiet -b feat "${po}/origin.git" "${po}/${c}" 2>/dev/null
+	done
+	git init --quiet --bare -b main "${po}/cn.git"
+	(
+		for c in cnmerge cnam3 crmerge; do
+			cd "${po}/${c}" || exit 1
+			git branch --quiet src origin/src && git remote remove origin
+		done
+		cd "${po}/cnmerge" || exit 1
+		git merge src || :; echo x > f.txt; git add f.txt
+		cd "${po}/cnam3" || exit 1
+		git am -3 "${po}/p/0001-c1.patch" "${po}/p/0002-c2.patch" || :; echo x > f.txt; git add f.txt
+		cd "${po}/crmerge" || exit 1
+		git merge src || :; echo x > f.txt; git add f.txt
+		cd "${po}/cnpush" || exit 1
+		git merge origin/src || :; echo x > f.txt; git add f.txt
+	) >/dev/null 2>&1
+	fAssertOut  "[dfjzh] a resolved merge with no origin refuses repo connect, naming the merge"  "A 'git merge' is in progress here"  bash -c "cd '${po}/cnmerge' && '${gitsby}' -q repo connect '${po}/cn.git' 2>&1"
+	fAssert     "[dfjzj] and commits nothing, adds no origin and leaves the remote empty"  bash -c "cd '${po}/cnmerge' && [[ \"\$(git log -1 --pretty=%s)\" == feat1 && -z \"\$(git remote)\" && -z \"\$(git -C '${po}/cn.git' for-each-ref)\" ]] && git rev-parse -q --verify MERGE_HEAD"
+	fAssert     "[dfjzk] a resolved am -3 refuses repo connect, naming its --abort, with patch 1 still pending"  bash -c "cd '${po}/cnam3' && out=\"\$('${gitsby}' -q repo connect '${po}/cn.git' 2>&1)\"; [[ \$? != 0 ]] && grep -qE '^ +git am --abort\$' <<< \"\${out}\" && [[ \"\$(git log -1 --pretty=%s)\" == feat1 && -z \"\$(git -C '${po}/cn.git' for-each-ref)\" ]] && test -d \"\$(git rev-parse --git-path rebase-apply)\""
+	fAssert     "[dfjzm] a resolved merge refuses repo create before gh makes the repo"  bash -c "cd '${po}/crmerge' && out=\"\$(PATH='${ghp}' FAKE_GH_VIEW=notfound FAKE_GH_REMOTE='${po}/created.git' FAKE_GH_LOG='${po}/create.log' '${gitsby}' -q repo create me/proj 2>&1)\"; [[ \$? != 0 ]] && grep -qF \"A 'git merge' is in progress here\" <<< \"\${out}\" && [[ ! -e '${po}/created.git' && \"\$(git log -1 --pretty=%s)\" == feat1 ]] && git rev-parse -q --verify MERGE_HEAD"
+	fAssert     "[dfjzn] with origin set, a resolved merge refuses repo connect, and origin's feat is kept"  bash -c "cd '${po}/cnpush' && ! '${gitsby}' -q repo connect >/dev/null 2>&1 && [[ \"\$(git -C '${po}/origin.git' rev-parse feat)\" == \"\$(git rev-parse HEAD)\" && \"\$(git log -1 --pretty=%s)\" == feat1 ]] && git rev-parse -q --verify MERGE_HEAD"
 
 	## no-remote repo: everything still works locally
 	local nr="${work}/$1-noremote"

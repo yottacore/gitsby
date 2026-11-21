@@ -392,3 +392,93 @@ func TestRefuseHeldBranch(t *testing.T) { // [dfh8b]
 		t.Errorf("br switch w after the prune: refused: %v", err)
 	}
 }
+
+// git won't check out a branch another worktree is rebasing or bisecting either,
+// though HEAD is detached there and %(worktreepath) doesn't name it. Each state is
+// made by real git, read through enterRepo as a run reads it.
+func TestRefuseBusyBranch(t *testing.T) { // [dfjzf]
+	_, clone := gitTestRepo(t)
+	commit := func(dir, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte(body+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, dir, "add", "f.txt")
+		runGit(t, dir, "commit", "-q", "-m", body)
+	}
+	mayFail := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		_ = cmd.Run() // the stop is the point
+	}
+	runGit(t, clone, "checkout", "-q", "-b", "side")
+	commit(clone, "side")
+	runGit(t, clone, "checkout", "-q", "-b", "dev", "main")
+	commit(clone, "d1")
+	commit(clone, "d2")
+	runGit(t, clone, "checkout", "-q", "main")
+	linked := filepath.Join(filepath.Dir(clone), "linked")
+	runGit(t, clone, "worktree", "add", "-q", linked, "dev")
+	realLinked, _ := filepath.EvalSymlinks(linked)
+	realClone, _ := filepath.EvalSymlinks(clone)
+	sub := filepath.Join(clone, "sub")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ask := func(from, branch string) error {
+		t.Helper()
+		t.Chdir(from)
+		a := newApp(newPrinter())
+		a.cmd = command{name: "br-switch", arg: branch, mutating: true}
+		if err := a.enterRepo(); err != nil || a.worktreesDir == "" {
+			t.Fatalf("enterRepo from %s: worktreesDir %q, %v", from, a.worktreesDir, err)
+		}
+		return a.refuseHeldBranch()
+	}
+	want := func(state string, err error, what, folder string) {
+		t.Helper()
+		switch {
+		case what == "" && err != nil:
+			t.Errorf("%s: refused: %v", state, err)
+		case what != "" && (err == nil || !strings.Contains(err.Error(), "'dev' is "+what+" in another worktree") || !strings.Contains(err.Error(), nativePath(folder))):
+			t.Errorf("%s: got %v, want dev named as %s in %s", state, err, what, folder)
+		}
+	}
+	mayFail(linked, "rebase", "side")
+	want("rebase in a linked worktree", ask(clone, "dev"), "being rebased", realLinked)
+	want("the same, from a subfolder", ask(sub, "dev"), "being rebased", realLinked)
+	want("another branch", ask(clone, "side"), "", "")
+	runGit(t, linked, "rebase", "--abort")
+	runGit(t, linked, "checkout", "-q", "--detach")
+	want("nothing stopped, dev free", ask(clone, "dev"), "", "")
+	runGit(t, linked, "checkout", "-q", "dev")
+	mayFail(linked, "rebase", "--apply", "side")
+	want("apply rebase", ask(clone, "dev"), "being rebased", realLinked)
+	runGit(t, linked, "rebase", "--abort")
+	runGit(t, linked, "bisect", "start", "dev", "main")
+	want("bisect", ask(clone, "dev"), "being bisected", realLinked)
+	runGit(t, linked, "bisect", "reset")
+	// An am holds no branch, so git checks dev out and so does gitsby.
+	runGit(t, linked, "checkout", "-q", "--detach")
+	runGit(t, linked, "format-patch", "-q", "-o", "../p", "main..side")
+	mayFail(linked, "am", "../p/0001-side.patch")
+	want("am in a linked worktree", ask(clone, "dev"), "", "")
+	runGit(t, linked, "am", "--abort")
+	// The main worktree rebasing dev, asked from the linked one.
+	runGit(t, clone, "checkout", "-q", "dev")
+	mayFail(clone, "rebase", "side")
+	want("rebase in the main worktree", ask(linked, "dev"), "being rebased", realClone)
+	runGit(t, clone, "rebase", "--abort")
+	runGit(t, clone, "checkout", "-q", "main")
+	// A worktree folder deleted by hand mid-rebase still holds dev, and prune frees it.
+	runGit(t, linked, "checkout", "-q", "dev")
+	mayFail(linked, "rebase", "side")
+	if err := os.Rename(linked, linked+"-moved"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ask(clone, "dev"); err == nil || !strings.Contains(err.Error(), "git worktree prune") {
+		t.Errorf("rebasing worktree's folder gone = %v, want 'git worktree prune'", err)
+	}
+	runGit(t, clone, "worktree", "prune")
+	want("after the prune", ask(clone, "dev"), "", "")
+}

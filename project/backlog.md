@@ -243,7 +243,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 8: repo connect and repo create finish a stopped merge or am under gitsby's message
 	- ID: 2026112017135778
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-171357
@@ -254,6 +254,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23 for repo connect, both cases. repo create only by reading. Confirmed.
 	- Possible cause [Bug]: The gate at mutate.go:132 lets the repo commands through on the premise that they never commit onto existing history, but cmdConnect commits at repo.go:400. design.md:197 states the same premise.
 	- Origin: 5177ad4, nov19b, Code Review 20261119 item 3. Missed twin.
+	- Closed reason: Done
+	- Actual cause [Bug]: The pending-op gate let every repo and account command through, on the premise that none commits onto existing history. repo create and repo connect commit the whole tree before they push it, so a resolved merge or am -3 went out under gitsby's message.
+	- Actual fix [Bug]: The gate names its exceptions now: repo clone, repo url and the account commands. Every other mutating command refuses before the plan, repo create and repo connect included, and so will a new one. design.md and the changelog say so.
+	- Branch: nov20c-2026112017135778
+	- Commit: 486c987
+	- Test case: Go [dfjzg] TestPendingOpEveryCommitter. test.bash [dfjzh] to [dfjzn].
+	- Swept: every mutating command, by [dfjzg], which settles each entry of the usages table and expects the refusal from all but the 5 exceptions. It checked 17. repo clone works outside this tree, repo url only re-spells origin, and the account commands write config only.
+	- Decisions: Named by exception, as pushesToRemote is, so a new mutating command refuses until it's listed. The refusal text is the shared one, unchanged.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-194643
+	- Verified: [dfjzh] to [dfjzn] fail on the build before the fix and pass with it, repo create's [dfjzm] through the fake gh. [dfjzg] fails with the old gate, naming repo create and repo connect. The quick gate with every area passed before a last change to the file reads in worktreeBusyWith and worktreeFolder. After it, lint, go test, test.bash 2282/0, fuzz 310/0 and spawn counts passed in one gate call that hit its time limit as parity closed, and parity passed 31/0 rerun alone. gosec 37, as before.
 
 - Code Review 20261120 item 9: Stage 0 passes with conflict markers in the tree when its autostash restore conflicts
 	- ID: 2026112017135764
@@ -288,7 +299,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 11: A branch another worktree is rebasing or bisecting isn't refused, so the run pushes and then fails
 	- ID: 2026112017135735
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-171357
@@ -299,6 +310,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, with a rebase and with a bisect. Confirmed.
 	- Possible cause [Bug]: `%(worktreepath)` names only a worktree whose HEAD is the branch. git also refuses a branch that another worktree is rebasing or bisecting.
 	- Origin: 6f277d3, nov19b, Code Review 20261119 item 13. Missed twin.
+	- Closed reason: Done
+	- Actual cause [Bug]: refuseHeldBranch read only %(worktreepath), which names a worktree whose HEAD is the branch. A worktree stopped in a rebase of the branch, or bisecting from it, has a detached HEAD, and git still won't check the branch out anywhere else.
+	- Actual fix [Bug]: refuseHeldBranch also reads each other worktree's rebase-merge, rebase-apply and BISECT_START, as git does, and refuses before the plan, naming the folder and the rebase's --continue and --abort, or git bisect reset. The worktrees folder comes from one more --git-path in enterRepo's rev-parse, so no spawn was added. design.md and the changelog say so.
+	- Branch: nov20c-2026112017135778
+	- Commit: 486c987
+	- Test case: Go [dfjzf] TestRefuseBusyBranch. test.bash [dfjzp] to [dfjzt].
+	- Swept: every command that checks a branch out lists it in checkoutsAhead and goes through refuseHeldBranch: br create, br hotfix, br switch, br merge, pr ok and release. br merge deletes only the branch it stands on. br prune's branch -D is left to git, which refuses a busy branch by its source (not run), and its non-fatal handling names that branch and keeps the remote copy. No other call writes an existing branch ref, by grep for update-ref, branch -f, checkout -B and fetch refspecs.
+	- Decisions: The files are read as git's is_worktree_being_rebased and is_worktree_being_bisected read them, rather than through git worktree list, which doesn't name a detached worktree's branch and costs a spawn. An am in another worktree holds no branch, as in git. The reads go through os.DirFS, which keeps them inside each git dir.
+	- Note: No test fails without the rebase-apply/applying check, since git am writes no head-name. It stays, to match git.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-194643
+	- Verified: [dfjzp] to [dfjzs] fail on the build before the fix and pass with it, and [dfjzt] passes on both. [dfjzf] fails 5 of its cases with the file check turned off. The quick gate with every area passed before a last change to the file reads in worktreeBusyWith and worktreeFolder. After it, lint, go test, test.bash 2282/0, fuzz 310/0 and spawn counts passed in one gate call that hit its time limit as parity closed, and parity passed 31/0 rerun alone. gosec 37, as before.
 
 - Code Review 20261120 item 12: An ssh origin that stalls after its banner hangs the fetch with no time limit
 	- ID: 2026112017135720

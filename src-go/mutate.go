@@ -123,13 +123,24 @@ func pendingOp(paths []string) (stoppedOp, bool) {
 	return stoppedOp{}, false
 }
 
+// pendingOpFree: the mutating commands that never commit, pull, switch or merge in
+// this work tree, so a stopped operation is none of their business. Named by
+// exception, so a new mutating command is refused. repo create and connect aren't
+// here: both commit the tree before they push it.
+func pendingOpFree(name string) bool {
+	switch name {
+	case "repo-clone", "repo-url", "account-apply", "account-set", "account-unset":
+		return true
+	}
+	return false
+}
+
 // refusePendingOp stops a command that commits, pulls, switches or merges while git
 // has an operation stopped partway. Run over one, a commit takes the half-done work
 // under gitsby's message, and a switch leaves the rest of a range for --continue to
 // apply onto the next branch.
 func (a *app) refusePendingOp() error {
-	// The branch commands, pr and release; repo and account never commit onto history.
-	if !a.inRepo || !a.cmd.mutating || !a.needsConfirmableBranch() {
+	if !a.inRepo || !a.cmd.mutating || pendingOpFree(a.cmd.name) {
 		return nil
 	}
 	op, found := pendingOp(a.opPaths)

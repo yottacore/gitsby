@@ -248,6 +248,8 @@ func (a *app) enterRepo() error {
 	for _, name := range opFiles {
 		args = append(args, "--git-path", name)
 	}
+	// Last, and shared by every worktree: where each linked one keeps its git dir.
+	args = append(args, "--git-path", "worktrees")
 	out, _ := toolCmd("git", args...).Output()
 	var answers []string
 	for _, line := range splitLines(string(out)) {
@@ -256,8 +258,8 @@ func (a *app) enterRepo() error {
 		}
 	}
 	top := ""
-	if len(answers) == 4+len(opFiles) && answers[0] == "true" {
-		top, a.opPaths, answers = answers[3], answers[4:], answers[:3]
+	if len(answers) == 5+len(opFiles) && answers[0] == "true" {
+		top, a.opPaths, a.worktreesDir, answers = answers[3], answers[4:4+len(opFiles)], answers[4+len(opFiles)], answers[:3]
 	}
 	a.git.contextDir.set(contextOf(top))
 	if len(answers) == 3 {

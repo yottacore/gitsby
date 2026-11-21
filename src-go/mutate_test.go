@@ -569,6 +569,72 @@ func TestPendingOpNamed(t *testing.T) { // [dfh53]
 	}
 }
 
+// Every mutating command refuses over a stopped operation, but for the few named
+// as never committing, pulling, switching or merging here. repo create and connect
+// commit the tree first, and finished a resolved merge or am under gitsby's message.
+func TestPendingOpEveryCommitter(t *testing.T) { // [dfjzg]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "checkout", "-q", "-b", "side")
+	if err := os.WriteFile(filepath.Join(clone, "f.txt"), []byte("side\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, clone, "add", "f.txt")
+	runGit(t, clone, "commit", "-q", "-m", "side")
+	runGit(t, clone, "checkout", "-q", "main")
+	runGit(t, clone, "merge", "-q", "--no-ff", "--no-commit", "side")
+	t.Chdir(clone)
+	seen := map[string]bool{}
+	for _, u := range usages {
+		if u.cmd == "raw" {
+			continue // handed to the tool before any of this runs
+		}
+		// The fewest words each takes, and with a transport repo url mutates.
+		var cmd command
+		settled := false
+		for _, tail := range [][]string{nil, {"ssh"}, {"x", "y"}, {"x", "y", "z"}} {
+			opt, got, _, err := parseArgs(append(strings.Fields(u.cmd), tail...))
+			if err == nil {
+				if got, err = collapseCommand(got); err == nil {
+					got, err = sortCommand(got, &opt)
+				}
+			}
+			if err == nil && (!settled || got.mutating) {
+				cmd, settled = got, true
+			}
+			if settled && cmd.mutating {
+				break
+			}
+		}
+		if !settled {
+			t.Fatalf("%s: no argument list settles", u.cmd)
+		}
+		if !cmd.mutating || seen[cmd.name+" "+cmd.arg] {
+			continue
+		}
+		seen[cmd.name+" "+cmd.arg] = true
+		a := newApp(newPrinter())
+		a.cmd = cmd
+		if err := a.enterRepo(); err != nil {
+			t.Fatal(err)
+		}
+		err := a.refusePendingOp()
+		switch {
+		case pendingOpFree(cmd.name) && err != nil:
+			t.Errorf("%s: refused: %v", u.cmd, err)
+		case !pendingOpFree(cmd.name) && (err == nil || !strings.Contains(err.Error(), "A 'git merge' is in progress here.")):
+			t.Errorf("%s: refusePendingOp = %v, want the merge named", u.cmd, err)
+		}
+	}
+	for _, name := range []string{"repo-create", "repo-connect", "pullcom", "br-switch", "release"} {
+		if pendingOpFree(name) {
+			t.Errorf("%s passes over a stopped operation", name)
+		}
+	}
+	if len(seen) < 15 {
+		t.Errorf("checked %d mutating commands, want at least 15; usages no longer settles them", len(seen))
+	}
+}
+
 // A stop's advice names the command that ran, and reads back as that command, for
 // every one that commits or pulls. --staged stays, since a rerun without it commits
 // the whole tree. cmdCommit used to name pullcom for all of them,
