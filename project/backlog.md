@@ -78,7 +78,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 2: With an Enterprise account, gh's own credential helper gives the token to any other Enterprise host
 	- ID: 2026112017135870
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261120-171358
@@ -90,11 +90,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: account.go:488 sets GH_ENTERPRISE_TOKEN for the whole run, and gh reads it for every Enterprise host. settlePrTool's GITLAB_TOKEN at pr.go:69 works the same way, by reading.
 	- Sweep: pr.go:69 GITLAB_TOKEN, and every other setEnv of a tool's token.
 	- Origin: d5d8cfa, nov19 (2026111016332206). Regression, and a missed twin of Code Review 20261119 item 5, whose Swept row says git is scoped to the host already.
+	- Closed reason: Done
+	- Related IDs: 2026112017135196
+	- Actual cause [Bug]: selectAccount put the token in gh's variable for the whole run, so every git child had it, and the helper 'gh auth setup-git' writes sent it to any Enterprise host git asked about. pr's GITLAB_TOKEN reached git the same way.
+	- Actual fix [Bug]: Through enhancement 2026112017135196's grant. No gh, glab or tea variable goes into gitsby's own environment, so git gets only GITSBY_HOST_TOKEN.
+	- Branch: nov20c-2026112017135196
+	- Commit: 9695856
+	- Test case: test.bash [dfh5s]: raw git asked for a second Enterprise host gh's helper serves, gitsby's own git asking the same through core.fsmonitor, and pr create's git asking another GitLab host through glab's helper. Go [dfjxb], [dfjxc].
+	- Verified: those 3 cases fail on the unfixed build and pass after. Not run with real gh 2.96.
+	- Swept: pr.go's GITLAB_TOKEN, raw glab's 3 variables, raw tea's 2, and gh's 2 all go through the grant now. Every other setEnv sets no token.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-183612
 
 - Code Review 20261120 item 3: A github.com account gets gh's Enterprise token when gh has the same login there
 	- ID: 2026112017135855
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261120-171358
@@ -105,11 +116,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, real gh 2.96 with a fake hosts.yml. Confirmed.
 	- Possible cause [Bug]: `gh auth token --user` without `--hostname`, at account.go:190 (probeGhToken) and accountcmd.go:876 (the helper's gh step).
 	- Origin: 8da8951 (Go port) and 08e7452 (2026110810100400). No round saw it. 2026111016332206's Swept row took GH_HOST as picking the host, which holds only for an Enterprise account.
+	- Closed reason: Done
+	- Related IDs: 2026112017135196
+	- Actual cause [Bug]: gh answers 'auth token --user' for the host GH_HOST names when no --hostname is given.
+	- Actual fix [Bug]: probeGhToken takes the account's host and passes --hostname, and the token cache is keyed by host and login. The fragment helper passes --hostname with the host git asked about, which has already matched gitsby.host. account list asks only for an account on a GitHub host.
+	- Branch: nov20c-2026112017135196
+	- Commit: 9695856
+	- Test case: test.bash [dfjxg] for raw git and plain git, Go [dfjxf] for both calls.
+	- Verified: [dfjxg] fails on the unfixed build for both and passes after. Plain git needs account apply run again, which the changelog says.
+	- Swept: every 'auth token' in src-go: probeGhToken and the fragment helper.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-183612
 
 - Code Review 20261120 item 4: An account whose host is ignored falls back to github.com, and its Gitea token goes there
 	- ID: 2026112017135838
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on UAT
+		- The token fix is pinned. Left for a look: the identity block's new Why and Fix lines for an ignored host, shown by 'gitsby whoami' in such an account's folder.
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261120-171358
@@ -120,6 +143,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
 	- Possible cause [Bug]: config.go:755-758 blanks the bad value, and hostOf at config.go:908 then gives github.com.
 	- Origin: 8d3f857 (2026-08-26) and 6abd24c. No round saw it.
+	- Related IDs: 2026112017135196
+	- Actual cause [Bug]: The ignored value was blanked, and hostOf read a blank host as github.com.
+	- Actual fix [Bug]: The config records an ignored host, and hostOf gives no host for that account, so it serves no host and gets no token. Its fragment sets no token file, ghAccount, username or helper. The identity block says the host was ignored and how to set it.
+	- Branch: nov20c-2026112017135196
+	- Commit: 9695856
+	- Test case: Go [dfjxe], test.bash [dfh5s] (raw git, plain git and raw gh in its folder).
+	- Verified: [dfjxe] and the 3 walk cases fail on the unfixed build and pass after.
+	- Swept: hostOf's callers: accountHost, fragmentNames (the file is named '_<login>' now), fragmentKeys, fragmentHelperFor, loginOf, account list's gh store check, and the identity block's notes.
 
 - Code Review 20261120 item 5: release from a feature branch with unpushed work or a dirty tree tags the commit already released
 	- ID: 2026112017135822
@@ -139,7 +170,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 6: A ? or # before the @ in a URL gets a token past the host check
 	- ID: 2026112017135807
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261120-171358
@@ -150,6 +181,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, with real gh 2.96, glab 1.53 and a local listener. Confirmed.
 	- Possible cause [Bug]: splitRemoteURL at githost.go:100 ends the host only at `/`.
 	- Origin: 9333159. It became a token check in 20e7cae (Code Review 20261110b item 1) and 22554f6 (Code Review 20261119 item 5). No round saw it.
+	- Closed reason: Done
+	- Related IDs: 2026112017135196
+	- Actual cause [Bug]: splitRemoteURL ended the host only at '/', and took the last '@' before it.
+	- Actual fix [Bug]: A '<scheme>://' URL's host comes from net/url, which ends it at the first '/', '?' or '#'. One net/url won't parse is cut at the same places. Every reader of a URL host goes through it, the gh and glab host lists and sameService included.
+	- Branch: nov20c-2026112017135196
+	- Commit: 9695856
+	- Test case: Go [dfjxd], test.bash [dfh5s]'s '?@' and '#@' cases for raw gh and raw glab.
+	- Verified: [dfjxd] and the 3 walk cases fail on the unfixed build and pass after. An IPv6 host in brackets also reads right now.
+	- Swept: splitRemoteURL's callers: parseRemoteText, glabURLHost, glabHostName and glabRepoArg. The scp-like form has no query part.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-183612
 
 - Code Review 20261120 item 7: After account set changes ghaccount, gitsby goes on acting as the old login until account apply
 	- ID: 2026112017135793
@@ -379,7 +421,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 22: raw tea in a GitHub account's folder gets GH_TOKEN
 	- ID: 2026112017135562
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171355
@@ -390,6 +432,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: The environment on b23 with a fake tea. tea 0.11 wasn't run, since 0.9.2 is installed. Plausible.
 	- Possible cause [Bug]: main.go:981 leaves GH_TOKEN and GH_ENTERPRISE_TOKEN in tea's environment.
 	- Origin: tea's own change, read from its source. No round saw it.
+	- Closed reason: Done
+	- Related IDs: 2026112017135196
+	- Actual cause [Bug]: selectAccount's GH_TOKEN was in the process's environment, which tea inherited.
+	- Actual fix [Bug]: Through the grant: tea gets GITEA_TOKEN and GITEA_INSTANCE_URL only, and only for a non-GitHub account.
+	- Branch: nov20c-2026112017135196
+	- Commit: 9695856
+	- Test case: test.bash [dfh5s] (raw tea in a github.com account's folder), [dfh5t] (raw tea in the Gitea folder still gets its token).
+	- Verified: pinned by the [dfh5s] case, whose fake tea gets the account's GH_TOKEN on the unfixed build, and not after. tea 0.11 still not run. A caller's own GH_TOKEN still reaches tea, as under plain tea.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261120-183612
 
 - Code Review 20261120 item 23: [dbhg7] passes with the refusal it checks taken out
 	- ID: 2026112017135548
@@ -752,14 +804,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 enhancement 2: One token grant per run, given only to the child that needs it
 	- ID: 2026112017135196
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171351
 	- Opened by:
 	- Requirements [Feature]: Token to the wrong host has had 4 fixes, one site at a time, and items 2, 3, 4, 6 and 22 here are 5 more paths. Hold one grant per run, a host and a token. git children get only GITSBY_HOST_TOKEN and the helper. gh, glab and tea each get their own variable in their own environment, never the process's. Read every host from text through net/url, pass --hostname to every gh auth token call, and give an account whose host was ignored no token. The walk test gets a case for every gh or glab child git can start.
 	- Decisions: Answered 2026-11-20: fix it with items 2, 3, 4, 6 and 22 as one change, though defects are still open.
+		- GITSBY_HOST_TOKEN goes to gh, glab and tea too, since they clone with git, and the helper gitsby sets answers only for the grant's host.
+		- The walk reaches gitsby's own git through core.fsmonitor, set in the caller's GIT_CONFIG_COUNT, since status and pr create read the index after the grant and pr's other git calls start nothing.
+		- The walk's wgh account got 'ghaccount: walkstore', and its fake gh answers 'auth token --user' from a store that holds that login on the Enterprise host alone, so [dfh5t]'s outer-folder case now goes through the helper's gh step before the token file.
+		- Left alone: a child of gh, such as the git that 'raw gh repo clone' starts, has gh's own variable, as under plain gh.
 	- Origin: Repeat class: Code Review 20261110b item 1, Code Review 20261119 items 4 and 5, and the 5 here.
+	- Closed reason: Done
+	- Actual fix: One grant per run, a host and a token, held in gitsby and never put in its own environment. toolCmd and the handover give each child its part: git, tig, lazygit and the host CLIs get GITSBY_HOST_TOKEN for the helper gitsby sets, and gh, glab and tea each get their own variable in their own environment. Items 2, 3, 4, 6 and 22 went in with it.
+	- Branch: nov20c-2026112017135196
+	- Commit: 9695856
+	- Test case: Go [dfjxb] (which tool gets which variable) and [dfjxc] (the spawn sites, run). test.bash [dfh5s] and [dfh5t], whose walk now has a case for gh's and glab's helpers asked by raw git and by gitsby's own git, and [dfjxg].
+	- Verified: on the unfixed build the 12 new walk cases fail (the rig over test.bash's walk, 20/12) and pass after (32/0). [dfjxb] and [dfjxc] fail with grantEnv handing every tool's variables to every child. Quick gate passed, all areas: test.bash 2254/0, fuzz 310/0, parity 31/0. gosec on src-go: 37, the same files and rules as before. Not run with real gh or glab, or on Windows.
+	- Swept: every setEnv and os.Setenv in src-go: none sets a token variable now (GIT_CONFIG_*, GITSBY_HOST_USER, GIT_SSH_COMMAND and GITSBY_RAW_ACTIVE are left). Every cmd.Env site: remoteEnv, refuseSparseAdd, the untracked probe in repo.go and probeGhLogin take the grant, and the ssh probe doesn't. Every gh auth token call: probeGhToken and the fragment helper.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after.
+	- Closed: 20261120-183549
+	- Progress log:
+		- 20261120: asserts moved from the process's environment to the grant, by its tool: [ddk63] (GITEA_TOKEN and GITEA_INSTANCE_URL for tea), [df4w5] (glab's 3 variables; with no token given, old 'before', new nothing), [dea3n] (GITLAB_HOST and GITLAB_API_HOST; old 'before', new nothing), and [ddg76] (the token cache, now keyed by host and login).
 
 - Code Review 20261120 enhancement 3: Decide from plumbing, so user git config can't blind gitsby's reads
 	- ID: 2026112017135182

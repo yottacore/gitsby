@@ -342,7 +342,7 @@ func (a *app) refuseSparseAdd() error {
 		return nil
 	}
 	cmd := toolCmd("git", "add", "--all", "--dry-run")
-	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	var paths []string

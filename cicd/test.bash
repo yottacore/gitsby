@@ -9669,34 +9669,66 @@ GHEOF
 	## 2026111016332206, then 2026111910223247 and 2026111910223233), so a new path goes in these
 	## lists. A Gitea account nested in a github.com one's folder, an Enterprise one and a GitLab one,
 	## each with its own token file. raw tea keeps its token on GITEA_INSTANCE_URL, and tig and
-	## lazygit go through git's helper.
+	## lazygit go through git's helper. Since 2026112017135196 the run holds one grant, and each host
+	## CLI gets its variable in its own environment, so the walk has a case for each gh or glab
+	## child git starts: the helpers 'gh auth setup-git' and glab write, for hosts the run isn't
+	## about, asked by raw git and by gitsby's own git through core.fsmonitor. gh's store holds
+	## walkstore on the Enterprise host alone, and answers for GH_HOST's host when none is named.
 	local tw="${fg}/tokwalk"
 	mkdir -p "${tw}/home" "${tw}/bin" "${tw}/ghcfg"
 	fStub "${tw}/bin/gh" <<'GHEOF'
 #!/usr/bin/env bash
+if [[ " $* " == *" --user "* ]]; then
+	h="${GH_HOST:-github.com}"
+	[[ " $* " =~ \ --hostname\ ([^ ]+) ]] && h="${BASH_REMATCH[1]}"
+	[[ "${h}" == ghe.walk.test ]] && echo tok_walk_ghestore
+	exit 0
+fi
 line="$* gh=${GH_TOKEN:-} ghe=${GH_ENTERPRISE_TOKEN:-}"
 [[ -n "${TW_LOG:-}" ]] && echo "${line}" >> "${TW_LOG}"
 echo "${line}"
 GHEOF
 	fStub "${tw}/bin/glab" <<'GLEOF'
 #!/usr/bin/env bash
-echo "$* gl=${GITLAB_TOKEN:-}"
+line="$* gl=${GITLAB_TOKEN:-}"
+[[ -n "${TW_LOG:-}" ]] && echo "${line}" >> "${TW_LOG}"
+echo "${line}"
 GLEOF
+	fStub "${tw}/bin/tea" <<'TEAEOF'
+#!/usr/bin/env bash
+[[ "$1" == --version ]] && { echo 'Version: 0.11.0'; exit 0; }
+echo "$* tea=${GITEA_TOKEN:-} gh=${GH_TOKEN:-} ghe=${GH_ENTERPRISE_TOKEN:-}"
+TEAEOF
+	## git runs it for any command that reads the index, and it asks git for another host's
+	## credentials. Only the helper's lines are read, since gitsby's own gh and glab calls get the token.
+	fStub "${tw}/bin/twfsmon" <<'FSEOF'
+#!/usr/bin/env bash
+printf 'protocol=https\nhost=%s\n\n' "${TW_ASK}" | git credential fill >/dev/null 2>&1
+exit 1
+FSEOF
 	local twItem
-	for twItem in gh/proj gh/gt/proj ghe/proj gl/proj; do git init --quiet "${tw}/trees/${twItem}"; done
+	for twItem in gh/proj gh/gt/proj ghe/proj gl/proj bad/proj; do git init --quiet "${tw}/trees/${twItem}"; done
 	git -C "${tw}/trees/gh/proj" remote add origin https://github.com/acme/proj.git
 	git -C "${tw}/trees/gh/gt/proj" remote add origin https://gitea.walk.test/acme/proj.git
 	git -C "${tw}/trees/ghe/proj" remote add origin https://ghe.walk.test/acme/proj.git
 	git -C "${tw}/trees/gl/proj" remote add origin https://gitlab.walk.test/acme/proj.git
-	for twItem in gh gt ghe gl; do printf 'tok_walk_%s\n' "${twItem}" > "${tw}/home/${twItem}.tok"; chmod 600 "${tw}/home/${twItem}.tok"; done
+	git -C "${tw}/trees/bad/proj" remote add origin https://github.com/acme/proj.git
+	git init --quiet -b main "${tw}/trees/gl/feat"; git -C "${tw}/trees/gl/feat" remote add origin https://gitlab.walk.test/acme/proj.git
+	( cd "${tw}/trees/gl/feat" || exit 1; echo a > a.txt; git add a.txt; git commit --quiet -m init; git update-ref refs/remotes/origin/main HEAD
+		git switch --quiet -c glwalk; echo b > b.txt; git add b.txt; git commit --quiet -m b )
+	for twItem in gh gt ghe gl bad; do printf 'tok_walk_%s\n' "${twItem}" > "${tw}/home/${twItem}.tok"; chmod 600 "${tw}/home/${twItem}.tok"; done
 	: > "${tw}/home/.gitconfig"
-	printf 'account: wgh\n\tpath: %s\n\ttokenfile: %s\n\naccount: wgt\n\tpath: %s\n\thost: gitea.walk.test\n\tuser: gtuser\n\ttokenfile: %s\n\naccount: wghe\n\tpath: %s\n\thost: ghe.walk.test\n\ttokenfile: %s\n\naccount: wgl\n\tpath: %s\n\thost: gitlab.walk.test\n\ttokenfile: %s\n' \
+	printf 'account: wgh\n\tpath: %s\n\tghaccount: walkstore\n\ttokenfile: %s\n\naccount: wgt\n\tpath: %s\n\thost: gitea.walk.test\n\tuser: gtuser\n\ttokenfile: %s\n\naccount: wghe\n\tpath: %s\n\thost: ghe.walk.test\n\ttokenfile: %s\n\naccount: wgl\n\tpath: %s\n\thost: gitlab.walk.test\n\ttokenfile: %s\n\naccount: wbad\n\tpath: %s\n\thost: https://gitea.walk.test\n\tuser: gtuser\n\ttokenfile: %s\n' \
 		"$(fWinPath "${tw}/trees/gh")" "$(fWinPath "${tw}/home/gh.tok")" "$(fWinPath "${tw}/trees/gh/gt")" "$(fWinPath "${tw}/home/gt.tok")" \
-		"$(fWinPath "${tw}/trees/ghe")" "$(fWinPath "${tw}/home/ghe.tok")" "$(fWinPath "${tw}/trees/gl")" "$(fWinPath "${tw}/home/gl.tok")" > "${tw}/walk.shcl"
+		"$(fWinPath "${tw}/trees/ghe")" "$(fWinPath "${tw}/home/ghe.tok")" "$(fWinPath "${tw}/trees/gl")" "$(fWinPath "${tw}/home/gl.tok")" \
+		"$(fWinPath "${tw}/trees/bad")" "$(fWinPath "${tw}/home/bad.tok")" > "${tw}/walk.shcl"
 	local twEnv="${acNoDiscovery} HOME='${tw}/home' GIT_CONFIG_GLOBAL='${tw}/home/.gitconfig' GH_CONFIG_DIR='${tw}/ghcfg' PATH='${tw}/bin:${fgPath}' GIT_TERMINAL_PROMPT=0 TW_LOG='${tw}/gh.log'"
 	local twG="env ${twEnv} '${gitsby}' -q -NoFetch --config '${tw}/walk.shcl'"
 	local twGhe="GH_HOST=ghe.walk.test"
+	local twFsmon; twFsmon="GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0='$(fWinPath "${tw}/bin/twfsmon")'"
 	bash -c "cd '${tw}/trees/gh/proj' && ${twG} account apply" >/dev/null 2>&1
+	git config --file "${tw}/home/.gitconfig" credential.https://ghe2.walk.test.helper '!gh auth git-credential'
+	git config --file "${tw}/home/.gitconfig" credential.https://gitlab2.walk.test.helper '!glab auth git-credential'
 	local -a twWhat=(
 		"plain git asked for github.com in the nested Gitea account's folder"
 		"raw git, the same"
@@ -9708,8 +9740,19 @@ GLEOF
 		"raw gh auth token for a ghe.com tenant, on github.com"
 		"raw gh with GH_HOST on a ghe.com tenant, in a github.com repo"
 		"raw glab api for another host"
+		"raw git asked for a second Enterprise host gh's own helper serves, on Enterprise"
+		"gitsby's own git asking for that host through gh's helper, on Enterprise"
+		"pr create's own git asking for another GitLab host through glab's helper"
+		"raw gh api with a URL whose ?@ names the account's host, on Enterprise"
+		"raw gh api with a URL whose #@ names the account's host, on Enterprise"
+		"raw glab api with a URL whose ?@ names the account's host"
+		"raw git asked for github.com by an account whose host was ignored"
+		"plain git, the same"
+		"raw gh there"
+		"raw tea in a github.com account's folder, with GITEA_INSTANCE_URL set"
 	)
-	local -a twWhere=( gh/gt/proj gh/gt/proj gh/gt/proj ghe/proj ghe/proj ghe/proj ghe/proj gh/proj gh/proj gl/proj )
+	local -a twWhere=( gh/gt/proj gh/gt/proj gh/gt/proj ghe/proj ghe/proj ghe/proj ghe/proj gh/proj gh/proj gl/proj
+		ghe/proj ghe/proj gl/feat ghe/proj ghe/proj gl/proj bad/proj bad/proj bad/proj gh/proj )
 	local -a twRun=(
 		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
 		"printf 'protocol=https\nhost=github.com\n\n' | ${twG} raw git credential fill"
@@ -9721,6 +9764,16 @@ GLEOF
 		"${twG} raw gh auth token --hostname acme.ghe.com"
 		"GH_HOST=acme.ghe.com ${twG} raw gh api user"
 		"${twG} raw glab api --hostname gitlab.com user"
+		": > '${tw}/gh.log'; printf 'protocol=https\nhost=ghe2.walk.test\n\n' | ${twGhe} ${twG} raw git credential fill; cat '${tw}/gh.log'"
+		": > '${tw}/gh.log'; ${twGhe} ${twFsmon} TW_ASK=ghe2.walk.test ${twG} status >/dev/null; grep '^auth git-credential' '${tw}/gh.log' || echo tok_walk_helper_never_asked"
+		": > '${tw}/gh.log'; ${twFsmon} TW_ASK=gitlab2.walk.test ${twG} pr create T </dev/null >/dev/null; grep '^auth git-credential' '${tw}/gh.log' || echo tok_walk_helper_never_asked"
+		"${twGhe} ${twG} raw gh api 'http://127.0.0.1:9?@ghe.walk.test/x'"
+		"${twGhe} ${twG} raw gh api 'http://127.0.0.1:9#@ghe.walk.test/x'"
+		"${twG} raw glab api 'http://127.0.0.1:9?@gitlab.walk.test/x'"
+		"printf 'protocol=https\nhost=github.com\n\n' | ${twG} raw git credential fill"
+		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
+		"${twG} raw gh auth token"
+		"GITEA_INSTANCE_URL=https://gitea.walk.test ${twG} raw tea whoami"
 	)
 	for twItem in "${!twRun[@]}"; do
 		fAssertNotOut "[dfh5s] no token for a host it isn't for: ${twWhat[twItem]}"  'tok_walk_' \
@@ -9735,9 +9788,11 @@ GLEOF
 		"pr on Enterprise"
 		"raw gh auth token for github.com"
 		"raw glab api"
+		"pr's glab on GitLab"
+		"raw tea in the Gitea folder"
 	)
-	twWhere=( gh/gt/proj gh/proj gh/gt/proj ghe/proj ghe/proj ghe/proj gh/proj gl/proj )
-	local -a twWant=( gt gh gt ghe ghe ghe gh gl )
+	twWhere=( gh/gt/proj gh/proj gh/gt/proj ghe/proj ghe/proj ghe/proj gh/proj gl/proj gl/proj gh/gt/proj )
+	local -a twWant=( gt gh gt ghe ghe ghe gh gl gl gt )
 	twRun=(
 		"printf 'protocol=https\nhost=gitea.walk.test\n\n' | env ${twEnv} git credential fill"
 		"printf 'protocol=https\nhost=github.com\n\n' | env ${twEnv} git credential fill"
@@ -9747,10 +9802,23 @@ GLEOF
 		": > '${tw}/gh.log'; ${twGhe} ${twG} pr; cat '${tw}/gh.log'"
 		"${twG} raw gh auth token --hostname github.com"
 		"${twG} raw glab api user"
+		": > '${tw}/gh.log'; ${twG} pr; cat '${tw}/gh.log'"
+		"${twG} raw tea whoami"
 	)
 	for twItem in "${!twRun[@]}"; do
 		fAssertOut "[dfh5t] and the token still goes to its own host: ${twWhat[twItem]}"  "tok_walk_${twWant[twItem]}" \
 			bash -c "cd '${tw}/trees/${twWhere[twItem]}' && ${twRun[twItem]}"
+	done
+	## gh answers 'auth token --user' for GH_HOST's host when none is named, so a github.com account
+	## took the token gh holds for its login on Enterprise.
+	twWhat=( "raw git" "plain git" )
+	twRun=(
+		"printf 'protocol=https\nhost=github.com\n\n' | ${twGhe} ${twG} raw git credential fill"
+		"printf 'protocol=https\nhost=github.com\n\n' | env ${twGhe} ${twEnv} git credential fill"
+	)
+	for twItem in "${!twRun[@]}"; do
+		fAssertNotOut "[dfjxg] gh's store is asked for the account's own host: ${twWhat[twItem]}"  'tok_walk_ghestore' \
+			bash -c "cd '${tw}/trees/gh/proj' && ${twRun[twItem]}"
 	done
 	## A Gitea account has no GitHub login, and the line used to read only that one.
 	fAssertOut "[ddk69] raw names the Gitea account it acts as"  'acting as giteauser' \

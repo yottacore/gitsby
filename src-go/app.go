@@ -160,7 +160,7 @@ type remoteState struct {
 	// 'account set' prints that listing before its own edit, so the same names come
 	// round more than once. Nothing logs gh in or out mid-run, and the answer is
 	// keyed by the login rather than by whoever gh currently acts as.
-	tokens map[string]string
+	tokens map[ghUser]string
 }
 
 // account is who this run acts as, and what selecting them actually changed.
@@ -188,10 +188,9 @@ type account struct {
 	// A token file other users on this machine can read, named so it can be fixed.
 	looseTokenFile string
 
-	// The git host this run authenticates to, the variable its token was exported
-	// under, and whether the account we resolved banks somewhere else entirely.
+	// The git host this run authenticates to, and whether the account we resolved
+	// banks somewhere else entirely. The token itself is in the run's grant.
 	credHost  string
-	tokenEnv  string
 	otherHost bool
 	// Hosts a raw tool's command line names, whether gh got the token in its own
 	// variable, and the host it's pointed at instead when it didn't.

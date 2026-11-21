@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -133,18 +134,22 @@ func resolveSSHHost(alias, target string) string {
 	return alias
 }
 
-// ghTokenFor reads the stored token for an account gh already has, or nothing.
+// ghUser is a login gh may hold, on the host it's for.
+type ghUser struct{ host, who string }
+
+// ghTokenFor reads the stored token for an account gh already has on host, or nothing.
 // Asked once per login: gh answers about one account at a time, so the listing
 // spent a process on every account it printed, twice over for 'account set'.
-func (a *app) ghTokenFor(who string) string {
-	if token, asked := a.remote.tokens[who]; asked {
+func (a *app) ghTokenFor(host, who string) string {
+	key := ghUser{host, who}
+	if token, asked := a.remote.tokens[key]; asked {
 		return token
 	}
-	token := probeGhToken(who)
+	token := probeGhToken(host, who)
 	if a.remote.tokens == nil {
-		a.remote.tokens = map[string]string{}
+		a.remote.tokens = map[ghUser]string{}
 	}
-	a.remote.tokens[who] = token
+	a.remote.tokens[key] = token
 	return token
 }
 
@@ -152,11 +157,11 @@ func (a *app) ghTokenFor(who string) string {
 // them in turn. A handful at a time: one gh each, and a long accounts file should
 // not start them all together. One login is left to ghTokenFor - nothing to
 // overlap it with.
-func (a *app) askGhTokens(logins []string) {
-	var asking []string
-	for _, who := range logins {
-		if _, asked := a.remote.tokens[who]; !asked && who != "" && !slices.Contains(asking, who) {
-			asking = append(asking, who)
+func (a *app) askGhTokens(logins []ghUser) {
+	var asking []ghUser
+	for _, l := range logins {
+		if _, asked := a.remote.tokens[l]; !asked && l.who != "" && l.host != "" && !slices.Contains(asking, l) {
+			asking = append(asking, l)
 		}
 	}
 	if len(asking) < 2 {
@@ -165,29 +170,31 @@ func (a *app) askGhTokens(logins []string) {
 	answers := make([]string, len(asking))
 	slots := make(chan struct{}, 8)
 	var wg sync.WaitGroup
-	for i, who := range asking {
+	for i, l := range asking {
 		wg.Go(func() {
 			slots <- struct{}{}
 			defer func() { <-slots }()
-			answers[i] = probeGhToken(who)
+			answers[i] = probeGhToken(l.host, l.who)
 		})
 	}
 	wg.Wait()
 	if a.remote.tokens == nil {
-		a.remote.tokens = map[string]string{}
+		a.remote.tokens = map[ghUser]string{}
 	}
-	for i, who := range asking {
-		a.remote.tokens[who] = answers[i]
+	for i, l := range asking {
+		a.remote.tokens[l] = answers[i]
 	}
 }
 
 // probeGhToken asks gh's own credential store - no network, no prompt - so it
-// doubles as the "does gh have this account" test.
-func probeGhToken(who string) string {
-	if who == "" || !inPath("gh") {
+// doubles as the "does gh have this account" test. Always for a host: with none, gh
+// answers for GH_HOST's, so a github.com account got the token gh holds for the
+// same login on an Enterprise host (2026112017135855).
+func probeGhToken(host, who string) string {
+	if who == "" || host == "" || !inPath("gh") {
 		return ""
 	}
-	return runOut("gh", "auth", "token", "--user", who)
+	return runOut("gh", "auth", "token", "--user", who, "--hostname", host)
 }
 
 // accountHost is the git host the resolved account belongs to. Unstated means
@@ -264,6 +271,83 @@ func (a *app) authHost() string {
 // so git gets the token whether or not gh may have it.
 const hostTokenVar = "GITSBY_HOST_TOKEN"
 
+// tokenGrant is this run's one token hand-over: the host it's for, the token, and
+// the variables each host CLI gets on top. None of it goes into this process's own
+// environment, which every child inherits: gh's variable there reached git, and the
+// helper 'gh auth setup-git' writes sent it on to any other Enterprise host.
+// Package state, since every spawn goes through toolCmd. Backlog 2026112017135196.
+type tokenGrant struct {
+	host, token string
+	tools       map[string][]string
+}
+
+var runGrant struct {
+	sync.Mutex
+	g tokenGrant
+}
+
+// setGrant starts this run's grant over, for one host.
+func setGrant(host, token string) {
+	runGrant.Lock()
+	defer runGrant.Unlock()
+	runGrant.g = tokenGrant{host: host, token: token}
+}
+
+// grantFor gives tool these KEY=VALUE pairs on top of the helper's variable. A later
+// pair for the same key wins, as exec does with a repeated one.
+func grantFor(tool string, kv ...string) {
+	runGrant.Lock()
+	defer runGrant.Unlock()
+	if runGrant.g.tools == nil {
+		runGrant.g.tools = map[string][]string{}
+	}
+	tool = toolKey(tool)
+	runGrant.g.tools[tool] = append(runGrant.g.tools[tool], kv...)
+}
+
+// granted is the grant's host and token, both empty when this run holds none.
+func granted() (host, token string) {
+	runGrant.Lock()
+	defer runGrant.Unlock()
+	return runGrant.g.host, runGrant.g.token
+}
+
+// gitRunners are the tools that run git underneath, so they get the variable the
+// helper gitsby sets reads. Nothing else reads it, and the helper answers only for
+// the grant's host. gh, glab and tea clone with git too.
+var gitRunners = map[string]bool{"git": true, "tig": true, "lazygit": true, "gh": true, "glab": true, "tea": true}
+
+// grantEnv is what tool gets of this run's grant, as KEY=VALUE pairs.
+func grantEnv(tool string) []string {
+	runGrant.Lock()
+	defer runGrant.Unlock()
+	if runGrant.g.token == "" {
+		return nil
+	}
+	tool = toolKey(tool)
+	var env []string
+	if gitRunners[tool] {
+		env = append(env, hostTokenVar+"="+runGrant.g.token)
+	}
+	return append(env, runGrant.g.tools[tool]...)
+}
+
+// toolEnv is the environment tool runs with: this process's own, plus its part of
+// the grant.
+func toolEnv(tool string) []string {
+	return append(os.Environ(), grantEnv(tool)...)
+}
+
+// toolKey is the tool a program name or path is, for the grant: Debian's tea-cli is
+// tea, and Windows' .exe and case don't count.
+func toolKey(name string) string {
+	name = strings.TrimSuffix(strings.ToLower(filepath.Base(strings.ReplaceAll(name, `\`, "/"))), ".exe")
+	if name == "tea-cli" {
+		return "tea"
+	}
+	return name
+}
+
 // tokenEnvVar is the variable gh reads a token from for a host it serves: GH_TOKEN for
 // github.com, GH_ENTERPRISE_TOKEN for an Enterprise Server host, where gh never looks
 // at GH_TOKEN. Anything else gets our own name, so a Gitea token is never exported
@@ -339,7 +423,7 @@ func (a *app) accountToken(host string) (string, tokenSource, string) {
 	// gh's own store, only for a host gh serves. Asking it about a Gitea account is
 	// asking after a login that was never going to be there.
 	if isGitHubHost(host) {
-		if token := a.ghTokenFor(a.acct.ghWho); token != "" {
+		if token := a.ghTokenFor(a.accountHost(), a.acct.ghWho); token != "" {
 			return token, tokenFromGh, ""
 		}
 	}
@@ -435,7 +519,7 @@ func gitConfigEnv(key, value string) error {
 }
 
 // selectAccount points this run and its children at this folder's account. The token
-// in gh's own variable scopes gh to this process, where 'gh auth switch' is global. skipGhProbe: no identity
+// in gh's own variable scopes gh to this run, where 'gh auth switch' is global. skipGhProbe: no identity
 // block prints.
 func (a *app) selectAccount(skipGhProbe bool) error {
 	if a.opt.anyIdentity {
@@ -478,17 +562,12 @@ func (a *app) selectAccount(skipGhProbe bool) error {
 				a.acct.switchedFrom = active
 			}
 		}
-		// Export whenever a token was found, not only when it replaces a different
+		// Granted whenever a token was found, not only when it replaces a different
 		// active account: the helper below reads it when git runs it, and the
 		// reset that precedes it has already evicted any credential manager.
-		a.acct.tokenEnv = hostTokenVar
-		if err := setEnv(hostTokenVar, token); err != nil {
-			return err
-		}
+		setGrant(credHost, token)
 		if a.acct.ghToken {
-			if err := setEnv(tokenEnvVar(credHost), token); err != nil {
-				return err
-			}
+			grantFor("gh", tokenEnvVar(credHost)+"="+token)
 		}
 		switch {
 		case !a.acct.ghToken:
@@ -601,18 +680,18 @@ func (a *app) ghLogin() string {
 			a.remote.loginAhead = nil
 			return pending.wait()
 		}
-		return probeGhLogin(context.Background(), os.Environ())
+		return probeGhLogin(context.Background(), toolEnv("gh"))
 	})
 }
 
 // askGhLoginAhead starts the ghLogin probe without waiting for it. The
-// environment is taken now, on this goroutine: the token just exported is the one
+// environment is taken now, on this goroutine: the token just granted is the one
 // being asked about.
 func (a *app) askGhLoginAhead() {
 	if a.remote.login.known || a.remote.loginAhead != nil {
 		return
 	}
-	ctx, env := a.probeContext(), os.Environ()
+	ctx, env := a.probeContext(), toolEnv("gh")
 	a.remote.loginAhead = startAhead(func() string { return probeGhLogin(ctx, env) })
 }
 

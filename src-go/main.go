@@ -984,19 +984,14 @@ func (a *app) cmdPassthrough(tool string, args []string) error {
 				return err
 			}
 		case "glab":
-			gave, elsewhere, err := a.glabTokenEnv(args)
-			if err != nil {
-				return err
-			}
+			gave, elsewhere := a.glabTokenEnv(args)
 			if elsewhere != "" && !a.opt.quiet {
 				a.out.errorf("not acting as the account: glab is pointed at %s, and the account's token is for %s", printable(elsewhere), a.acct.credHost)
 				warned = true
 			}
 			if gave {
 				args = glabScopeAuth(args, a.acct.credHost)
-				if err := a.glabRemoteHost(); err != nil {
-					return err
-				}
+				a.glabRemoteHost()
 			}
 		}
 	}

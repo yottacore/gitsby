@@ -65,6 +65,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - After `account apply`, a folder inside another account's folder no longer hands its token to the outer account's host. With a gitea.com account's folder inside a github.com one's, plain git and `raw git` there answered github.com with the gitea.com token. Each fragment now names its account's host, and the helper answers only for that host. Run `account apply` again to rewrite the fragments.
 
+- `gh` and `glab` no longer get the account's token through git. Gitsby put it in their variables for the whole run, so git had them too, and the helper `gh auth setup-git` writes handed an Enterprise token to any other Enterprise host git asked it about, a submodule's included. Now only `gh`, `glab` and `tea` get their own variable, and git gets Gitsby's own.
+
+- A github.com account no longer takes the token gh holds for the same login on an Enterprise host. Gitsby and the helper `account apply` writes asked gh for the login's token without naming a host, so gh answered for the host `GH_HOST` names. Run `account apply` again to rewrite the helper.
+
+- An account whose `host` was ignored, such as `https://gitea.example` or `gitea.example:3000`, no longer counts as a github.com one. Its token went to github.com, and `account apply` wrote a github.com helper with its token file. It now gets no token anywhere, and the identity block says why.
+
+- A URL with a `?` or `#` before an `@`, such as `http://127.0.0.1:8080?@ghe.example/x`, is read as git reads it, with the host ending at the `?` or `#`. `raw gh api` and `raw glab api` took the host after the `@` as the account's own and sent it the token.
+
+- `raw tea` in a GitHub account's folder no longer gets the GitHub token in `GH_TOKEN`. tea 0.11 and later use that one when `GITEA_INSTANCE_URL` is set and `GITEA_TOKEN` isn't.
+
 - `raw gh` and `pr` no longer hand the account's token to some other host. gh reads `GH_ENTERPRISE_TOKEN` for every Enterprise host and `GH_TOKEN` for github.com and every `*.ghe.com` host, so `raw gh auth token --hostname evil.example` printed the Enterprise token. A run that names another host, with `--hostname`, `-R`, a URL, `GH_HOST` or `GH_REPO`, now gets no token in gh's variables, and `raw gh` says so. git still gets the token for the account's own host.
 
 - `raw git -C <folder>` acts as the account of the repo git works in. It acted as the account of the folder it was started in, so a commit or push into another account's repo went out with the wrong name, email and token. The same goes for `--git-dir` and `GIT_DIR`, `raw tig -C`, and `raw lazygit -p`, `-w` and `-g`. With `GIT_DIR` set, every other command now takes its account from that repo too. `whoami`, `status` and the rest went by the folder they were run in.

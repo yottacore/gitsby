@@ -12,6 +12,7 @@ package main
 
 import (
 	"bytes"
+	neturl "net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -79,11 +80,11 @@ func parseRemoteText(url string) (ref remoteRef, viaSSH bool) {
 func splitRemoteURL(url string) (host, path string, viaSSH bool) {
 	switch {
 	case strings.HasPrefix(url, "ssh://"):
-		host, path, viaSSH = url[len("ssh://"):], "", true
+		return splitURLForm(url)
 	case isDrivePath(url):
 		return "", "", false // a Windows drive path, not 'host:path'
 	case len(url) > 0 && isLetter(url[0]) && strings.Contains(url, "://"):
-		host = url[strings.Index(url, "://")+3:]
+		return splitURLForm(url)
 	default:
 		// scp-like '[user@]host:path'. A colon at position zero is not a host.
 		colon := strings.Index(url, ":")
@@ -96,15 +97,31 @@ func splitRemoteURL(url string) (host, path string, viaSSH bool) {
 		}
 		return hostOrNothing(host, strings.TrimPrefix(path, "/"), viaSSH)
 	}
-	// The two '://' forms both have the path after the first slash.
-	if slash := strings.Index(host, "/"); slash >= 0 {
-		host, path = host[:slash], host[slash+1:]
+}
+
+// splitURLForm is splitRemoteURL for a '<scheme>://' URL. The host is net/url's,
+// which ends it at the first '/', '?' or '#', as git and curl do, so a '?@' or '#@'
+// can't put another host where the host check reads it (2026112017135807). The path
+// is the text after the host up to any query, as written. One net/url won't parse,
+// such as a port that isn't a number, gets its host cut at the same places.
+func splitURLForm(url string) (host, path string, viaSSH bool) {
+	viaSSH = strings.HasPrefix(url, "ssh://")
+	rest := url[strings.Index(url, "://")+3:]
+	authority := rest
+	if end := strings.IndexAny(rest, "/?#"); end >= 0 {
+		authority, path = rest[:end], rest[end:]
 	}
-	if at := strings.LastIndex(host, "@"); at >= 0 {
-		host = host[at+1:]
+	if end := strings.IndexAny(path, "?#"); end >= 0 {
+		path = path[:end]
 	}
-	if colon := strings.Index(host, ":"); colon >= 0 { // a port is not part of the name
-		host = host[:colon]
+	if u, err := neturl.Parse(url); err == nil && u.Host == authority[strings.LastIndex(authority, "@")+1:] {
+		host = u.Hostname()
+	} else {
+		host = authority[strings.LastIndex(authority, "@")+1:]
+		if colon := strings.LastIndex(host, ":"); colon >= 0 && !strings.HasSuffix(host, "]") { // a port is not part of the name
+			host = host[:colon]
+		}
+		host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
 	}
 	return hostOrNothing(host, strings.TrimPrefix(path, "/"), viaSSH)
 }
@@ -177,41 +194,42 @@ func (a *app) teaCommand() string {
 	})
 }
 
-// hostTokenEnv hands the account's token for this run's host to a git host CLI
-// other than gh, in the variables that CLI reads, with the host beside it. tea keeps
-// the token on that host; glab doesn't, so it goes through glabTokenEnv. A GitHub
-// token is never handed over: that one is gh's, which selectAccount puts in the
-// variable gh reads when gh is pointed nowhere else. Says whether there was a token to give.
-func (a *app) hostTokenEnv(tokenVar, hostVar string) (bool, error) {
-	if a.acct.tokenEnv == "" || isGitHubHost(a.acct.credHost) {
-		return false, nil
+// hostTokenEnv grants the run's token to a git host CLI other than gh, in the
+// variables that CLI reads, with the host beside it, in that CLI's environment
+// alone. tea keeps the token on that host; glab doesn't, so it goes through
+// glabTokenEnv. A GitHub token is never handed over: that one is gh's, which
+// selectAccount grants gh when gh is pointed nowhere else. Says whether there was a
+// token to give.
+func hostTokenEnv(tool, tokenVar, hostVar string) bool {
+	host, token := granted()
+	if token == "" || isGitHubHost(host) {
+		return false
 	}
-	if err := setEnv(tokenVar, os.Getenv(a.acct.tokenEnv)); err != nil {
-		return false, err
-	}
-	return true, setEnv(hostVar, "https://"+a.acct.credHost)
+	grantFor(tool, tokenVar+"="+token, hostVar+"=https://"+host)
+	return true
 }
 
 // glabTokenEnv is hostTokenEnv for glab, which sends GITLAB_TOKEN to every host it
 // talks to. GITLAB_API_HOST wins over any host glab is told, so pinning it keeps the
 // token on the account's host. A run pointed at some other host gets nothing and
 // runs as plain glab would; that host comes back so the caller can say so.
-func (a *app) glabTokenEnv(args []string) (gave bool, elsewhere string, err error) {
-	if a.acct.tokenEnv == "" || isGitHubHost(a.acct.credHost) {
-		return false, "", nil
+func (a *app) glabTokenEnv(args []string) (gave bool, elsewhere string) {
+	host, token := granted()
+	if token == "" || isGitHubHost(host) {
+		return false, ""
 	}
-	host := a.acct.credHost
 	named := glabNamedHosts(args)
 	if api := os.Getenv("GITLAB_API_HOST"); api != "" {
 		named = append(named, api)
 	}
 	if x := a.tokenElsewhere(named); x != "" {
-		return false, x, nil
+		return false, x
 	}
-	if gave, err = a.hostTokenEnv("GITLAB_TOKEN", "GITLAB_HOST"); !gave || err != nil {
-		return gave, "", err
+	if !hostTokenEnv("glab", "GITLAB_TOKEN", "GITLAB_HOST") {
+		return false, ""
 	}
-	return true, "", setEnv("GITLAB_API_HOST", host)
+	grantFor("glab", "GITLAB_API_HOST="+host)
+	return true, ""
 }
 
 // tokenElsewhere is the first of hosts that isn't the one this run's token is for,
@@ -361,15 +379,12 @@ func glabScopeAuth(args []string, host string) []string {
 // name (ssh.gitlab.gnome.org). glab takes a repo only from a remote whose host is
 // GITLAB_HOST, so GITLAB_HOST names origin's host and GITLAB_API_HOST sends the API
 // calls to the account's. 'pr' needs none of this, since it passes -R.
-func (a *app) glabRemoteHost() error {
+func (a *app) glabRemoteHost() {
 	remote, host := a.originHost(), a.acct.credHost
 	if strings.EqualFold(remote, host) || !strings.EqualFold(serviceHost(remote), host) {
-		return nil
+		return
 	}
-	if err := setEnv("GITLAB_HOST", "https://"+remote); err != nil {
-		return err
-	}
-	return setEnv("GITLAB_API_HOST", host)
+	grantFor("glab", "GITLAB_HOST=https://"+remote, "GITLAB_API_HOST="+host)
 }
 
 // teaVersionRE reads 'tea --version', once ansiRE has taken the bold off the number.
@@ -399,12 +414,9 @@ func teaVersionReadsEnv(text string) bool {
 // first, so only that one being somebody else is a problem. -q can't warn, so it
 // refuses. Couldn't tell is not somebody else. Says whether it warned.
 func (a *app) teaAsAccount(cli string) (bool, error) {
-	// Read before we set it, so this is the caller's own env login.
+	// The caller's own env login, since the grant never sets ours here.
 	callerEnvLogin := os.Getenv("GITEA_INSTANCE_URL") != ""
-	gave, err := a.hostTokenEnv("GITEA_TOKEN", "GITEA_INSTANCE_URL")
-	if err != nil {
-		return false, err
-	}
+	gave := hostTokenEnv("tea", "GITEA_TOKEN", "GITEA_INSTANCE_URL")
 	want := a.accountWho(a.acct.credHost)
 	if want == "" || !a.accountDecidedSomething() || (!gave && callerEnvLogin) || (gave && teaReadsEnv(cli)) {
 		return false, nil

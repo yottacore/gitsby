@@ -485,9 +485,11 @@ func (a *app) cmdAccountList() {
 	}
 	a.out.clean("")
 	a.out.clean("Accounts:")
-	logins := make([]string, 0, len(names))
+	logins := make([]ghUser, 0, len(names))
 	for _, name := range names {
-		logins = append(logins, a.cfg.value(name, "ghAccount"))
+		if host := a.cfg.hostOf(name); isGitHubHost(host) {
+			logins = append(logins, ghUser{host, a.cfg.value(name, "ghAccount")})
+		}
 	}
 	a.askGhTokens(logins)
 	for _, name := range names {
@@ -554,7 +556,7 @@ func (a *app) showAccount(name string, isHere bool) {
 	}
 	// Say where a token would come from, never what it is.
 	tokenFrom := "(none)"
-	if ghWho != "" && a.ghTokenFor(ghWho) != "" {
+	if host := a.cfg.hostOf(name); ghWho != "" && isGitHubHost(host) && a.ghTokenFor(host, ghWho) != "" {
 		tokenFrom = "gh's own store"
 	} else if readTokenFile(a.cfg.value(name, "tokenFile")) != "" {
 		tokenFrom = a.cfg.value(name, "tokenFile")
@@ -692,24 +694,31 @@ func (a *app) fragmentKeys(name string) []fragmentKey {
 	if sshKey := a.cfg.value(name, "sshKey"); sshKey != "" {
 		sshCommand = sshKeyCommand(sshKey)
 	}
+	host, login := a.cfg.hostOf(name), a.cfg.loginOf(name)
+	ghAccount, tokenFile := a.cfg.value(name, "ghAccount"), expandHome(a.cfg.value(name, "tokenFile"))
+	if host == "" {
+		// Its host was ignored, so its token is for no host, and the token file
+		// fallback would read an unset gitsby.host as GitHub's.
+		login, ghAccount, tokenFile = "", "", ""
+	}
 	return []fragmentKey{
 		{key: "user.name", value: a.cfg.value(name, "name")},
 		{key: "user.email", value: a.cfg.value(name, "email")},
 		// The host the token file and ghAccount are for. Every account sets it, so the
 		// innermost account's wins, and a helper for any other host reads it as not
 		// its own. Lower case, since the helper compares it to the host git asks about.
-		{key: "gitsby.host", value: strings.ToLower(a.cfg.hostOf(name))},
-		{key: "gitsby.ghAccount", value: a.cfg.value(name, "ghAccount")},
+		{key: "gitsby.host", value: strings.ToLower(host)},
+		{key: "gitsby.ghAccount", value: ghAccount},
 		// Which account plain git asks for over https, so a credential manager looks up
 		// that account's entry and not any for the host.
-		{key: "credential.https://" + a.cfg.hostOf(name) + ".username", value: a.cfg.loginOf(name)},
+		{key: "credential.https://" + host + ".username", value: login},
 		// Expanded, since git knows none of the home spellings the accounts file takes.
-		{key: "gitsby.ghTokenFile", value: expandHome(a.cfg.value(name, "tokenFile"))},
+		{key: "gitsby.ghTokenFile", value: tokenFile},
 		// gh's own helper answers only for its active account, so plain git over
 		// https had nothing to push with in another account's folder. Added after
 		// any helper the global config already lists, so a credential manager set
 		// up there is still asked first.
-		{key: "credential.https://" + a.cfg.hostOf(name) + ".helper", value: a.fragmentHelperFor(name)},
+		{key: "credential.https://" + host + ".helper", value: a.fragmentHelperFor(name)},
 		{key: "core.sshCommand", value: sshCommand},
 	}
 }
@@ -844,11 +853,13 @@ func (a *app) writeAccountFragment(dir, file string, keys []fragmentKey) (err er
 }
 
 // fragmentHelperFor is an account's helper, or nothing for one with no way to a
-// token on its own host, such as an ssh-only account: a helper that can never
-// answer only costs every https request a few processes.
+// token on its own host, such as an ssh-only account or one whose host was
+// ignored: a helper that can never answer only costs every https request a few
+// processes.
 func (a *app) fragmentHelperFor(name string) string {
-	onGitHub := isGitHubHost(a.cfg.hostOf(name))
-	if a.cfg.value(name, "tokenFile") == "" && (!onGitHub || a.cfg.value(name, "ghAccount") == "") {
+	host := a.cfg.hostOf(name)
+	onGitHub := isGitHubHost(host)
+	if host == "" || a.cfg.value(name, "tokenFile") == "" && (!onGitHub || a.cfg.value(name, "ghAccount") == "") {
 		return ""
 	}
 	return fragmentHelper(onGitHub)
@@ -873,7 +884,7 @@ func fragmentHelper(onGitHub bool) string {
 	if onGitHub {
 		steps = append(steps,
 			`u=$(git config --get gitsby.ghAccount)`,
-			`test -z "$u" || t=$(gh auth token --user "$u" 2>/dev/null)`)
+			`test -z "$u" || t=$(gh auth token --user "$u" --hostname "$h" 2>/dev/null)`)
 	}
 	steps = append(steps,
 		`if test -z "$t"; then f=$(git config --global --includes --get gitsby.ghTokenFile); case $f in /*|?:*) ;; *) f= ;; esac; test -r "$f" && t=$(tr -d '[:space:]' < "$f"); fi`,

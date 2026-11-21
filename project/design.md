@@ -159,10 +159,12 @@ The Bash and PowerShell files were ports of each other, and were kept in step fo
 
 - An account's credentials are only credentials where that account banks.
 	- Accounts gained `host` (defaulting to `github.com`, which is what every config written before the key existed meant) and `user`. If an account's host is not the host `origin` is on, nothing is applied and the identity block names both hosts.
-	- A non-GitHub token is exported under its own variable, never as `GH_TOKEN`: `gh` reads that one, and every child process would otherwise inherit a credential for a host `gh` would try to use it on.
+	- A run holds one token grant: a host and its token. None of it goes into gitsby's own environment, which every child inherits. Each child gets only its part: git, and the tools that run git, get gitsby's own variable, which only the helper gitsby sets reads. `gh`, `glab` and `tea` each get their own variable in their own environment. `gh` or `glab` variables in git's environment went on to any other host through the helpers `gh auth setup-git` and glab write.
+	- A non-GitHub token never goes in `GH_TOKEN`: `gh` reads that one, and would try it on a host it isn't for.
 	- A GitHub token goes where `gh` reads it for that host: `GH_TOKEN` for github.com and a `*.ghe.com` tenant, `GH_ENTERPRISE_TOKEN` for an Enterprise Server host that `GH_HOST` names, since `gh` never reads `GH_TOKEN` there. The credential helper reads gitsby's own variable on every host, so git gets the token even when `gh` doesn't.
 	- `gh` and `glab` send their token to any host they're pointed at, so neither gets one while its command line or environment names another host. Every hand-over asks one host check, and the helper `account apply` writes makes the same check in sh, against the host its fragment names. The suite walks every path that hands out a token, pointed at another host.
 	- The credential helper is written for the host actually being authenticated to. `user` exists because Gitea checks the username an HTTPS push presents where GitHub ignores it.
+	- Every host is read from the text through `net/url`, which ends it at the first `/`, `?` or `#`, as git does. Every `gh auth token` names `--hostname`, since with none `gh` answers for the host `GH_HOST` names. An account whose `host` was ignored names no host, so it gets no token anywhere.
 	- Neither the token nor the username is interpolated into the helper - both are read from the environment when it runs. The helper is a string Git hands to a shell, and the login reaching it can come from `GITSBY_ACCOUNT`, from a git config key, or from the config file, none of which is a place to accept shell. Interpolating the login put whatever those said inside the command Git runs; the environment removes the class rather than filtering it.
 
 The rule for every path that hands out a token. The token goes only to the host in the last column. A new path gets a row here and a case in the suite's walk.
@@ -171,9 +173,10 @@ The rule for every path that hands out a token. The token goes only to the host 
 | :-- | :-- | :--
 | Plain git after `account apply` | the fragment's helper | the host the innermost fragment's `gitsby.host` names, read from your global config
 | gitsby's own runs, `raw git`, `raw tig`, `raw lazygit` | git, through the helper gitsby sets | the host the run works with, `origin`'s or a clone's, and only when the account's `host` is that one
-| `raw gh`, and gitsby's own `gh` calls | gh, from `GH_TOKEN` or `GH_ENTERPRISE_TOKEN` | that same host, and only while no `--hostname`, `-R`, URL, `GH_HOST` or `GH_REPO` names another
-| `raw glab`, and `pr` on GitLab | glab, from `GITLAB_TOKEN` | that same host, with `GITLAB_API_HOST` pinned to it, and only while nothing names another
-| `raw tea` | tea, from `GITEA_TOKEN` | the host `GITEA_INSTANCE_URL` names, which is that same host
+| `raw gh`, and gitsby's own `gh` calls | gh, from `GH_TOKEN` or `GH_ENTERPRISE_TOKEN` in its own environment | that same host, and only while no `--hostname`, `-R`, URL, `GH_HOST` or `GH_REPO` names another
+| `raw glab`, and `pr` on GitLab | glab, from `GITLAB_TOKEN` in its own environment | that same host, with `GITLAB_API_HOST` pinned to it, and only while nothing names another
+| `raw tea` | tea, from `GITEA_TOKEN` in its own environment | the host `GITEA_INSTANCE_URL` names, which is that same host
+| A `gh` or `glab` helper git starts, from `gh auth setup-git` or glab | nothing from gitsby, since no `gh` or `glab` variable is in git's environment | only what plain git would send
 | `gitsby.ghTokenFile` set by hand or by `account apply` | gitsby's own runs | the host `gitsby.host` names, or a GitHub host where it's unset
 
 - There is no bare `commit`, and no bare `pull` that skips the commit. Both were escape hatches around the workflow the tool exists to enforce.

@@ -238,6 +238,9 @@ func toolPath(name string) (string, error) {
 
 func named(cmd *exec.Cmd, name string, missing error) *exec.Cmd {
 	cmd.Args[0] = name
+	if grant := grantEnv(name); len(grant) > 0 {
+		cmd.Env = append(os.Environ(), grant...)
+	}
 	if missing != nil {
 		// exec.Command's own look would run the entry that is us.
 		cmd.Err = missing
@@ -408,6 +411,7 @@ func batchName(path string) bool {
 func (a *app) handover(name, path string, args []string) error {
 	cmd := exec.Command(path, args...)
 	cmd.Args[0] = name
+	cmd.Env = toolEnv(name)
 	if err := stdio(cmd).Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {

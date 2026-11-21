@@ -92,13 +92,14 @@ func TestAskGhTokensAsksEachLoginOnce(t *testing.T) { // [ddg76]
 	asked := filepath.Join(t.TempDir(), "asked")
 	fakeTool(t, "gh", `echo "$4" >> '`+asked+`'; case "$4" in two) echo tok_two ;; *) exit 1 ;; esac`)
 	a := newApp(newPrinter())
-	a.askGhTokens([]string{"one", "two", "one", "", "three"})
+	h := "github.com"
+	a.askGhTokens([]ghUser{{h, "one"}, {h, "two"}, {h, "one"}, {h, ""}, {h, "three"}})
 	for who, want := range map[string]string{"one": "", "two": "tok_two", "three": ""} {
-		if got, known := a.remote.tokens[who]; !known || got != want {
+		if got, known := a.remote.tokens[ghUser{h, who}]; !known || got != want {
 			t.Errorf("token for %s = %q (known %v), want %q", who, got, known, want)
 		}
 	}
-	if got := a.ghTokenFor("two"); got != "tok_two" {
+	if got := a.ghTokenFor(h, "two"); got != "tok_two" {
 		t.Errorf("ghTokenFor(two) = %q, want tok_two", got)
 	}
 	raw, err := os.ReadFile(asked)

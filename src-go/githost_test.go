@@ -11,6 +11,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -392,22 +393,35 @@ func TestTeaVersionReadsEnv(t *testing.T) { // [ddk62]
 // tea falls back to GH_TOKEN and glab sends its token to whatever host it is
 // told, so a GitHub token handed on would go to somebody else's server.
 func TestHostTokenEnvKeepsGitHubTokens(t *testing.T) { // [ddk63]
-	t.Setenv("GITEA_TOKEN", "")
-	t.Setenv("GITEA_INSTANCE_URL", "")
-	t.Setenv("GH_TOKEN", "tok_gh")
-	a := newApp(newPrinter())
-	a.acct.tokenEnv, a.acct.credHost = "GH_TOKEN", "github.com"
-	if gave, err := a.hostTokenEnv("GITEA_TOKEN", "GITEA_INSTANCE_URL"); gave || err != nil || os.Getenv("GITEA_TOKEN") != "" {
-		t.Fatalf("a GitHub token was handed on: gave=%v err=%v", gave, err)
+	testGrant(t, "github.com", "tok_gh")
+	if gave := hostTokenEnv("tea", "GITEA_TOKEN", "GITEA_INSTANCE_URL"); gave || grantVar("tea", "GITEA_TOKEN") != "" {
+		t.Fatalf("a GitHub token was handed on: gave=%v", gave)
 	}
-	t.Setenv("GITSBY_HOST_TOKEN", "tok_gitea")
-	a.acct.tokenEnv, a.acct.credHost = "GITSBY_HOST_TOKEN", "git.example.test"
-	if gave, err := a.hostTokenEnv("GITEA_TOKEN", "GITEA_INSTANCE_URL"); !gave || err != nil {
-		t.Fatalf("a Gitea token was not handed on: gave=%v err=%v", gave, err)
+	testGrant(t, "git.example.test", "tok_gitea")
+	if gave := hostTokenEnv("tea", "GITEA_TOKEN", "GITEA_INSTANCE_URL"); !gave {
+		t.Fatal("a Gitea token was not handed on")
 	}
-	if os.Getenv("GITEA_TOKEN") != "tok_gitea" || os.Getenv("GITEA_INSTANCE_URL") != "https://git.example.test" {
-		t.Errorf("got GITEA_TOKEN=%q GITEA_INSTANCE_URL=%q", os.Getenv("GITEA_TOKEN"), os.Getenv("GITEA_INSTANCE_URL"))
+	if grantVar("tea", "GITEA_TOKEN") != "tok_gitea" || grantVar("tea", "GITEA_INSTANCE_URL") != "https://git.example.test" {
+		t.Errorf("got GITEA_TOKEN=%q GITEA_INSTANCE_URL=%q", grantVar("tea", "GITEA_TOKEN"), grantVar("tea", "GITEA_INSTANCE_URL"))
 	}
+}
+
+// testGrant gives this test a grant, and takes it back after.
+func testGrant(t *testing.T, host, token string) {
+	t.Helper()
+	setGrant(host, token)
+	t.Cleanup(func() { setGrant("", "") })
+}
+
+// grantVar is the value tool gets for key from the grant, the last one given.
+func grantVar(tool, key string) string {
+	value := ""
+	for _, kv := range grantEnv(tool) {
+		if k, v, _ := strings.Cut(kv, "="); k == key {
+			value = v
+		}
+	}
+	return value
 }
 
 // 'glab auth status' with no host walks every host glab knows, and gitlab.com
@@ -480,23 +494,24 @@ func TestGlabTokenEnvStaysHome(t *testing.T) { // [df4w5]
 		{"repo clone https://other.test/a/b", "", false, "other.test"},
 		{"api user", "gitlab.com", false, "gitlab.com"},
 	} {
-		t.Setenv("GITSBY_HOST_TOKEN", "tok_gl")
-		t.Setenv("GITLAB_TOKEN", "before")
-		t.Setenv("GITLAB_HOST", "before")
 		t.Setenv("GITLAB_API_HOST", c.callerAPI)
+		testGrant(t, host, "tok_gl")
 		a := newApp(newPrinter())
-		a.acct.tokenEnv, a.acct.credHost = "GITSBY_HOST_TOKEN", host
-		gave, elsewhere, err := a.glabTokenEnv(strings.Fields(c.args))
-		if err != nil || gave != c.gave || elsewhere != c.elsewhere {
-			t.Errorf("%q api=%q: gave=%v elsewhere=%q err=%v, want %v %q", c.args, c.callerAPI, gave, elsewhere, err, c.gave, c.elsewhere)
+		a.acct.credHost = host
+		gave, elsewhere := a.glabTokenEnv(strings.Fields(c.args))
+		if gave != c.gave || elsewhere != c.elsewhere {
+			t.Errorf("%q api=%q: gave=%v elsewhere=%q, want %v %q", c.args, c.callerAPI, gave, elsewhere, c.gave, c.elsewhere)
 			continue
 		}
-		tok, gl, api := os.Getenv("GITLAB_TOKEN"), os.Getenv("GITLAB_HOST"), os.Getenv("GITLAB_API_HOST")
+		tok, gl, api := grantVar("glab", "GITLAB_TOKEN"), grantVar("glab", "GITLAB_HOST"), grantVar("glab", "GITLAB_API_HOST")
 		if gave && (tok != "tok_gl" || gl != "https://"+host || api != host) {
 			t.Errorf("%q: GITLAB_TOKEN=%q GITLAB_HOST=%q GITLAB_API_HOST=%q", c.args, tok, gl, api)
 		}
-		if !gave && (tok != "before" || gl != "before" || api != c.callerAPI) {
-			t.Errorf("%q: env changed with no token given: %q %q %q", c.args, tok, gl, api)
+		if !gave && (tok != "" || gl != "" || api != "") {
+			t.Errorf("%q: glab granted variables with no token given: %q %q %q", c.args, tok, gl, api)
+		}
+		if os.Getenv("GITLAB_TOKEN") == "tok_gl" {
+			t.Errorf("%q: GITLAB_TOKEN went into the process's own environment", c.args)
 		}
 	}
 }
@@ -614,20 +629,17 @@ func TestServiceHost(t *testing.T) { // [de9k6]
 func TestGlabRemoteHost(t *testing.T) { // [dea3n]
 	for _, c := range []struct{ remote, host, wantHost, wantAPI string }{
 		{"ssh.gitlab.example.test", "gitlab.example.test", "https://ssh.gitlab.example.test", "gitlab.example.test"},
-		{"gitlab.example.test", "gitlab.example.test", "before", ""},
-		{"GitLab.example.test", "gitlab.example.test", "before", ""},
-		{"ssh.other.test", "gitlab.example.test", "before", ""},
-		{"", "gitlab.example.test", "before", ""},
+		{"gitlab.example.test", "gitlab.example.test", "", ""},
+		{"GitLab.example.test", "gitlab.example.test", "", ""},
+		{"ssh.other.test", "gitlab.example.test", "", ""},
+		{"", "gitlab.example.test", "", ""},
 	} {
-		t.Setenv("GITLAB_HOST", "before")
-		t.Setenv("GITLAB_API_HOST", "")
+		testGrant(t, c.host, "tok_gl")
 		a := newApp(newPrinter())
 		a.acct.credHost = c.host
 		a.git.originRef.set(remoteRef{host: c.remote, owner: "grp", name: "proj"})
-		if err := a.glabRemoteHost(); err != nil {
-			t.Fatal(err)
-		}
-		if got, api := os.Getenv("GITLAB_HOST"), os.Getenv("GITLAB_API_HOST"); got != c.wantHost || api != c.wantAPI {
+		a.glabRemoteHost()
+		if got, api := grantVar("glab", "GITLAB_HOST"), grantVar("glab", "GITLAB_API_HOST"); got != c.wantHost || api != c.wantAPI {
 			t.Errorf("%q: GITLAB_HOST=%q GITLAB_API_HOST=%q, want %q %q", c.remote, got, api, c.wantHost, c.wantAPI)
 		}
 	}
@@ -720,5 +732,130 @@ func TestFixKeysAreSetFields(t *testing.T) { // [df366]
 	}
 	if seen == 0 {
 		t.Fatal("no 'account set <name> <key>' literal found; the pattern no longer matches the source")
+	}
+}
+
+// One grant per run: each host CLI gets its own variable in its own environment,
+// the tools that run git get the helper's, and nothing goes into the process's own.
+// gh's variable in git's environment went on to any Enterprise host through the
+// helper 'gh auth setup-git' writes (2026112017135870).
+func TestGrantGoesOnlyToItsTool(t *testing.T) { // [dfjxb]
+	testGrant(t, "ghe.example.test", "tok_grant")
+	grantFor("gh", "GH_ENTERPRISE_TOKEN=tok_grant")
+	grantFor("glab", "GITLAB_TOKEN=tok_grant")
+	grantFor("tea", "GITEA_TOKEN=tok_grant")
+	own := map[string]string{"gh": "GH_ENTERPRISE_TOKEN", "glab": "GITLAB_TOKEN", "tea": "GITEA_TOKEN"}
+	for _, tool := range []string{"git", "tig", "lazygit", "gh", "glab", "tea", "tea-cli", "/usr/bin/git", `C:\Git\cmd\GIT.EXE`, "ssh", "sh", "tput"} {
+		key := toolKey(tool)
+		for _, v := range []string{"GH_TOKEN", "GH_ENTERPRISE_TOKEN", "GITLAB_TOKEN", "GITEA_TOKEN", hostTokenVar} {
+			want := own[key] == v || (v == hostTokenVar && gitRunners[key])
+			if got := grantVar(tool, v) == "tok_grant"; got != want {
+				t.Errorf("%s gets %s: %v, want %v", tool, v, got, want)
+			}
+		}
+	}
+	for _, kv := range os.Environ() {
+		if strings.Contains(kv, "tok_grant") {
+			t.Errorf("the grant is in the process's own environment: %s", kv)
+		}
+	}
+}
+
+// The spawn sites, run: git gets the helper's variable and none of gh's or glab's,
+// also under remoteEnv, and gh gets its own.
+func TestGrantReachesChildren(t *testing.T) { // [dfjxc]
+	show := `echo "ghe=${GH_ENTERPRISE_TOKEN:-} gl=${GITLAB_TOKEN:-} host=${GITSBY_HOST_TOKEN:-}"`
+	fakeTool(t, "git", show)
+	fakeTool(t, "gh", show)
+	testGrant(t, "ghe.example.test", "tok_grant")
+	grantFor("gh", "GH_ENTERPRISE_TOKEN=tok_grant")
+	grantFor("glab", "GITLAB_TOKEN=tok_grant")
+	if got := runOut("git"); got != "ghe= gl= host=tok_grant" {
+		t.Errorf("git got %q", got)
+	}
+	cmd := toolCmd("git")
+	cmd.Env = newApp(newPrinter()).remoteEnv()
+	if out, _ := cmd.Output(); strings.TrimSpace(string(out)) != "ghe= gl= host=tok_grant" {
+		t.Errorf("git under remoteEnv got %q", out)
+	}
+	if got := runOut("gh"); got != "ghe=tok_grant gl= host=tok_grant" {
+		t.Errorf("gh got %q", got)
+	}
+	if got := probeGhLogin(context.Background(), toolEnv("gh")); got != "ghe=tok_grant gl= host=tok_grant" {
+		t.Errorf("the gh login probe got %q", got)
+	}
+}
+
+// The host ends at the first '/', '?' or '#', as net/url and git read it, so a '?@'
+// or '#@' can't put the account's host where the token check reads it
+// (2026112017135807).
+func TestSplitRemoteURLHostEnds(t *testing.T) { // [dfjxd]
+	for _, c := range []struct{ in, host, path string }{
+		{"http://127.0.0.1:8080?@ghe.example.test/x", "127.0.0.1", ""},
+		{"http://127.0.0.1:8080#@ghe.example.test/x", "127.0.0.1", ""},
+		{"https://evil.test?@github.com/acme/proj.git", "evil.test", ""},
+		{"https://evil.test/?@github.com/acme/proj.git", "evil.test", ""},
+		{"https://user@github.com/acme/proj.git", "github.com", "acme/proj.git"},
+		{"https://a@b@github.com/acme/proj", "github.com", "acme/proj"},
+		{"https://github.com/acme/proj.git?x=1#y", "github.com", "acme/proj.git"},
+		{"ssh://git@[::1]:22/acme/proj.git", "::1", "acme/proj.git"},
+		{"ssh://git@host.test:owner/proj.git", "host.test", "proj.git"},
+		{"ssh://git@host.test?@github.com/acme/proj.git", "host.test", ""},
+		{"git@github.com:acme/proj.git", "github.com", "acme/proj.git"},
+	} {
+		if host, path, _ := splitRemoteURL(c.in); host != c.host || path != c.path {
+			t.Errorf("%q -> %q %q, want %q %q", c.in, host, path, c.host, c.path)
+		}
+	}
+	a := newApp(newPrinter())
+	a.acct.credHost = "ghe.example.test"
+	for _, arg := range []string{"http://127.0.0.1:9?@ghe.example.test/x", "http://127.0.0.1:9#@ghe.example.test/x"} {
+		if x := a.tokenElsewhere(ghNamedHosts([]string{"api", arg})); x != "127.0.0.1" {
+			t.Errorf("gh api %q: elsewhere %q, want 127.0.0.1", arg, x)
+		}
+		if x := a.tokenElsewhere(glabNamedHosts([]string{"api", arg})); x != "127.0.0.1" {
+			t.Errorf("glab api %q: elsewhere %q, want 127.0.0.1", arg, x)
+		}
+	}
+}
+
+// An account whose host was ignored names no host its token is for, so it gets no
+// token and no helper anywhere, rather than github.com's (2026112017135838).
+func TestIgnoredHostBanksNowhere(t *testing.T) { // [dfjxe]
+	file := filepath.ToSlash(filepath.Join(t.TempDir(), "gt.tok"))
+	for _, host := range []string{"https://gitea.example.test", "gitea.example.test:3000"} {
+		a := newApp(newPrinter())
+		a.cfg = writeConfig(t, "account: bad\n\thost: "+host+"\n\tuser: gtuser\n\ttokenfile: "+file+"\n\naccount: good\n\ttokenfile: "+file+"\n")
+		if got := a.cfg.hostOf("bad"); got != "" {
+			t.Errorf("%s: hostOf = %q, want nothing", host, got)
+		}
+		if got := a.cfg.hostOf("good"); got != "github.com" {
+			t.Errorf("%s: an account with no host is %q, want github.com", host, got)
+		}
+		a.acct.name = "bad"
+		if a.accountServesHost("github.com") {
+			t.Errorf("%s: the account serves github.com", host)
+		}
+		for _, k := range a.fragmentKeys("bad") {
+			if k.value != "" && (strings.HasPrefix(k.key, "credential.") || strings.HasPrefix(k.key, "gitsby.")) {
+				t.Errorf("%s: the fragment sets %s = %q", host, k.key, k.value)
+			}
+		}
+	}
+}
+
+// gh answers 'auth token --user' for GH_HOST's host when none is named, so a
+// github.com account took the token gh holds for the same login on Enterprise
+// (2026112017135855).
+func TestGhTokenAskedForItsHost(t *testing.T) { // [dfjxf]
+	fakeTool(t, "gh", `echo "$*"`)
+	if got := probeGhToken("github.com", "jim"); got != "auth token --user jim --hostname github.com" {
+		t.Errorf("asked %q", got)
+	}
+	if got := probeGhToken("", "jim"); got != "" {
+		t.Errorf("asked with no host: %q", got)
+	}
+	if !strings.Contains(fragmentHelper(true), `gh auth token --user "$u" --hostname "$h"`) {
+		t.Error("the fragment helper asks gh with no host")
 	}
 }

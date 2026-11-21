@@ -189,7 +189,7 @@ func sshTakesOptions(program string) bool {
 // it stands: a GIT_SSH_COMMAND the caller chose, one only a shell can read, PuTTY's,
 // and GIT_SSH, which any GIT_SSH_COMMAND would outrank.
 func (a *app) remoteEnv() []string {
-	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	env := append(toolEnv("git"), "GIT_TERMINAL_PROMPT=0")
 	env = append(env, httpStallEnv()...)
 	if a.userSSHCommand {
 		return env

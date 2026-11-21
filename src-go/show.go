@@ -453,6 +453,11 @@ func (a *app) showAccountOtherHost() {
 		a.showAccountFix("Declare an account for "+host+" in "+a.accountFileRef()+
 			", then name that one here. To start one:",
 			"  "+meName+" account set <name> host "+host)
+	case a.cfg.hostIgnored(a.acct.name):
+		a.showAccountNote("Why", "That block's host isn't a plain host name, so it was ignored, and a block with no host its token is for gets no token anywhere.")
+		a.showAccountKept()
+		a.showAccountFix("Set its host to a plain host name, such as this repo's:",
+			"  "+meName+" account set "+a.acct.name+" host "+host)
 	case a.cfg.value(a.acct.name, "host") == "":
 		// An account that never named a host is TAKEN to be a github.com one, for the
 		// configs written before the key existed. Said in the same words as a host
