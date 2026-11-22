@@ -33,6 +33,40 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- The warning for a submodule that is behind names no way to commit a move back made on purpose
+	- ID: 2026112118464455
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261121-184644
+	- Opened by:
+	- Related IDs: 2026112112175066, 2026112118463121
+	- Steps to reproduce [Bug]: With a submodule level with origin, move it back on purpose with `git -C <submodule> checkout HEAD~1`, then run `gitsby pullcom`.
+	- Incorrect behavior [Bug]: The submodule is left out and the run says Nothing to commit. The warning names only `git submodule update`, which undoes the move. It also says the commit would have undone "that move", though no pull moved anything.
+	- Expected behavior [Bug]: The submodule is still left out, since a checkout a pull left behind and a move back look the same. The warning also says how to record the older commit: `git add <folder>`, then the same command with `--staged`. Its wording fits both cases.
+	- Reproduced [Bug]: 2026-11-21 on b23. `git add child`, then `gitsby -q pullcom --staged`, commits the move back.
+	- Possible cause [Bug]: The warning in cmdCommit (mutate.go) was written for the pull case only.
+	- Decisions: Answered 2026-11-21: keep leaving it out, and name the way through. Committing a move back without a word is the High bug 2026112112175066 fixed, and the two cases can't be told apart once a run has ended. Goes with 2026112118463121, at the same site.
+	- Origin: 2cdbb74, the fix of 2026112112175066. Confirmed. Found while answering its Check: entry.
+
+- With submodule.recurse set, the pull no longer updates submodules
+	- ID: 2026112118463121
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261121-184631
+	- Opened by:
+	- Related IDs: 2026112112175066
+	- Steps to reproduce [Bug]: In a clone with a submodule, run `git config submodule.recurse true`. Have origin's dev move the submodule to a newer commit, then run `gitsby -q pullcom` on dev.
+	- Incorrect behavior [Bug]: The submodule's checkout stays on the old commit, and the run warns that it was left out of the commit. The warning comes back on every run until `git submodule update` is run by hand. Plain `git pull --ff-only` with that setting updates the checkout, and so did v2.1.0, which ran `git pull`. `br switch` still updates it, through `git checkout`.
+	- Expected behavior [Bug]: With `submodule.recurse` true, each merge that stands in for a pull is followed by `git submodule update --recursive --checkout`, as `git pull` does, and the plan lists it. A failed update warns and the run goes on, since the commit already leaves out a submodule that is behind. Without the setting nothing changes, and a repo with no `.gitmodules` costs no extra process.
+	- Reproduced [Bug]: 2026-11-21 on b23, git 2.51, local bare repos. Confirmed.
+	- Possible cause [Bug]: f61adb6 made the pull step a `git merge --ff-only`, and `git merge` never reads `submodule.recurse`. Only an upstream on another remote still runs `git pull`.
+	- Decisions: Answered 2026-11-21: follow the setting, rather than always update or never update. The setting is the user's own request for it, so the detached checkout is what plain git already gives them, and gitsby then agrees with `git pull`, v2.1.0 and its own `br switch`. Without the setting the checkout is left alone, per 2026112112175066.
+	- Origin: f61adb6, Go port. Confirmed. Found while answering the Check: entry of 2026112112175066.
+
 - pr ok takes the PR's target from its head's name, not the base the git host gives it
 	- ID: 2026112113223086
 	- Type: Bug
@@ -604,7 +638,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [dfkzx] to [dfkzz], [dfm00], [dfm01], [dfm09] to [dfm0b].
 	- Verified: [dfm00], [dfkzx], [dfkzy] fail on the build before the fix and pass with it. [dfkzz] passed there before its bump condition was added, which is unverified on that build. [dfm09] and [dfm0a] fail with only the commit fixed and pass with treeDirty fixed. [dfm01] and [dfm0b] pass on both, as guards. [dfh4h] fails on a git status call without --untracked-files after its pattern was widened to see '-c' options. The quick gate with every area passed: test.bash 2358/0, fuzz 310/0, parity 31/0, spawn counts. gosec 37, as before.
 	- Swept: git add runs only in cmdCommit. Every pre-staging check goes through treeDirty: commitPending (directPush, releasePreflight), br switch's dirty refusal and pr ok's refusal. pr ok's isn't run here, since it needs a git host. The plan's status block still lists the submodule, as it does a dirty one.
-	- Decisions: Left out with a warning rather than updated, since the submodule's checkout is its own, an update detaches a branch checked out there, and it may need a fetch the run already saw fail. git merge ignores submodule.recurse, so that setting isn't honored either. A move forward or sideways is still committed, since it may be the user's. A submodule lacking the recorded commit counts as behind: work built on that commit would contain it. The unstage shows as a step though the plan can't list it. treeDirty passes -c status.relativePaths=false, since v2 paths follow it, and [dfh4h]'s pattern now sees calls with -c options.
+	- Decisions: Left out with a warning rather than updated, since the submodule's checkout is its own, an update detaches a branch checked out there, and it may need a fetch the run already saw fail. git merge ignores submodule.recurse, so that setting isn't honored either. A move forward or sideways is still committed, since it may be the user's. A submodule lacking the recorded commit counts as behind: work built on that commit would contain it. The unstage shows as a step though the plan can't list it. treeDirty passes -c status.relativePaths=false, since v2 paths follow it, and [dfh4h]'s pattern now sees calls with -c options. Check answered 2026-11-21: leaving it out stays the default, as plain git leaves a submodule alone after a pull. With submodule.recurse set, `git pull` and v2.1.0 update it, so the pull follows that setting in 2026112118463121. The warning names how to commit a move back made on purpose in 2026112118464455.
 	- Branch: nov21-2026112112175066
 	- Commit: 2cdbb74, deba756
 	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sibling checks are swept.
