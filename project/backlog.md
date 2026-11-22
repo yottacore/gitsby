@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - On Windows, repo clone into a rooted or drive-relative folder takes its account from the wrong folder
 	- ID: 2026112214033583
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261122-140335
@@ -53,10 +53,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions: filepath.Abs rather than 2026112017135400's joinDir. joinDir starts from an earlier -C, while a clone starts from the current folder, which is what Abs reads. Abs also takes D:foo from drive D's current folder, which joinDir leaves as typed.
 	- Test case: Go [dfnff] TestAbsDirFollowsChdir.
 	- Verified: [dfnff] compares absDir with a chdir to each folder. The Windows test build under wine failed 5 cases before the fix and passes after. On Linux it passes before and after, since no path there has a drive or a bare root. The other Windows Go test failures under wine are the same 5 before and after. Quick run of every area passed: test.bash 2408/0, fuzz 310/0, parity 31/0. gosec 37, as before.
-	- Needs external testing: vm925w: Go [dfnff] in the Windows Go tests, and the 2 steps above with real git, on 1678410 or later.
 	- Swept: absDir's one caller, repo clone's account in settleAccount. The other filepath.IsAbs and os.Getwd sites in src-go, per 2026112017135400's Swept, and the rest only read the current folder.
 	- Branch: nov22-2026112214033583
 	- Commit: 1678410
+	- Closed reason: Done
+	- Closed: 20261122-152300
+	- Acceptance signoff: Self-closed: passed on vm925w on 24cb249, and the build before the fix took the wrong account.
+	- Verified: 2026-11-22 on vm925w, on 24cb249. Go [dfnff] passed in the Windows Go tests. In Git Bash with git 2.55, from a folder of one account, repo clone into the other account's folder by a rooted path and by C:..\b\x2 took that folder's account and cloned there. The build before the fix (ec33cde) took the starting folder's account for both.
 
 - pr ok on a pull request from dev or main deletes that branch
 	- ID: 2026112212332136
@@ -298,7 +301,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 32: install.ps1 may count an unexpanded %VAR% PATH entry as present
 	- ID: 2026112017135414
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171354
@@ -310,7 +313,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: install.ps1:298-306 expands every entry, the ones from `$env:PATH` included.
 	- Against: Code Review 20261119 item 34's fix, which expands %VAR% entries.
 	- Origin: 808235d, 2856951 and fb6ae4c (Code Review 20261119 item 34).
-	- Needs external testing: vm925w, Windows PowerShell 5.1 and pwsh 7: private/claude_simple/tools/install-ps1-path-rig/win-run.bash under claude_vm-state.bash wrap, on c403d19's install.ps1, for the new pctsz case (user PATH holding %LOCALAPPDATA%\Programs\gitsby as REG_SZ, and the same text unexpanded in the session PATH). It should say Added and append the literal folder, with the other 4 cases as before. Run it on c403d19^'s install.ps1 too, where pctsz should fail.
 	- Actual cause [Bug]: As read. Test-OnPath expanded every %VAR% entry, the session PATH's and a REG_SZ stored PATH's included, where Windows leaves it as text.
 	- Actual fix [Bug]: Test-OnPath expands %VAR% only when told to. The 2 session PATH checks don't. The stored PATH check does only when the registry value is REG_EXPAND_SZ. A REG_SZ value holding the folder only as %LOCALAPPDATA%\... now gets the literal folder appended, keeping its kind. changelog.md's line for item 34 says so.
 	- Decisions: Keeps item 34's intent, no second copy of an entry that already works, and narrows what counts as working to what Windows expands. The broken %VAR% entry is left in place rather than rewritten, since the installer only appends to PATH.
@@ -319,11 +321,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [dfnea] asks Test-OnPath about a %VAR% entry not expanded (n), the session's literal folder (y) and an expanded REG_EXPAND_SZ entry (y). [dfneb] the 2 session checks pass -expand $false and the stored one passes the value's kind. [dfjab] keeps its 8 spellings, now asked with expanding on. On Windows, the path rig's pctsz case.
 	- Verified: [dfnea] and [dfneb] fail on the previous install.ps1 (yyy where nyy is wanted) and pass after. [dfjab] and [dfjac] pass on both. Quick run of every area passed on c403d19's tree. The Windows branch didn't run here; the rig's pctsz case was added for it and parses.
 	- Swept: every %VAR% expansion in the tree. install.ps1's Test-OnPath is the only one, with 3 callers. legacy/install.ps1 is frozen. Go and cicd don't read the Windows PATH this way.
+	- Closed reason: Done
+	- Closed: 20261122-152300
+	- Acceptance signoff: Self-closed: the pctsz case passed on vm925w in 5.1 and pwsh 7 and failed on the install.ps1 before the fix.
+	- Verified: 2026-11-22 on vm925w, Windows PowerShell 5.1.26100 and pwsh 7.6.10, on 24cb249's install.ps1: the path rig's 5 cases passed. pctsz said Added and appended the literal folder, and the 3 spellings of a present entry and the install with no entry did as before. On 89162f0's install.ps1 only pctsz failed, with no Added line and nothing appended. The user PATH was put back as found.
 
 - Code Review 20261120 item 33: raw git acts as the wrong account when a drive-relative -C follows another -C
 	- ID: 2026112017135400
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171354
@@ -339,10 +345,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions: A drive-relative -C for another drive is left for the move, which takes it from that drive's current folder. git does the same, except after an earlier -C in the same command on that drive, where git starts from there. Left as is, since it takes 3 -C options over 2 drives.
 	- Test case: Go [dfnev] TestToolRepoOfFollowsChdir.
 	- Verified: [dfnev] changes folder once per -C, as git does, and checks that toolRepoOf ends in the same folder, for git and tig. The Windows test build under wine failed 7 sequences for each before the fix and passed after. On Linux it passes before and after, since no path there has a drive or a bare root. Quick run of every area passed: test.bash 2408/0, fuzz 310/0, parity 31/0. gosec 37, as before.
-	- Needs external testing: vm925w: Go [dfnev] in the Windows Go tests, and the 2 steps above in Git Bash with real git, on c44a7d3 or later.
 	- Swept: every joinDir caller: git's -C and --bare, and tig's -C, in toolRepoOf. lazygit's options go through filepath.Abs, and git's --git-dir and --work-tree are read after the move, so Windows resolves those itself. The other filepath.IsAbs sites in src-go: a .git file's gitdir line, which git writes, PATH entries, and show.go's display. absDir in config.go has the same fault for repo clone's destination, filed as 2026112214033583.
 	- Branch: nov22-2026112017135400
 	- Commit: c44a7d3
+	- Closed reason: Done
+	- Closed: 20261122-152300
+	- Acceptance signoff: Self-closed: passed on vm925w on 24cb249, and the build before the fix took the starting folder's account.
+	- Verified: 2026-11-22 on vm925w, on 24cb249. Go [dfnev] passed in the Windows Go tests. In Git Bash with git 2.55, from w\c\top, raw git -C .. -C C:foo and -C .. -C \Users\...\w\c\top\foo gave the email of the folder git ran in, which plain git confirmed was c\foo and c\top\foo. The build before the fix (88ebc47) gave top's email for both.
 
 - Code Review 20261120 item 34: 4 paste lines skip typedArg, so PowerShell misreads them
 	- ID: 2026112017135384
@@ -374,7 +383,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 35: On Windows, a held old-format accounts file fails conversion with no Fix
 	- ID: 2026112017135370
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171353
@@ -390,15 +399,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions: The Fix is set for any permissions error on the rename, off Windows too, where it names the folder only, as the save does. The lock and the old copy are new files and replace nothing, so they keep their Why with no Fix.
 	- Test case: Go [dfnft] TestOldFormatConvertOverAHeldFile (Windows only): a flat file held with read sharing only gives the held-file Fix in the notice and in account set's refusal, and is left as it was with no copy beside it.
 	- Verified: under wine, [dfnft] fails on the build before, with no Fix in the notice and 'Run this again' in the refusal, and passes after, with [dfhmz] and [dfhmx]. Quick gate, every area: test.bash 2408/0, fuzz 310/0, parity 31/0. gosec gives nothing on a changed line.
-	- Needs external testing: vm925w: a Windows Go test build of c5a01d5, run with its sources there, -test.run 'TestOldFormatConvertOverAHeldFile' [dfnft]. Wine is a stand-in, so the real held-file refusal is left to check.
 	- Swept: every step of replaceOldFormat. Only the final WriteFileAtomic renames over a file. The lock, the old copy and its time are new files of ours, and the read again refuses only a file held without read sharing, which is the unreadable class. replaceOldFormat is the one writer for the flat, 2.x and earlier SHCL 3 conversions (config.go 550, 575, 588).
 	- Branch: nov22-2026112017135370
 	- Commit: c5a01d5
+	- Closed reason: Done
+	- Closed: 20261122-152300
+	- Acceptance signoff: Self-closed: [dfnft] passed on vm925w against a real held file.
+	- Verified: 2026-11-22 on vm925w, a Windows Go test build of 24cb249: [dfnft] TestOldFormatConvertOverAHeldFile passed.
 
 - Code Review 20261120 item 36: On Windows, file lists are cut at 100 columns whatever the console width
 	- ID: 2026112017135355
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171353
@@ -415,9 +427,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: under wine in a pty sized 72 and then 133 columns, [dfng4] read 72 and 133 and passed, and failed with termCols returning 0 as before. Wine is a stand-in. The quick gate with every area passed: test.bash 2408/0, fuzz 310/0, parity 31/0. go vet and staticcheck pass for windows amd64 and arm64.
 	- Swept: grep for termCols and tput in src-go. show.go terminalWidth is the only width read, and tty_unix.go already asks the kernel. tty_other.go, for platforms nothing is built for, still returns 0 and takes tput.
 	- Decisions: The window width, since text past the window wraps in a console whose buffer is wider. The test opens CONOUT$, since a test's own stdout under ssh is a pipe, and checks the width against PowerShell's RawUI where that answers.
-	- Needs external testing: vm925w: a Windows Go test build of fcbfa1f, run over ssh -tt in a 72-column console, -test.run 'TestTerminalWidthAsksTheConsole' -test.v [dfng4], which should log 72 columns. Then gitsby -NoFetch status there in cmd and pwsh, in a repo with long file names, where lines should end at 72.
 	- Branch: nov22-2026112017135355
 	- Commit: fcbfa1f
+	- Closed reason: Done
+	- Closed: 20261122-152300
+	- Acceptance signoff: Self-closed: passed on vm925w in a 72-column console, and the build before the fix cut at 100.
+	- Verified: 2026-11-22 on vm925w over ssh -tt in a 72-column pty, on 24cb249. [dfng4] logged 72 columns and passed. gitsby -NoFetch status in cmd and pwsh 7 cut the untracked file lines at 72, and the build before the fix (2b25171) cut them at 100 in both.
 
 - Code Review 20261120 item 37: 5 parts of last round's fixes have no test that fails without them
 	- ID: 2026112017135341
@@ -444,12 +459,12 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: One build with each of parts 1 to 4 undone (openPrForBranch asked about the local branch, gh's warning off, pr ok moving only when the upstream is gone, disp's renamed-target case off, sync's plan line naming only the branch) failed [dfngf], [dfngg], [dfngk], [dfk0y], [dfk1a] and [dfk18], and the tree passes them. [dfngh] and [dfngj] pass both ways: the warning stays off on its own host, and the plan reads the rule the mutation left alone. Quick run of every area passed: test.bash 2413/0, fuzz 310/0, parity 31/0.
 	- Swept: openPrForBranch has one caller. tea's identity warning is pinned by [ddk6a] to [df047], and glab's by [df4w7]. The pr ok move is read by previewPr, cmdPrAccept and checkoutsAhead through prOkMoves, and only the run's side had no check under --no-fetch.
 	- Decisions: Part 5 split off, since it needs a change to install.ps1 (a function the AST rig can run, with an installerVersion bump) and a Windows run. Part 2 got no new check, since the code it named moved into plannedPush.disp and the existing checks fail with it undone.
-	- Progress log: Parts 1 to 4 done in nov22 (dd03f69). Part 5 is child 2026112214483821, done in nov22 (26ea275) and waiting on its vm925w run.
+	- Progress log: Parts 1 to 4 done in nov22 (dd03f69). Part 5 is child 2026112214483821, done in nov22 (26ea275) and closed after its vm925w run on 2026-11-22.
 
 - Code Review 20261120 item 37, part 5: install.ps1's 'already on your account PATH' result line has no check that fails without it
 	- ID: 2026112214483821
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261122-144838
@@ -461,7 +476,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, by grep. Confirmed.
 	- Possible cause [Bug]: The registry read, the append and the result line are inline in the Windows branch, so pwsh on Linux can't reach them. Taking the choice of line out into a function, as Test-OnPath was, would let fPsOnPath's AST rig run it here, with the vm925w run as the real path. An install.ps1 change also bumps installerVersion and its History entry.
 	- Origin: Code Review 20261119 item 34, closed in nov20.
-	- Needs external testing: vm925w, install.ps1 in PowerShell 5.1 and 7: the 3 spellings of a PATH that has the folder say it's already on your account PATH and write nothing, and an install from a PATH without it says Added and appends one entry, as item 34's run did.
 	- Actual fix [Bug]: install.ps1's stored PATH read, append and result sentence moved into Add-StoredPath, which returns the sentence. No change in what it writes or says. test.bash's fPsStoredPath defines it from the file and runs it over a stand-in registry key.
 	- Branch: nov22-2026112017135341
 	- Commit: 26ea275
@@ -469,6 +483,11 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: [dfngz] fails with the already-on line made to say Added (xxaa), and with the append's trailing ';' trim taken out (kkxa), and passes on the tree. On the install.ps1 before the move it fails, with no Add-StoredPath. [dfgxd] passes on the old and new install.ps1, and fails with Send-EnvironmentChange moved into the call's try or ahead of the write. Quick run of every area passed: test.bash 2414/0, fuzz 310/0, parity 31/0, PSScriptAnalyzer clean. The Windows branch itself didn't run here.
 	- Swept: install.ps1 has one registry PATH write and one result line. install.bash prints only a note for PATH, pinned by [dfjah].
 	- Decisions: [dfgxd] was rewritten, not dropped. It encoded that the PATH broadcast is sent after the registry write and outside the try whose catch reports PATH as not updated. With the write in a function that has no try of its own, that try is the one around the call, so the check now anchors there. It still fails on both orders it guarded.
+	- Closed reason: Done
+	- Closed: 20261122-152300
+	- Acceptance signoff: Self-closed: passed on vm925w in 5.1 and pwsh 7, with [dfngz] failing on a planted Added line.
+	- Acceptance signoff: Self-closed: passed on vm925w in 5.1 and pwsh 7.
+	- Verified: 2026-11-22 on vm925w, Windows PowerShell 5.1.26100 and pwsh 7.6.10, on 24cb249's install.ps1: the 3 spellings of a PATH holding the folder said it was already on the account PATH and wrote nothing, and the install from a PATH without it said Added and appended one entry.
 
 - Code Review 20261120 item 38: 5 spawn-count rows sit at their limits, since their expected counts weren't raised
 	- ID: 2026112017135327
