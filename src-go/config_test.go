@@ -287,6 +287,51 @@ func TestAbsDirResolvesDotDot(t *testing.T) { // [dbfr7]
 	}
 }
 
+// A clone's folder resolves where git makes it, so its account comes from there. On
+// Windows that takes in \foo and C:foo, which aren't under the current folder.
+// 2026112214033583.
+func TestAbsDirFollowsChdir(t *testing.T) { // [dfnff]
+	root := t.TempDir()
+	for _, dir := range []string{"a/b", "top/foo"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := filepath.Join(root, "top")
+	t.Chdir(start)
+	vol := filepath.VolumeName(root)
+	rooted := root[len(vol):]
+	// Each case is the path as typed, the folder a chdir there ends in, and what
+	// the clone adds under that.
+	cases := [][3]string{
+		{"foo", "foo", ""}, {"..", "..", ""}, {filepath.Join("..", "a", "b"), filepath.Join("..", "a", "b"), ""},
+		{filepath.Join(root, "a"), filepath.Join(root, "a"), ""}, {filepath.Join("..", "a", "new"), filepath.Join("..", "a"), "new"},
+	}
+	if vol != "" {
+		cases = append(cases,
+			[3]string{vol + "foo", vol + "foo", ""}, [3]string{vol + `..\a`, vol + `..\a`, ""}, [3]string{vol + "new", vol, "new"},
+			[3]string{filepath.Join(rooted, "a", "b"), filepath.Join(rooted, "a", "b"), ""},
+			[3]string{filepath.Join(rooted, "a", "new"), filepath.Join(rooted, "a"), "new"},
+		)
+	}
+	for _, tc := range cases {
+		if err := os.Chdir(tc[1]); err != nil {
+			t.Fatalf("%q leads nowhere: %v", tc[1], err)
+		}
+		wd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chdir(start); err != nil {
+			t.Fatal(err)
+		}
+		want := canonPath(filepath.ToSlash(filepath.Join(wd, tc[2])))
+		if got := absDir(tc[0]); got != want {
+			t.Errorf("absDir(%q) = %q, want %q", tc[0], got, want)
+		}
+	}
+}
+
 // '~' resolved through HOME alone, which nothing sets on native Windows - so every
 // tilde path there expanded to nothing and quietly matched no folder and read no
 // token. One helper answers it now, and leaves anything it cannot resolve as typed.

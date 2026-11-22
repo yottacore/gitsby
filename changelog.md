@@ -51,11 +51,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- On Windows, file lists are cut to the console's width. They were cut at 100 columns whatever the width, so in a narrower console each long line wrapped.
+
 - After the PowerShell installer adds gitsby to PATH on Windows, a new PowerShell or Command Prompt opened from the Start menu or taskbar finds it. It used to need a sign-out first, since the installer changed PATH without telling Windows.
 
 - When the PowerShell installer can't put the new `gitsby.exe` in place over an old one, it puts the old one back. It used to delete the old copy first, so a failed upgrade left no gitsby at all. If the old copy can't be put back either, the error says where it is.
 
-- The PowerShell installer no longer adds gitsby's folder to PATH a second time when PATH already names it as `%LOCALAPPDATA%\Programs\gitsby` or with a trailing backslash. It used to add it again and say Added. Now it says the folder is already on PATH, and the plan and the result both call it the account or system PATH.
+- The PowerShell installer no longer adds gitsby's folder to PATH a second time when PATH already names it as `%LOCALAPPDATA%\Programs\gitsby` or with a trailing backslash. It used to add it again and say Added. Now it says the folder is already on PATH, and the plan and the result both call it the account or system PATH. A `%LOCALAPPDATA%` entry counts only where Windows expands it, in a PATH stored as an expandable string (REG_EXPAND_SZ).
+
+- The PowerShell installer picks the same release as the Bash one when a tag has a suffix after a dot or a fourth number, as in `v3.1.0.rc1` or `v3.0.0.1`. It used to pass over `v3.1.0.rc1`, and take `v3.0.0.1` over `v3.0.0`.
 
 - The Bash installer no longer says its folder isn't on PATH when PATH names it with a trailing slash.
 
@@ -95,6 +99,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - After a `release` whose push of `dev` was refused, running `release` again pushes `dev`. It used to tag the same commit with the next version.
 
+- Finishing a `release` whose push was refused, from the default branch with uncommitted changes, now refuses before it starts, and says to set them aside with `git stash`. It used to commit them onto the default branch past the release's tag, push that, and move `dev` onto it.
+
 - The plan for `release` started on `main` no longer ends with `git checkout main`. The run ends on `dev`, as it always has, and the plan's last step now says so.
 
 - `release` with no version counts on from a release, not from its candidate, when the candidate's suffix follows a dot, as in `v3.0.0.rc1`. git sorts that tag above `v3.0.0`, so the next version came out as `v3.0.0` again and the run stopped on a tag that exists. Finishing a refused push takes the release's tag over its candidate's the same way.
@@ -106,6 +112,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `pr create` on a branch that tracks one of another name, as `push.default=upstream` pushes it, opens the pull request from the branch it pushed to. It named the current branch, so the pull request came from an older branch of that name on origin, at exit 0. A branch that pushes to a remote other than origin is refused before the plan, since the pull request opens on origin, and `git branch --unset-upstream` lets it publish there under its own name.
 
 - `pr create` takes the pull request's base from the branch it pushes to, which `pr ok` later reads back, rather than from the current branch's name. A branch tracking `hotfix/x` under `push.default=upstream` opened its pull request against `dev`, and `pr ok` then merged `main` back into `dev`, though the fix never reached `main`.
+
+- `pr ok` merges into the base the pull request has on the git host, and checks out that base after, rather than going by the head's name. A pull request from `hotfix/x` opened against `dev` on the git host's page went into `dev`, then `pr ok` pulled `main` and merged it back into `dev` at exit 0, though the fix never reached `main`. One from a plain branch opened against `main` went into `main`, and `dev` never got it back. The merge back into `dev` now follows the base: it runs when the pull request went into the default branch, whatever its head is called. A base this clone has no copy of is refused before anything runs.
+
+- `pr ok` on GitLab deletes the merged branch here too, as it does on GitHub and Gitea. glab deleted only GitLab's copy.
+
+- `pr ok` refuses a pull request from `main`, `dev` or the default branch, before anything runs, and says to merge it on the git host's page. Its merge deletes the branch it merged, so one from `dev` into `main`, opened on the git host's page, deleted `dev` on origin where the git host allowed it, and here. For `dev` into `main` it names `release`.
+
+- The plan for `pr create` on GitLab names `--target-branch`, the flag glab runs with. It said `--base`, which glab doesn't have.
 
 - `br merge` on a branch that tracks one of another name deletes that branch from origin once it's merged. It named the current branch, so the branch it pushed to stayed on origin, and the leased delete of an older branch of that name warned that it had commits the merge didn't, which wasn't so. Where its push goes to another remote, to a ref that isn't a branch, or to `main` or `dev`, it's refused before the plan.
 
@@ -183,7 +197,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - When origin answers but the fetch of a submodule fails, as when the submodule's own remote has moved, Gitsby says so and goes on with the pull. It used to take the failure as being offline, so `pullcom` skipped the pull and said Done with the branch still behind.
 
-- After a pull that moved a submodule to a newer commit, `pullcom` and the other commands that commit no longer commit the submodule back to its old one. git moves the recorded commit but not the submodule's own checkout, so `git add --all` took the old commit, and the next push undid origin's move. Gitsby now leaves out a submodule checked out behind the commit the branch records, warns, and names `git submodule update`. `br switch` off `dev` no longer refuses over it, and `sync` on `dev` no longer calls it a direct push.
+- After a pull that moved a submodule to a newer commit, `pullcom` and the other commands that commit no longer commit the submodule back to its old one. git moves the recorded commit but not the submodule's own checkout, so `git add --all` took the old commit, and the next push undid origin's move. Gitsby now leaves out a submodule checked out behind the commit the branch records, warns, and names `git submodule update`. For a move back made on purpose, the warning names `git add <folder>` and then the same command with `--staged`. `br switch` off `dev` no longer refuses over it, and `sync` on `dev` no longer calls it a direct push.
+
+- With `submodule.recurse` set, the pull updates the submodules again, as `git pull` and v2.1.0 do. The pull became a `git merge`, which never reads that setting, so the submodule stayed on its old commit and every run warned about it. Gitsby now runs `git submodule update --recursive --checkout` after the merge, and the plan lists it.
 
 - For a branch held by a locked worktree whose folder is gone, the refusal names mounting the folder again, or `git worktree unlock` and then `git worktree prune`. It used to name prune alone, which passes over a locked worktree, so the next run refused the same way.
 

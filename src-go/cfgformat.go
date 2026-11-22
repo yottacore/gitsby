@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -468,6 +469,11 @@ func replaceOldFormat(file, read, converted string, mig *formatMigration) {
 		// The copy is ours and the file is untouched, so the next run starts clean.
 		_ = os.Remove(backup)
 		mig.why = causeText(err)
+		// A rename over the file, as the save in 'account set' is, so the same Fix:
+		// on Windows a program holding the file refuses it as a permissions error.
+		if errors.Is(err, fs.ErrPermission) {
+			mig.fix = replaceFix(runtime.GOOS, "Make the folder it is in writable, then run this again.")
+		}
 		return
 	}
 	mig.backup, mig.done = backup, true

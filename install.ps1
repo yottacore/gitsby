@@ -92,7 +92,7 @@ function Install-Gitsby {
         return
     }
     # The date of the newest History entry below. test.bash holds the two together.
-    $installerVersion = '2026-11-20'
+    $installerVersion = '2026-11-22'
     if ($Version) {
         Write-Output "gitsby installer ${installerVersion}"
         return
@@ -243,10 +243,17 @@ function Install-Gitsby {
             # Highest version wins, not newest listed, so a backported fix isn't taken.
             # Sort-Object is stable, so a tie keeps the newer listed. Only dev weighs a full release
             # against a pre-release, and puts it above pre-releases of its own version.
+            # The version is the first 3 numbers split at . _ or -, as install.bash's vkey reads it,
+            # so v3.1.0.rc1 is a 3.1.0 candidate and v3.0.0.1 doesn't outrank v3.0.0. [version]
+            # read the first as nothing and the second as newer. Padded, so it sorts as text.
             $tagVersion = {
-                $v = ($_.tag_name -replace '^[vV]', '') -replace '[-+].*$', ''
-                $parsed = [version]'0.0'
-                if ([version]::TryParse($v, [ref]$parsed)) { $parsed } else { [version]'0.0' }
+                $parts = @(($_.tag_name -replace '^[vV]', '') -split '[._-]')
+                $key = ''
+                foreach ($i in 0..2) {
+                    $n = if ($i -lt $parts.Count -and $parts[$i] -match '^0*(\d+)') { $Matches[1] } else { '0' }
+                    $key += $n.PadLeft(20, '0')
+                }
+                $key
             }
             $newestFull = $withBinary | Where-Object { -not $_.prerelease } | Sort-Object -Property @{Expression = $tagVersion} -Descending | Select-Object -First 1
             $newestPre = $withBinary | Where-Object { $_.prerelease } | Sort-Object -Property @{Expression = $tagVersion} -Descending | Select-Object -First 1
@@ -294,11 +301,14 @@ function Install-Gitsby {
     }
 
     # A stored PATH can name the folder as %LOCALAPPDATA%\..., with a trailing slash, or with /
-    # in place of \, so entries are expanded and trimmed before comparing.
-    function Test-OnPath([string]$list, [string]$dir, [bool]$onWindows) {
+    # in place of \, so entries are trimmed before comparing. %VAR% is expanded only with -expand,
+    # for a stored REG_EXPAND_SZ value. Windows leaves it as text in a plain REG_SZ one, and the
+    # session PATH has already had whatever expanding it gets, so there it names no folder.
+    function Test-OnPath([string]$list, [string]$dir, [bool]$onWindows, [bool]$expand) {
         $tidy = {
             param([string]$entry)
-            $entry = [Environment]::ExpandEnvironmentVariables($entry).Trim().Trim('"')
+            if ($expand) { $entry = [Environment]::ExpandEnvironmentVariables($entry) }
+            $entry = $entry.Trim().Trim('"')
             if ($onWindows) { $entry.Replace('/', '\').TrimEnd('\') } else { $entry.TrimEnd('/') }
         }
         $want = & $tidy $dir
@@ -345,7 +355,7 @@ function Install-Gitsby {
     }
     # Windows puts nothing on PATH for you, so without this the install finishes with a program
     # that cannot be run by name. On *nix the destination is a conventional bin dir already.
-    if ($onWindows -and -not (Test-OnPath -list $env:PATH -dir $destDir -onWindows $onWindows)) {
+    if ($onWindows -and -not (Test-OnPath -list $env:PATH -dir $destDir -onWindows $onWindows -expand $false)) {
         $pathScopeLabel = if ($installSystemWide) { 'system' } else { 'account' }
         Write-Host "  - Add ${destDir} to your ${pathScopeLabel} PATH (new shells only; this one is unchanged)"
     }
@@ -451,26 +461,32 @@ function Install-Gitsby {
             if ($sent -eq [IntPtr]::Zero) { throw 'WM_SETTINGCHANGE was not delivered.' }
         }
 
+        # Straight at the registry, since GetEnvironmentVariable expands PATH and writing that
+        # back bakes in literals. The kind it had is kept. Windows only, so ';'. Gives the result
+        # line's first sentence.
+        function Add-StoredPath([string]$keyPath, [string]$destDir, [string]$pathScope) {
+            $pathKey = Get-Item -LiteralPath $keyPath
+            $stored = [string]$pathKey.GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            $storedKind = if ($stored) { $pathKey.GetValueKind('PATH') } else { $null }
+            if (Test-OnPath -list $stored -dir $destDir -onWindows $true -expand ($storedKind -eq [Microsoft.Win32.RegistryValueKind]::ExpandString)) {
+                return "${destDir} is already on your ${pathScope} PATH."
+            }
+            $joined = if ([string]::IsNullOrEmpty($stored)) { $destDir } else { $stored.TrimEnd(';') + ';' + $destDir }
+            if (-not $stored) {
+                $storedKind = if ($joined -match '%') { [Microsoft.Win32.RegistryValueKind]::ExpandString } else { [Microsoft.Win32.RegistryValueKind]::String }
+            }
+            Set-ItemProperty -LiteralPath $keyPath -Name 'PATH' -Value $joined -Type $storedKind
+            "Added ${destDir} to your ${pathScope} PATH."
+        }
+
         $pathSep = [IO.Path]::PathSeparator
-        if (-not (Test-OnPath -list $env:PATH -dir $destDir -onWindows $onWindows)) {
+        if (-not (Test-OnPath -list $env:PATH -dir $destDir -onWindows $onWindows -expand $false)) {
             if ($onWindows) {
                 # Persist it, as promised in the plan. Same word as the plan's.
                 $pathScope = if ($installSystemWide) { 'system' } else { 'account' }
-                $added = $false
-                # Straight at the registry, since GetEnvironmentVariable expands PATH and writing
-                # that back bakes in literals. The kind it had is kept.
                 $pathKeyPath = if ($installSystemWide) { 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' } else { 'HKCU:\Environment' }
                 try {
-                    $pathKey = Get-Item -LiteralPath $pathKeyPath
-                    $stored = [string]$pathKey.GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-                    if (-not (Test-OnPath -list $stored -dir $destDir -onWindows $true)) {
-                        $joined = if ([string]::IsNullOrEmpty($stored)) { $destDir } else { $stored.TrimEnd($pathSep) + $pathSep + $destDir }
-                        $storedKind = if ($stored) { $pathKey.GetValueKind('PATH') }
-                        elseif ($joined -match '%') { [Microsoft.Win32.RegistryValueKind]::ExpandString }
-                        else { [Microsoft.Win32.RegistryValueKind]::String }
-                        Set-ItemProperty -LiteralPath $pathKeyPath -Name 'PATH' -Value $joined -Type $storedKind
-                        $added = $true
-                    }
+                    $what = Add-StoredPath -keyPath $pathKeyPath -destDir $destDir -pathScope $pathScope
                     $env:PATH = $env:PATH.TrimEnd($pathSep) + $pathSep + $destDir
                 } catch {
                     Write-Host "Note: couldn't update PATH ($($_.Exception.Message)). Add ${destDir} to it to run 'gitsby' by name."
@@ -481,7 +497,6 @@ function Install-Gitsby {
                     # copy of this script never told Explorer.
                     $told = $true
                     try { Send-EnvironmentChange } catch { $told = $false }
-                    $what = if ($added) { "Added ${destDir} to your ${pathScope} PATH." } else { "${destDir} is already on your ${pathScope} PATH." }
                     $next = if ($told) { 'Open a new shell to pick it up.' } else { 'Sign out and back in to pick it up.' }
                     Write-Host "[ ${what} ${next} ]"
                 }
@@ -618,3 +633,8 @@ try {
 #     The copyright line is plain ASCII, like the rest of the file.
 #   - 20261120 JC: -Release dev takes the newest release, pre-releases included. It was refused,
 #     since it once meant a branch tip.
+#   - 20261122 JC: With no -Tag, a release's version is its first 3 numbers, as install.bash reads
+#     it, so a tag with a dot suffix or a 4th number picks the same release in both. A %VAR% PATH
+#     entry counts only in a stored REG_EXPAND_SZ value, the one place Windows expands it.
+#   - 20261122 JC: The stored PATH update is its own function, Add-StoredPath, so the already-on
+#     result line is checked off Windows too.

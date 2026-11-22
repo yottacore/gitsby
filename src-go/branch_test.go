@@ -348,6 +348,7 @@ func TestRefuseHeldBranch(t *testing.T) { // [dfh8b]
 			{"pr ok of this branch", "w", "pr", "ok", "", "w", "dev"},
 			{"pr ok of another branch", "w", "pr", "ok", "", "other", ""},
 			{"pr ok from a branch with no upstream", "solo", "pr", "ok", "", "other", "dev"},
+			{"pr ok of a branch opened against main owes dev its back-merge", "w", "pr", "ok", "", "other>main", "dev"},
 			{"pr create checks nothing out", "w", "pr", "create", "", "", ""},
 			{"sync checks nothing out", "w", "sync", "", "", "", ""},
 			{"a hotfix's back-merge", "hotfix/h", "br-merge", "", "", "", "dev"},
@@ -357,6 +358,12 @@ func TestRefuseHeldBranch(t *testing.T) { // [dfh8b]
 				runGit(t, linked, "checkout", "-q", tc.branch)
 				a := newApp(newPrinter())
 				a.cmd.name, a.cmd.arg, a.pr.sub, a.pr.headBranch = tc.cmd, tc.arg, tc.sub, tc.head
+				// "head>base" for a PR opened against another base than its name gives.
+				if h, base, found := strings.Cut(tc.head, ">"); found {
+					a.pr.headBranch, a.pr.baseBranch = h, base
+				} else if tc.sub == "ok" {
+					a.pr.baseBranch = a.branchTarget(tc.head)
+				}
 				err := a.refuseHeldBranch()
 				switch {
 				case tc.want == "" && err != nil:

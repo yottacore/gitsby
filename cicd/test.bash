@@ -226,22 +226,36 @@ fPsPathTold(){ PS_FILE="$1" pwsh -NoProfile -Command '$ast = [Management.Automat
 	$write = @($cmds | Where-Object { $_.GetCommandName() -eq "Set-ItemProperty" -and $_.Extent.Text -match "-Name .PATH." })
 	$tell = @($cmds | Where-Object { $_.GetCommandName() -eq "Send-EnvironmentChange" })
 	if ($write.Count -ne 1 -or $tell.Count -lt 1) { "writes: $($write.Count), tells: $($tell.Count)"; exit 1 }
-	$tries = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $n.Body.Extent.StartOffset -le $write[0].Extent.StartOffset -and $n.Body.Extent.EndOffset -ge $write[0].Extent.EndOffset }, $true)
-	$inner = $tries | Sort-Object { $_.Body.Extent.EndOffset - $_.Body.Extent.StartOffset } | Select-Object -First 1
+	$innerTry = { param($node) $ast.FindAll({ param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $n.Body.Extent.StartOffset -le $node.Extent.StartOffset -and $n.Body.Extent.EndOffset -ge $node.Extent.EndOffset }, $true) |
+		Sort-Object { $_.Body.Extent.EndOffset - $_.Body.Extent.StartOffset } | Select-Object -First 1 }
+	## A write in a function with no try of its own around it happens, and fails, where that
+	## function is called.
+	$at = $write[0]; $inner = & $innerTry $at; $fn = $at.Parent
+	while ($fn -and $fn -isnot [Management.Automation.Language.FunctionDefinitionAst]) { $fn = $fn.Parent }
+	if ($fn -and (-not $inner -or $inner.Extent.StartOffset -lt $fn.Extent.StartOffset)) {
+		$calls = @($cmds | Where-Object { $_.GetCommandName() -eq $fn.Name })
+		if ($calls.Count -ne 1) { "calls of $($fn.Name): $($calls.Count)"; exit 1 }
+		$at = $calls[0]; $inner = & $innerTry $at
+	}
 	foreach ($t in $tell) {
-		if ($t.Extent.StartOffset -le $write[0].Extent.EndOffset) { "told before the write"; exit 1 }
+		if ($t.Extent.StartOffset -le $at.Extent.EndOffset) { "told before the write"; exit 1 }
 		if ($inner -and $t.Extent.StartOffset -lt $inner.Extent.EndOffset) { "told inside the write'"'"'s try"; exit 1 }
 	}' </dev/null 2>&1 ;}
-## Defines install.ps1's Test-OnPath from the file and asks it about each PATH below, Windows
-## ones with LOCALAPPDATA set. Prints one y or n per case, in order.
+## Defines install.ps1's Test-OnPath from the file and asks it about each PATH in <set>, Windows
+## ones with LOCALAPPDATA set. spellings expands %VAR%, as for a stored REG_EXPAND_SZ value;
+## expand gives each case its own say. Prints one y or n per case, in order.
 # shellcheck disable=SC2016  ## pwsh's own variables; pwsh does the expanding.
-fPsOnPath(){ PS_FILE="$1" POWERSHELL_TELEMETRY_OPTOUT=1 pwsh -NoProfile -Command '$ErrorActionPreference = "Stop"
+fPsOnPath(){ PS_FILE="$1" PS_SET="$2" POWERSHELL_TELEMETRY_OPTOUT=1 pwsh -NoProfile -Command '$ErrorActionPreference = "Stop"
 	$fn = [Management.Automation.Language.Parser]::ParseFile($env:PS_FILE, [ref]$null, [ref]$null).Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq "Test-OnPath" }, $true)
 	if (-not $fn) { "no Test-OnPath"; exit 1 }
 	. ([scriptblock]::Create($fn.Extent.Text))
 	$env:LOCALAPPDATA = "C:\Users\u\AppData\Local"
 	$dir = "C:\Users\u\AppData\Local\Programs/gitsby"
-	$cases = @(
+	$cases = if ($env:PS_SET -eq "expand") { @(
+		@("C:\Windows;%LOCALAPPDATA%\Programs\gitsby", $dir, $true, $false),
+		@("C:\Users\u\AppData\Local\Programs\gitsby;C:\Windows", $dir, $true, $false),
+		@("%LOCALAPPDATA%\Programs\gitsby\", $dir, $true, $true))
+	} else { @(
 		@("C:\Windows;%LOCALAPPDATA%\Programs\gitsby", $dir, $true),
 		@("C:\Users\u\AppData\Local\Programs\gitsby\;C:\Windows", $dir, $true),
 		@("c:\users\U\appdata\local\programs\GITSBY", $dir, $true),
@@ -250,7 +264,39 @@ fPsOnPath(){ PS_FILE="$1" POWERSHELL_TELEMETRY_OPTOUT=1 pwsh -NoProfile -Command
 		@("", $dir, $false),
 		@("/usr/bin:/home/u/.local/bin/", "/home/u/.local/bin", $false),
 		@("/usr/bin:/home/U/.local/bin", "/home/u/.local/bin", $false))
-	-join @($cases | ForEach-Object { if (Test-OnPath $_[0] $_[1] $_[2]) { "y" } else { "n" } })' </dev/null 2>&1 ;}
+	}
+	-join @($cases | ForEach-Object { $expand = if ($_.Count -gt 3) { $_[3] } else { $true }; if (Test-OnPath $_[0] $_[1] $_[2] $expand) { "y" } else { "n" } })' </dev/null 2>&1 ;}
+## Defines install.ps1's Test-OnPath and Add-StoredPath from the file and runs the stored PATH
+## update over a stand-in registry key. Prints k for a PATH kept, with the already-on line, a for
+## one added to, with the Added line and the joined value, and x for anything else, per case.
+# shellcheck disable=SC2016  ## pwsh's own variables; pwsh does the expanding.
+fPsStoredPath(){ PS_FILE="$1" POWERSHELL_TELEMETRY_OPTOUT=1 pwsh -NoProfile -Command '$ErrorActionPreference = "Stop"
+	$ast = [Management.Automation.Language.Parser]::ParseFile($env:PS_FILE, [ref]$null, [ref]$null)
+	foreach ($name in "Test-OnPath", "Add-StoredPath") {
+		$fn = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+		if (-not $fn) { "no ${name}"; exit 1 }
+		. ([scriptblock]::Create($fn.Extent.Text))
+	}
+	$env:LOCALAPPDATA = "C:\Users\u\AppData\Local"
+	$dir = "C:\Users\u\AppData\Local\Programs\gitsby"
+	$script:key = $null; $script:wrote = $null
+	function Get-Item([string]$LiteralPath) { $script:key }
+	function Set-ItemProperty([string]$LiteralPath, [string]$Name, $Value, $Type) { $script:wrote = "${Name}=${Value}=${Type}" }
+	$cases = @(
+		@("C:\Windows;%LOCALAPPDATA%\Programs\gitsby", "ExpandString", ""),
+		@("C:\Windows;C:\Users\u\AppData\Local\Programs\gitsby\", "String", ""),
+		@("C:\Windows;", "String", "PATH=C:\Windows;${dir}=String"),
+		@("", "String", "PATH=${dir}=String"))
+	-join @($cases | ForEach-Object {
+		$c = $_; $script:wrote = $null
+		$script:key = [pscustomobject]@{ Value = $c[0]; Kind = $c[1] }
+		$script:key | Add-Member ScriptMethod GetValue { param($n, $d, $o) $this.Value }
+		$script:key | Add-Member ScriptMethod GetValueKind { param($n) [Microsoft.Win32.RegistryValueKind]$this.Kind }
+		$what = Add-StoredPath -keyPath "HKCU:\Environment" -destDir $dir -pathScope account
+		if (-not $c[2] -and $what -ceq "${dir} is already on your account PATH." -and $null -eq $script:wrote) { "k" }
+		elseif ($c[2] -and $what -ceq "Added ${dir} to your account PATH." -and $script:wrote -ceq $c[2]) { "a" }
+		else { "x" }
+	})' </dev/null 2>&1 ;}
 ## Defines install.ps1's Install-Binary from the file and runs its Windows branch over an old
 ## gitsby.exe in <dir>. <mode> ok lets every move through, fail refuses the move of the staged
 ## file, and fail2 also refuses moving the old copy back. Prints what's left in <dir>.
@@ -2178,6 +2224,17 @@ fRunSuite(){
 	fAssert     "[dfgx3] the same from a feature branch"  fPlanEnds "${cloneA}"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.7.3 && [[ \"\$(git branch --show-current)\" == relend ]]"
 	( cd "${cloneA}" || exit 1; git checkout --quiet dev && git branch --quiet -D relend && git push --quiet origin --delete relend )
 
+	## The failed run leaves you on main. Finishing it parked an edit made there, so it
+	## committed past the tag, pushed main and moved dev onto it.
+	( cd "${cloneA}" || exit 1; echo end5 > end5.txt && git add end5.txt && git commit --quiet -m end5 && git push --quiet && git checkout --quiet main && mv "${origin}/hooks/pre-receive.off" "${origin}/hooks/pre-receive" )
+	fAssert     "[dfndg] a release from main whose push of main is refused fails, and stays on main"  bash -c "cd '${cloneA}' && ! '${gitsby}' -q release v1.8.0 && [[ \"\$(git branch --show-current)\" == main ]]"
+	( cd "${cloneA}" || exit 1; mv "${origin}/hooks/pre-receive" "${origin}/hooks/pre-receive.off"; echo edit >> end5.txt )
+	fAssertFail "[dfndh] then a bare release there with an edit is refused"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
+	fAssertOut  "[dfndj] and says the edit is why"  "^gitsby: Release v1\.8\.0 is tagged here but never reached origin, and 'main' has uncommitted changes\. Nothing was done\.$"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
+	fAssert     "[dfndk] and commits and pushes nothing, and leaves the edit"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse v1.8.0^{commit})\" && \"\$(git rev-parse dev)\" != \"\$(git rev-parse main)\" ]] && ! git ls-remote --exit-code origin refs/tags/v1.8.0 >/dev/null && ! git diff --quiet -- end5.txt"
+	( cd "${cloneA}" || exit 1; git checkout --quiet -- end5.txt )
+	fAssert     "[dfndm] with the edit gone, it finishes that release"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" && \"\$(git rev-parse main)\" == \"\$(git rev-parse v1.8.0^{commit})\" && \"\$(git branch --show-current)\" == dev ]] && git ls-remote --exit-code origin refs/tags/v1.8.0 >/dev/null"
+
 	## Work parked on a feature branch never reaches the release, which merges only dev, yet a
 	## commit or an edit there counted as something new, so a bare release tagged the commit
 	## already released. So did dev's lead after a release whose dev push failed.
@@ -2213,7 +2270,10 @@ fRunSuite(){
 	## The same from a feature branch, which also finishes it rather than saying nothing is new.
 	( cd "${rf}/c" || exit 1; echo g > g.txt && git add g.txt && git commit --quiet -m g && git push --quiet && mv "${rf}/pre-receive.off" "${rf}/origin.git/hooks/pre-receive" )
 	fAssertFail "[dfjyb] a second refused push of dev"  bash -c "cd '${rf}/c' && '${gitsby}' -q release v1.2.0"
-	( cd "${rf}/c" || exit 1; mv "${rf}/origin.git/hooks/pre-receive" "${rf}/pre-receive.off"; git checkout --quiet feat )
+	( cd "${rf}/c" || exit 1; mv "${rf}/origin.git/hooks/pre-receive" "${rf}/pre-receive.off"; git checkout --quiet main && echo i > i.txt )
+	fAssertOut  "[dfndn] on main with a new file, a bare release refuses to finish the dev push"  "^gitsby: Release v1\.2\.0 is out, but 'dev' never reached origin, and 'main' has uncommitted changes\. Nothing was done\.$"  bash -c "cd '${rf}/c' && '${gitsby}' -q release"
+	fAssert     "[dfndp] and commits and pushes nothing"  bash -c "cd '${rf}/c' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse v1.2.0^{commit})\" && \"\$(git rev-parse dev)\" == \"\$(git rev-parse main)\" && \"\$(git rev-parse origin/dev)\" != \"\$(git rev-parse dev)\" && -f i.txt ]] && [[ -z \"\$(git log --oneline origin/main..main)\" ]]"
+	( cd "${rf}/c" || exit 1; mv i.txt "${rf}/i.txt"; git checkout --quiet feat )
 	fAssert     "[dfjyc] a bare release from a feature branch then pushes dev, cuts no tag and ends there"  bash -c "cd '${rf}/c' && '${gitsby}' -q release && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" && \"\$(git tag --points-at v1.2.0^{commit})\" == v1.2.0 && \"\$(git branch --show-current)\" == feat ]] && ! git rev-parse -q --verify refs/tags/v1.2.1 >/dev/null"
 	## A dev that gained a commit since the refused push is new work, not that release's push.
 	( cd "${rf}/c" || exit 1; git checkout --quiet dev && mv "${rf}/pre-receive.off" "${rf}/origin.git/hooks/pre-receive"; "${gitsby}" -q release v1.3.0 >/dev/null 2>&1; mv "${rf}/origin.git/hooks/pre-receive" "${rf}/pre-receive.off"; echo h > h.txt && git add h.txt && git commit --quiet -m h )
@@ -2705,6 +2765,34 @@ fRunSuite(){
 	fAssert    "[daktx] br hotfix works offline"  bash -c "cd '${omw}' && git checkout --quiet main && '${gitsby}' -q br hotfix hx1 && [[ \"\$(git branch --show-current)\" == hotfix/hx1 ]]"
 	fAssertOut "[dakty] an offline hotfix land names the branch its merge is stuck on"  "the merge to 'main' is local only - once online"  bash -c "cd '${omw}' && echo h >> f.txt && '${gitsby}' -q br land 'Hot fix' 2>&1"
 	fAssert    "[daktz] and the back-merge still brought it to dev"  bash -c "cd '${omw}' && [[ \"\$(git branch --show-current)\" == dev ]] && git merge-base --is-ancestor main dev"
+
+	## A paste line that names a branch, a path or a URL quotes it for the shell. Each is cut
+	## from what gitsby printed and run through sh, where a bare ';' would end the command.
+	local plO="${work}/$1-paste;o.git"; local plW="${work}/$1-pastew"; local plN="${work}/$1-pasten"
+	git init --quiet --bare -b 'm;x' "${plO}"
+	git clone --quiet "${plO}" "${plW}" 2>/dev/null
+	(
+		cd "${plW}" || exit 1
+		echo one > f.txt && git add f.txt && git commit --quiet -m "initial" && git push --quiet -u origin 'm;x'
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b 'o;b' && git push --quiet -u origin 'o;b' && git checkout --quiet dev && git branch --quiet -D 'o;b'
+		git branch 'l;b'
+	)
+	git init --quiet -b main "${plN}"
+	( cd "${plN}" || exit 1; echo n > n.txt && git add n.txt && git commit --quiet -m "initial" )
+	## <folder> <sed script that prints the paste line> <pattern for the words sh hands gitsby> <gitsby args>...
+	# shellcheck disable=SC2053  ## the want is a pattern
+	fPasteReads(){ local dir="$1" pick="$2" want="$3" out="" line=""; shift 3
+		out="$(cd "${dir}" && "${gitsby}" -q "$@" 2>&1)"
+		line="$(sed -n "${pick}" <<< "${out}")"
+		[[ -n "${line}" ]] && [[ "$(sh -c "${APP_NAME}() { printf '<%s>' \"\$@\"; }; ${line}")" == ${want} ]] ;}
+	fAssert "[dfnew] br create of a branch here names its switch as one word"       fPasteReads "${plW}" 's/.* already exists; use: //p'             '<br><switch><l;b>'  br create 'l;b'
+	fAssert "[dfnex] and of a branch on origin"                                    fPasteReads "${plW}" 's/.* already exists on origin; use: //p'   '<br><switch><o;b>'  br create 'o;b'
+	fAssert "[dfney] br switch to no such branch names its create as one word"    fPasteReads "${plW}" 's/.* To create it: //p'                    '<br><create><n;b>'  br switch 'n;b'
+	fAssert "[dfnez] repo connect to a repo with history names its clone"         fPasteReads "${plN}" "s/.*(\(${APP_NAME} repo clone .*\)), or reconcile.*/\1/p"  '<repo><clone><*paste;o.git>'  repo connect "${plO}"
+	fAssert "[dfnf0] repo create of no owner/name names its connect as one word"  fPasteReads "${plN}" 's/.* For a remote that already exists: //p'  '<repo><connect><p;q>'  repo create 'p;q'
+	( cd "${plW}" || exit 1; git checkout --quiet 'm;x' && "${gitsby}" -q br hotfix hz >/dev/null 2>&1 && echo h >> f.txt && git remote set-url origin "${work}/nosuch-remote.git" )
+	fAssert "[dfnf1] an offline hotfix land names the switch to its target as one word"  fPasteReads "${plW}" "s/.* once online, '\(.*\)' then '${APP_NAME} sync'.*/\1/p"  '<br><switch><m;x>'  br land 'Hot fix'
 
 	## ... and offline has to mean the same thing inside a compound command, or the flag saves
 	## nothing there. Own throwaway origin, so the shared one keeps its history for later checks.
@@ -3593,6 +3681,7 @@ case "$1 $2" in
 	               ## nothing and exit 0.
 	               [[ "${FAKE_GH_PRVIEW:-}" == fail ]] && { echo "GraphQL: Could not resolve to a PullRequest" >&2; exit 1 ;}
 	               echo "${FAKE_GH_HEAD:-$(git branch --show-current)}"     ## the PR's own head branch
+	               echo "${FAKE_GH_BASE:-dev}"                               ## ... the one it goes into, where pr merge puts it
 	               echo "${FAKE_GH_STATE:-OPEN}" ;;                          ## ... and whether it is still open
 	"pr diff")     echo "diff --git a/work.txt b/work.txt" ;;
 	"pr merge")    ## Merge the branch into the base, then drop it from the remote. Real gh does the delete
@@ -3745,6 +3834,13 @@ GHEOF
 	fAssert    "[dacyq] pr ok ended on the merge target"  bash -c "cd '${prc}' && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssert    "[dacyr] pr ok pulled the merged work"      bash -c "cd '${prc}' && git ls-tree --name-only dev | grep -qx work.txt"
 	fAssert    "[dacys] the merged branch is gone from origin"  bash -c "cd '${prc}' && ! git ls-remote --heads origin prfeat | grep -q prfeat"
+	## Under --no-fetch nothing is pruned, so the branch's upstream still looks alive. The run
+	## moves to the merge target all the same, as its plan says.
+	local prcNf="${gh}/prok/nf"
+	git clone --quiet -b dev "${gh}/prok/origin.git" "${prcNf}" 2>/dev/null
+	( cd "${prcNf}" || exit 1; git checkout --quiet -b prnf && echo nf > nf.txt && git add --all && git commit --quiet -m nf && git push --quiet -u origin prnf )
+	fAssertPlan "[dfngj] pr ok --no-fetch on the PR's own branch plans the switch"  '^ +git checkout dev'  bash -c "cd '${prcNf}' && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q --no-fetch pr ok 8"
+	fAssert     "[dfngk] and ends on the merge target"  bash -c "cd '${prcNf}' && [[ \"\$(git branch --show-current)\" == dev ]]"
 
 	## pr ok from a third branch, whose upstream moved on: the run pulls that branch and stays
 	## there, so the plan has to say so, not promise a checkout and pull of the merge target.
@@ -3888,6 +3984,8 @@ GHEOF
 	( cd "${pnf}" && git config push.default upstream && echo far > far.txt && git add far.txt && git commit --quiet -m "Far work" )
 	fAssert "[dfh72] under push.default=upstream it opens the PR from the branch the push went to" \
 		bash -c "cd '${pnf}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prfar2.log' '${gitsby}' -q pr create 'Far' && grep -q -- '^pr create .*--head pnx-far --title Far' '${gh}/prfar2.log'"
+	fAssert "[dfngf] and asks gh for an open PR from that branch, not the local one" \
+		bash -c "grep -q -- '^pr list --head pnx-far ' '${gh}/prfar2.log' && ! grep -q -- '^pr list --head pnx ' '${gh}/prfar2.log'"
 	fAssert "[dfh73] and origin's older branch of the same name is left as it was" \
 		bash -c "cd '${pnf}' && [[ \"\$(git ls-remote origin refs/heads/pnx-far | cut -f1)\" == \"\$(git rev-parse pnx)\" && \"\$(git ls-remote origin refs/heads/pnx | cut -f1)\" == \"\$(git rev-parse origin/dev)\" ]]"
 	( cd "${pnf}" && git switch --quiet -c pnd --track origin/dev )
@@ -4517,6 +4615,47 @@ GHEOF
 	fAssertNotPlan "[df028] and --no-fetch leaves it out"  'git fetch' \
 		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=pkfeat FAKE_GH_BASE=dev '${gitsby}' -q -NoFetch pr ok 8 2>&1"
 
+	## A PR opened on the git host's page can go into another base than its head's name gives, and
+	## the git host merges it there. pr ok checks out that base, and owes dev a back-merge only when
+	## the base is main.
+	mkdir -p "${gh}/prbase"
+	git init --quiet --bare -b main "${gh}/prbase/origin.git"
+	local pbc="${gh}/prbase/c"
+	git clone --quiet "${gh}/prbase/origin.git" "${pbc}" 2>/dev/null
+	(
+		cd "${pbc}" || exit 1
+		echo base > base.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b pbplain dev && echo plain > plain.txt && git add --all && git commit --quiet -m plain && git push --quiet -u origin pbplain
+		git checkout --quiet -b hotfix/pbx main && echo fix > fix.txt && git add --all && git commit --quiet -m fix && git push --quiet -u origin hotfix/pbx
+	)
+	fAssert        "[dfnbj] pr ok of a hotfix PR opened against dev runs"  bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=hotfix/pbx FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7 > '${gh}/prbase1.log' 2>&1"
+	fAssertNotPlan "[dfnbk] and checks out dev, where it went, not main"  'git checkout main'  cat "${gh}/prbase1.log"
+	fAssertNotPlan "[dfnbm] and plans no back-merge, since main never got it"  'git merge origin/main'  cat "${gh}/prbase1.log"
+	fAssert        "[dfnbn] and ends on dev, with the fix in dev and not in main"  bash -c "cd '${pbc}' && [[ \"\$(git branch --show-current)\" == dev ]] && git cat-file -e origin/dev:fix.txt && ! git cat-file -e origin/main:fix.txt 2>/dev/null"
+	fAssertPlan    "[dfnbp] pr ok of a plain PR opened against main plans the back-merge"  'git merge origin/main' \
+		bash -c "cd '${pbc}' && git checkout --quiet pbplain && PATH='${ghp}' FAKE_GH_HEAD=pbplain FAKE_GH_BASE=main '${gitsby}' -q pr ok 8 2>&1"
+	fAssert        "[dfnbq] and dev gets the work through it"  bash -c "cd '${pbc}' && git cat-file -e origin/main:plain.txt && git cat-file -e origin/dev:plain.txt"
+	(
+		cd "${pbc}" || exit 1
+		git checkout --quiet -b pbnext dev && echo next > next.txt && git add --all && git commit --quiet -m next && git push --quiet -u origin pbnext
+		git checkout --quiet dev
+	)
+	fAssertOut     "[dfnbr] pr ok refuses a base shaped like an option, read from gh"  "Branch '-pb' starts with a dash" \
+		bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=pbnext FAKE_GH_BASE=-pb '${gitsby}' -q pr ok 9 2>&1 || true"
+	fAssertOut     "[dfnbs] and a base this clone has no copy of, naming the fetch"  "git fetch origin pbgone:refs/remotes/origin/pbgone" \
+		bash -c "cd '${pbc}' && git checkout --quiet pbnext && PATH='${ghp}' FAKE_GH_HEAD=pbnext FAKE_GH_BASE=pbgone '${gitsby}' -q pr ok 9 2>&1 || true"
+	fAssert        "[dfnbt] before anything merged"  bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prbase3.log' FAKE_GH_HEAD=pbnext FAKE_GH_BASE=pbgone '${gitsby}' -q pr ok 9 >/dev/null 2>&1; [[ \$? == 1 ]] && ! grep -q '^pr merge' '${gh}/prbase3.log' && git ls-remote --exit-code --heads origin pbnext >/dev/null"
+	## Every tool's merge deletes the PR's branch, so a PR from dev or main, opened on the git host's
+	## page, is refused before the plan rather than taking that branch with it.
+	fAssertOut     "[dfncq] pr ok refuses a PR from dev into main, naming release"  "PR #9 proposes 'dev', a protected branch.*as a release:" \
+		bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=dev FAKE_GH_BASE=main '${gitsby}' -q pr ok 9 2>&1 || true"
+	fAssert        "[dfncr] before anything merged, with dev kept on origin and here"  bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prbase4.log' FAKE_GH_HEAD=dev FAKE_GH_BASE=main '${gitsby}' -q pr ok 9 >/dev/null 2>&1; [[ \$? == 1 ]] && ! grep -q '^pr merge' '${gh}/prbase4.log' && git ls-remote --exit-code --heads origin dev >/dev/null && git rev-parse --verify --quiet refs/heads/dev >/dev/null"
+	fAssertOut     "[dfncs] and a PR from main into dev"  "PR #9 proposes 'main', a protected branch" \
+		bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=main FAKE_GH_BASE=dev '${gitsby}' -q pr ok 9 2>&1 || true"
+	fAssertNotOut  "[dfnct] without the release hint, which is only for dev into main"  "as a release" \
+		bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=main FAKE_GH_BASE=dev '${gitsby}' -q pr ok 9 2>&1 || true"
+
 	## The bash version gate. Bash build only - the PowerShell one needs no bash at all.
 	local vg="${work}/vgate"
 	mkdir -p "${vg}/bin"
@@ -4991,12 +5130,17 @@ GHEOF
 	local rlGo="SHA256SUMS,gitsby-linux-amd64,gitsby-linux-arm64,gitsby-freebsd-amd64,gitsby-freebsd-arm64,gitsby-darwin-universal,gitsby-windows-amd64.exe"
 	local rlOld="gitsby,gitsby.ps1,SHA256SUMS"
 	printf '%s *gitsby\n%s *gitsby.ps1\n' "$(printf '%064d' 1)" "$(printf '%064d' 2)" > "${rl}/sums/v2.1.0"
-	for rlTag in v3.0.0 v3.0.0-beta.1 v3.0.0-rc.1 v3.1.0-beta.1; do cp "${ei}/SHA256SUMS" "${rl}/sums/${rlTag}"; done
+	for rlTag in v3.0.0 v3.0.0-beta.1 v3.0.0-rc.1 v3.1.0-beta.1 v3.1.0.rc1 v3.0.0.1; do cp "${ei}/SHA256SUMS" "${rl}/sums/${rlTag}"; done
 	fReleaseList "v3.0.0-beta.1:true:${rlGo}" "v2.1.0:false:${rlOld}" "v2.0.2:false:${rlOld}" > "${rl}/beta.json"
 	fReleaseList "v3.1.0-beta.1:true:${rlGo}" "v3.0.0:false:${rlGo}" "v3.0.0-beta.1:true:${rlGo}" "v2.1.0:false:${rlOld}" > "${rl}/full.json"
 	fReleaseList "v2.1.1-rc.1:true:${rlOld}" "v2.1.0:false:${rlOld}" "v2.0.2:false:${rlOld}" > "${rl}/none.json"
 	## A candidate listed above its own release, as a late re-tag would put it.
 	fReleaseList "v3.0.0-rc.1:true:${rlGo}" "v3.0.0:false:${rlGo}" "v3.0.0-beta.1:true:${rlGo}" > "${rl}/rc.json"
+	## A suffix after a dot is a candidate too, as release.bash publishes it: v3.1.0.rc1 is one of
+	## 3.1.0, and v3.0.0.1 one of 3.0.0, so it stays below v3.0.0.
+	fReleaseList "v3.1.0.rc1:true:${rlGo}" "v3.0.0:false:${rlGo}" "v3.0.0-rc.1:true:${rlGo}" > "${rl}/dot.json"
+	fReleaseList "v3.0.0.1:true:${rlGo}" "v3.0.0:false:${rlGo}" > "${rl}/four.json"
+	fReleaseList "v3.1.0.rc1:true:${rlGo}" "v3.0.0-beta.1:true:${rlGo}" "v2.1.0:false:${rlOld}" > "${rl}/dotpre.json"
 	fStub "${rl}/bin/curl" <<-'CURLEOF'
 		#!/usr/bin/env bash
 		url=""
@@ -5040,6 +5184,12 @@ GHEOF
 		fRlInstall devrc "" "${rl}/rc.json" --release dev -y
 	fAssertOut "[dfjr6] and says when no release publishes a binary"  'No release of yottacore/gitsby publishes a gitsby binary yet' \
 		fRlInstall devnone "" "${rl}/none.json" --release dev -y
+	fAssertOut "[dfne4] go installer --release dev ranks a dot-suffixed candidate by its own version"  '\(v3\.1\.0\.rc1\) from' \
+		fRlInstall devdot "" "${rl}/dot.json" --release dev -y
+	fAssertOut "[dfne5] and puts a full release above a 4-number tag of its own version"  '\(v3\.0\.0\) from' \
+		fRlInstall devfour "" "${rl}/four.json" --release dev -y
+	fAssertOut "[dfne6] go installer ranks a dot-suffixed pre-release by its own version while no full release has a binary"  'newest pre-release, v3\.1\.0\.rc1' \
+		fRlInstall dotpre v2.1.0 "${rl}/dotpre.json" -y
 	## An explicit tag asks neither the redirect nor the list, and is refused or installed as before.
 	fAssertOut "[ddf9f] go installer still refuses a --tag release with no binary for this platform"  'release v2\.1\.0 publishes no gitsby binary for' \
 		fRlInstall tag21 v3.0.0 "${rl}/full.json" --tag v2.1.0 -y
@@ -5085,9 +5235,20 @@ GHEOF
 		## A PATH holding the folder as %LOCALAPPDATA%\... or with a trailing slash was read as
 		## lacking it, so a second entry went in and the result said Added.
 		fAssertOut "[dfjab] go install.ps1 finds its folder on PATH however the entry is written" '^yyyynnyn$' \
-			fPsOnPath "${goInstPs}"
+			fPsOnPath "${goInstPs}" spellings
 		fAssert    "[dfjac] and every PATH check in it goes through that" \
 			bash -c "! grep -nE 'contains[[:space:]]+\\\$destDir' '${goInstPs}' && [[ \$(grep -c 'Test-OnPath ' '${goInstPs}') -ge 3 ]]"
+		## Windows expands %VAR% only in a REG_EXPAND_SZ value. In a REG_SZ one, and in the session
+		## PATH, which has had its expanding, a %VAR% entry names no folder.
+		fAssertOut "[dfnea] go install.ps1 counts a %VAR% PATH entry only where it's told Windows expands it" '^nyy$' \
+			fPsOnPath "${goInstPs}" expand
+		## The result line comes from the stored PATH, which only Windows has, so the update runs here
+		## over a stand-in key.
+		fAssertOut "[dfngz] go install.ps1 keeps a stored PATH that has its folder, and says it's already on it" '^kkaa$' \
+			fPsStoredPath "${goInstPs}"
+		fAssert    "[dfneb] and is told so only for the stored PATH, by its registry kind" \
+			bash -c "[[ \$(grep -cF 'Test-OnPath -list \$env:PATH -dir \$destDir -onWindows \$onWindows -expand \$false)' '${goInstPs}') == 2 && \$(grep -c 'Test-OnPath -list' '${goInstPs}') == 3 ]] \
+				&& grep -qF 'Test-OnPath -list \$stored -dir \$destDir -onWindows \$true -expand (\$storedKind -eq [Microsoft.Win32.RegistryValueKind]::ExpandString)' '${goInstPs}'"
 		## The old copy was moved aside and deleted before the new one went in, so a failed last
 		## move left no gitsby.exe at all. The Windows branch is only renames, so it runs here.
 		fAssertOut "[dfha2] go install.ps1 replaces an old gitsby.exe and leaves nothing beside it" '^dest=new left=gitsby\.exe err=$' \
@@ -5367,6 +5528,12 @@ GHEOF
 				bash -c "grep -q '/repos/' '${rlp}/calls' && ! grep -q 'releases/latest' '${rlp}/calls'"
 			fAssertOut "[dfjr9] and puts a full release above pre-releases of its own version"  '\(v3\.0\.0\) from' \
 				fRlPsInstall devrc "" "${rl}/rc.json" -Release dev -Yes
+			fAssertOut "[dfne7] go ps installer -Release dev ranks a dot-suffixed candidate by its own version"  '\(v3\.1\.0\.rc1\) from' \
+				fRlPsInstall devdot "" "${rl}/dot.json" -Release dev -Yes
+			fAssertOut "[dfne8] and puts a full release above a 4-number tag of its own version"  '\(v3\.0\.0\) from' \
+				fRlPsInstall devfour "" "${rl}/four.json" -Release dev -Yes
+			fAssertOut "[dfne9] go ps installer ranks a dot-suffixed pre-release by its own version while no full release has a binary"  'newest pre-release, v3\.1\.0\.rc1' \
+				fRlPsInstall dotpre v2.1.0 "${rl}/dotpre.json" -Yes
 			fAssertOut "[ddf9m] go ps installer says when no release publishes a binary"  'No release of yottacore/gitsby publishes a gitsby binary yet' \
 				fRlPsInstall none v2.1.0 "${rl}/none.json" -Yes
 			fAssert    "[ddf9n] and downloads nothing"  bash -c "grep -q '/repos/' '${rlp}/calls' && ! grep -q '/gitsby-' '${rlp}/calls'"
@@ -5563,6 +5730,65 @@ GHEOF
 	fAssert     "[dfm09] br switch off dev with only a submodule behind its gitlink moves"  bash -c "cd '${smb}/mine' && git push --quiet origin dev && git -C child checkout --quiet HEAD~1 && git branch smbfeat && '${gitsby}' -q br switch smbfeat >/dev/null 2>&1 && [[ \"\$(git branch --show-current)\" == smbfeat ]]"
 	fAssert     "[dfm0a] -q sync on dev with only that submodule isn't a direct push, and pushes no move back"  bash -c "cd '${smb}/mine' && git checkout --quiet dev && '${gitsby}' -q sync 'smb' >/dev/null 2>&1 && [[ \"\$(git -C '${smb}/origin.git' rev-parse dev:child)\" == \"\$(git rev-parse HEAD:child)\" && \"\$(git -C child rev-parse HEAD)\" != \"\$(git rev-parse HEAD:child)\" ]]"
 	fAssert     "[dfm0b] a submodule moved sideways still counts as work on dev"  bash -c "cd '${smb}/mine' && ( cd child && git checkout --quiet -b side && git commit --quiet --allow-empty -m side ) && ! '${gitsby}' -q br switch smbfeat >/dev/null 2>&1; rc=\$?; git -C child checkout --quiet --detach HEAD~1; exit \${rc}"
+
+	## git merge never reads submodule.recurse, so with it set the pull left the submodule's
+	## checkout behind, where git pull updates it. And the warning for a submodule moved back on
+	## purpose named only 'git submodule update', which undoes that move.
+	local smr="${work}/$1-submodulerecurse"
+	mkdir -p "${smr}"
+	git init --quiet --bare -b main "${smr}/child.git"
+	git clone --quiet "${smr}/child.git" "${smr}/childwork" 2>/dev/null
+	git init --quiet --bare -b main "${smr}/origin.git"
+	git clone --quiet "${smr}/origin.git" "${smr}/theirs" 2>/dev/null
+	(
+		cd "${smr}/childwork" || exit 1
+		echo c > c.txt && git add --all && git commit --quiet -m child && git push --quiet origin main
+		cd "${smr}/theirs" || exit 1
+		echo a > a.txt && git add --all
+		git -c protocol.file.allow=always submodule --quiet add "${smr}/child.git" child
+		git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git -c protocol.file.allow=always clone --quiet --recurse-submodules -b dev "${smr}/origin.git" "${smr}/mine" 2>/dev/null
+		cd "${smr}/mine" && git config protocol.file.allow always
+		fBump(){ ( cd "${smr}/childwork" && echo d >> c.txt && git commit --quiet -am more && git push --quiet origin main; cd "${smr}/theirs/child" && git pull --quiet origin main; cd "${smr}/theirs" && git pull --quiet --ff-only origin dev && git add child && git commit --quiet -m bump && git push --quiet origin dev ) ;}
+		fBump
+		cd "${smr}/mine" || exit 1
+		git config submodule.recurse true
+		echo m > m.txt
+		rc=0; "${gitsby}" -q pullcom 'r1' > "${smr}/r1.out" 2>&1 || rc=$?
+		echo "${rc}" > "${smr}/r1.rc"
+		git -C child rev-parse HEAD > "${smr}/child.1"
+		git rev-parse HEAD:child > "${smr}/recorded.1"
+		git log -1 --pretty=%s > "${smr}/subject.1"
+		git push --quiet origin dev
+		git config --unset submodule.recurse
+		git -C child checkout --quiet HEAD~1
+		git rev-parse HEAD > "${smr}/head.2"
+		rc=0; "${gitsby}" -q pullcom 'r2' > "${smr}/r2.out" 2>&1 || rc=$?
+		echo "${rc}" > "${smr}/r2.rc"
+		git rev-parse HEAD > "${smr}/head.2after"
+		## A bump the submodule can't fetch: the update fails, and the run goes on.
+		git config submodule.recurse true
+		fBump
+		mv "${smr}/child.git" "${smr}/child.moved"
+		echo x > x.txt
+		rc=0; "${gitsby}" -q pullcom 'r3' > "${smr}/r3.out" 2>&1 || rc=$?
+		echo "${rc}" > "${smr}/r3.rc"
+		git rev-parse HEAD:child > "${smr}/recorded.3"
+		git log -1 --pretty=%s > "${smr}/subject.3"
+		git cat-file -e HEAD:x.txt && touch "${smr}/x.3"
+		mv "${smr}/child.moved" "${smr}/child.git"
+		git -c protocol.file.allow=always submodule --quiet update
+		git -C child checkout --quiet HEAD~1
+		git add child
+		rc=0; "${gitsby}" -q pullcom --staged -m 'r4' > "${smr}/r4.out" 2>&1 || rc=$?
+		echo "${rc}" > "${smr}/r4.rc"
+	)
+	fAssert     "[dfnaw] with submodule.recurse set, pullcom after a bump updates the submodule's checkout"  bash -c "cd '${smr}/mine' && [[ \"\$(cat ../r1.rc)\" == 0 && \"\$(cat ../child.1)\" == \"\$(cat ../recorded.1)\" && \"\$(cat ../subject.1)\" == r1 ]] && ! grep -qF WARNING ../r1.out"
+	fAssert     "[dfnax] and its plan lists the update"  bash -c "cd '${smr}' && grep -qE '^    git submodule update --recursive --checkout \\*\$' r1.out"
+	fAssert     "[dfnay] a submodule moved back on purpose is left out, and the warning names git add and --staged"  bash -c "cd '${smr}' && [[ \"\$(cat r2.rc)\" == 0 && \"\$(cat head.2after)\" == \"\$(cat head.2)\" ]] && grep -qF 'Nothing to commit.' r2.out && grep -qE \"^          git add '.*/mine/child'\\\$\" r2.out && grep -qE '^          gitsby pullcom --staged\$' r2.out && ! grep -qF 'that move' r2.out && ! grep -qF 'submodule update --recursive' r2.out"
+	fAssert     "[dfnaz] a failed submodule update warns, and the run commits the rest and keeps the bump"  bash -c "cd '${smr}/mine' && [[ \"\$(cat ../r3.rc)\" == 0 && \"\$(cat ../recorded.3)\" == \"\$(git -C '${smr}/origin.git' rev-parse dev:child)\" && \"\$(cat ../subject.3)\" == r3 && -e ../x.3 ]] && grep -qF \"WARNING: 'git submodule update --recursive --checkout' failed (exit \" ../r3.out"
+	fAssert     "[dfnb0] with it set, git add and --staged commit the move back, which the update keeps"  bash -c "cd '${smr}/mine' && [[ \"\$(cat ../r4.rc)\" == 0 && \"\$(git rev-parse HEAD:child)\" == \"\$(git -C child rev-parse HEAD)\" && \"\$(git rev-parse HEAD:child)\" != \"\$(git -C '${smr}/origin.git' rev-parse dev:child)\" ]] && git log -1 --pretty=%s | grep -qx r4 && grep -qF 'git submodule update --recursive --checkout ...' ../r4.out"
 
 	## status.showUntrackedFiles=no hides untracked files from status, but 'git add --all' still
 	## takes them. Read from status, the plan said clean and the guards let them through.
@@ -9943,6 +10169,7 @@ case "$1 $2" in
                printf '"Name"\t"URL"\t"SSHHost"\t"User"\t"Default"\n' ;
                printf '"work"\t"%s"\t""\t"%s"\t"true"\n' "${FAKE_TEA_URL:-https://git.example.test}" "${FAKE_TEA_USER:-giteauser}" ;;
 "pulls list")  printf '"index"\t"head"\n' ; [[ -n "${FAKE_TEA_EXISTING:-}" ]] && printf '"%s"\t"%s"\n' "${FAKE_TEA_EXISTING}" "${FAKE_TEA_HEAD:-feat}" ;;
+"pulls "[0-9]*) printf '"index"\t"head"\t"base"\t"state"\n"%s"\t"%s"\t"%s"\t"open"\n' "$2" "${FAKE_TEA_HEAD:-feat}" "${FAKE_TEA_BASE:-dev}" ;;
 *)             [[ -n "${FAKE_TEA_ENV:-}" ]] && echo "url=${GITEA_INSTANCE_URL:-} token=${GITEA_TOKEN:-}" ;;
 esac
 exit 0
@@ -10090,7 +10317,7 @@ GHEOF
 #!/usr/bin/env bash
 [[ -n "${FAKE_GLAB_LOG:-}" ]] && echo "$* api=${GITLAB_API_HOST:-} host=${GITLAB_HOST:-} token=${GITLAB_TOKEN:-}" >> "${FAKE_GLAB_LOG}"
 case "$1 $2" in
-"mr view")  if [[ -n "${FAKE_GLAB_VIEW:-}" ]]; then printf '%s\n' "${FAKE_GLAB_VIEW}"; else echo "{\"iid\":7,\"state\":\"${FAKE_GLAB_STATE:-opened}\",\"source_branch\":\"glfeat\"}"; fi ;;
+"mr view")  if [[ -n "${FAKE_GLAB_VIEW:-}" ]]; then printf '%s\n' "${FAKE_GLAB_VIEW}"; else echo "{\"iid\":7,\"state\":\"${FAKE_GLAB_STATE:-opened}\",\"source_branch\":\"glfeat\",\"target_branch\":\"main\"}"; fi ;;
 "mr list")  if [[ -n "${FAKE_GLAB_EXISTING:-}" ]]; then echo "[{\"iid\":${FAKE_GLAB_EXISTING}}]"; else echo "[]"; fi ;;
 esac
 exit 0
@@ -10156,11 +10383,69 @@ GLEOF
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssertOut "[df04p] pr ok reads glab's state past a nested one, in any key order" 'PR #7 is merged, not open' \
 		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
-		'{ "author": {"state": "active", "id": 3}, "title": "a \"b\", c", "source_branch": "glfeat", "state": "merged" }' "${gitsby}"
+		'{ "author": {"state": "active", "id": 3}, "title": "a \"b\", c", "source_branch": "glfeat", "target_branch": "main", "state": "merged" }' "${gitsby}"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssertOut "[df04q] and a branch name with an escaped quote and a comma whole" "Branch '-gl\"x,y' starts with a dash" \
 		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
-		'{"source_branch":"-gl\"x,y","iid":7,"state":"opened"}' "${gitsby}"
+		'{"source_branch":"-gl\"x,y","iid":7,"target_branch":"main","state":"opened"}' "${gitsby}"
+	## The base comes from the git host, through each tool's own field for it.
+	fAssertOut "[dfnbv] pr ok reads the PR's base through tea" "Branch '-tb' starts with a dash" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_HEAD=feat FAKE_TEA_BASE=-tb '${gitsby}' -q -NoFetch pr ok 7 2>&1 || true"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssertOut "[dfnbw] and through glab, where a merge request with no target_branch can't be read" "Can't read PR #7" \
+		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
+		'{"iid":7,"state":"opened","source_branch":"glfeat"}' "${gitsby}"
+	## glab's merge takes only GitLab's copy of the branch, so pr ok deletes ours after it, as gh and
+	## tea do in theirs. Origin is a GitLab ssh url, carried to a local bare by a stub ssh.
+	local fgMr="${fg}/glmerge"
+	mkdir -p "${fgMr}/bin"
+	git init --quiet --bare -b main "${fgMr}/origin.git"
+	fStub "${fgMr}/bin/ssh" <<'SSHEOF'
+#!/usr/bin/env bash
+[[ "$1" == "-G" ]] && { dest="${!#}"; printf 'user git\nhostname %s\n' "${dest#*@}"; exit 0; }
+for arg in "$@"; do
+	case "${arg}" in git-upload-pack*|git-receive-pack*) exec "${arg%% *}" "${FAKE_SSH_REPO}" ;; esac
+done
+exit 255
+SSHEOF
+	fStub "${fgMr}/bin/glab" <<'GLEOF'
+#!/usr/bin/env bash
+[[ -n "${FAKE_GLAB_LOG:-}" ]] && echo "$*" >> "${FAKE_GLAB_LOG}"
+case "$1 $2" in
+"mr view")  echo "{\"iid\":$3,\"state\":\"opened\",\"source_branch\":\"${FAKE_GLAB_HEAD}\",\"target_branch\":\"${FAKE_GLAB_BASE}\"}" ;;
+"mr list")  echo "[]" ;;
+"mr merge") ## As GitLab does with --remove-source-branch: origin's copy goes into the base, then
+            ## origin's copy is deleted and ours stays. FAKE_GLAB_LATE is a commit made on the
+            ## branch here while the prompt sat.
+            tip="$(git rev-parse "refs/remotes/origin/${FAKE_GLAB_HEAD}")"
+            git push --quiet origin "${tip}:refs/heads/${FAKE_GLAB_BASE}" && git push --quiet origin --delete "${FAKE_GLAB_HEAD}"
+            [[ -z "${FAKE_GLAB_LATE:-}" ]] || git commit --quiet --allow-empty -m late ;;
+esac
+exit 0
+GLEOF
+	local fgMc="${fgMr}/c"
+	git clone --quiet "${fgMr}/origin.git" "${fgMc}" 2>/dev/null
+	(
+		cd "${fgMc}" || exit 1
+		echo a > a.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b glrace dev && echo r > r.txt && git add --all && git commit --quiet -m race && git push --quiet -u origin glrace
+		git checkout --quiet -b hotfix/gl main && echo fix > fix.txt && git add --all && git commit --quiet -m fix && git push --quiet -u origin hotfix/gl
+		git remote set-url origin git@ssh.gitlab.example.test:grp/proj.git
+	)
+	local fgMrEnv="PATH='${fgMr}/bin:${fgGlPath}' FAKE_SSH_REPO='${fgMr}/origin.git' FAKE_GLAB_LOG='${fgMr}/glab.log'"
+	fAssert "[dfnbx] pr ok through glab of a hotfix opened against dev runs" \
+		bash -c "cd '${fgMc}' && ${fgMrEnv} FAKE_GLAB_HEAD=hotfix/gl FAKE_GLAB_BASE=dev '${gitsby}' -q pr ok 7 > '${fgMr}/ok1.log' 2>&1"
+	fAssert "[dfnby] and plans the delete of the local branch, which runs as planned"  fPlanRan '^ +git branch -D hotfix/gl'  cat "${fgMr}/ok1.log"
+	fAssert "[dfnbz] and ends on dev with the branch gone, and the fix in dev, not main" \
+		bash -c "cd '${fgMc}' && [[ \"\$(git branch --show-current)\" == dev ]] && ! git show-ref --verify --quiet refs/heads/hotfix/gl && git cat-file -e origin/dev:fix.txt && ! git cat-file -e origin/main:fix.txt 2>/dev/null"
+	fAssert "[dfnc0] a commit made on the branch after the plan keeps it, with a warning" \
+		bash -c "cd '${fgMc}' && git checkout --quiet glrace && out=\"\$(${fgMrEnv} FAKE_GLAB_HEAD=glrace FAKE_GLAB_BASE=dev FAKE_GLAB_LATE=1 '${gitsby}' -q pr ok 8 2>&1)\" && grep -qF \"WARNING: 'glrace' has commits PR #8 doesn't; left it alone.\" <<< \"\${out}\" && ! grep -qF '[ git branch -D' <<< \"\${out}\" && [[ \"\$(git log -1 --pretty=%s glrace)\" == late ]]"
+	( cd "${fgMc}" || exit 1; git checkout --quiet -b glnew dev && echo n > n.txt && git add --all && git commit --quiet -m new )
+	fAssert "[dfnc1] pr create through glab plans --target-branch, on the line the run announces" \
+		fPlanRan '^ +glab mr create --target-branch dev --title "New"' bash -c "cd '${fgMc}' && ${fgMrEnv} '${gitsby}' -q pr create New"
+	fAssert "[dfnc2] and glab gets that base" \
+		bash -c "grep -q '^mr create --target-branch dev --source-branch glnew --title New ' '${fgMr}/glab.log'"
 	fAssertOut "[ddk66] --any-identity hands tea nothing"  '^url= token=$' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_ENV=1 '${gitsby}' -q -NoFetch --any-identity --config '${fg}/tea-acct.shcl' raw tea whoami"
 	: > "${fg}/rawdeb.log"
@@ -10361,6 +10646,11 @@ FSEOF
 		fAssertNotOut "[dfjxg] gh's store is asked for the account's own host: ${twWhat[twItem]}"  'tok_walk_ghestore' \
 			bash -c "cd '${tw}/trees/gh/proj' && ${twRun[twItem]}"
 	done
+	## raw gh pointed at another host gets no token, and says so, as raw glab does in [df4w7].
+	fAssertOut    "[dfngg] raw gh pointed at another host says it isn't acting as the account"  'not acting as the account: gh is pointed at evil\.walk\.test, and the account.s token is for ghe\.walk\.test' \
+		bash -c "cd '${tw}/trees/ghe/proj' && ${twGhe} env ${twEnv} '${gitsby}' -NoFetch --config '${tw}/walk.shcl' raw gh auth token --hostname evil.walk.test 2>&1 >/dev/null"
+	fAssertNotOut "[dfngh] and pointed at its own host it doesn't"  'not acting as the account' \
+		bash -c "cd '${tw}/trees/ghe/proj' && ${twGhe} env ${twEnv} '${gitsby}' -NoFetch --config '${tw}/walk.shcl' raw gh auth token 2>&1 >/dev/null"
 	## A Gitea account has no GitHub login, and the line used to read only that one.
 	fAssertOut "[ddk69] raw names the Gitea account it acts as"  'acting as giteauser' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_VERSION=0.11.0 '${gitsby}' -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
@@ -11003,3 +11293,7 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261121 JC: The real publisher with an empty path list, with another staged edit, with a failed pull, with a staged edit the pull clashes with, with an untracked file in the way, and with --quiet and no message, [dfkvy] to [dfkw1], [dfkw5], [dfkw3]. A blank answer at the cicd message prompt and --help, [dfkw2] [dfkw4].
 ##		- 20261121 JC: pullcom leaves a submodule out of the commit when it's checked out behind the commit HEAD records, as after a pull that bumped it, [dfkzx] to [dfm01]. br switch and sync don't count it as work, [dfm09] to [dfm0b].
 ##		- 20261121 JC: pr create bases the pull request on the branch its push lands on, the head pr ok reads back, in the run and the plan, [dfm0q] to [dfm0s].
+##		- 20261122 JC: With submodule.recurse set, the pull updates the submodules after its merge, and its plan says so. A failed update warns and the run goes on. The warning for a submodule left out names git add and --staged, for a move back made on purpose, [dfnaw] to [dfnb0].
+##		- 20261122 JC: pr ok merges into the base the git host gives the pull request, through gh, tea and glab, and owes dev a back-merge only when that base is main, [dfnbj] to [dfnbw]. Through glab it deletes the merged branch here too, and pr create's plan names --target-branch, [dfnbx] to [dfnc2].
+##		- 20261122 JC: Finishing a release whose push was refused, from main with an edit or a new file, refuses and leaves them, rather than committing past the tag, [dfndg] to [dfndp].
+##		- 20261122 JC: pr create asks about an open PR from the branch its push lands on, [dfngf]. raw gh pointed at another host says it isn't acting as the account, [dfngg] [dfngh]. pr ok --no-fetch on the PR's own branch moves to the merge target, [dfngj] [dfngk]. install.ps1's stored PATH update runs over a stand-in key, [dfngz].

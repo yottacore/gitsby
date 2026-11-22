@@ -266,20 +266,20 @@ func resolveLinks(p string) string {
 // absDir puts a relative path on the current directory, so a folder rule sees the
 // same spelling it would for a folder we were standing in. Folded first, because
 // '/c/x' is already absolute on Windows and joining it to the cwd would bury it.
+// filepath.Abs rather than a join, since on Windows \foo is on the current drive's
+// root and C:foo on that drive's current folder, as git takes them.
 func absDir(p string) string {
 	if p = canonPath(p); p == "" {
 		return ""
 	}
-	if !filepath.IsAbs(p) {
-		wd, err := os.Getwd()
-		if err != nil {
-			return p
-		}
-		p = wd + "/" + p
+	// Native separators, since wine reads a /-led path as a Unix one, on Z:.
+	full, err := filepath.Abs(filepath.FromSlash(p))
+	if err != nil {
+		return p
 	}
 	// '..' has to go before a rule sees it, or a destination reached by climbing out
-	// of one tree still reads as a folder inside it.
-	return canonPath(filepath.ToSlash(filepath.Clean(p)))
+	// of one tree still reads as a folder inside it. Abs cleans it.
+	return canonPath(filepath.ToSlash(full))
 }
 
 // canonSegment folds a 'pathContains' run of folder names the same way canonPath

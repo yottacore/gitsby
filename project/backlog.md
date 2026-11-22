@@ -33,225 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- The warning for a submodule that is behind names no way to commit a move back made on purpose
-	- ID: 2026112118464455
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261121-184644
-	- Opened by:
-	- Related IDs: 2026112112175066, 2026112118463121
-	- Steps to reproduce [Bug]: With a submodule level with origin, move it back on purpose with `git -C <submodule> checkout HEAD~1`, then run `gitsby pullcom`.
-	- Incorrect behavior [Bug]: The submodule is left out and the run says Nothing to commit. The warning names only `git submodule update`, which undoes the move. It also says the commit would have undone "that move", though no pull moved anything.
-	- Expected behavior [Bug]: The submodule is still left out, since a checkout a pull left behind and a move back look the same. The warning also says how to record the older commit: `git add <folder>`, then the same command with `--staged`. Its wording fits both cases.
-	- Reproduced [Bug]: 2026-11-21 on b23. `git add child`, then `gitsby -q pullcom --staged`, commits the move back.
-	- Possible cause [Bug]: The warning in cmdCommit (mutate.go) was written for the pull case only.
-	- Decisions: Answered 2026-11-21: keep leaving it out, and name the way through. Committing a move back without a word is the High bug 2026112112175066 fixed, and the two cases can't be told apart once a run has ended. Goes with 2026112118463121, at the same site.
-	- Origin: 2cdbb74, the fix of 2026112112175066. Confirmed. Found while answering its Check: entry.
-
-- With submodule.recurse set, the pull no longer updates submodules
-	- ID: 2026112118463121
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261121-184631
-	- Opened by:
-	- Related IDs: 2026112112175066
-	- Steps to reproduce [Bug]: In a clone with a submodule, run `git config submodule.recurse true`. Have origin's dev move the submodule to a newer commit, then run `gitsby -q pullcom` on dev.
-	- Incorrect behavior [Bug]: The submodule's checkout stays on the old commit, and the run warns that it was left out of the commit. The warning comes back on every run until `git submodule update` is run by hand. Plain `git pull --ff-only` with that setting updates the checkout, and so did v2.1.0, which ran `git pull`. `br switch` still updates it, through `git checkout`.
-	- Expected behavior [Bug]: With `submodule.recurse` true, each merge that stands in for a pull is followed by `git submodule update --recursive --checkout`, as `git pull` does, and the plan lists it. A failed update warns and the run goes on, since the commit already leaves out a submodule that is behind. Without the setting nothing changes, and a repo with no `.gitmodules` costs no extra process.
-	- Reproduced [Bug]: 2026-11-21 on b23, git 2.51, local bare repos. Confirmed.
-	- Possible cause [Bug]: f61adb6 made the pull step a `git merge --ff-only`, and `git merge` never reads `submodule.recurse`. Only an upstream on another remote still runs `git pull`.
-	- Decisions: Answered 2026-11-21: follow the setting, rather than always update or never update. The setting is the user's own request for it, so the detached checkout is what plain git already gives them, and gitsby then agrees with `git pull`, v2.1.0 and its own `br switch`. Without the setting the checkout is left alone, per 2026112112175066.
-	- Origin: f61adb6, Go port. Confirmed. Found while answering the Check: entry of 2026112112175066.
-
-- pr ok takes the PR's target from its head's name, not the base the git host gives it
-	- ID: 2026112113223086
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261121-132230
-	- Opened by:
-	- Related IDs: 2026112017135624
-	- Steps to reproduce [Bug]: Open a PR from hotfix/x against dev on the git host's web page, then run `gitsby -q pr ok <n>`.
-	- Incorrect behavior [Bug]: The git host merges it into dev. pr ok then reads the head as a hotfix, checks out and pulls main, and back-merges main into dev at exit 0, though the fix never reached main. A plain branch's PR opened against main merges there, and pr ok checks out dev and skips the back-merge.
-	- Expected behavior [Bug]: pr ok takes the target and the back-merge from the base the PR has, or refuses before the plan when the base isn't the one its head's name gives.
-	- Possible cause [Bug]: readPr asks gh, tea and glab for the head and state only. prTarget in pr.go reads the target off the head's name.
-	- Origin: 4918b5b, Go port. Plausible. Found while fixing 2026112017135624, whose pr create now opens every PR on the base pr ok expects, so only a PR opened elsewhere is left.
-
-- Code Review 20261120 item 19: A resumed release started on main with an edited file pushes a commit past the tag
-	- ID: 2026112017135608
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171356
-	- Opened by:
-	- Steps to reproduce [Bug]: Have the main push refused once, so the failed run leaves you on main. Edit a file and run a bare `release`.
-	- Incorrect behavior [Bug]: It says it's finishing the release, commits the edit onto main after v1.0.0, pushes main and moves dev to it. The plan shows the commit.
-	- Expected behavior [Bug]: A resume finishes the pushes and leaves the edit alone, or refuses it.
-	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
-	- Possible cause [Bug]: cmdPush runs ahead of the resume check at release.go:228-236.
-	- Origin: The resume from 2026111016332417. No round saw it.
-
-- Code Review 20261120 item 20: With glab, pr ok leaves the local branch behind
-	- ID: 2026112017135592
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171355
-	- Opened by:
-	- Steps to reproduce [Bug]: Run `pr ok` on a merged MR through glab.
-	- Incorrect behavior [Bug]: The git host's branch is deleted and the local one isn't. Through gh and tea both go.
-	- Expected behavior [Bug]: design.md:271 says pr ok deletes the branch it merged.
-	- Reproduced [Bug]: No. Read, plus a fake glab's argument log. Plausible.
-	- Possible cause [Bug]: `glab mr merge --remove-source-branch` acts on the git host only, at pr.go:666.
-	- Origin: 197677f (2026-10-22). No round reached the glab flows before.
-
-- Code Review 20261120 item 21: The pr create plan shows glab mr create --base
-	- ID: 2026112017135577
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171355
-	- Opened by:
-	- Steps to reproduce [Bug]: Run `pr create` in a GitLab repo and read the plan.
-	- Incorrect behavior [Bug]: The plan and step lines say `glab mr create --base dev`. glab has no --base, and the run uses --target-branch.
-	- Expected behavior [Bug]: The plan names the flags that run, per pr.go's rule for each tool's own words.
-	- Reproduced [Bug]: 2026-11-20 on b23, the plan against a fake glab's log. Confirmed.
-	- Possible cause [Bug]: prCreateDisp at pr.go:630 has one form for every tool.
-	- Origin: 197677f. No round saw it.
-
-- Code Review 20261120 item 26: install.ps1 picks a different release than install.bash when a tag has a dot suffix or 4 numbers
-	- ID: 2026112017135503
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171355
-	- Opened by:
-	- Steps to reproduce [Bug]: Feed both installers the same release list, with v3.1.0.rc1 as a pre-release, v3.0.0 and v3.0.0-rc.1, and run `-Release dev`.
-	- Incorrect behavior [Bug]: install.ps1 takes v3.0.0 and install.bash takes v3.1.0.rc1. Over v3.0.0 and v3.0.0.1, install.ps1 takes the candidate over its own release.
-	- Expected behavior [Bug]: Both follow design.md:458. A full release ranks above pre-releases of its own version, and a dot suffix is a candidate.
-	- Reproduced [Bug]: 2026-11-20 on vm925w in 5.1 and 7, and in pwsh on b23 with stubs. Confirmed.
-	- Possible cause [Bug]: install.ps1:247 strips only a `-` or `+` suffix, so `[version]` fails on 3.1.0.rc1 and reads 3.0.0.1 as newer than 3.0.0.
-	- Origin: 4ccd133 (2026-10-03). `-Release dev` (7c6a66a, 2026112015351403) now reaches it. Missed twin of 2026111920273377, whose Swept row left the installers out.
-
-- Code Review 20261120 item 31: design.md says a later candidate is installed only with --tag
-	- ID: 2026112017135430
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171354
-	- Opened by:
-	- Steps to reproduce [Bug]: Read design.md:686 and :690.
-	- Incorrect behavior [Bug]: They say a later candidate needs --tag, and that a release and a pre-release are never compared by version. Both contradict design.md:458 since --release dev.
-	- Expected behavior [Bug]: design.md agrees with --release dev.
-	- Reproduced [Bug]: 2026-11-20, by reading. Confirmed.
-	- Origin: 7c6a66a (2026112015351403) left them.
-
-- Code Review 20261120 item 32: install.ps1 may count an unexpanded %VAR% PATH entry as present
-	- ID: 2026112017135414
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171354
-	- Opened by:
-	- Steps to reproduce [Bug]: On Windows, put `%LOCALAPPDATA%\Programs\gitsby` in a user PATH stored as plain REG_SZ, then run install.ps1.
-	- Incorrect behavior [Bug]: Test-OnPath expands the entry, finds the folder and writes nothing. Windows doesn't expand %VAR% in a REG_SZ value, so the entry doesn't work.
-	- Expected behavior [Bug]: An entry counts as present only where Windows expands it.
-	- Reproduced [Bug]: No. Read only. vm925w's user PATH was checked as REG_SZ on 2026-11-20. Plausible.
-	- Possible cause [Bug]: install.ps1:298-306 expands every entry, the ones from `$env:PATH` included.
-	- Against: Code Review 20261119 item 34's fix, which expands %VAR% entries.
-	- Origin: 808235d, 2856951 and fb6ae4c (Code Review 20261119 item 34).
-
-- Code Review 20261120 item 33: raw git acts as the wrong account when a drive-relative -C follows another -C
-	- ID: 2026112017135400
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171354
-	- Opened by:
-	- Steps to reproduce [Bug]: On Windows in w\c\top, run `gitsby raw git -C .. -C C:foo config --get user.email`. Do the same with `-C .. -C \Users\<you>\w\c\top\foo`.
-	- Incorrect behavior [Bug]: git runs in the folder the options name, but raw acts as the starting folder's account, and git gets that email. A single drive-relative -C matches git.
-	- Expected behavior [Bug]: raw acts as the account of the folder git runs in, per design.md:381.
-	- Reproduced [Bug]: 2026-11-20 on vm925w in Git Bash. Confirmed.
-	- Possible cause [Bug]: joinDir at main.go:1108 uses filepath.IsAbs, so C:foo and \foo are joined onto the earlier folder, and the chdir fails.
-	- Origin: 12f1bc2, nov18, Code Review 20261110b item 7. Missed twin for Windows.
-
-- Code Review 20261120 item 34: 4 paste lines skip typedArg, so PowerShell misreads them
-	- ID: 2026112017135384
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171353
-	- Opened by:
-	- Steps to reproduce [Bug]: With origin holding `@foo`, run `gitsby -q br create '@foo'` on Windows and paste the line it prints into PowerShell.
-	- Incorrect behavior [Bug]: It prints `gitsby br switch @foo`, which PowerShell passes as br switch with no branch, and that switches to dev.
-	- Expected behavior [Bug]: Every paste line goes through typedArg, per Code Review 20261119 items 14 and 29.
-	- Reproduced [Bug]: 2026-11-20 on vm925w in 5.1 and 7, for branchcmd.go:32. The other 3 sites by reading. Confirmed.
-	- Possible cause [Bug]: branchcmd.go:29, :32 and :213, and main.go:494 print the name bare.
-	- Sweep: The 4 sites above, and a grep for every paste line that prints a branch, tag or path.
-	- Origin: 4918b5b (Go port). Missed twins of Code Review 20261119 items 14 and 29.
-
-- Code Review 20261120 item 35: On Windows, a held old-format accounts file fails conversion with no Fix
-	- ID: 2026112017135370
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171353
-	- Opened by:
-	- Steps to reproduce [Bug]: In pwsh 7, open a flat v2.1.0 accounts file with FileShare.Read and run `gitsby -q status`.
-	- Incorrect behavior [Bug]: The notice gives "Access is denied." with no Fix line. account set then says to run it again, which fails the same way while the file is held.
-	- Expected behavior [Bug]: The Fix says another program may have the file open, as Code Review 20261119 item 31 does for the other renames.
-	- Reproduced [Bug]: 2026-11-20 on vm925w. Confirmed.
-	- Possible cause [Bug]: cfgformat.go:470 doesn't use replaceFix.
-	- Origin: 37f4843. Missed twin of Code Review 20261119 item 31, whose Swept row covered the 3 writeRefusal renames.
-
-- Code Review 20261120 item 36: On Windows, file lists are cut at 100 columns whatever the console width
-	- ID: 2026112017135355
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171353
-	- Opened by:
-	- Steps to reproduce [Bug]: In a 72-column console on vm925w, run `gitsby -NoFetch status` in a repo with long file names.
-	- Incorrect behavior [Bug]: Lines run to 100 characters and wrap.
-	- Expected behavior [Bug]: design.md:614 says lists are cut to the terminal width.
-	- Reproduced [Bug]: 2026-11-20 on vm925w over `ssh -tt`, in cmd and pwsh. Confirmed.
-	- Possible cause [Bug]: termCols at tty_windows.go:23 returns 0. GetConsoleScreenBufferInfo gives the width.
-	- Origin: 12752d0 (2026-10-04). No round reached it before.
-
-- Code Review 20261120 item 37: 5 parts of last round's fixes have no test that fails without them
-	- ID: 2026112017135341
-	- Type: Bug
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171353
-	- Opened by:
-	- Steps to reproduce [Bug]: Undo each part listed below and run the Go tests and test.bash.
-		- Code Review 20261119 item 7's open-PR check: pr.go:449 asking openPrForBranch about the current branch rather than the pushed one.
-		- Item 1's sync plan line: the condition at preview.go:43 forced false, so the plan no longer names a different target.
-		- Item 5's raw gh warning: the "not acting as the account: gh is pointed at" line at main.go:978 turned off. glab's twin has [df4w7].
-		- 2026111910223089's move: pr ok with --no-fetch on the PR's own branch now moves to the merge target. Its Decisions row says it wasn't run.
-		- Item 34's result line: no check in the tree covers "already on your account PATH". Only the private Windows rig ran it.
-	- Incorrect behavior [Bug]: Nothing fails.
-	- Expected behavior [Bug]: Each part has a check that fails without it, per the review rules.
-	- Reproduced [Bug]: 2026-11-20 on b23. The first 3 by mutation, the other 2 by grep and a run. Confirmed.
-	- Origin: Code Review 20261119 items 1, 5, 7 and 34, and 2026111910223089, closed in nov19b, nov19c and nov20.
-
 - Code Review 20261120 item 38: 5 spawn-count rows sit at their limits, since their expected counts weren't raised
 	- ID: 2026112017135327
 	- Type: Bug
@@ -4985,6 +4766,464 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: stage 7's harness on gover after round 4, 2026-10-04. b26: Go tests pass, and test.bash against the universal build 1255/0. vmFreeBSD, vmDebARM64 and vm925w: Go tests pass. The Unix boxes ran Go tests only this time, since no Unix builds were passed. Their full test.bash ran earlier the same day and failed only `[db712]`, fixed since.
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
+
+- On Windows, repo clone into a rooted or drive-relative folder takes its account from the wrong folder
+	- ID: 2026112214033583
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261122-140335
+	- Opened by:
+	- Related IDs: 2026112017135400
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: On Windows, from a folder of one account, run gitsby repo clone <url> into \Users\<you>\<a folder of another account>\x, or into C: followed by that folder's path from the current one.
+	- Incorrect behavior [Bug]: absDir in config.go puts any path filepath.IsAbs doesn't call absolute under the current folder, so /foo and c:foo become <cwd>//foo and <cwd>/c:foo, and the clone's account comes from rules for that folder. By reading; not run.
+	- Expected behavior [Bug]: The clone's account comes from the folder the clone goes into, as git resolves it.
+	- Origin: f4d53c3, 2026-08-19. Found while sweeping 2026112017135400, the same class in raw's -C. Plausible.
+	- Reproduced [Bug]: 2026-11-22 in the Windows test build under wine, by [dfnff]. Confirmed.
+	- Actual cause [Bug]: As read. absDir joined any path filepath.IsAbs doesn't call absolute onto the current folder, so C:foo and \foo came out under it.
+	- Actual fix [Bug]: absDir takes the folder from filepath.Abs, which on Windows puts \foo on the current drive's root and C:foo on that drive's current folder, as git does.
+	- Decisions: filepath.Abs rather than 2026112017135400's joinDir. joinDir starts from an earlier -C, while a clone starts from the current folder, which is what Abs reads. Abs also takes D:foo from drive D's current folder, which joinDir leaves as typed.
+	- Test case: Go [dfnff] TestAbsDirFollowsChdir.
+	- Verified: [dfnff] compares absDir with a chdir to each folder. The Windows test build under wine failed 5 cases before the fix and passes after. On Linux it passes before and after, since no path there has a drive or a bare root. The other Windows Go test failures under wine are the same 5 before and after. Quick run of every area passed: test.bash 2408/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Swept: absDir's one caller, repo clone's account in settleAccount. The other filepath.IsAbs and os.Getwd sites in src-go, per 2026112017135400's Swept, and the rest only read the current folder.
+	- Branch: nov22-2026112214033583
+	- Commit: 1678410
+	- Closed reason: Done
+	- Closed: 20261122-152300
+	- Acceptance signoff: Self-closed: passed on vm925w on 24cb249, and the build before the fix took the wrong account.
+	- Verified: 2026-11-22 on vm925w, on 24cb249. Go [dfnff] passed in the Windows Go tests. In Git Bash with git 2.55, from a folder of one account, repo clone into the other account's folder by a rooted path and by C:..\b\x2 took that folder's account and cloned there. The build before the fix (ec33cde) took the starting folder's account for both.
+
+- pr ok on a pull request from dev or main deletes that branch
+	- ID: 2026112212332136
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261122-123321
+	- Opened by:
+	- Related IDs: 2026112113223086
+	- Steps to reproduce [Bug]: Open a pull request from dev into main on the git host's page, then run gitsby -q pr ok <n>.
+	- Incorrect behavior [Bug]: gh's merge runs with --delete-branch, glab's with --remove-source-branch, and tea's clean follows, so dev is deleted on origin where the git host allows it, and here. Nothing before the plan asks whether the head is a protected branch. By reading; not run.
+	- Expected behavior [Bug]: Refuse before the plan when the head is main, dev or the default branch, as pr create and br merge do, or merge it and keep the branch.
+	- Origin: Go port. Found while fixing 2026112113223086, whose change lets a pull request into main owe dev a back-merge. Plausible.
+	- Closed reason: Done
+	- Reproduced [Bug]: 2026-11-22 on b23, with the fake gh: pr ok 9 with a head of dev and a base of main ran the merge, and one from main into dev did too. Confirmed.
+	- Actual cause [Bug]: prAcceptPreflight checked the PR's head for unpushed work only, never whether it was a protected branch, and every tool's merge deletes the head.
+	- Actual fix [Bug]: pr ok refuses before the plan when the PR's head is main, master, dev or the default branch, and says to merge it on the git host's page, keeping the branch. For dev into the default branch it also names release. design.md and the changelog say so.
+	- Branch: nov22-2026112212332136
+	- Commit: 3ffb35d
+	- Test case: test.bash [dfncq] to [dfnct].
+	- Verified: [dfncq], [dfncr] and [dfncs] fail on the build before the fix and pass with it. [dfnct] passes on both, as a guard. test.bash 2387/0 on the fixed build, and the quick gate's lint and unit areas passed. The whole quick gate didn't fit in 4 minutes at load 26, so fuzz and parity are left to the gate step. gosec isn't on this box.
+	- Swept: every branch delete: gh's --delete-branch, glab's --remove-source-branch and its local git branch -D, and tea's clean all sit behind the new refusal in prAcceptPreflight. br merge refuses a protected branch, br prune skips one, and pr create refuses a push landing on one.
+	- Decisions: Refuse, rather than merge with the delete left off. A git host's own delete-on-merge setting can still take an unprotected dev, and release is how dev goes into main. A fork's PR from a branch named dev is refused too, since readPr gets only the branch name. Check: entry filed.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-130030
+
+- The warning for a submodule that is behind names no way to commit a move back made on purpose
+	- ID: 2026112118464455
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261121-184644
+	- Opened by:
+	- Related IDs: 2026112112175066, 2026112118463121
+	- Steps to reproduce [Bug]: With a submodule level with origin, move it back on purpose with `git -C <submodule> checkout HEAD~1`, then run `gitsby pullcom`.
+	- Incorrect behavior [Bug]: The submodule is left out and the run says Nothing to commit. The warning names only `git submodule update`, which undoes the move. It also says the commit would have undone "that move", though no pull moved anything.
+	- Expected behavior [Bug]: The submodule is still left out, since a checkout a pull left behind and a move back look the same. The warning also says how to record the older commit: `git add <folder>`, then the same command with `--staged`. Its wording fits both cases.
+	- Reproduced [Bug]: 2026-11-21 on b23. `git add child`, then `gitsby -q pullcom --staged`, commits the move back.
+	- Possible cause [Bug]: The warning in cmdCommit (mutate.go) was written for the pull case only.
+	- Decisions: Answered 2026-11-21: keep leaving it out, and name the way through. Committing a move back without a word is the High bug 2026112112175066 fixed, and the two cases can't be told apart once a run has ended. Goes with 2026112118463121, at the same site.
+		- The add names the folder by its full path, quoted as other Fix lines are, so it works from any folder. The first sentence of the warning is kept, so [dfkzy] still holds.
+	- Origin: 2cdbb74, the fix of 2026112112175066. Confirmed. Found while answering its Check: entry.
+	- Closed reason: Done
+	- Actual cause [Bug]: The warning was written for the pull case. It named only 'git submodule update', which undoes a move back made on purpose, and said the commit would have undone 'that move'.
+	- Actual fix [Bug]: The warning says a pull or switch leaves a submodule that way, and that committing it would take the branch back to the older commit. A Fix note names 'git submodule update', or 'git add' with the folder and then the same command with --staged. repo create and repo connect don't take --staged, so theirs names 'git commit' and a rerun. design.md and the changelog say so.
+	- Test case: test.bash [dfnay] and [dfnb0]. Go [dfnav] TestBehindFixNamesStaged.
+	- Verified: [dfnay] and [dfnb0] fail on the build before the fix and pass with it. [dfnav] fails with --staged dropped from the rerun line, and with repo create and connect given it. The quick gate with every area passed: test.bash 2366/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Swept: behindGitlinks has one caller, cmdCommit, so the warning is the one site. [dfnav] covers every command stagesTree names, and checks that its rerun line parses with --staged.
+	- Branch: nov22-2026112118464455
+	- Commit: 61e6604
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after, and the advice is the one the answer named.
+	- Closed: 20261122-115204
+
+- With submodule.recurse set, the pull no longer updates submodules
+	- ID: 2026112118463121
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261121-184631
+	- Opened by:
+	- Related IDs: 2026112112175066
+	- Steps to reproduce [Bug]: In a clone with a submodule, run `git config submodule.recurse true`. Have origin's dev move the submodule to a newer commit, then run `gitsby -q pullcom` on dev.
+	- Incorrect behavior [Bug]: The submodule's checkout stays on the old commit, and the run warns that it was left out of the commit. The warning comes back on every run until `git submodule update` is run by hand. Plain `git pull --ff-only` with that setting updates the checkout, and so did v2.1.0, which ran `git pull`. `br switch` still updates it, through `git checkout`.
+	- Expected behavior [Bug]: With `submodule.recurse` true, each merge that stands in for a pull is followed by `git submodule update --recursive --checkout`, as `git pull` does, and the plan lists it. A failed update warns and the run goes on, since the commit already leaves out a submodule that is behind. Without the setting nothing changes, and a repo with no `.gitmodules` costs no extra process.
+	- Reproduced [Bug]: 2026-11-21 on b23, git 2.51, local bare repos. Confirmed.
+	- Possible cause [Bug]: f61adb6 made the pull step a `git merge --ff-only`, and `git merge` never reads `submodule.recurse`. Only an upstream on another remote still runs `git pull`.
+	- Decisions: Answered 2026-11-21: follow the setting, rather than always update or never update. The setting is the user's own request for it, so the detached checkout is what plain git already gives them, and gitsby then agrees with `git pull`, v2.1.0 and its own `br switch`. Without the setting the checkout is left alone, per 2026112112175066.
+		- With the setting, the update also checks out the recorded commit for a submodule moved back on purpose and not staged, as git pull does. A staged move back is kept, since the update reads the index ([dfnb0]). A failed update exited 128 on git 2.51, so [dfnaz] checks the text rather than the code.
+	- Origin: f61adb6, Go port. Confirmed. Found while answering the Check: entry of 2026112112175066.
+	- Closed reason: Done
+	- Actual cause [Bug]: f61adb6 made the pull a 'git merge --ff-only', and git merge never reads submodule.recurse, so the update git pull runs after its merge with that setting never ran.
+	- Actual fix [Bug]: pullStep in mutate.go, which cmdPull and pullIfOnline call, follows the merge with 'git submodule update --recursive --checkout' when submodule.recurse is true. The setting is read once a run, and only where the work tree has a .gitmodules. planPull in preview.go lists the update under each pull in the plan. A failed update warns with its exit code and the run goes on. An upstream on another remote still runs git pull, which updates by itself. design.md and the changelog say so.
+	- Test case: test.bash [dfnaw], [dfnax], [dfnaz] and [dfnb0].
+	- Verified: all 4 fail on the build before the fix and pass with it. git pull --ff-only with the setting updates a submodule even when already up to date, so the update runs after every merge. The quick gate with every area passed: test.bash 2366/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Swept: pullArgs is called only from pullStep, which covers cmdPull and every pullIfOnline caller (br switch, br create, br hotfix, br merge, release, pr ok). Every pull line in the plan goes through planPull, 10 sites. The other merges, br merge's --no-ff, the hotfix back-merge and release's, aren't pulls, and plain git merge leaves submodules alone there too.
+	- Branch: nov22-2026112118464455
+	- Commit: 61e6604
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-115204
+
+- pr ok takes the PR's target from its head's name, not the base the git host gives it
+	- ID: 2026112113223086
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261121-132230
+	- Opened by:
+	- Related IDs: 2026112017135624
+	- Steps to reproduce [Bug]: Open a PR from hotfix/x against dev on the git host's web page, then run `gitsby -q pr ok <n>`.
+	- Incorrect behavior [Bug]: The git host merges it into dev. pr ok then reads the head as a hotfix, checks out and pulls main, and back-merges main into dev at exit 0, though the fix never reached main. A plain branch's PR opened against main merges there, and pr ok checks out dev and skips the back-merge.
+	- Expected behavior [Bug]: pr ok takes the target and the back-merge from the base the PR has, or refuses before the plan when the base isn't the one its head's name gives.
+	- Possible cause [Bug]: readPr asks gh, tea and glab for the head and state only. prTarget in pr.go reads the target off the head's name.
+	- Origin: 4918b5b, Go port. Plausible. Found while fixing 2026112017135624, whose pr create now opens every PR on the base pr ok expects, so only a PR opened elsewhere is left.
+	- Closed reason: Done
+	- Reproduced [Bug]: 2026-11-22 on b23, with a fake gh merging into the base the PR names: a hotfix PR against dev checked out main and back-merged it into dev, and a plain PR against main checked out dev with no back-merge. Confirmed.
+	- Actual cause [Bug]: readPr asked gh, tea and glab for the head and state only, so pr ok's checkout, plan, held-branch check and back-merge read the target off the head's name, while the git host merged into the base the PR has.
+	- Actual fix [Bug]: readPr reads the base too: gh's baseRefName, tea's base field and glab's target_branch. prTarget gives that base for pr ok, and a new prOkBackMerges says a back-merge is owed only when the base is the default branch and dev is a branch of its own. The checkout, the plan, refuseHeldBranch and mergePushesOwn read them. A base shaped like an option, or one this clone has no copy of, is refused before the plan. design.md and the changelog say so.
+	- Branch: nov22-2026112113223086
+	- Commit: 1acf747
+	- Test case: test.bash [dfnbj] to [dfnbw], [dfnbx] and [dfnbz] through glab; Go TestPrTarget [dfm0t], TestMergePushesOwn [dfhg8] and TestRefuseHeldBranch [dfh8b] with base cases, TestReadGlabMR [df04m], FuzzReadGlabMR [df04n].
+	- Verified: [dfnbk], [dfnbm], [dfnbp] to [dfnbt], [dfnbv] and [dfnbw] fail on the build before the fix and pass with it. [dfm0t], [dfhg8] and [dfh8b] fail with prOkBackMerges reading the head's name, and [dfm0t] with prTarget doing so. The quick gate passed with every area: test.bash 2383/0, fuzz 310/0, parity 31/0, spawn counts unchanged. gosec 37, as before, none in the changed files.
+	- Swept: every reader of pr ok's target or back-merge: cmdPrAccept, previewPr, checkoutsAhead and mergePushesOwn, by grep for prTarget and isHotfixBranch(a.pr.headBranch), which has no caller left. readPr for gh, tea and glab. pr create still takes its base off the pushed head's name, which is its own call (2026112017135624). br merge merges locally, so its target and the branch's name agree.
+	- Decisions: The base wins over the head's name, rather than refusing a PR whose base differs. The git host merges into the base either way, and refusing would leave the user to merge on the web page, where nothing merges main back into dev, and release then refuses. Check: entry filed.
+	- Against: 2026112017135624's call to keep isHotfixBranch(a.pr.headBranch) at its 4 sites without a helper. That rested on each site reading the head; they now read the base, through prOkBackMerges.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-123242
+	- Note: 20261122, inputs given a base, with what each checks unchanged. TestPrTarget [dfm0t]'s pr ok half read the target off the head's name, and now gives the head a base of main and of dev. TestMergePushesOwn [dfhg8] and TestRefuseHeldBranch [dfh8b] set the base the head's name gives. The fake gh's pr view prints the base between the head and the state, and the fake glab's default view, [df04p] and [df04q] have a target_branch, as real glab's JSON does.
+
+- Code Review 20261120 item 19: A resumed release started on main with an edited file pushes a commit past the tag
+	- ID: 2026112017135608
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171356
+	- Opened by:
+	- Steps to reproduce [Bug]: Have the main push refused once, so the failed run leaves you on main. Edit a file and run a bare `release`.
+	- Incorrect behavior [Bug]: It says it's finishing the release, commits the edit onto main after v1.0.0, pushes main and moves dev to it. The plan shows the commit.
+	- Expected behavior [Bug]: A resume finishes the pushes and leaves the edit alone, or refuses it.
+	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
+	- Possible cause [Bug]: cmdPush runs ahead of the resume check at release.go:228-236.
+	- Origin: The resume from 2026111016332417. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: release parks the current branch before its pushes, resumed or not. Run on the default branch, the park committed the edit past the release's tag, pushed it with the release, and dev then fast-forwarded onto it.
+	- Actual fix [Bug]: Before the plan, a resume run on the default branch with uncommitted changes, staged ones under --staged, is refused. It names the release, says the changes would land past its tag, and says to set them aside with 'git stash --include-untracked', run it again, then 'git stash pop'. The changelog says so.
+	- Test case: test.bash [dfndg] to [dfndp].
+	- Verified: [dfndh] to [dfndn] and [dfndp] fail on the build before the fix and pass with it, as does [dfjyc], which the old build's commit on main broke. [dfndg] passes on both, as setup. The whole quick gate passed: test.bash 2394/0, fuzz 310/0, parity 31/0. gosec 37, as before, none in release.go.
+	- Swept: the one park ahead of a resume, cmdPush in cmdRelease, for both resumes: the default branch's refused push ([dfndh]) and dev's ([dfndn]). On dev, the park lands on dev, which the dev resume then pushes as it is, and on a feature branch it stays off the release. A typed version other than the pending one cuts its own release, and keeps parking on the default branch, as a fresh release from there does.
+	- Decisions: Refuse, rather than finish the pushes and leave the edit in the tree. The run checks out dev next with the edit still in the tree, and git can refuse that checkout after the default branch and the tag are pushed. Only the default branch is refused, since a park elsewhere doesn't reach the release. Check: entry filed.
+	- Branch: nov22-2026112017135608
+	- Commit: 39338ec
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-131946
+
+- Code Review 20261120 item 20: With glab, pr ok leaves the local branch behind
+	- ID: 2026112017135592
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171355
+	- Opened by:
+	- Steps to reproduce [Bug]: Run `pr ok` on a merged MR through glab.
+	- Incorrect behavior [Bug]: The git host's branch is deleted and the local one isn't. Through gh and tea both go.
+	- Expected behavior [Bug]: design.md:271 says pr ok deletes the branch it merged.
+	- Reproduced [Bug]: 2026-11-22 on b23, with a fake glab that merges into a local bare and deletes origin's copy, reached over a stub ssh: pr ok left the local branch. Confirmed.
+	- Possible cause [Bug]: `glab mr merge --remove-source-branch` acts on the git host only, at pr.go:666.
+	- Origin: 197677f (2026-10-22). No round reached the glab flows before.
+	- Closed reason: Done
+	- Actual cause [Bug]: glab's --remove-source-branch deletes only the git host's copy, and nothing in pr ok deleted ours, where gh's --delete-branch and tea's clean delete both.
+	- Actual fix [Bug]: After a glab merge and the checkout, pr ok runs git branch -D on the PR's branch, in the plan and the run, as gh does. It asks again just before whether the branch has commits origin's copy lacked, as one made while the prompt sat, and then keeps it with a warning. A failed delete warns and the run goes on. Not planned while pr ok stays on that branch. design.md and the changelog say so.
+	- Branch: nov22-2026112113223086
+	- Commit: 1acf747
+	- Test case: test.bash [dfnbx] to [dfnc0]; Go TestPrLocalCleanArgs [dfnbh].
+	- Verified: [dfnby], [dfnbz] and [dfnc0] fail on the build before the fix and pass with it. [dfnbh] fails with prLocalCleanArgs giving nothing. The quick gate passed with every area, as for 2026112113223086.
+	- Swept: the merge of every tool: gh's --delete-branch and tea's pulls clean take both copies, glab's now has the local delete. br merge deletes its own local branch. br prune is a separate path.
+	- Decisions: -D, as gh uses, since the preflight refused a branch with commits origin's copy lacks. The tip is asked again before the delete, since the prompt can sit.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-123306
+
+- Code Review 20261120 item 21: The pr create plan shows glab mr create --base
+	- ID: 2026112017135577
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171355
+	- Opened by:
+	- Steps to reproduce [Bug]: Run `pr create` in a GitLab repo and read the plan.
+	- Incorrect behavior [Bug]: The plan and step lines say `glab mr create --base dev`. glab has no --base, and the run uses --target-branch.
+	- Expected behavior [Bug]: The plan names the flags that run, per pr.go's rule for each tool's own words.
+	- Reproduced [Bug]: 2026-11-20 on b23, the plan against a fake glab's log. Confirmed.
+	- Possible cause [Bug]: prCreateDisp at pr.go:630 has one form for every tool.
+	- Origin: 197677f. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: prCreateDisp wrote --base for every tool, while prCreateArgs gave glab --target-branch.
+	- Actual fix [Bug]: One helper, prBaseFlag, names the base flag for each tool, and both the create call and its plan line read it. The changelog says so.
+	- Branch: nov22-2026112113223086
+	- Commit: 1acf747
+	- Test case: test.bash [dfnc1], [dfnc2]; Go TestPrCreateDispFlags [dfnbg].
+	- Verified: [dfnc1] fails on the build before the fix and passes with it. [dfnc2] passes on both, since the call always had the flag. [dfnbg] fails for glab with the plan line's --base put back. It checks every tool: each option the plan line names is in the call, with the same value after it. The quick gate passed with every area, as for 2026112113223086.
+	- Swept: every plan line for a pr call. Approve, merge and tea's clean are written from the call's own words through prDisp, so only create had a form of its own.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-123306
+
+- Code Review 20261120 item 26: install.ps1 picks a different release than install.bash when a tag has a dot suffix or 4 numbers
+	- ID: 2026112017135503
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171355
+	- Opened by:
+	- Steps to reproduce [Bug]: Feed both installers the same release list, with v3.1.0.rc1 as a pre-release, v3.0.0 and v3.0.0-rc.1, and run `-Release dev`.
+	- Incorrect behavior [Bug]: install.ps1 takes v3.0.0 and install.bash takes v3.1.0.rc1. Over v3.0.0 and v3.0.0.1, install.ps1 takes the candidate over its own release.
+	- Expected behavior [Bug]: Both follow design.md:458. A full release ranks above pre-releases of its own version, and a dot suffix is a candidate.
+	- Reproduced [Bug]: 2026-11-20 on vm925w in 5.1 and 7, and in pwsh on b23 with stubs. Confirmed.
+	- Possible cause [Bug]: install.ps1:247 strips only a `-` or `+` suffix, so `[version]` fails on 3.1.0.rc1 and reads 3.0.0.1 as newer than 3.0.0.
+	- Origin: 4ccd133 (2026-10-03). `-Release dev` (7c6a66a, 2026112015351403) now reaches it. Missed twin of 2026111920273377, whose Swept row left the installers out.
+	- Closed reason: Done
+	- Actual cause [Bug]: As read. install.ps1 read a tag's version with [version] after cutting a dash or plus suffix, so v3.1.0.rc1 read as 0.0 and v3.0.0.1 as newer than v3.0.0. install.bash's vkey takes the first 3 numbers. The stable fallback to the newest pre-release had the same fault.
+	- Actual fix [Bug]: install.ps1 ranks a tag by its first 3 numbers, split at a dot, underscore or dash, as install.bash does. A dot suffix is then a candidate of its own version in all 3 picks, and a fourth number doesn't outrank the release. changelog.md has a line under vNEXT Fixed.
+	- Decisions: Match install.bash's vkey rather than port [version] rules to bash, since install.bash, release.bash and Go already treat any suffix after X.Y.Z as a candidate (2026111910222928). Two candidates of one version, such as v3.0.0.1 and v3.0.0.2, now go by publish order, as design.md says.
+	- Branch: nov22-2026112017135503
+	- Commit: c403d19
+	- Test case: test.bash [dfne7] -Release dev takes v3.1.0.rc1 over v3.0.0 and v3.0.0-rc.1, [dfne8] takes v3.0.0 over v3.0.0.1, [dfne9] the stable fallback takes v3.1.0.rc1 over v3.0.0-beta.1. [dfne4] to [dfne6] put the same 3 lists to install.bash.
+	- Verified: [dfne7] to [dfne9] fail on the previous install.ps1 and pass after. [dfne4] to [dfne6] pass on both, since install.bash was already right. Quick run of every area passed on c403d19's tree: test.bash 2402/0, fuzz 310/0, parity 31/0, PSScriptAnalyzer clean. Ran in pwsh 7 on Linux with stubbed downloads. Windows PowerShell 5.1 didn't run here; the change uses only -split, -match and string padding.
+	- Swept: every place a release tag is ranked. install.bash's fPickTag was right. config.bash's fReleaseTags and Go's newestReleaseTag were fixed in 2026111920273377. legacy/ is frozen. No other .ps1 parses a version.
+	- Acceptance signoff: Self-closed: the tests that pin it failed before and pass after.
+	- Closed: 20261122-134013
+
+- Code Review 20261120 item 31: design.md says a later candidate is installed only with --tag
+	- ID: 2026112017135430
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171354
+	- Opened by:
+	- Steps to reproduce [Bug]: Read design.md:686 and :690.
+	- Incorrect behavior [Bug]: They say a later candidate needs --tag, and that a release and a pre-release are never compared by version. Both contradict design.md:458 since --release dev.
+	- Expected behavior [Bug]: design.md agrees with --release dev.
+	- Reproduced [Bug]: 2026-11-20, by reading. Confirmed.
+	- Origin: 7c6a66a (2026112015351403) left them.
+	- Closed reason: Done
+	- Actual cause [Bug]: As read. Both sentences predate --release dev and weren't updated when it came back.
+	- Actual fix [Bug]: design.md's Release policy says a later candidate is installed with --release dev or --tag, that a full release wins by default, that a tag's version is its first 3 numbers, and that only --release dev compares a release with a pre-release, putting the release above its own candidates. README's one-liners section already said so.
+	- Branch: nov22-2026112017135503
+	- Commit: c403d19
+	- Test case: Docs only. The claims are pinned by test.bash [dfjr3] to [dfjr9] and [dfne4] to [dfne9] in both installers.
+	- Verified: markdown check and markdownlint clean on design.md.
+	- Acceptance signoff: Self-closed: docs now match the tested behavior.
+	- Closed: 20261122-134013
+
+- Code Review 20261120 item 32: install.ps1 may count an unexpanded %VAR% PATH entry as present
+	- ID: 2026112017135414
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171354
+	- Opened by:
+	- Steps to reproduce [Bug]: On Windows, put `%LOCALAPPDATA%\Programs\gitsby` in a user PATH stored as plain REG_SZ, then run install.ps1.
+	- Incorrect behavior [Bug]: Test-OnPath expands the entry, finds the folder and writes nothing. Windows doesn't expand %VAR% in a REG_SZ value, so the entry doesn't work.
+	- Expected behavior [Bug]: An entry counts as present only where Windows expands it.
+	- Reproduced [Bug]: No. Read only. vm925w's user PATH was checked as REG_SZ on 2026-11-20. Plausible.
+	- Possible cause [Bug]: install.ps1:298-306 expands every entry, the ones from `$env:PATH` included.
+	- Against: Code Review 20261119 item 34's fix, which expands %VAR% entries.
+	- Origin: 808235d, 2856951 and fb6ae4c (Code Review 20261119 item 34).
+	- Actual cause [Bug]: As read. Test-OnPath expanded every %VAR% entry, the session PATH's and a REG_SZ stored PATH's included, where Windows leaves it as text.
+	- Actual fix [Bug]: Test-OnPath expands %VAR% only when told to. The 2 session PATH checks don't. The stored PATH check does only when the registry value is REG_EXPAND_SZ. A REG_SZ value holding the folder only as %LOCALAPPDATA%\... now gets the literal folder appended, keeping its kind. changelog.md's line for item 34 says so.
+	- Decisions: Keeps item 34's intent, no second copy of an entry that already works, and narrows what counts as working to what Windows expands. The broken %VAR% entry is left in place rather than rewritten, since the installer only appends to PATH.
+	- Branch: nov22-2026112017135503
+	- Commit: c403d19
+	- Test case: test.bash [dfnea] asks Test-OnPath about a %VAR% entry not expanded (n), the session's literal folder (y) and an expanded REG_EXPAND_SZ entry (y). [dfneb] the 2 session checks pass -expand $false and the stored one passes the value's kind. [dfjab] keeps its 8 spellings, now asked with expanding on. On Windows, the path rig's pctsz case.
+	- Verified: [dfnea] and [dfneb] fail on the previous install.ps1 (yyy where nyy is wanted) and pass after. [dfjab] and [dfjac] pass on both. Quick run of every area passed on c403d19's tree. The Windows branch didn't run here; the rig's pctsz case was added for it and parses.
+	- Swept: every %VAR% expansion in the tree. install.ps1's Test-OnPath is the only one, with 3 callers. legacy/install.ps1 is frozen. Go and cicd don't read the Windows PATH this way.
+	- Closed reason: Done
+	- Closed: 20261122-152300
+	- Acceptance signoff: Self-closed: the pctsz case passed on vm925w in 5.1 and pwsh 7 and failed on the install.ps1 before the fix.
+	- Verified: 2026-11-22 on vm925w, Windows PowerShell 5.1.26100 and pwsh 7.6.10, on 24cb249's install.ps1: the path rig's 5 cases passed. pctsz said Added and appended the literal folder, and the 3 spellings of a present entry and the install with no entry did as before. On 89162f0's install.ps1 only pctsz failed, with no Added line and nothing appended. The user PATH was put back as found.
+
+- Code Review 20261120 item 33: raw git acts as the wrong account when a drive-relative -C follows another -C
+	- ID: 2026112017135400
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171354
+	- Opened by:
+	- Steps to reproduce [Bug]: On Windows in w\c\top, run `gitsby raw git -C .. -C C:foo config --get user.email`. Do the same with `-C .. -C \Users\<you>\w\c\top\foo`.
+	- Incorrect behavior [Bug]: git runs in the folder the options name, but raw acts as the starting folder's account, and git gets that email. A single drive-relative -C matches git.
+	- Expected behavior [Bug]: raw acts as the account of the folder git runs in, per design.md:381.
+	- Reproduced [Bug]: 2026-11-20 on vm925w in Git Bash. Confirmed.
+	- Possible cause [Bug]: joinDir at main.go:1108 uses filepath.IsAbs, so C:foo and \foo are joined onto the earlier folder, and the chdir fails.
+	- Origin: 12f1bc2, nov18, Code Review 20261110b item 7. Missed twin for Windows.
+	- Actual cause [Bug]: As read. joinDir took any -C that filepath.IsAbs doesn't call absolute as under the folder before it. On Windows C:foo and \foo after another -C were joined under it, the move there failed, and the account work stayed in the starting folder.
+	- Actual fix [Bug]: joinDir takes C:foo from the earlier folder when that is on drive C, and \foo from the root of that folder's drive. tig's -C goes through the same code.
+	- Decisions: A drive-relative -C for another drive is left for the move, which takes it from that drive's current folder. git does the same, except after an earlier -C in the same command on that drive, where git starts from there. Left as is, since it takes 3 -C options over 2 drives.
+	- Test case: Go [dfnev] TestToolRepoOfFollowsChdir.
+	- Verified: [dfnev] changes folder once per -C, as git does, and checks that toolRepoOf ends in the same folder, for git and tig. The Windows test build under wine failed 7 sequences for each before the fix and passed after. On Linux it passes before and after, since no path there has a drive or a bare root. Quick run of every area passed: test.bash 2408/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Swept: every joinDir caller: git's -C and --bare, and tig's -C, in toolRepoOf. lazygit's options go through filepath.Abs, and git's --git-dir and --work-tree are read after the move, so Windows resolves those itself. The other filepath.IsAbs sites in src-go: a .git file's gitdir line, which git writes, PATH entries, and show.go's display. absDir in config.go has the same fault for repo clone's destination, filed as 2026112214033583.
+	- Branch: nov22-2026112017135400
+	- Commit: c44a7d3
+	- Closed reason: Done
+	- Closed: 20261122-152300
+	- Acceptance signoff: Self-closed: passed on vm925w on 24cb249, and the build before the fix took the starting folder's account.
+	- Verified: 2026-11-22 on vm925w, on 24cb249. Go [dfnev] passed in the Windows Go tests. In Git Bash with git 2.55, from w\c\top, raw git -C .. -C C:foo and -C .. -C \Users\...\w\c\top\foo gave the email of the folder git ran in, which plain git confirmed was c\foo and c\top\foo. The build before the fix (88ebc47) gave top's email for both.
+
+- Code Review 20261120 item 34: 4 paste lines skip typedArg, so PowerShell misreads them
+	- ID: 2026112017135384
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171353
+	- Opened by:
+	- Steps to reproduce [Bug]: With origin holding `@foo`, run `gitsby -q br create '@foo'` on Windows and paste the line it prints into PowerShell.
+	- Incorrect behavior [Bug]: It prints `gitsby br switch @foo`, which PowerShell passes as br switch with no branch, and that switches to dev.
+	- Expected behavior [Bug]: Every paste line goes through typedArg, per Code Review 20261119 items 14 and 29.
+	- Reproduced [Bug]: 2026-11-20 on vm925w in 5.1 and 7, for branchcmd.go:32. The other 3 sites by reading. Confirmed.
+	- Possible cause [Bug]: branchcmd.go:29, :32 and :213, and main.go:494 print the name bare.
+	- Sweep: The 4 sites above, and a grep for every paste line that prints a branch, tag or path.
+	- Origin: 4918b5b (Go port). Missed twins of Code Review 20261119 items 14 and 29.
+	- Actual cause [Bug]: As read. 4 lines printed the branch bare, and 2 repo lines did the same with a path or URL.
+	- Actual fix [Bug]: br create's 2 'already exists' lines, br switch's 'To create it' line, the offline hotfix land warning, repo connect's 'clone it instead' line and repo create's 'repo connect' line spell the word through typedArg.
+	- Decisions: The 2 repo lines name a URL or a path, and go through typedArg rather than shellQuote, since typedArg spells for PowerShell on Windows and the sh way elsewhere. A URL or path with nothing to quote prints as before. Exec lines such as [ git merge m;x ... ] and plan lines aren't paste lines and are left alone, per 2026111910223104.
+	- Test case: test.bash [dfnew] to [dfnf1].
+	- Verified: [dfnew] to [dfnf1] cut each line from gitsby's output and run it through sh with a gitsby function that prints its words. All 6 fail on the build before the fix and pass after. Quick run of every area passed: test.bash 2408/0, fuzz 310/0, parity 31/0. gosec 37, as before. The Windows spelling is typedArg's, which [dfhfc] reads back through pwsh and Windows PowerShell on vm925w.
+	- Swept: every usagef, status and Fix line in src-go that prints a gitsby or git command with a word in it, by grep for '" + meName + " ', '%s <verb> %s' and '"git <verb> " +'. The rest already use typedArg or shellQuote, or name a PR number or a checked owner/name (repo.go's 2 github.com lines).
+	- Branch: nov22-2026112017135400
+	- Commit: 8ebc6a8
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-140407
+
+- Code Review 20261120 item 35: On Windows, a held old-format accounts file fails conversion with no Fix
+	- ID: 2026112017135370
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171353
+	- Opened by:
+	- Steps to reproduce [Bug]: In pwsh 7, open a flat v2.1.0 accounts file with FileShare.Read and run `gitsby -q status`.
+	- Incorrect behavior [Bug]: The notice gives "Access is denied." with no Fix line. account set then says to run it again, which fails the same way while the file is held.
+	- Expected behavior [Bug]: The Fix says another program may have the file open, as Code Review 20261119 item 31 does for the other renames.
+	- Reproduced [Bug]: 2026-11-20 on vm925w. Confirmed.
+	- Possible cause [Bug]: cfgformat.go:470 doesn't use replaceFix.
+	- Origin: 37f4843. Missed twin of Code Review 20261119 item 31, whose Swept row covered the 3 writeRefusal renames.
+	- Actual cause [Bug]: replaceOldFormat set only the Why when the rename over the old file failed. On Windows a program holding the file without delete sharing refuses that rename as a permissions error, so the notice gave no Fix, and account set fell back to saying to run it again.
+	- Actual fix [Bug]: A permissions error on that rename sets the conversion's Fix through replaceFix, the same text as the accounts file save: on Windows, another program may have it open, then the folder. The notice and account set's refusal both show it.
+	- Decisions: The Fix is set for any permissions error on the rename, off Windows too, where it names the folder only, as the save does. The lock and the old copy are new files and replace nothing, so they keep their Why with no Fix.
+	- Test case: Go [dfnft] TestOldFormatConvertOverAHeldFile (Windows only): a flat file held with read sharing only gives the held-file Fix in the notice and in account set's refusal, and is left as it was with no copy beside it.
+	- Verified: under wine, [dfnft] fails on the build before, with no Fix in the notice and 'Run this again' in the refusal, and passes after, with [dfhmz] and [dfhmx]. Quick gate, every area: test.bash 2408/0, fuzz 310/0, parity 31/0. gosec gives nothing on a changed line.
+	- Swept: every step of replaceOldFormat. Only the final WriteFileAtomic renames over a file. The lock, the old copy and its time are new files of ours, and the read again refuses only a file held without read sharing, which is the unreadable class. replaceOldFormat is the one writer for the flat, 2.x and earlier SHCL 3 conversions (config.go 550, 575, 588).
+	- Branch: nov22-2026112017135370
+	- Commit: c5a01d5
+	- Closed reason: Done
+	- Closed: 20261122-152300
+	- Acceptance signoff: Self-closed: [dfnft] passed on vm925w against a real held file.
+	- Verified: 2026-11-22 on vm925w, a Windows Go test build of 24cb249: [dfnft] TestOldFormatConvertOverAHeldFile passed.
+
+- Code Review 20261120 item 36: On Windows, file lists are cut at 100 columns whatever the console width
+	- ID: 2026112017135355
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171353
+	- Opened by:
+	- Steps to reproduce [Bug]: In a 72-column console on vm925w, run `gitsby -NoFetch status` in a repo with long file names.
+	- Incorrect behavior [Bug]: Lines run to 100 characters and wrap.
+	- Expected behavior [Bug]: design.md:614 says lists are cut to the terminal width.
+	- Reproduced [Bug]: 2026-11-20 on vm925w over `ssh -tt`, in cmd and pwsh. Confirmed.
+	- Possible cause [Bug]: termCols at tty_windows.go:23 returns 0. GetConsoleScreenBufferInfo gives the width.
+	- Origin: 12752d0 (2026-10-04). No round reached it before.
+	- Actual cause [Bug]: termCols on Windows always returned 0, and with no tput there the list width fell back to 100.
+	- Actual fix [Bug]: termCols asks GetConsoleScreenBufferInfo and returns the console window's width, not the buffer's, and 0 when the handle isn't a console. The changelog says so.
+	- Test case: Go [dfng4] TestTerminalWidthAsksTheConsole, Windows only.
+	- Verified: under wine in a pty sized 72 and then 133 columns, [dfng4] read 72 and 133 and passed, and failed with termCols returning 0 as before. Wine is a stand-in. The quick gate with every area passed: test.bash 2408/0, fuzz 310/0, parity 31/0. go vet and staticcheck pass for windows amd64 and arm64.
+	- Swept: grep for termCols and tput in src-go. show.go terminalWidth is the only width read, and tty_unix.go already asks the kernel. tty_other.go, for platforms nothing is built for, still returns 0 and takes tput.
+	- Decisions: The window width, since text past the window wraps in a console whose buffer is wider. The test opens CONOUT$, since a test's own stdout under ssh is a pipe, and checks the width against PowerShell's RawUI where that answers.
+	- Branch: nov22-2026112017135355
+	- Commit: fcbfa1f
+	- Closed reason: Done
+	- Closed: 20261122-152300
+	- Acceptance signoff: Self-closed: passed on vm925w in a 72-column console, and the build before the fix cut at 100.
+	- Verified: 2026-11-22 on vm925w over ssh -tt in a 72-column pty, on 24cb249. [dfng4] logged 72 columns and passed. gitsby -NoFetch status in cmd and pwsh 7 cut the untracked file lines at 72, and the build before the fix (2b25171) cut them at 100 in both.
+
+- Code Review 20261120 item 37: 5 parts of last round's fixes have no test that fails without them
+	- ID: 2026112017135341
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171353
+	- Opened by:
+	- Steps to reproduce [Bug]: Undo each part listed below and run the Go tests and test.bash.
+		- Code Review 20261119 item 7's open-PR check: pr.go:449 asking openPrForBranch about the current branch rather than the pushed one.
+		- Item 1's sync plan line: the condition at preview.go:43 forced false, so the plan no longer names a different target.
+		- Item 5's raw gh warning: the "not acting as the account: gh is pointed at" line at main.go:978 turned off. glab's twin has [df4w7].
+		- 2026111910223089's move: pr ok with --no-fetch on the PR's own branch now moves to the merge target. Its Decisions row says it wasn't run.
+		- Item 34's result line: no check in the tree covers "already on your account PATH". Only the private Windows rig ran it.
+	- Incorrect behavior [Bug]: Nothing fails.
+	- Expected behavior [Bug]: Each part has a check that fails without it, per the review rules.
+	- Reproduced [Bug]: 2026-11-20 on b23. The first 3 by mutation, the other 2 by grep and a run. Confirmed.
+	- Origin: Code Review 20261119 items 1, 5, 7 and 34, and 2026111910223089, closed in nov19b, nov19c and nov20.
+	- Actual fix [Bug]: Parts 1 to 4 have checks now. Part 1: test.bash [dfngf] reads gh's log, so the open-PR question has to name the branch the push lands on. Part 3: [dfngg] and [dfngh] are raw gh's twins of [df4w7], pointed at another host and at its own. Part 4: [dfngj] and [dfngk] run pr ok --no-fetch on the PR's own branch, which ends on the merge target. Part 2 was already pinned since Enhancement 1's push list moved the line into plannedPush.disp: Go [dfk0y] and test.bash [dfk1a] check the renamed target, and [dfk18] checks sync's own plan line. Part 5 is child 2026112214483821.
+	- Branch: nov22-2026112017135341
+	- Commit: dd03f69
+	- Test case: its children's: 2026112214483821: test.bash [dfngz]. [dfgxd] now follows a write made inside a function to that function's one call.
+	- Verified: One build with each of parts 1 to 4 undone (openPrForBranch asked about the local branch, gh's warning off, pr ok moving only when the upstream is gone, disp's renamed-target case off, sync's plan line naming only the branch) failed [dfngf], [dfngg], [dfngk], [dfk0y], [dfk1a] and [dfk18], and the tree passes them. [dfngh] and [dfngj] pass both ways: the warning stays off on its own host, and the plan reads the rule the mutation left alone. Quick run of every area passed: test.bash 2413/0, fuzz 310/0, parity 31/0.
+	- Swept: openPrForBranch has one caller. tea's identity warning is pinned by [ddk6a] to [df047], and glab's by [df4w7]. The pr ok move is read by previewPr, cmdPrAccept and checkoutsAhead through prOkMoves, and only the run's side had no check under --no-fetch.
+	- Decisions: Part 5 split off, since it needs a change to install.ps1 (a function the AST rig can run, with an installerVersion bump) and a Windows run. Part 2 got no new check, since the code it named moved into plannedPush.disp and the existing checks fail with it undone.
+	- Progress log: Parts 1 to 4 done in nov22 (dd03f69). Part 5 is child 2026112214483821, done in nov22 (26ea275) and closed after its vm925w run on 2026-11-22.
+	- Closed: 20261122-152538
+	- Closed reason: Done
+
+- Code Review 20261120 item 37, part 5: install.ps1's 'already on your account PATH' result line has no check that fails without it
+	- ID: 2026112214483821
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261122-144838
+	- Opened by:
+	- Parent ID: 2026112017135341
+	- Steps to reproduce [Bug]: In install.ps1, make the result line always say Added, and run test.bash.
+	- Incorrect behavior [Bug]: Nothing fails. The line is built inside the Windows registry branch, which only the private Windows rig ran.
+	- Expected behavior [Bug]: A check fails when a PATH that already holds the folder gets Added, or a new entry, in place of the already-on line.
+	- Reproduced [Bug]: 2026-11-20 on b23, by grep. Confirmed.
+	- Possible cause [Bug]: The registry read, the append and the result line are inline in the Windows branch, so pwsh on Linux can't reach them. Taking the choice of line out into a function, as Test-OnPath was, would let fPsOnPath's AST rig run it here, with the vm925w run as the real path. An install.ps1 change also bumps installerVersion and its History entry.
+	- Origin: Code Review 20261119 item 34, closed in nov20.
+	- Actual fix [Bug]: install.ps1's stored PATH read, append and result sentence moved into Add-StoredPath, which returns the sentence. No change in what it writes or says. test.bash's fPsStoredPath defines it from the file and runs it over a stand-in registry key.
+	- Branch: nov22-2026112017135341
+	- Commit: 26ea275
+	- Test case: test.bash [dfngz]. [dfgxd] now follows a write made inside a function to that function's one call.
+	- Verified: [dfngz] fails with the already-on line made to say Added (xxaa), and with the append's trailing ';' trim taken out (kkxa), and passes on the tree. On the install.ps1 before the move it fails, with no Add-StoredPath. [dfgxd] passes on the old and new install.ps1, and fails with Send-EnvironmentChange moved into the call's try or ahead of the write. Quick run of every area passed: test.bash 2414/0, fuzz 310/0, parity 31/0, PSScriptAnalyzer clean. The Windows branch itself didn't run here.
+	- Swept: install.ps1 has one registry PATH write and one result line. install.bash prints only a note for PATH, pinned by [dfjah].
+	- Decisions: [dfgxd] was rewritten, not dropped. It encoded that the PATH broadcast is sent after the registry write and outside the try whose catch reports PATH as not updated. With the write in a function that has no try of its own, that try is the one around the call, so the check now anchors there. It still fails on both orders it guarded.
+	- Closed reason: Done
+	- Closed: 20261122-152300
+	- Acceptance signoff: Self-closed: passed on vm925w in 5.1 and pwsh 7, with [dfngz] failing on a planted Added line.
+	- Acceptance signoff: Self-closed: passed on vm925w in 5.1 and pwsh 7.
+	- Verified: 2026-11-22 on vm925w, Windows PowerShell 5.1.26100 and pwsh 7.6.10, on 24cb249's install.ps1: the 3 spellings of a PATH holding the folder said it was already on the account PATH and wrote nothing, and the install from a PATH without it said Added and appended one entry.
 
 - The ssh identity probe and the ssh -G read cut a bracketed IPv6 host in an ssh:// origin at its first colon
 	- ID: 2026112111542213

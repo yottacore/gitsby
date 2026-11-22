@@ -9,7 +9,9 @@
 package main
 
 import (
+	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
@@ -122,5 +124,55 @@ func TestAccountSetSaveOverAHeldFile(t *testing.T) { // [dfhmz]
 	release()
 	if got := readBack(t, file); got != keptBody {
 		t.Errorf("the held file changed:\n%q", got)
+	}
+}
+
+// A v2.1.0 file another program holds with read sharing only: the conversion's
+// rename over it is refused, and the notice and the refusal in 'account set' gave
+// no Fix, or said to run it again, which fails the same way while it's held.
+func TestOldFormatConvertOverAHeldFile(t *testing.T) { // [dfnft]
+	dir := t.TempDir()
+	file := filepath.Join(dir, "config.shcl")
+	if err := os.WriteFile(file, []byte(flatBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	name, err := syscall.UTF16PtrFromString(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := syscall.CreateFile(name, syscall.GENERIC_READ, syscall.FILE_SHARE_READ, nil, syscall.OPEN_EXISTING, syscall.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := true
+	release := func() {
+		if held {
+			held = false
+			// Opened only to hold the file; nothing went through it, so Close has nothing to say.
+			_ = syscall.CloseHandle(h)
+		}
+	}
+	t.Cleanup(release)
+	var stderr bytes.Buffer
+	p := newPrinter()
+	p.out, p.err = &bytes.Buffer{}, &stderr
+	a := newApp(p)
+	a.opt.configFile, a.opt.configGiven, a.opt.quiet = file, true, true
+	if err := a.resolveAccount(dir, ""); err != nil {
+		t.Fatal(err)
+	}
+	const fix = "Fix:  Another program may have it open."
+	notice := stderr.String()
+	if !strings.Contains(notice, "couldn't be converted") || !strings.Contains(notice, fix) {
+		t.Errorf("the notice doesn't name a program holding it:\n%s", notice)
+	}
+	a.cmd = command{name: "account-set", arg: "w", arg2: "name", arg3: "Bob", mutating: true}
+	err = a.cmdAccountSet()
+	if err == nil || !strings.Contains(err.Error(), "still in the flat") || !strings.Contains(err.Error(), fix) {
+		t.Errorf("set: %v", err)
+	}
+	release()
+	if names := dirEntries(t, dir); len(names) != 1 || readBack(t, file) != flatBody {
+		t.Errorf("left behind: %v", names)
 	}
 }

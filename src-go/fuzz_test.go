@@ -59,19 +59,20 @@ func FuzzParseTeaTable(f *testing.F) { // [dcpv0]
 }
 
 // encoding/json is the reference for the hand reader: on any object they agree on
-// whether it reads and on the 3 fields. Keys match exactly in glab's output, so
+// whether it reads and on the 4 fields. Keys match exactly in glab's output, so
 // the reference decodes into a map rather than a struct, which folds case.
 func FuzzReadGlabMR(f *testing.F) { // [df04n]
 	f.Add(`{"iid":7,"state":"opened","source_branch":"feat"}`)
 	f.Add(`{"author":{"state":"active"},"source_branch":"x\"y,z","state":"merged","iid":3}`)
 	f.Add(`{"source_branch":"\ud83d\ude00\ud83d\u0041","x":[1,{"a":null}],"state":"a"}`)
 	f.Add(`{"iid":3,}`)
+	f.Add(`{"target_branch":"dev","x":{"target_branch":"main"},"source_branch":"hotfix/x"}`)
 	f.Fuzz(func(t *testing.T, in string) {
 		got, ok := readGlabMR(in, false)
 		var raw map[string]json.RawMessage
 		wantOK := utf8.ValidString(in) && json.Unmarshal([]byte(in), &raw) == nil && raw != nil
 		var want glabMR
-		for key, field := range map[string]*string{"state": &want.State, "source_branch": &want.Source} {
+		for key, field := range map[string]*string{"state": &want.State, "source_branch": &want.Source, "target_branch": &want.Target} {
 			if v, found := raw[key]; wantOK && found {
 				wantOK = v[0] == '"' && json.Unmarshal(v, field) == nil
 			}

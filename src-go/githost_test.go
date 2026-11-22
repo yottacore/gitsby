@@ -233,6 +233,69 @@ func TestPrArgsPerTool(t *testing.T) { // [dbg64]
 	}
 }
 
+// The plan's create line is the run's call with some flags left out, never with
+// a flag of its own: every option it names is in the call, with the same value
+// after it. glab's base is --target-branch, which a shared --base hid.
+func TestPrCreateDispFlags(t *testing.T) { // [dfnbg]
+	t.Chdir(t.TempDir()) // glab's -R reads origin, and this repo's isn't the test's
+	for _, tool := range []hostTool{toolGh, toolTea, toolGlab} {
+		a := newApp(newPrinter())
+		a.pr.tool, a.pr.cli, a.pr.sub, a.pr.headBranch, a.pr.title = tool, "cli", "create", "feat", "My title"
+		a.git.mergeTarget.set("dev")
+		args := a.prCreateArgs()
+		// The title is last, and quoted, so it's split off whole.
+		front, title, _ := strings.Cut(strings.TrimPrefix(a.prCreateDisp(), "cli "), " --title ")
+		disp := append(strings.Fields(front), "--title", title)
+		if verb := strings.Fields(a.prCreateVerb()); !slices.Equal(args[:len(verb)], verb) || !slices.Equal(disp[:len(verb)], verb) {
+			t.Errorf("tool %d: verb %q, args %q, plan %q", tool, verb, args, disp)
+		}
+		named := 0
+		for i, word := range disp {
+			if !strings.HasPrefix(word, "--") || i+1 >= len(disp) {
+				continue
+			}
+			named++
+			at := slices.Index(args, word)
+			if at < 0 || at+1 >= len(args) || shellWord(args[at+1], word == "--title") != disp[i+1] {
+				t.Errorf("tool %d: the plan names %s %s, the call is %q", tool, word, disp[i+1], args)
+			}
+		}
+		if named != 2 {
+			t.Errorf("tool %d: plan %q names %d options, want the base and the title", tool, disp, named)
+		}
+	}
+}
+
+// glab's merge deletes only the git host's copy of the branch, so pr ok deletes
+// ours after it. gh's merge and tea's clean already take both.
+func TestPrLocalCleanArgs(t *testing.T) { // [dfnbh]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "checkout", "-q", "-b", "feat")
+	runGit(t, clone, "push", "-q", "-u", "origin", "feat")
+	runGit(t, clone, "push", "-q", "origin", "feat:other")
+	t.Chdir(clone)
+	try := func(name string, tool hostTool, head string, want []string) {
+		t.Run(name, func(t *testing.T) {
+			a := newApp(newPrinter())
+			a.pr.tool, a.pr.sub, a.pr.headBranch, a.pr.baseBranch = tool, "ok", head, "main"
+			if got := a.prLocalCleanArgs(); !slices.Equal(got, want) {
+				t.Errorf("prLocalCleanArgs() = %q, want %q", got, want)
+			}
+		})
+	}
+	try("glab, standing on it", toolGlab, "feat", []string{"branch", "-D", "feat"})
+	try("gh", toolGh, "feat", nil)
+	try("tea", toolTea, "feat", nil)
+	try("glab, no local copy", toolGlab, "gone", nil)
+	runGit(t, clone, "checkout", "-q", "main")
+	try("glab, from elsewhere", toolGlab, "feat", []string{"branch", "-D", "feat"})
+	// Standing on it while it tracks another branch, pr ok stays and pulls, so
+	// git couldn't delete it.
+	runGit(t, clone, "checkout", "-q", "feat")
+	runGit(t, clone, "branch", "-q", "--set-upstream-to", "origin/other")
+	try("glab, staying on it", toolGlab, "feat", nil)
+}
+
 // 'pr <n>' is the PR and its diff. gh takes a call for each; tea's detail view
 // has the diff in one.
 func TestPrViewArgsPerTool(t *testing.T) { // [dd5ga]
@@ -673,13 +736,15 @@ func TestReadGlabMR(t *testing.T) { // [df04m]
 		ok   bool
 		want glabMR
 	}{
-		{`{"iid":7,"state":"opened","source_branch":"feat"}`, false, true, glabMR{"7", "opened", "feat"}},
-		{"\n {\n\t\"source_branch\" : \"feat\" ,\r\n \"state\":\"merged\", \"iid\" : 12 }\n", false, true, glabMR{"12", "merged", "feat"}},
-		{`{"author":{"state":"active","id":3},"labels":["a","b"],"state":"opened","source_branch":"feat"}`, false, true, glabMR{"", "opened", "feat"}},
-		{`{"title":"a \"quoted\", title}","source_branch":"x\"y,z","state":"opened"}`, false, true, glabMR{"", "opened", `x"y,z`}},
-		{`{"source_branch":"café\/\\ 😀","state":"opened"}`, false, true, glabMR{"", "opened", "café/\\ \U0001F600"}},
-		{`{"draft":false,"merged_at":null,"x":-1.5e3,"state":"closed","source_branch":"b"}`, false, true, glabMR{"", "closed", "b"}},
-		{`[{"iid":3,"source_branch":"a"},{"iid":4}]`, true, true, glabMR{"3", "", "a"}},
+		{`{"iid":7,"state":"opened","source_branch":"feat"}`, false, true, glabMR{"7", "opened", "feat", ""}},
+		{"\n {\n\t\"source_branch\" : \"feat\" ,\r\n \"state\":\"merged\", \"iid\" : 12 }\n", false, true, glabMR{"12", "merged", "feat", ""}},
+		{`{"author":{"state":"active","id":3},"labels":["a","b"],"state":"opened","source_branch":"feat"}`, false, true, glabMR{"", "opened", "feat", ""}},
+		{`{"title":"a \"quoted\", title}","source_branch":"x\"y,z","state":"opened"}`, false, true, glabMR{"", "opened", `x"y,z`, ""}},
+		{`{"source_branch":"café\/\\ 😀","state":"opened"}`, false, true, glabMR{"", "opened", "café/\\ \U0001F600", ""}},
+		{`{"draft":false,"merged_at":null,"x":-1.5e3,"state":"closed","source_branch":"b"}`, false, true, glabMR{"", "closed", "b", ""}},
+		{`[{"iid":3,"source_branch":"a"},{"iid":4}]`, true, true, glabMR{"3", "", "a", ""}},
+		{`{"source_branch":"hotfix/x","author":{"target_branch":"no"},"target_branch":"dev","state":"opened"}`, false, true, glabMR{"", "opened", "hotfix/x", "dev"}},
+		{`{"target_branch":null}`, false, false, glabMR{}},
 		{`[]`, true, false, glabMR{}},
 		{` [ ] `, true, false, glabMR{}},
 		{`{}`, false, true, glabMR{}},

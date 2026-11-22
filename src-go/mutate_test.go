@@ -334,12 +334,18 @@ func TestPrTarget(t *testing.T) { // [dfm0t]
 					t.Errorf("tool %d: prCreateDisp() = %q, want base %q", tool, disp, tc.want)
 				}
 			}
-			// pr ok, standing anywhere, reads the same head back from the git host.
+			// pr ok, standing anywhere, goes where the git host's base says, whatever
+			// the head is called: a PR opened by hand can name either one.
 			runGit(t, clone, "checkout", "-q", "main")
-			ok := newApp(newPrinter())
-			ok.pr.sub, ok.pr.headBranch = "ok", head
-			if got := ok.prTarget(); got != tc.want {
-				t.Errorf("pr ok prTarget() = %q, want %q", got, tc.want)
+			for _, base := range []string{"main", "dev"} {
+				ok := newApp(newPrinter())
+				ok.pr.sub, ok.pr.headBranch, ok.pr.baseBranch = "ok", head, base
+				if got := ok.prTarget(); got != base {
+					t.Errorf("pr ok of %q into %q: prTarget() = %q", head, base, got)
+				}
+				if got := ok.prOkBackMerges(); got != (base == "main") {
+					t.Errorf("pr ok of %q into %q: prOkBackMerges() = %v", head, base, got)
+				}
 			}
 		})
 	}
@@ -423,6 +429,13 @@ func TestMergePushesOwn(t *testing.T) { // [dfhg8]
 			a := newApp(newPrinter())
 			a.cmd.name = cmd
 			a.pr.sub, a.pr.headBranch = sub, head
+			// The PR's base as the git host gives it, written into the case's head
+			// as "head>base" where it isn't the one the head's name gives.
+			if h, base, found := strings.Cut(head, ">"); found {
+				a.pr.headBranch, a.pr.baseBranch = h, base
+			} else if sub == "ok" {
+				a.pr.baseBranch = a.branchTarget(head)
+			}
 			if got := a.mergePushesOwn(); got != want {
 				t.Errorf("mergePushesOwn() = %q, want %q", got, want)
 			}
@@ -435,6 +448,8 @@ func TestMergePushesOwn(t *testing.T) { // [dfhg8]
 	check("own commit, back-merge", "hotfix/x", "br-merge", "", "", "dev")
 	check("own commit, pr ok of a hotfix", "feat", "pr", "ok", "hotfix/x", "dev")
 	check("own commit, pr ok of a feature", "feat", "pr", "ok", "feat", "")
+	check("own commit, pr ok of a hotfix opened against dev", "feat", "pr", "ok", "hotfix/x>dev", "")
+	check("own commit, pr ok of a feature opened against main", "feat", "pr", "ok", "feat>main", "dev")
 	check("own commit, sync", "feat", "sync", "", "", "")
 	onDev("reset", "-q", "--hard", "origin/dev")
 	runGit(t, clone, "checkout", "-q", "-b", "side", "dev")
@@ -929,5 +944,57 @@ func TestSkippedEdits(t *testing.T) { // [dfhkn]
 	}
 	if got := skippedEdits(nil, dry); got != nil {
 		t.Errorf("skippedEdits with no edits = %q, want none", got)
+	}
+}
+
+// The advice for a submodule the commit left out names the way to commit the older
+// commit on purpose: stage it, then the same command with --staged, which has to
+// parse. repo create and repo connect don't take --staged, so theirs is a commit by
+// hand.
+func TestBehindFixNamesStaged(t *testing.T) { // [dfnav]
+	for _, argv := range [][]string{
+		{"pullcom", "msg1"}, {"sync"}, {"br", "switch", "feat1"}, {"br", "create", "feat1"}, {"br", "hotfix", "hotfix/fix1"},
+		{"br", "merge"}, {"pr", "create", "title1"}, {"release", "v1.2.3"}, {"repo", "connect", "o/n"}, {"repo", "create", "o/n"},
+	} {
+		opt, cmd, _, err := parseArgs(argv)
+		if err == nil {
+			cmd, err = collapseCommand(cmd)
+		}
+		if err == nil {
+			cmd, err = sortCommand(cmd, &opt)
+		}
+		if err != nil {
+			t.Fatalf("%v: %v", argv, err)
+		}
+		fix := (&app{cmd: cmd, opt: opt}).behindFix([]string{"/w/a b/child"})
+		if !slices.Contains(fix, "  git add '/w/a b/child'") || !slices.Contains(fix, "  git submodule update") {
+			t.Errorf("%v: %q lacks the add or the update", argv, fix)
+			continue
+		}
+		last := strings.TrimSpace(fix[len(fix)-1])
+		if cmd.name == "repo-create" || cmd.name == "repo-connect" {
+			if !slices.Contains(fix, "  git commit") || strings.Contains(strings.Join(fix, "\n"), "--staged") {
+				t.Errorf("%v: %q should commit by hand", argv, fix)
+			}
+			continue
+		}
+		words := strings.Fields(last)
+		if len(words) < 2 || words[0] != meName {
+			t.Errorf("%v: last line %q isn't a %s command", argv, last, meName)
+			continue
+		}
+		backOpt, back, _, err := parseArgs(words[1:])
+		if err == nil {
+			back, err = collapseCommand(back)
+		}
+		if err == nil {
+			back, err = sortCommand(back, &backOpt)
+		}
+		if err == nil {
+			err = checkOptionsUsed(typedName(back), backOpt)
+		}
+		if err != nil || !backOpt.staged || back.name != cmd.name {
+			t.Errorf("%v: %q reads back as %+v staged=%v (%v)", argv, last, back, backOpt.staged, err)
+		}
 	}
 }
