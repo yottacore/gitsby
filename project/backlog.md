@@ -374,7 +374,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 35: On Windows, a held old-format accounts file fails conversion with no Fix
 	- ID: 2026112017135370
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171353
@@ -385,6 +385,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on vm925w. Confirmed.
 	- Possible cause [Bug]: cfgformat.go:470 doesn't use replaceFix.
 	- Origin: 37f4843. Missed twin of Code Review 20261119 item 31, whose Swept row covered the 3 writeRefusal renames.
+	- Actual cause [Bug]: replaceOldFormat set only the Why when the rename over the old file failed. On Windows a program holding the file without delete sharing refuses that rename as a permissions error, so the notice gave no Fix, and account set fell back to saying to run it again.
+	- Actual fix [Bug]: A permissions error on that rename sets the conversion's Fix through replaceFix, the same text as the accounts file save: on Windows, another program may have it open, then the folder. The notice and account set's refusal both show it.
+	- Decisions: The Fix is set for any permissions error on the rename, off Windows too, where it names the folder only, as the save does. The lock and the old copy are new files and replace nothing, so they keep their Why with no Fix.
+	- Test case: Go [dfnft] TestOldFormatConvertOverAHeldFile (Windows only): a flat file held with read sharing only gives the held-file Fix in the notice and in account set's refusal, and is left as it was with no copy beside it.
+	- Verified: under wine, [dfnft] fails on the build before, with no Fix in the notice and 'Run this again' in the refusal, and passes after, with [dfhmz] and [dfhmx]. Quick gate, every area: test.bash 2408/0, fuzz 310/0, parity 31/0. gosec gives nothing on a changed line.
+	- Needs external testing: vm925w: a Windows Go test build of c5a01d5, run with its sources there, -test.run 'TestOldFormatConvertOverAHeldFile' [dfnft]. Wine is a stand-in, so the real held-file refusal is left to check.
+	- Swept: every step of replaceOldFormat. Only the final WriteFileAtomic renames over a file. The lock, the old copy and its time are new files of ours, and the read again refuses only a file held without read sharing, which is the unreadable class. replaceOldFormat is the one writer for the flat, 2.x and earlier SHCL 3 conversions (config.go 550, 575, 588).
+	- Branch: nov22-2026112017135370
+	- Commit: c5a01d5
 
 - Code Review 20261120 item 36: On Windows, file lists are cut at 100 columns whatever the console width
 	- ID: 2026112017135355
