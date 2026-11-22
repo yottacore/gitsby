@@ -107,6 +107,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `pr create` takes the pull request's base from the branch it pushes to, which `pr ok` later reads back, rather than from the current branch's name. A branch tracking `hotfix/x` under `push.default=upstream` opened its pull request against `dev`, and `pr ok` then merged `main` back into `dev`, though the fix never reached `main`.
 
+- `pr ok` merges into the base the pull request has on the git host, and checks out that base after, rather than going by the head's name. A pull request from `hotfix/x` opened against `dev` on the git host's page went into `dev`, then `pr ok` pulled `main` and merged it back into `dev` at exit 0, though the fix never reached `main`. One from a plain branch opened against `main` went into `main`, and `dev` never got it back. The merge back into `dev` now follows the base: it runs when the pull request went into the default branch, whatever its head is called. A base this clone has no copy of is refused before anything runs.
+
+- `pr ok` on GitLab deletes the merged branch here too, as it does on GitHub and Gitea. glab deleted only GitLab's copy.
+
+- The plan for `pr create` on GitLab names `--target-branch`, the flag glab runs with. It said `--base`, which glab doesn't have.
+
 - `br merge` on a branch that tracks one of another name deletes that branch from origin once it's merged. It named the current branch, so the branch it pushed to stayed on origin, and the leased delete of an older branch of that name warned that it had commits the merge didn't, which wasn't so. Where its push goes to another remote, to a ref that isn't a branch, or to `main` or `dev`, it's refused before the plan.
 
 - `release` and `repo connect` on a branch that git won't push, such as one tracking a branch of another name under `push.default=simple`, refuse before the plan, as `sync` does. They committed the tree first, then stopped at the push with a message saying nothing was done. `release` from a branch whose push lands on `main` or `dev` refuses too, naming `sync --direct`. The plan's push line names the remote when it isn't origin, and `repo connect`'s line names the push that runs.

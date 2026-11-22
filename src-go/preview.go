@@ -261,14 +261,16 @@ func (a *app) previewPr() {
 	if a.opt.fetch {
 		a.out.clean(planPad + "git fetch --prune origin")
 	}
+	pullFrom := a.currentBranch()
 	if a.prOkMoves() {
-		target := a.prTarget()
-		a.out.clean(planPad + a.checkoutDisp(target))
-		a.planPull(target)
-	} else {
-		a.planPull(a.currentBranch())
+		pullFrom = a.prTarget()
+		a.out.clean(planPad + a.checkoutDisp(pullFrom))
 	}
-	if a.isHotfixBranch(a.pr.headBranch) {
+	if clean := a.prLocalCleanArgs(); clean != nil {
+		a.out.clean(planPad + gitDisp(clean) + " *")
+	}
+	a.planPull(pullFrom)
+	if a.prOkBackMerges() {
 		a.previewBackMerge()
 	}
 }

@@ -74,7 +74,7 @@ func (a *app) checkoutsAhead() []string {
 		if a.prOkMoves() {
 			add(a.prTarget())
 		}
-		if a.isHotfixBranch(a.pr.headBranch) {
+		if a.prOkBackMerges() {
 			add(a.mergeTarget())
 		}
 	}

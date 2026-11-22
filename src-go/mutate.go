@@ -849,7 +849,7 @@ func (a *app) mergePushesOwn() string {
 			targets = append(targets, a.mergeTarget()) // the back-merge
 		}
 	case "pr":
-		if a.pr.sub == "ok" && a.isHotfixBranch(a.pr.headBranch) {
+		if a.prOkBackMerges() {
 			targets = append(targets, a.mergeTarget())
 		}
 	}

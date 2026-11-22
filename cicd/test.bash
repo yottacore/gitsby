@@ -3593,6 +3593,7 @@ case "$1 $2" in
 	               ## nothing and exit 0.
 	               [[ "${FAKE_GH_PRVIEW:-}" == fail ]] && { echo "GraphQL: Could not resolve to a PullRequest" >&2; exit 1 ;}
 	               echo "${FAKE_GH_HEAD:-$(git branch --show-current)}"     ## the PR's own head branch
+	               echo "${FAKE_GH_BASE:-dev}"                               ## ... the one it goes into, where pr merge puts it
 	               echo "${FAKE_GH_STATE:-OPEN}" ;;                          ## ... and whether it is still open
 	"pr diff")     echo "diff --git a/work.txt b/work.txt" ;;
 	"pr merge")    ## Merge the branch into the base, then drop it from the remote. Real gh does the delete
@@ -4516,6 +4517,38 @@ GHEOF
 		fPlanRan 'git fetch --prune origin' bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=pkfeat FAKE_GH_BASE=dev '${gitsby}' -q pr ok 8 2>&1"
 	fAssertNotPlan "[df028] and --no-fetch leaves it out"  'git fetch' \
 		bash -c "cd '${pkc}' && PATH='${ghp}' FAKE_GH_HEAD=pkfeat FAKE_GH_BASE=dev '${gitsby}' -q -NoFetch pr ok 8 2>&1"
+
+	## A PR opened on the git host's page can go into another base than its head's name gives, and
+	## the git host merges it there. pr ok checks out that base, and owes dev a back-merge only when
+	## the base is main.
+	mkdir -p "${gh}/prbase"
+	git init --quiet --bare -b main "${gh}/prbase/origin.git"
+	local pbc="${gh}/prbase/c"
+	git clone --quiet "${gh}/prbase/origin.git" "${pbc}" 2>/dev/null
+	(
+		cd "${pbc}" || exit 1
+		echo base > base.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b pbplain dev && echo plain > plain.txt && git add --all && git commit --quiet -m plain && git push --quiet -u origin pbplain
+		git checkout --quiet -b hotfix/pbx main && echo fix > fix.txt && git add --all && git commit --quiet -m fix && git push --quiet -u origin hotfix/pbx
+	)
+	fAssert        "[dfnbj] pr ok of a hotfix PR opened against dev runs"  bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=hotfix/pbx FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7 > '${gh}/prbase1.log' 2>&1"
+	fAssertNotPlan "[dfnbk] and checks out dev, where it went, not main"  'git checkout main'  cat "${gh}/prbase1.log"
+	fAssertNotPlan "[dfnbm] and plans no back-merge, since main never got it"  'git merge origin/main'  cat "${gh}/prbase1.log"
+	fAssert        "[dfnbn] and ends on dev, with the fix in dev and not in main"  bash -c "cd '${pbc}' && [[ \"\$(git branch --show-current)\" == dev ]] && git cat-file -e origin/dev:fix.txt && ! git cat-file -e origin/main:fix.txt 2>/dev/null"
+	fAssertPlan    "[dfnbp] pr ok of a plain PR opened against main plans the back-merge"  'git merge origin/main' \
+		bash -c "cd '${pbc}' && git checkout --quiet pbplain && PATH='${ghp}' FAKE_GH_HEAD=pbplain FAKE_GH_BASE=main '${gitsby}' -q pr ok 8 2>&1"
+	fAssert        "[dfnbq] and dev gets the work through it"  bash -c "cd '${pbc}' && git cat-file -e origin/main:plain.txt && git cat-file -e origin/dev:plain.txt"
+	(
+		cd "${pbc}" || exit 1
+		git checkout --quiet -b pbnext dev && echo next > next.txt && git add --all && git commit --quiet -m next && git push --quiet -u origin pbnext
+		git checkout --quiet dev
+	)
+	fAssertOut     "[dfnbr] pr ok refuses a base shaped like an option, read from gh"  "Branch '-pb' starts with a dash" \
+		bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=pbnext FAKE_GH_BASE=-pb '${gitsby}' -q pr ok 9 2>&1 || true"
+	fAssertOut     "[dfnbs] and a base this clone has no copy of, naming the fetch"  "git fetch origin pbgone:refs/remotes/origin/pbgone" \
+		bash -c "cd '${pbc}' && git checkout --quiet pbnext && PATH='${ghp}' FAKE_GH_HEAD=pbnext FAKE_GH_BASE=pbgone '${gitsby}' -q pr ok 9 2>&1 || true"
+	fAssert        "[dfnbt] before anything merged"  bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prbase3.log' FAKE_GH_HEAD=pbnext FAKE_GH_BASE=pbgone '${gitsby}' -q pr ok 9 >/dev/null 2>&1; [[ \$? == 1 ]] && ! grep -q '^pr merge' '${gh}/prbase3.log' && git ls-remote --exit-code --heads origin pbnext >/dev/null"
 
 	## The bash version gate. Bash build only - the PowerShell one needs no bash at all.
 	local vg="${work}/vgate"
@@ -10002,6 +10035,7 @@ case "$1 $2" in
                printf '"Name"\t"URL"\t"SSHHost"\t"User"\t"Default"\n' ;
                printf '"work"\t"%s"\t""\t"%s"\t"true"\n' "${FAKE_TEA_URL:-https://git.example.test}" "${FAKE_TEA_USER:-giteauser}" ;;
 "pulls list")  printf '"index"\t"head"\n' ; [[ -n "${FAKE_TEA_EXISTING:-}" ]] && printf '"%s"\t"%s"\n' "${FAKE_TEA_EXISTING}" "${FAKE_TEA_HEAD:-feat}" ;;
+"pulls "[0-9]*) printf '"index"\t"head"\t"base"\t"state"\n"%s"\t"%s"\t"%s"\t"open"\n' "$2" "${FAKE_TEA_HEAD:-feat}" "${FAKE_TEA_BASE:-dev}" ;;
 *)             [[ -n "${FAKE_TEA_ENV:-}" ]] && echo "url=${GITEA_INSTANCE_URL:-} token=${GITEA_TOKEN:-}" ;;
 esac
 exit 0
@@ -10149,7 +10183,7 @@ GHEOF
 #!/usr/bin/env bash
 [[ -n "${FAKE_GLAB_LOG:-}" ]] && echo "$* api=${GITLAB_API_HOST:-} host=${GITLAB_HOST:-} token=${GITLAB_TOKEN:-}" >> "${FAKE_GLAB_LOG}"
 case "$1 $2" in
-"mr view")  if [[ -n "${FAKE_GLAB_VIEW:-}" ]]; then printf '%s\n' "${FAKE_GLAB_VIEW}"; else echo "{\"iid\":7,\"state\":\"${FAKE_GLAB_STATE:-opened}\",\"source_branch\":\"glfeat\"}"; fi ;;
+"mr view")  if [[ -n "${FAKE_GLAB_VIEW:-}" ]]; then printf '%s\n' "${FAKE_GLAB_VIEW}"; else echo "{\"iid\":7,\"state\":\"${FAKE_GLAB_STATE:-opened}\",\"source_branch\":\"glfeat\",\"target_branch\":\"main\"}"; fi ;;
 "mr list")  if [[ -n "${FAKE_GLAB_EXISTING:-}" ]]; then echo "[{\"iid\":${FAKE_GLAB_EXISTING}}]"; else echo "[]"; fi ;;
 esac
 exit 0
@@ -10215,11 +10249,69 @@ GLEOF
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssertOut "[df04p] pr ok reads glab's state past a nested one, in any key order" 'PR #7 is merged, not open' \
 		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
-		'{ "author": {"state": "active", "id": 3}, "title": "a \"b\", c", "source_branch": "glfeat", "state": "merged" }' "${gitsby}"
+		'{ "author": {"state": "active", "id": 3}, "title": "a \"b\", c", "source_branch": "glfeat", "target_branch": "main", "state": "merged" }' "${gitsby}"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssertOut "[df04q] and a branch name with an escaped quote and a comma whole" "Branch '-gl\"x,y' starts with a dash" \
 		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
-		'{"source_branch":"-gl\"x,y","iid":7,"state":"opened"}' "${gitsby}"
+		'{"source_branch":"-gl\"x,y","iid":7,"target_branch":"main","state":"opened"}' "${gitsby}"
+	## The base comes from the git host, through each tool's own field for it.
+	fAssertOut "[dfnbv] pr ok reads the PR's base through tea" "Branch '-tb' starts with a dash" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_HEAD=feat FAKE_TEA_BASE=-tb '${gitsby}' -q -NoFetch pr ok 7 2>&1 || true"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssertOut "[dfnbw] and through glab, where a merge request with no target_branch can't be read" "Can't read PR #7" \
+		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
+		'{"iid":7,"state":"opened","source_branch":"glfeat"}' "${gitsby}"
+	## glab's merge takes only GitLab's copy of the branch, so pr ok deletes ours after it, as gh and
+	## tea do in theirs. Origin is a GitLab ssh url, carried to a local bare by a stub ssh.
+	local fgMr="${fg}/glmerge"
+	mkdir -p "${fgMr}/bin"
+	git init --quiet --bare -b main "${fgMr}/origin.git"
+	fStub "${fgMr}/bin/ssh" <<'SSHEOF'
+#!/usr/bin/env bash
+[[ "$1" == "-G" ]] && { dest="${!#}"; printf 'user git\nhostname %s\n' "${dest#*@}"; exit 0; }
+for arg in "$@"; do
+	case "${arg}" in git-upload-pack*|git-receive-pack*) exec "${arg%% *}" "${FAKE_SSH_REPO}" ;; esac
+done
+exit 255
+SSHEOF
+	fStub "${fgMr}/bin/glab" <<'GLEOF'
+#!/usr/bin/env bash
+[[ -n "${FAKE_GLAB_LOG:-}" ]] && echo "$*" >> "${FAKE_GLAB_LOG}"
+case "$1 $2" in
+"mr view")  echo "{\"iid\":$3,\"state\":\"opened\",\"source_branch\":\"${FAKE_GLAB_HEAD}\",\"target_branch\":\"${FAKE_GLAB_BASE}\"}" ;;
+"mr list")  echo "[]" ;;
+"mr merge") ## As GitLab does with --remove-source-branch: origin's copy goes into the base, then
+            ## origin's copy is deleted and ours stays. FAKE_GLAB_LATE is a commit made on the
+            ## branch here while the prompt sat.
+            tip="$(git rev-parse "refs/remotes/origin/${FAKE_GLAB_HEAD}")"
+            git push --quiet origin "${tip}:refs/heads/${FAKE_GLAB_BASE}" && git push --quiet origin --delete "${FAKE_GLAB_HEAD}"
+            [[ -z "${FAKE_GLAB_LATE:-}" ]] || git commit --quiet --allow-empty -m late ;;
+esac
+exit 0
+GLEOF
+	local fgMc="${fgMr}/c"
+	git clone --quiet "${fgMr}/origin.git" "${fgMc}" 2>/dev/null
+	(
+		cd "${fgMc}" || exit 1
+		echo a > a.txt && git add --all && git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b glrace dev && echo r > r.txt && git add --all && git commit --quiet -m race && git push --quiet -u origin glrace
+		git checkout --quiet -b hotfix/gl main && echo fix > fix.txt && git add --all && git commit --quiet -m fix && git push --quiet -u origin hotfix/gl
+		git remote set-url origin git@ssh.gitlab.example.test:grp/proj.git
+	)
+	local fgMrEnv="PATH='${fgMr}/bin:${fgGlPath}' FAKE_SSH_REPO='${fgMr}/origin.git' FAKE_GLAB_LOG='${fgMr}/glab.log'"
+	fAssert "[dfnbx] pr ok through glab of a hotfix opened against dev runs" \
+		bash -c "cd '${fgMc}' && ${fgMrEnv} FAKE_GLAB_HEAD=hotfix/gl FAKE_GLAB_BASE=dev '${gitsby}' -q pr ok 7 > '${fgMr}/ok1.log' 2>&1"
+	fAssert "[dfnby] and plans the delete of the local branch, which runs as planned"  fPlanRan '^ +git branch -D hotfix/gl'  cat "${fgMr}/ok1.log"
+	fAssert "[dfnbz] and ends on dev with the branch gone, and the fix in dev, not main" \
+		bash -c "cd '${fgMc}' && [[ \"\$(git branch --show-current)\" == dev ]] && ! git show-ref --verify --quiet refs/heads/hotfix/gl && git cat-file -e origin/dev:fix.txt && ! git cat-file -e origin/main:fix.txt 2>/dev/null"
+	fAssert "[dfnc0] a commit made on the branch after the plan keeps it, with a warning" \
+		bash -c "cd '${fgMc}' && git checkout --quiet glrace && out=\"\$(${fgMrEnv} FAKE_GLAB_HEAD=glrace FAKE_GLAB_BASE=dev FAKE_GLAB_LATE=1 '${gitsby}' -q pr ok 8 2>&1)\" && grep -qF \"WARNING: 'glrace' has commits PR #8 doesn't; left it alone.\" <<< \"\${out}\" && ! grep -qF '[ git branch -D' <<< \"\${out}\" && [[ \"\$(git log -1 --pretty=%s glrace)\" == late ]]"
+	( cd "${fgMc}" || exit 1; git checkout --quiet -b glnew dev && echo n > n.txt && git add --all && git commit --quiet -m new )
+	fAssert "[dfnc1] pr create through glab plans --target-branch, on the line the run announces" \
+		fPlanRan '^ +glab mr create --target-branch dev --title "New"' bash -c "cd '${fgMc}' && ${fgMrEnv} '${gitsby}' -q pr create New"
+	fAssert "[dfnc2] and glab gets that base" \
+		bash -c "grep -q '^mr create --target-branch dev --source-branch glnew --title New ' '${fgMr}/glab.log'"
 	fAssertOut "[ddk66] --any-identity hands tea nothing"  '^url= token=$' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_ENV=1 '${gitsby}' -q -NoFetch --any-identity --config '${fg}/tea-acct.shcl' raw tea whoami"
 	: > "${fg}/rawdeb.log"
@@ -11063,3 +11155,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261121 JC: pullcom leaves a submodule out of the commit when it's checked out behind the commit HEAD records, as after a pull that bumped it, [dfkzx] to [dfm01]. br switch and sync don't count it as work, [dfm09] to [dfm0b].
 ##		- 20261121 JC: pr create bases the pull request on the branch its push lands on, the head pr ok reads back, in the run and the plan, [dfm0q] to [dfm0s].
 ##		- 20261122 JC: With submodule.recurse set, the pull updates the submodules after its merge, and its plan says so. A failed update warns and the run goes on. The warning for a submodule left out names git add and --staged, for a move back made on purpose, [dfnaw] to [dfnb0].
+##		- 20261122 JC: pr ok merges into the base the git host gives the pull request, through gh, tea and glab, and owes dev a back-merge only when that base is main, [dfnbj] to [dfnbw]. Through glab it deletes the merged branch here too, and pr create's plan names --target-branch, [dfnbx] to [dfnc2].

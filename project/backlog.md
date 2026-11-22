@@ -33,6 +33,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- pr ok on a pull request from dev or main deletes that branch
+	- ID: 2026112212332136
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261122-123321
+	- Opened by:
+	- Related IDs: 2026112113223086
+	- Steps to reproduce [Bug]: Open a pull request from dev into main on the git host's page, then run gitsby -q pr ok <n>.
+	- Incorrect behavior [Bug]: gh's merge runs with --delete-branch, glab's with --remove-source-branch, and tea's clean follows, so dev is deleted on origin where the git host allows it, and here. Nothing before the plan asks whether the head is a protected branch. By reading; not run.
+	- Expected behavior [Bug]: Refuse before the plan when the head is main, dev or the default branch, as pr create and br merge do, or merge it and keep the branch.
+	- Origin: Go port. Found while fixing 2026112113223086, whose change lets a pull request into main owe dev a back-merge. Plausible.
+
 - The warning for a submodule that is behind names no way to commit a move back made on purpose
 	- ID: 2026112118464455
 	- Type: Bug
@@ -92,7 +106,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - pr ok takes the PR's target from its head's name, not the base the git host gives it
 	- ID: 2026112113223086
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261121-132230
@@ -103,6 +117,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: pr ok takes the target and the back-merge from the base the PR has, or refuses before the plan when the base isn't the one its head's name gives.
 	- Possible cause [Bug]: readPr asks gh, tea and glab for the head and state only. prTarget in pr.go reads the target off the head's name.
 	- Origin: 4918b5b, Go port. Plausible. Found while fixing 2026112017135624, whose pr create now opens every PR on the base pr ok expects, so only a PR opened elsewhere is left.
+	- Closed reason: Done
+	- Reproduced [Bug]: 2026-11-22 on b23, with a fake gh merging into the base the PR names: a hotfix PR against dev checked out main and back-merged it into dev, and a plain PR against main checked out dev with no back-merge. Confirmed.
+	- Actual cause [Bug]: readPr asked gh, tea and glab for the head and state only, so pr ok's checkout, plan, held-branch check and back-merge read the target off the head's name, while the git host merged into the base the PR has.
+	- Actual fix [Bug]: readPr reads the base too: gh's baseRefName, tea's base field and glab's target_branch. prTarget gives that base for pr ok, and a new prOkBackMerges says a back-merge is owed only when the base is the default branch and dev is a branch of its own. The checkout, the plan, refuseHeldBranch and mergePushesOwn read them. A base shaped like an option, or one this clone has no copy of, is refused before the plan. design.md and the changelog say so.
+	- Branch: nov22-2026112113223086
+	- Commit: 1acf747
+	- Test case: test.bash [dfnbj] to [dfnbw], [dfnbx] and [dfnbz] through glab; Go TestPrTarget [dfm0t], TestMergePushesOwn [dfhg8] and TestRefuseHeldBranch [dfh8b] with base cases, TestReadGlabMR [df04m], FuzzReadGlabMR [df04n].
+	- Verified: [dfnbk], [dfnbm], [dfnbp] to [dfnbt], [dfnbv] and [dfnbw] fail on the build before the fix and pass with it. [dfm0t], [dfhg8] and [dfh8b] fail with prOkBackMerges reading the head's name, and [dfm0t] with prTarget doing so. The quick gate passed with every area: test.bash 2383/0, fuzz 310/0, parity 31/0, spawn counts unchanged. gosec 37, as before, none in the changed files.
+	- Swept: every reader of pr ok's target or back-merge: cmdPrAccept, previewPr, checkoutsAhead and mergePushesOwn, by grep for prTarget and isHotfixBranch(a.pr.headBranch), which has no caller left. readPr for gh, tea and glab. pr create still takes its base off the pushed head's name, which is its own call (2026112017135624). br merge merges locally, so its target and the branch's name agree.
+	- Decisions: The base wins over the head's name, rather than refusing a PR whose base differs. The git host merges into the base either way, and refusing would leave the user to merge on the web page, where nothing merges main back into dev, and release then refuses. Check: entry filed.
+	- Against: 2026112017135624's call to keep isHotfixBranch(a.pr.headBranch) at its 4 sites without a helper. That rested on each site reading the head; they now read the base, through prOkBackMerges.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-123242
+	- Note: 20261122, inputs given a base, with what each checks unchanged. TestPrTarget [dfm0t]'s pr ok half read the target off the head's name, and now gives the head a base of main and of dev. TestMergePushesOwn [dfhg8] and TestRefuseHeldBranch [dfh8b] set the base the head's name gives. The fake gh's pr view prints the base between the head and the state, and the fake glab's default view, [df04p] and [df04q] have a target_branch, as real glab's JSON does.
 
 - Code Review 20261120 item 19: A resumed release started on main with an edited file pushes a commit past the tag
 	- ID: 2026112017135608
@@ -122,7 +150,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 20: With glab, pr ok leaves the local branch behind
 	- ID: 2026112017135592
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171355
@@ -130,14 +158,25 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Steps to reproduce [Bug]: Run `pr ok` on a merged MR through glab.
 	- Incorrect behavior [Bug]: The git host's branch is deleted and the local one isn't. Through gh and tea both go.
 	- Expected behavior [Bug]: design.md:271 says pr ok deletes the branch it merged.
-	- Reproduced [Bug]: No. Read, plus a fake glab's argument log. Plausible.
+	- Reproduced [Bug]: 2026-11-22 on b23, with a fake glab that merges into a local bare and deletes origin's copy, reached over a stub ssh: pr ok left the local branch. Confirmed.
 	- Possible cause [Bug]: `glab mr merge --remove-source-branch` acts on the git host only, at pr.go:666.
 	- Origin: 197677f (2026-10-22). No round reached the glab flows before.
+	- Closed reason: Done
+	- Actual cause [Bug]: glab's --remove-source-branch deletes only the git host's copy, and nothing in pr ok deleted ours, where gh's --delete-branch and tea's clean delete both.
+	- Actual fix [Bug]: After a glab merge and the checkout, pr ok runs git branch -D on the PR's branch, in the plan and the run, as gh does. It asks again just before whether the branch has commits origin's copy lacked, as one made while the prompt sat, and then keeps it with a warning. A failed delete warns and the run goes on. Not planned while pr ok stays on that branch. design.md and the changelog say so.
+	- Branch: nov22-2026112113223086
+	- Commit: 1acf747
+	- Test case: test.bash [dfnbx] to [dfnc0]; Go TestPrLocalCleanArgs [dfnbh].
+	- Verified: [dfnby], [dfnbz] and [dfnc0] fail on the build before the fix and pass with it. [dfnbh] fails with prLocalCleanArgs giving nothing. The quick gate passed with every area, as for 2026112113223086.
+	- Swept: the merge of every tool: gh's --delete-branch and tea's pulls clean take both copies, glab's now has the local delete. br merge deletes its own local branch. br prune is a separate path.
+	- Decisions: -D, as gh uses, since the preflight refused a branch with commits origin's copy lacks. The tip is asked again before the delete, since the prompt can sit.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-123306
 
 - Code Review 20261120 item 21: The pr create plan shows glab mr create --base
 	- ID: 2026112017135577
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171355
@@ -148,6 +187,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, the plan against a fake glab's log. Confirmed.
 	- Possible cause [Bug]: prCreateDisp at pr.go:630 has one form for every tool.
 	- Origin: 197677f. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: prCreateDisp wrote --base for every tool, while prCreateArgs gave glab --target-branch.
+	- Actual fix [Bug]: One helper, prBaseFlag, names the base flag for each tool, and both the create call and its plan line read it. The changelog says so.
+	- Branch: nov22-2026112113223086
+	- Commit: 1acf747
+	- Test case: test.bash [dfnc1], [dfnc2]; Go TestPrCreateDispFlags [dfnbg].
+	- Verified: [dfnc1] fails on the build before the fix and passes with it. [dfnc2] passes on both, since the call always had the flag. [dfnbg] fails for glab with the plan line's --base put back. It checks every tool: each option the plan line names is in the call, with the same value after it. The quick gate passed with every area, as for 2026112113223086.
+	- Swept: every plan line for a pr call. Approve, merge and tea's clean are written from the call's own words through prDisp, so only create had a form of its own.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-123306
 
 - Code Review 20261120 item 26: install.ps1 picks a different release than install.bash when a tag has a dot suffix or 4 numbers
 	- ID: 2026112017135503

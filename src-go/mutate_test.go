@@ -334,12 +334,18 @@ func TestPrTarget(t *testing.T) { // [dfm0t]
 					t.Errorf("tool %d: prCreateDisp() = %q, want base %q", tool, disp, tc.want)
 				}
 			}
-			// pr ok, standing anywhere, reads the same head back from the git host.
+			// pr ok, standing anywhere, goes where the git host's base says, whatever
+			// the head is called: a PR opened by hand can name either one.
 			runGit(t, clone, "checkout", "-q", "main")
-			ok := newApp(newPrinter())
-			ok.pr.sub, ok.pr.headBranch = "ok", head
-			if got := ok.prTarget(); got != tc.want {
-				t.Errorf("pr ok prTarget() = %q, want %q", got, tc.want)
+			for _, base := range []string{"main", "dev"} {
+				ok := newApp(newPrinter())
+				ok.pr.sub, ok.pr.headBranch, ok.pr.baseBranch = "ok", head, base
+				if got := ok.prTarget(); got != base {
+					t.Errorf("pr ok of %q into %q: prTarget() = %q", head, base, got)
+				}
+				if got := ok.prOkBackMerges(); got != (base == "main") {
+					t.Errorf("pr ok of %q into %q: prOkBackMerges() = %v", head, base, got)
+				}
 			}
 		})
 	}
@@ -423,6 +429,13 @@ func TestMergePushesOwn(t *testing.T) { // [dfhg8]
 			a := newApp(newPrinter())
 			a.cmd.name = cmd
 			a.pr.sub, a.pr.headBranch = sub, head
+			// The PR's base as the git host gives it, written into the case's head
+			// as "head>base" where it isn't the one the head's name gives.
+			if h, base, found := strings.Cut(head, ">"); found {
+				a.pr.headBranch, a.pr.baseBranch = h, base
+			} else if sub == "ok" {
+				a.pr.baseBranch = a.branchTarget(head)
+			}
 			if got := a.mergePushesOwn(); got != want {
 				t.Errorf("mergePushesOwn() = %q, want %q", got, want)
 			}
@@ -435,6 +448,8 @@ func TestMergePushesOwn(t *testing.T) { // [dfhg8]
 	check("own commit, back-merge", "hotfix/x", "br-merge", "", "", "dev")
 	check("own commit, pr ok of a hotfix", "feat", "pr", "ok", "hotfix/x", "dev")
 	check("own commit, pr ok of a feature", "feat", "pr", "ok", "feat", "")
+	check("own commit, pr ok of a hotfix opened against dev", "feat", "pr", "ok", "hotfix/x>dev", "")
+	check("own commit, pr ok of a feature opened against main", "feat", "pr", "ok", "feat>main", "dev")
 	check("own commit, sync", "feat", "sync", "", "", "")
 	onDev("reset", "-q", "--hard", "origin/dev")
 	runGit(t, clone, "checkout", "-q", "-b", "side", "dev")
