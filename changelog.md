@@ -51,6 +51,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- On Windows, file lists are cut to the console's width. They were cut at 100 columns whatever the width, so in a narrower console each long line wrapped.
+
 - After the PowerShell installer adds gitsby to PATH on Windows, a new PowerShell or Command Prompt opened from the Start menu or taskbar finds it. It used to need a sign-out first, since the installer changed PATH without telling Windows.
 
 - When the PowerShell installer can't put the new `gitsby.exe` in place over an old one, it puts the old one back. It used to delete the old copy first, so a failed upgrade left no gitsby at all. If the old copy can't be put back either, the error says where it is.

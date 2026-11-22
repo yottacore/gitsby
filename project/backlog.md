@@ -398,7 +398,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 36: On Windows, file lists are cut at 100 columns whatever the console width
 	- ID: 2026112017135355
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171353
@@ -409,6 +409,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on vm925w over `ssh -tt`, in cmd and pwsh. Confirmed.
 	- Possible cause [Bug]: termCols at tty_windows.go:23 returns 0. GetConsoleScreenBufferInfo gives the width.
 	- Origin: 12752d0 (2026-10-04). No round reached it before.
+	- Actual cause [Bug]: termCols on Windows always returned 0, and with no tput there the list width fell back to 100.
+	- Actual fix [Bug]: termCols asks GetConsoleScreenBufferInfo and returns the console window's width, not the buffer's, and 0 when the handle isn't a console. The changelog says so.
+	- Test case: Go [dfng4] TestTerminalWidthAsksTheConsole, Windows only.
+	- Verified: under wine in a pty sized 72 and then 133 columns, [dfng4] read 72 and 133 and passed, and failed with termCols returning 0 as before. Wine is a stand-in. The quick gate with every area passed: test.bash 2408/0, fuzz 310/0, parity 31/0. go vet and staticcheck pass for windows amd64 and arm64.
+	- Swept: grep for termCols and tput in src-go. show.go terminalWidth is the only width read, and tty_unix.go already asks the kernel. tty_other.go, for platforms nothing is built for, still returns 0 and takes tput.
+	- Decisions: The window width, since text past the window wraps in a console whose buffer is wider. The test opens CONOUT$, since a test's own stdout under ssh is a pipe, and checks the width against PowerShell's RawUI where that answers.
+	- Needs external testing: vm925w: a Windows Go test build of fcbfa1f, run over ssh -tt in a 72-column console, -test.run 'TestTerminalWidthAsksTheConsole' -test.v [dfng4], which should log 72 columns. Then gitsby -NoFetch status there in cmd and pwsh, in a repo with long file names, where lines should end at 72.
+	- Branch: nov22-2026112017135355
+	- Commit: fcbfa1f
 
 - Code Review 20261120 item 37: 5 parts of last round's fixes have no test that fails without them
 	- ID: 2026112017135341
