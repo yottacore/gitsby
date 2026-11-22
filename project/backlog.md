@@ -437,6 +437,38 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: Each part has a check that fails without it, per the review rules.
 	- Reproduced [Bug]: 2026-11-20 on b23. The first 3 by mutation, the other 2 by grep and a run. Confirmed.
 	- Origin: Code Review 20261119 items 1, 5, 7 and 34, and 2026111910223089, closed in nov19b, nov19c and nov20.
+	- Actual fix [Bug]: Parts 1 to 4 have checks now. Part 1: test.bash [dfngf] reads gh's log, so the open-PR question has to name the branch the push lands on. Part 3: [dfngg] and [dfngh] are raw gh's twins of [df4w7], pointed at another host and at its own. Part 4: [dfngj] and [dfngk] run pr ok --no-fetch on the PR's own branch, which ends on the merge target. Part 2 was already pinned since Enhancement 1's push list moved the line into plannedPush.disp: Go [dfk0y] and test.bash [dfk1a] check the renamed target, and [dfk18] checks sync's own plan line. Part 5 is child 2026112214483821.
+	- Branch: nov22-2026112017135341
+	- Commit: dd03f69
+	- Test case: test.bash [dfngf] to [dfngk]. Part 2: Go TestPlannedPushDisp [dfk0y], test.bash [dfk1a] and [dfk18].
+	- Verified: One build with each of parts 1 to 4 undone (openPrForBranch asked about the local branch, gh's warning off, pr ok moving only when the upstream is gone, disp's renamed-target case off, sync's plan line naming only the branch) failed [dfngf], [dfngg], [dfngk], [dfk0y], [dfk1a] and [dfk18], and the tree passes them. [dfngh] and [dfngj] pass both ways: the warning stays off on its own host, and the plan reads the rule the mutation left alone. Quick run of every area passed: test.bash 2413/0, fuzz 310/0, parity 31/0.
+	- Swept: openPrForBranch has one caller. tea's identity warning is pinned by [ddk6a] to [df047], and glab's by [df4w7]. The pr ok move is read by previewPr, cmdPrAccept and checkoutsAhead through prOkMoves, and only the run's side had no check under --no-fetch.
+	- Decisions: Part 5 split off, since it needs a change to install.ps1 (a function the AST rig can run, with an installerVersion bump) and a Windows run. Part 2 got no new check, since the code it named moved into plannedPush.disp and the existing checks fail with it undone.
+	- Progress log: Parts 1 to 4 done in nov22 (dd03f69). Part 5 is child 2026112214483821, done in nov22 (26ea275) and waiting on its vm925w run.
+
+- Code Review 20261120 item 37, part 5: install.ps1's 'already on your account PATH' result line has no check that fails without it
+	- ID: 2026112214483821
+	- Type: Bug
+	- Status: Waiting on automated testing
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261122-144838
+	- Opened by:
+	- Parent ID: 2026112017135341
+	- Steps to reproduce [Bug]: In install.ps1, make the result line always say Added, and run test.bash.
+	- Incorrect behavior [Bug]: Nothing fails. The line is built inside the Windows registry branch, which only the private Windows rig ran.
+	- Expected behavior [Bug]: A check fails when a PATH that already holds the folder gets Added, or a new entry, in place of the already-on line.
+	- Reproduced [Bug]: 2026-11-20 on b23, by grep. Confirmed.
+	- Possible cause [Bug]: The registry read, the append and the result line are inline in the Windows branch, so pwsh on Linux can't reach them. Taking the choice of line out into a function, as Test-OnPath was, would let fPsOnPath's AST rig run it here, with the vm925w run as the real path. An install.ps1 change also bumps installerVersion and its History entry.
+	- Origin: Code Review 20261119 item 34, closed in nov20.
+	- Needs external testing: vm925w, install.ps1 in PowerShell 5.1 and 7: the 3 spellings of a PATH that has the folder say it's already on your account PATH and write nothing, and an install from a PATH without it says Added and appends one entry, as item 34's run did.
+	- Actual fix [Bug]: install.ps1's stored PATH read, append and result sentence moved into Add-StoredPath, which returns the sentence. No change in what it writes or says. test.bash's fPsStoredPath defines it from the file and runs it over a stand-in registry key.
+	- Branch: nov22-2026112017135341
+	- Commit: 26ea275
+	- Test case: test.bash [dfngz]. [dfgxd] now follows a write made inside a function to that function's one call.
+	- Verified: [dfngz] fails with the already-on line made to say Added (xxaa), and with the append's trailing ';' trim taken out (kkxa), and passes on the tree. On the install.ps1 before the move it fails, with no Add-StoredPath. [dfgxd] passes on the old and new install.ps1, and fails with Send-EnvironmentChange moved into the call's try or ahead of the write. Quick run of every area passed: test.bash 2414/0, fuzz 310/0, parity 31/0, PSScriptAnalyzer clean. The Windows branch itself didn't run here.
+	- Swept: install.ps1 has one registry PATH write and one result line. install.bash prints only a note for PATH, pinned by [dfjah].
+	- Decisions: [dfgxd] was rewritten, not dropped. It encoded that the PATH broadcast is sent after the registry write and outside the try whose catch reports PATH as not updated. With the write in a function that has no try of its own, that try is the one around the call, so the check now anchors there. It still fails on both orders it guarded.
 
 - Code Review 20261120 item 38: 5 spawn-count rows sit at their limits, since their expected counts weren't raised
 	- ID: 2026112017135327

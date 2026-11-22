@@ -226,10 +226,19 @@ fPsPathTold(){ PS_FILE="$1" pwsh -NoProfile -Command '$ast = [Management.Automat
 	$write = @($cmds | Where-Object { $_.GetCommandName() -eq "Set-ItemProperty" -and $_.Extent.Text -match "-Name .PATH." })
 	$tell = @($cmds | Where-Object { $_.GetCommandName() -eq "Send-EnvironmentChange" })
 	if ($write.Count -ne 1 -or $tell.Count -lt 1) { "writes: $($write.Count), tells: $($tell.Count)"; exit 1 }
-	$tries = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $n.Body.Extent.StartOffset -le $write[0].Extent.StartOffset -and $n.Body.Extent.EndOffset -ge $write[0].Extent.EndOffset }, $true)
-	$inner = $tries | Sort-Object { $_.Body.Extent.EndOffset - $_.Body.Extent.StartOffset } | Select-Object -First 1
+	$innerTry = { param($node) $ast.FindAll({ param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $n.Body.Extent.StartOffset -le $node.Extent.StartOffset -and $n.Body.Extent.EndOffset -ge $node.Extent.EndOffset }, $true) |
+		Sort-Object { $_.Body.Extent.EndOffset - $_.Body.Extent.StartOffset } | Select-Object -First 1 }
+	## A write in a function with no try of its own around it happens, and fails, where that
+	## function is called.
+	$at = $write[0]; $inner = & $innerTry $at; $fn = $at.Parent
+	while ($fn -and $fn -isnot [Management.Automation.Language.FunctionDefinitionAst]) { $fn = $fn.Parent }
+	if ($fn -and (-not $inner -or $inner.Extent.StartOffset -lt $fn.Extent.StartOffset)) {
+		$calls = @($cmds | Where-Object { $_.GetCommandName() -eq $fn.Name })
+		if ($calls.Count -ne 1) { "calls of $($fn.Name): $($calls.Count)"; exit 1 }
+		$at = $calls[0]; $inner = & $innerTry $at
+	}
 	foreach ($t in $tell) {
-		if ($t.Extent.StartOffset -le $write[0].Extent.EndOffset) { "told before the write"; exit 1 }
+		if ($t.Extent.StartOffset -le $at.Extent.EndOffset) { "told before the write"; exit 1 }
 		if ($inner -and $t.Extent.StartOffset -lt $inner.Extent.EndOffset) { "told inside the write'"'"'s try"; exit 1 }
 	}' </dev/null 2>&1 ;}
 ## Defines install.ps1's Test-OnPath from the file and asks it about each PATH in <set>, Windows
@@ -257,6 +266,37 @@ fPsOnPath(){ PS_FILE="$1" PS_SET="$2" POWERSHELL_TELEMETRY_OPTOUT=1 pwsh -NoProf
 		@("/usr/bin:/home/U/.local/bin", "/home/u/.local/bin", $false))
 	}
 	-join @($cases | ForEach-Object { $expand = if ($_.Count -gt 3) { $_[3] } else { $true }; if (Test-OnPath $_[0] $_[1] $_[2] $expand) { "y" } else { "n" } })' </dev/null 2>&1 ;}
+## Defines install.ps1's Test-OnPath and Add-StoredPath from the file and runs the stored PATH
+## update over a stand-in registry key. Prints k for a PATH kept, with the already-on line, a for
+## one added to, with the Added line and the joined value, and x for anything else, per case.
+# shellcheck disable=SC2016  ## pwsh's own variables; pwsh does the expanding.
+fPsStoredPath(){ PS_FILE="$1" POWERSHELL_TELEMETRY_OPTOUT=1 pwsh -NoProfile -Command '$ErrorActionPreference = "Stop"
+	$ast = [Management.Automation.Language.Parser]::ParseFile($env:PS_FILE, [ref]$null, [ref]$null)
+	foreach ($name in "Test-OnPath", "Add-StoredPath") {
+		$fn = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+		if (-not $fn) { "no ${name}"; exit 1 }
+		. ([scriptblock]::Create($fn.Extent.Text))
+	}
+	$env:LOCALAPPDATA = "C:\Users\u\AppData\Local"
+	$dir = "C:\Users\u\AppData\Local\Programs\gitsby"
+	$script:key = $null; $script:wrote = $null
+	function Get-Item([string]$LiteralPath) { $script:key }
+	function Set-ItemProperty([string]$LiteralPath, [string]$Name, $Value, $Type) { $script:wrote = "${Name}=${Value}=${Type}" }
+	$cases = @(
+		@("C:\Windows;%LOCALAPPDATA%\Programs\gitsby", "ExpandString", ""),
+		@("C:\Windows;C:\Users\u\AppData\Local\Programs\gitsby\", "String", ""),
+		@("C:\Windows;", "String", "PATH=C:\Windows;${dir}=String"),
+		@("", "String", "PATH=${dir}=String"))
+	-join @($cases | ForEach-Object {
+		$c = $_; $script:wrote = $null
+		$script:key = [pscustomobject]@{ Value = $c[0]; Kind = $c[1] }
+		$script:key | Add-Member ScriptMethod GetValue { param($n, $d, $o) $this.Value }
+		$script:key | Add-Member ScriptMethod GetValueKind { param($n) [Microsoft.Win32.RegistryValueKind]$this.Kind }
+		$what = Add-StoredPath -keyPath "HKCU:\Environment" -destDir $dir -pathScope account
+		if (-not $c[2] -and $what -ceq "${dir} is already on your account PATH." -and $null -eq $script:wrote) { "k" }
+		elseif ($c[2] -and $what -ceq "Added ${dir} to your account PATH." -and $script:wrote -ceq $c[2]) { "a" }
+		else { "x" }
+	})' </dev/null 2>&1 ;}
 ## Defines install.ps1's Install-Binary from the file and runs its Windows branch over an old
 ## gitsby.exe in <dir>. <mode> ok lets every move through, fail refuses the move of the staged
 ## file, and fail2 also refuses moving the old copy back. Prints what's left in <dir>.
@@ -3794,6 +3834,13 @@ GHEOF
 	fAssert    "[dacyq] pr ok ended on the merge target"  bash -c "cd '${prc}' && [[ \"\$(git branch --show-current)\" == dev ]]"
 	fAssert    "[dacyr] pr ok pulled the merged work"      bash -c "cd '${prc}' && git ls-tree --name-only dev | grep -qx work.txt"
 	fAssert    "[dacys] the merged branch is gone from origin"  bash -c "cd '${prc}' && ! git ls-remote --heads origin prfeat | grep -q prfeat"
+	## Under --no-fetch nothing is pruned, so the branch's upstream still looks alive. The run
+	## moves to the merge target all the same, as its plan says.
+	local prcNf="${gh}/prok/nf"
+	git clone --quiet -b dev "${gh}/prok/origin.git" "${prcNf}" 2>/dev/null
+	( cd "${prcNf}" || exit 1; git checkout --quiet -b prnf && echo nf > nf.txt && git add --all && git commit --quiet -m nf && git push --quiet -u origin prnf )
+	fAssertPlan "[dfngj] pr ok --no-fetch on the PR's own branch plans the switch"  '^ +git checkout dev'  bash -c "cd '${prcNf}' && PATH='${ghp}' FAKE_GH_BASE=dev '${gitsby}' -q --no-fetch pr ok 8"
+	fAssert     "[dfngk] and ends on the merge target"  bash -c "cd '${prcNf}' && [[ \"\$(git branch --show-current)\" == dev ]]"
 
 	## pr ok from a third branch, whose upstream moved on: the run pulls that branch and stays
 	## there, so the plan has to say so, not promise a checkout and pull of the merge target.
@@ -3937,6 +3984,8 @@ GHEOF
 	( cd "${pnf}" && git config push.default upstream && echo far > far.txt && git add far.txt && git commit --quiet -m "Far work" )
 	fAssert "[dfh72] under push.default=upstream it opens the PR from the branch the push went to" \
 		bash -c "cd '${pnf}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prfar2.log' '${gitsby}' -q pr create 'Far' && grep -q -- '^pr create .*--head pnx-far --title Far' '${gh}/prfar2.log'"
+	fAssert "[dfngf] and asks gh for an open PR from that branch, not the local one" \
+		bash -c "grep -q -- '^pr list --head pnx-far ' '${gh}/prfar2.log' && ! grep -q -- '^pr list --head pnx ' '${gh}/prfar2.log'"
 	fAssert "[dfh73] and origin's older branch of the same name is left as it was" \
 		bash -c "cd '${pnf}' && [[ \"\$(git ls-remote origin refs/heads/pnx-far | cut -f1)\" == \"\$(git rev-parse pnx)\" && \"\$(git ls-remote origin refs/heads/pnx | cut -f1)\" == \"\$(git rev-parse origin/dev)\" ]]"
 	( cd "${pnf}" && git switch --quiet -c pnd --track origin/dev )
@@ -5193,6 +5242,10 @@ GHEOF
 		## PATH, which has had its expanding, a %VAR% entry names no folder.
 		fAssertOut "[dfnea] go install.ps1 counts a %VAR% PATH entry only where it's told Windows expands it" '^nyy$' \
 			fPsOnPath "${goInstPs}" expand
+		## The result line comes from the stored PATH, which only Windows has, so the update runs here
+		## over a stand-in key.
+		fAssertOut "[dfngz] go install.ps1 keeps a stored PATH that has its folder, and says it's already on it" '^kkaa$' \
+			fPsStoredPath "${goInstPs}"
 		fAssert    "[dfneb] and is told so only for the stored PATH, by its registry kind" \
 			bash -c "[[ \$(grep -cF 'Test-OnPath -list \$env:PATH -dir \$destDir -onWindows \$onWindows -expand \$false)' '${goInstPs}') == 2 && \$(grep -c 'Test-OnPath -list' '${goInstPs}') == 3 ]] \
 				&& grep -qF 'Test-OnPath -list \$stored -dir \$destDir -onWindows \$true -expand (\$storedKind -eq [Microsoft.Win32.RegistryValueKind]::ExpandString)' '${goInstPs}'"
@@ -10593,6 +10646,11 @@ FSEOF
 		fAssertNotOut "[dfjxg] gh's store is asked for the account's own host: ${twWhat[twItem]}"  'tok_walk_ghestore' \
 			bash -c "cd '${tw}/trees/gh/proj' && ${twRun[twItem]}"
 	done
+	## raw gh pointed at another host gets no token, and says so, as raw glab does in [df4w7].
+	fAssertOut    "[dfngg] raw gh pointed at another host says it isn't acting as the account"  'not acting as the account: gh is pointed at evil\.walk\.test, and the account.s token is for ghe\.walk\.test' \
+		bash -c "cd '${tw}/trees/ghe/proj' && ${twGhe} env ${twEnv} '${gitsby}' -NoFetch --config '${tw}/walk.shcl' raw gh auth token --hostname evil.walk.test 2>&1 >/dev/null"
+	fAssertNotOut "[dfngh] and pointed at its own host it doesn't"  'not acting as the account' \
+		bash -c "cd '${tw}/trees/ghe/proj' && ${twGhe} env ${twEnv} '${gitsby}' -NoFetch --config '${tw}/walk.shcl' raw gh auth token 2>&1 >/dev/null"
 	## A Gitea account has no GitHub login, and the line used to read only that one.
 	fAssertOut "[ddk69] raw names the Gitea account it acts as"  'acting as giteauser' \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_VERSION=0.11.0 '${gitsby}' -NoFetch --config '${fg}/tea-acct.shcl' raw tea whoami 2>&1"
@@ -11238,3 +11296,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261122 JC: With submodule.recurse set, the pull updates the submodules after its merge, and its plan says so. A failed update warns and the run goes on. The warning for a submodule left out names git add and --staged, for a move back made on purpose, [dfnaw] to [dfnb0].
 ##		- 20261122 JC: pr ok merges into the base the git host gives the pull request, through gh, tea and glab, and owes dev a back-merge only when that base is main, [dfnbj] to [dfnbw]. Through glab it deletes the merged branch here too, and pr create's plan names --target-branch, [dfnbx] to [dfnc2].
 ##		- 20261122 JC: Finishing a release whose push was refused, from main with an edit or a new file, refuses and leaves them, rather than committing past the tag, [dfndg] to [dfndp].
+##		- 20261122 JC: pr create asks about an open PR from the branch its push lands on, [dfngf]. raw gh pointed at another host says it isn't acting as the account, [dfngg] [dfngh]. pr ok --no-fetch on the PR's own branch moves to the merge target, [dfngj] [dfngk]. install.ps1's stored PATH update runs over a stand-in key, [dfngz].
