@@ -50,7 +50,7 @@ func (a *app) cmdCommit() error {
 			for _, path := range behind {
 				files = append(files, nativePath(a.workTop+"/"+path))
 			}
-			a.out.statusNotes("WARNING: a submodule is checked out behind the commit this branch records for it, so it was left out of the commit, which would have undone that move. 'git submodule update' checks out the recorded one.", noteLines("File", files...))
+			a.out.statusNotes("WARNING: a submodule is checked out behind the commit this branch records for it, so it was left out of the commit. A pull or switch leaves a submodule that way, and committing it would take the branch back to the older commit.", append(noteLines("File", files...), noteLines("Fix", a.behindFix(files)...)...))
 			differs = indexDiffers()
 		}
 		if !differs {
@@ -78,7 +78,7 @@ func (a *app) cmdPull() error {
 	case a.isOffline():
 		a.out.status("WARNING: remote unreachable; skipping the pull. Local changes still get committed.")
 	case a.hasUpstream():
-		return a.step("git", a.pullArgs(a.autostash()...)...)
+		return a.pullStep(a.autostash()...)
 	case a.goneUpstream() != "":
 		a.out.status("'" + a.goneUpstream() + "' is gone; nothing to pull.")
 	default:
@@ -189,6 +189,56 @@ func (a *app) refuseConflicts(stopped, rerun string) error {
 	return usagef("Resolve those, then run '%s' again. Git also kept your pre-pull tree - see 'git stash list'.", rerun)
 }
 
+// behindFix is how to go on from the submodules the commit left out: check out the
+// commits the branch records, or commit the older ones by staging them and running
+// the command again with --staged, which commits the index as it is. repo create and
+// repo connect don't take --staged, so there the commit is by hand.
+func (a *app) behindFix(paths []string) []string {
+	add := "  git add"
+	for _, path := range paths {
+		add += " " + shellQuote(path)
+	}
+	fix := []string{"To check out the recorded commit:", "  git submodule update", "To commit the older one on purpose:", add}
+	if !slices.Contains(stagedCmds, typedName(a.cmd)) {
+		return append(fix, "  git commit", "Then run this again.")
+	}
+	return append(fix, "  "+a.rerunText()+" --staged")
+}
+
+// submoduleUpdateArgs is the update git pull runs after its merge when
+// submodule.recurse is set.
+var submoduleUpdateArgs = []string{"submodule", "update", "--recursive", "--checkout"}
+
+// pullStep is the pull for a branch with an upstream. git merge never reads
+// submodule.recurse, so a merge standing in for git pull is followed by the update
+// git pull runs with it set (2026112118463121). A failed update only warns, as the
+// commit already leaves out a submodule that is still behind.
+func (a *app) pullStep(extra ...string) error {
+	args := a.pullArgs(extra...)
+	if err := a.step("git", args...); err != nil {
+		return err
+	}
+	if args[0] != "merge" || !a.submoduleRecurse() {
+		return nil
+	}
+	if err := a.step("git", submoduleUpdateArgs...); err != nil {
+		a.out.status("WARNING: " + err.Error() + ", so a submodule may be checked out behind the commit this branch records for it. A commit leaves such a submodule out. 'git submodule update' tries again.")
+	}
+	return nil
+}
+
+// submoduleRecurse: submodule.recurse is set, so a pull updates the submodules
+// too. Asked only where there is a .gitmodules, so a repo without submodules
+// spends no spawn on it.
+func (a *app) submoduleRecurse() bool {
+	if a.workTop == "" || !pathExists(filepath.Join(a.workTop, ".gitmodules")) {
+		return false
+	}
+	return a.git.submoduleRecurse.get(func() bool {
+		return runOut("git", "config", "--type=bool", "submodule.recurse") == "true"
+	})
+}
+
 // pullIfOnline is the pull inside a multi-step command. Same offline rule as
 // cmdPull, quietly: --no-fetch and an unreachable remote both mean skip. Extra
 // arguments go through to git.
@@ -196,7 +246,7 @@ func (a *app) pullIfOnline(extra ...string) error {
 	if !a.opt.fetch || a.isOffline() || !a.hasUpstream() {
 		return nil
 	}
-	if err := a.step("git", a.pullArgs(extra...)...); err != nil {
+	if err := a.pullStep(extra...); err != nil {
 		return err
 	}
 	// An autostash reapply that conflicts still exits 0. With no commit after it to

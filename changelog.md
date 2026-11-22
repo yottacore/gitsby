@@ -183,7 +183,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - When origin answers but the fetch of a submodule fails, as when the submodule's own remote has moved, Gitsby says so and goes on with the pull. It used to take the failure as being offline, so `pullcom` skipped the pull and said Done with the branch still behind.
 
-- After a pull that moved a submodule to a newer commit, `pullcom` and the other commands that commit no longer commit the submodule back to its old one. git moves the recorded commit but not the submodule's own checkout, so `git add --all` took the old commit, and the next push undid origin's move. Gitsby now leaves out a submodule checked out behind the commit the branch records, warns, and names `git submodule update`. `br switch` off `dev` no longer refuses over it, and `sync` on `dev` no longer calls it a direct push.
+- After a pull that moved a submodule to a newer commit, `pullcom` and the other commands that commit no longer commit the submodule back to its old one. git moves the recorded commit but not the submodule's own checkout, so `git add --all` took the old commit, and the next push undid origin's move. Gitsby now leaves out a submodule checked out behind the commit the branch records, warns, and names `git submodule update`. For a move back made on purpose, the warning names `git add <folder>` and then the same command with `--staged`. `br switch` off `dev` no longer refuses over it, and `sync` on `dev` no longer calls it a direct push.
+
+- With `submodule.recurse` set, the pull updates the submodules again, as `git pull` and v2.1.0 do. The pull became a `git merge`, which never reads that setting, so the submodule stayed on its old commit and every run warned about it. Gitsby now runs `git submodule update --recursive --checkout` after the merge, and the plan lists it.
 
 - For a branch held by a locked worktree whose folder is gone, the refusal names mounting the folder again, or `git worktree unlock` and then `git worktree prune`. It used to name prune alone, which passes over a locked worktree, so the next run refused the same way.
 

@@ -109,11 +109,14 @@ type repoState struct {
 	defaultBranch  cached[string]
 	mergeTarget    cached[string]
 	originFetch    cached[[]string]
+	// submodule.recurse, which no step of ours sets.
+	submoduleRecurse cached[bool]
 }
 
 // forget drops every answer a step could have invalidated. The two branch names
 // are deliberately not among them: main settles both once, post-fetch, and no
-// step of ours renames a default branch or invents a dev.
+// step of ours renames a default branch or invents a dev. Nor is
+// submodule.recurse, which no step changes.
 func (r *repoState) forget() {
 	r.originURL.forget()
 	r.originRef.forget()

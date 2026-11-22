@@ -5564,6 +5564,65 @@ GHEOF
 	fAssert     "[dfm0a] -q sync on dev with only that submodule isn't a direct push, and pushes no move back"  bash -c "cd '${smb}/mine' && git checkout --quiet dev && '${gitsby}' -q sync 'smb' >/dev/null 2>&1 && [[ \"\$(git -C '${smb}/origin.git' rev-parse dev:child)\" == \"\$(git rev-parse HEAD:child)\" && \"\$(git -C child rev-parse HEAD)\" != \"\$(git rev-parse HEAD:child)\" ]]"
 	fAssert     "[dfm0b] a submodule moved sideways still counts as work on dev"  bash -c "cd '${smb}/mine' && ( cd child && git checkout --quiet -b side && git commit --quiet --allow-empty -m side ) && ! '${gitsby}' -q br switch smbfeat >/dev/null 2>&1; rc=\$?; git -C child checkout --quiet --detach HEAD~1; exit \${rc}"
 
+	## git merge never reads submodule.recurse, so with it set the pull left the submodule's
+	## checkout behind, where git pull updates it. And the warning for a submodule moved back on
+	## purpose named only 'git submodule update', which undoes that move.
+	local smr="${work}/$1-submodulerecurse"
+	mkdir -p "${smr}"
+	git init --quiet --bare -b main "${smr}/child.git"
+	git clone --quiet "${smr}/child.git" "${smr}/childwork" 2>/dev/null
+	git init --quiet --bare -b main "${smr}/origin.git"
+	git clone --quiet "${smr}/origin.git" "${smr}/theirs" 2>/dev/null
+	(
+		cd "${smr}/childwork" || exit 1
+		echo c > c.txt && git add --all && git commit --quiet -m child && git push --quiet origin main
+		cd "${smr}/theirs" || exit 1
+		echo a > a.txt && git add --all
+		git -c protocol.file.allow=always submodule --quiet add "${smr}/child.git" child
+		git commit --quiet -m init && git push --quiet -u origin main
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git -c protocol.file.allow=always clone --quiet --recurse-submodules -b dev "${smr}/origin.git" "${smr}/mine" 2>/dev/null
+		cd "${smr}/mine" && git config protocol.file.allow always
+		fBump(){ ( cd "${smr}/childwork" && echo d >> c.txt && git commit --quiet -am more && git push --quiet origin main; cd "${smr}/theirs/child" && git pull --quiet origin main; cd "${smr}/theirs" && git pull --quiet --ff-only origin dev && git add child && git commit --quiet -m bump && git push --quiet origin dev ) ;}
+		fBump
+		cd "${smr}/mine" || exit 1
+		git config submodule.recurse true
+		echo m > m.txt
+		rc=0; "${gitsby}" -q pullcom 'r1' > "${smr}/r1.out" 2>&1 || rc=$?
+		echo "${rc}" > "${smr}/r1.rc"
+		git -C child rev-parse HEAD > "${smr}/child.1"
+		git rev-parse HEAD:child > "${smr}/recorded.1"
+		git log -1 --pretty=%s > "${smr}/subject.1"
+		git push --quiet origin dev
+		git config --unset submodule.recurse
+		git -C child checkout --quiet HEAD~1
+		git rev-parse HEAD > "${smr}/head.2"
+		rc=0; "${gitsby}" -q pullcom 'r2' > "${smr}/r2.out" 2>&1 || rc=$?
+		echo "${rc}" > "${smr}/r2.rc"
+		git rev-parse HEAD > "${smr}/head.2after"
+		## A bump the submodule can't fetch: the update fails, and the run goes on.
+		git config submodule.recurse true
+		fBump
+		mv "${smr}/child.git" "${smr}/child.moved"
+		echo x > x.txt
+		rc=0; "${gitsby}" -q pullcom 'r3' > "${smr}/r3.out" 2>&1 || rc=$?
+		echo "${rc}" > "${smr}/r3.rc"
+		git rev-parse HEAD:child > "${smr}/recorded.3"
+		git log -1 --pretty=%s > "${smr}/subject.3"
+		git cat-file -e HEAD:x.txt && touch "${smr}/x.3"
+		mv "${smr}/child.moved" "${smr}/child.git"
+		git -c protocol.file.allow=always submodule --quiet update
+		git -C child checkout --quiet HEAD~1
+		git add child
+		rc=0; "${gitsby}" -q pullcom --staged -m 'r4' > "${smr}/r4.out" 2>&1 || rc=$?
+		echo "${rc}" > "${smr}/r4.rc"
+	)
+	fAssert     "[dfnaw] with submodule.recurse set, pullcom after a bump updates the submodule's checkout"  bash -c "cd '${smr}/mine' && [[ \"\$(cat ../r1.rc)\" == 0 && \"\$(cat ../child.1)\" == \"\$(cat ../recorded.1)\" && \"\$(cat ../subject.1)\" == r1 ]] && ! grep -qF WARNING ../r1.out"
+	fAssert     "[dfnax] and its plan lists the update"  bash -c "cd '${smr}' && grep -qE '^    git submodule update --recursive --checkout \\*\$' r1.out"
+	fAssert     "[dfnay] a submodule moved back on purpose is left out, and the warning names git add and --staged"  bash -c "cd '${smr}' && [[ \"\$(cat r2.rc)\" == 0 && \"\$(cat head.2after)\" == \"\$(cat head.2)\" ]] && grep -qF 'Nothing to commit.' r2.out && grep -qE \"^          git add '.*/mine/child'\\\$\" r2.out && grep -qE '^          gitsby pullcom --staged\$' r2.out && ! grep -qF 'that move' r2.out && ! grep -qF 'submodule update --recursive' r2.out"
+	fAssert     "[dfnaz] a failed submodule update warns, and the run commits the rest and keeps the bump"  bash -c "cd '${smr}/mine' && [[ \"\$(cat ../r3.rc)\" == 0 && \"\$(cat ../recorded.3)\" == \"\$(git -C '${smr}/origin.git' rev-parse dev:child)\" && \"\$(cat ../subject.3)\" == r3 && -e ../x.3 ]] && grep -qF \"WARNING: 'git submodule update --recursive --checkout' failed (exit \" ../r3.out"
+	fAssert     "[dfnb0] with it set, git add and --staged commit the move back, which the update keeps"  bash -c "cd '${smr}/mine' && [[ \"\$(cat ../r4.rc)\" == 0 && \"\$(git rev-parse HEAD:child)\" == \"\$(git -C child rev-parse HEAD)\" && \"\$(git rev-parse HEAD:child)\" != \"\$(git -C '${smr}/origin.git' rev-parse dev:child)\" ]] && git log -1 --pretty=%s | grep -qx r4 && grep -qF 'git submodule update --recursive --checkout ...' ../r4.out"
+
 	## status.showUntrackedFiles=no hides untracked files from status, but 'git add --all' still
 	## takes them. Read from status, the plan said clean and the guards let them through.
 	local hu="${work}/$1-hideuntracked"
@@ -11003,3 +11062,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261121 JC: The real publisher with an empty path list, with another staged edit, with a failed pull, with a staged edit the pull clashes with, with an untracked file in the way, and with --quiet and no message, [dfkvy] to [dfkw1], [dfkw5], [dfkw3]. A blank answer at the cicd message prompt and --help, [dfkw2] [dfkw4].
 ##		- 20261121 JC: pullcom leaves a submodule out of the commit when it's checked out behind the commit HEAD records, as after a pull that bumped it, [dfkzx] to [dfm01]. br switch and sync don't count it as work, [dfm09] to [dfm0b].
 ##		- 20261121 JC: pr create bases the pull request on the branch its push lands on, the head pr ok reads back, in the run and the plan, [dfm0q] to [dfm0s].
+##		- 20261122 JC: With submodule.recurse set, the pull updates the submodules after its merge, and its plan says so. A failed update warns and the run goes on. The warning for a submodule left out names git add and --staged, for a move back made on purpose, [dfnaw] to [dfnb0].

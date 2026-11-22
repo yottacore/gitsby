@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The warning for a submodule that is behind names no way to commit a move back made on purpose
 	- ID: 2026112118464455
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261121-184644
@@ -48,12 +48,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-21 on b23. `git add child`, then `gitsby -q pullcom --staged`, commits the move back.
 	- Possible cause [Bug]: The warning in cmdCommit (mutate.go) was written for the pull case only.
 	- Decisions: Answered 2026-11-21: keep leaving it out, and name the way through. Committing a move back without a word is the High bug 2026112112175066 fixed, and the two cases can't be told apart once a run has ended. Goes with 2026112118463121, at the same site.
+		- The add names the folder by its full path, quoted as other Fix lines are, so it works from any folder. The first sentence of the warning is kept, so [dfkzy] still holds.
 	- Origin: 2cdbb74, the fix of 2026112112175066. Confirmed. Found while answering its Check: entry.
+	- Closed reason: Done
+	- Actual cause [Bug]: The warning was written for the pull case. It named only 'git submodule update', which undoes a move back made on purpose, and said the commit would have undone 'that move'.
+	- Actual fix [Bug]: The warning says a pull or switch leaves a submodule that way, and that committing it would take the branch back to the older commit. A Fix note names 'git submodule update', or 'git add' with the folder and then the same command with --staged. repo create and repo connect don't take --staged, so theirs names 'git commit' and a rerun. design.md and the changelog say so.
+	- Test case: test.bash [dfnay] and [dfnb0]. Go [dfnav] TestBehindFixNamesStaged.
+	- Verified: [dfnay] and [dfnb0] fail on the build before the fix and pass with it. [dfnav] fails with --staged dropped from the rerun line, and with repo create and connect given it. The quick gate with every area passed: test.bash 2366/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Swept: behindGitlinks has one caller, cmdCommit, so the warning is the one site. [dfnav] covers every command stagesTree names, and checks that its rerun line parses with --staged.
+	- Branch: nov22-2026112118464455
+	- Commit: 61e6604
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after, and the advice is the one the answer named.
+	- Closed: 20261122-115204
 
 - With submodule.recurse set, the pull no longer updates submodules
 	- ID: 2026112118463121
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261121-184631
@@ -65,7 +76,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-21 on b23, git 2.51, local bare repos. Confirmed.
 	- Possible cause [Bug]: f61adb6 made the pull step a `git merge --ff-only`, and `git merge` never reads `submodule.recurse`. Only an upstream on another remote still runs `git pull`.
 	- Decisions: Answered 2026-11-21: follow the setting, rather than always update or never update. The setting is the user's own request for it, so the detached checkout is what plain git already gives them, and gitsby then agrees with `git pull`, v2.1.0 and its own `br switch`. Without the setting the checkout is left alone, per 2026112112175066.
+		- With the setting, the update also checks out the recorded commit for a submodule moved back on purpose and not staged, as git pull does. A staged move back is kept, since the update reads the index ([dfnb0]). A failed update exited 128 on git 2.51, so [dfnaz] checks the text rather than the code.
 	- Origin: f61adb6, Go port. Confirmed. Found while answering the Check: entry of 2026112112175066.
+	- Closed reason: Done
+	- Actual cause [Bug]: f61adb6 made the pull a 'git merge --ff-only', and git merge never reads submodule.recurse, so the update git pull runs after its merge with that setting never ran.
+	- Actual fix [Bug]: pullStep in mutate.go, which cmdPull and pullIfOnline call, follows the merge with 'git submodule update --recursive --checkout' when submodule.recurse is true. The setting is read once a run, and only where the work tree has a .gitmodules. planPull in preview.go lists the update under each pull in the plan. A failed update warns with its exit code and the run goes on. An upstream on another remote still runs git pull, which updates by itself. design.md and the changelog say so.
+	- Test case: test.bash [dfnaw], [dfnax], [dfnaz] and [dfnb0].
+	- Verified: all 4 fail on the build before the fix and pass with it. git pull --ff-only with the setting updates a submodule even when already up to date, so the update runs after every merge. The quick gate with every area passed: test.bash 2366/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Swept: pullArgs is called only from pullStep, which covers cmdPull and every pullIfOnline caller (br switch, br create, br hotfix, br merge, release, pr ok). Every pull line in the plan goes through planPull, 10 sites. The other merges, br merge's --no-ff, the hotfix back-merge and release's, aren't pulls, and plain git merge leaves submodules alone there too.
+	- Branch: nov22-2026112118464455
+	- Commit: 61e6604
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-115204
 
 - pr ok takes the PR's target from its head's name, not the base the git host gives it
 	- ID: 2026112113223086

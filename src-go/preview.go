@@ -33,7 +33,7 @@ func (a *app) preview(what string) {
 		a.out.clean(planPad + "git add --all")
 		a.out.clean(planPad + msgDisp + " *")
 	case "pull":
-		a.out.clean(planPad + a.pullDisp(a.currentBranch(), a.autostash()...))
+		a.planPull(a.currentBranch(), a.autostash()...)
 	case "pullcom":
 		a.preview("pull")
 		a.preview("commit")
@@ -62,11 +62,11 @@ func (a *app) preview(what string) {
 			a.preview("sync")
 			a.out.clean(planPad + a.checkoutDisp(target))
 		}
-		a.out.clean(planPad + a.pullDisp(target))
+		a.planPull(target)
 	case "br-merge":
 		a.preview("sync")
 		a.out.clean(planPad + a.checkoutDisp(a.branchTarget("")))
-		a.out.clean(planPad + a.pullDisp(a.branchTarget("")))
+		a.planPull(a.branchTarget(""))
 		a.out.clean(planPad + "git merge --no-ff " + a.currentBranch())
 		if a.atomicMergeFits(a.branchTarget("")) {
 			a.out.clean(planPad + "git push --atomic (the merge, and the leased delete of origin's '" + a.mergeHead() + "') *")
@@ -76,7 +76,7 @@ func (a *app) preview(what string) {
 			a.out.clean(planPad + "git branch -d " + a.currentBranch() + " *")
 			a.out.clean(planPad + "git push --force-with-lease origin --delete " + a.mergeHead() + " *")
 		}
-		a.out.clean(planPad + a.pullDisp(a.branchTarget("")))
+		a.planPull(a.branchTarget(""))
 		// A hotfix owes dev the same change, or the next release undoes it.
 		if a.isHotfixBranch("") {
 			a.previewBackMerge()
@@ -215,21 +215,25 @@ func (a *app) previewUnset() {
 func (a *app) previewNewBranch(baseBranch string) {
 	if a.isProtectedBranch("") {
 		a.out.clean(planPad + a.checkoutDisp(baseBranch) + " *")
-		a.out.clean(planPad + a.pullDisp(baseBranch, a.autostash()...))
+		a.planPull(baseBranch, a.autostash()...)
 	} else {
 		a.preview("sync")
 		a.out.clean(planPad + a.checkoutDisp(baseBranch) + " *")
-		a.out.clean(planPad + a.pullDisp(baseBranch))
+		a.planPull(baseBranch)
 	}
 	a.out.clean(planPad + "git checkout -b " + a.cmd.arg)
 	a.out.clean(planPad + "git push -u origin HEAD *")
 }
 
-// pullDisp is the plan's pull line for a branch, said the way the step will run
-// it there: pullArgs, read from that branch's upstream rather than the current
-// one's.
-func (a *app) pullDisp(branch string, extra ...string) string {
-	return "git " + strings.Join(pullArgsFor(a.upstreamOf(branch), extra...), " ") + " *"
+// planPull is the plan's pull for a branch, said the way the step will run it
+// there: pullArgs, read from that branch's upstream rather than the current one's,
+// and the submodule update that follows a merge under submodule.recurse.
+func (a *app) planPull(branch string, extra ...string) {
+	args := pullArgsFor(a.upstreamOf(branch), extra...)
+	a.out.clean(planPad + "git " + strings.Join(args, " ") + " *")
+	if args[0] == "merge" && a.submoduleRecurse() {
+		a.out.clean(planPad + "git " + strings.Join(submoduleUpdateArgs, " ") + " *")
+	}
 }
 
 // previewBackMerge is the tail every hotfix path shares: dev has to receive what
@@ -260,9 +264,9 @@ func (a *app) previewPr() {
 	if a.prOkMoves() {
 		target := a.prTarget()
 		a.out.clean(planPad + a.checkoutDisp(target))
-		a.out.clean(planPad + a.pullDisp(target))
+		a.planPull(target)
 	} else {
-		a.out.clean(planPad + a.pullDisp(a.currentBranch()))
+		a.planPull(a.currentBranch())
 	}
 	if a.isHotfixBranch(a.pr.headBranch) {
 		a.previewBackMerge()
@@ -274,11 +278,11 @@ func (a *app) previewRelease() {
 	hasDev := a.mergeTarget() == "dev"
 	if hasDev && !a.rel.resume {
 		a.out.clean(planPad + a.checkoutDisp("dev") + " *")
-		a.out.clean(planPad + a.pullDisp("dev"))
+		a.planPull("dev")
 	}
 	a.out.clean(planPad + a.checkoutDisp(a.defaultBranch()) + " *")
 	if !a.rel.resume {
-		a.out.clean(planPad + a.pullDisp(a.defaultBranch()))
+		a.planPull(a.defaultBranch())
 		if hasDev {
 			a.out.clean(planPad + "git merge --no-ff dev")
 		}
