@@ -2726,6 +2726,34 @@ fRunSuite(){
 	fAssertOut "[dakty] an offline hotfix land names the branch its merge is stuck on"  "the merge to 'main' is local only - once online"  bash -c "cd '${omw}' && echo h >> f.txt && '${gitsby}' -q br land 'Hot fix' 2>&1"
 	fAssert    "[daktz] and the back-merge still brought it to dev"  bash -c "cd '${omw}' && [[ \"\$(git branch --show-current)\" == dev ]] && git merge-base --is-ancestor main dev"
 
+	## A paste line that names a branch, a path or a URL quotes it for the shell. Each is cut
+	## from what gitsby printed and run through sh, where a bare ';' would end the command.
+	local plO="${work}/$1-paste;o.git"; local plW="${work}/$1-pastew"; local plN="${work}/$1-pasten"
+	git init --quiet --bare -b 'm;x' "${plO}"
+	git clone --quiet "${plO}" "${plW}" 2>/dev/null
+	(
+		cd "${plW}" || exit 1
+		echo one > f.txt && git add f.txt && git commit --quiet -m "initial" && git push --quiet -u origin 'm;x'
+		git checkout --quiet -b dev && git push --quiet -u origin dev
+		git checkout --quiet -b 'o;b' && git push --quiet -u origin 'o;b' && git checkout --quiet dev && git branch --quiet -D 'o;b'
+		git branch 'l;b'
+	)
+	git init --quiet -b main "${plN}"
+	( cd "${plN}" || exit 1; echo n > n.txt && git add n.txt && git commit --quiet -m "initial" )
+	## <folder> <sed script that prints the paste line> <pattern for the words sh hands gitsby> <gitsby args>...
+	# shellcheck disable=SC2053  ## the want is a pattern
+	fPasteReads(){ local dir="$1" pick="$2" want="$3" out="" line=""; shift 3
+		out="$(cd "${dir}" && "${gitsby}" -q "$@" 2>&1)"
+		line="$(sed -n "${pick}" <<< "${out}")"
+		[[ -n "${line}" ]] && [[ "$(sh -c "${APP_NAME}() { printf '<%s>' \"\$@\"; }; ${line}")" == ${want} ]] ;}
+	fAssert "[dfnew] br create of a branch here names its switch as one word"       fPasteReads "${plW}" 's/.* already exists; use: //p'             '<br><switch><l;b>'  br create 'l;b'
+	fAssert "[dfnex] and of a branch on origin"                                    fPasteReads "${plW}" 's/.* already exists on origin; use: //p'   '<br><switch><o;b>'  br create 'o;b'
+	fAssert "[dfney] br switch to no such branch names its create as one word"    fPasteReads "${plW}" 's/.* To create it: //p'                    '<br><create><n;b>'  br switch 'n;b'
+	fAssert "[dfnez] repo connect to a repo with history names its clone"         fPasteReads "${plN}" "s/.*(\(${APP_NAME} repo clone .*\)), or reconcile.*/\1/p"  '<repo><clone><*paste;o.git>'  repo connect "${plO}"
+	fAssert "[dfnf0] repo create of no owner/name names its connect as one word"  fPasteReads "${plN}" 's/.* For a remote that already exists: //p'  '<repo><connect><p;q>'  repo create 'p;q'
+	( cd "${plW}" || exit 1; git checkout --quiet 'm;x' && "${gitsby}" -q br hotfix hz >/dev/null 2>&1 && echo h >> f.txt && git remote set-url origin "${work}/nosuch-remote.git" )
+	fAssert "[dfnf1] an offline hotfix land names the switch to its target as one word"  fPasteReads "${plW}" "s/.* once online, '\(.*\)' then '${APP_NAME} sync'.*/\1/p"  '<br><switch><m;x>'  br land 'Hot fix'
+
 	## ... and offline has to mean the same thing inside a compound command, or the flag saves
 	## nothing there. Own throwaway origin, so the shared one keeps its history for later checks.
 	local nfOrigin="${work}/$1-nfo.git"; local nfPeer="${work}/$1-nfa"; local nfWork="${work}/$1-nfb"

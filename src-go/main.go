@@ -497,7 +497,7 @@ func (a *app) preflightBranch() error {
 			if strings.HasPrefix(a.cmd.arg, "-") {
 				return usagef("No branch '%s' locally or on origin, and a branch name can't start with a dash.", a.cmd.arg)
 			}
-			return usagef("No branch '%s' locally or on origin. To create it: %s br create %s", a.cmd.arg, meName, a.cmd.arg)
+			return usagef("No branch '%s' locally or on origin. To create it: %s br create %s", a.cmd.arg, meName, typedArg(a.cmd.arg, runtime.GOOS))
 		}
 		// After '--' the target can start with a dash, and checkout would read it as an
 		// option. One made by raw git or a clone exists, so it gets past the check above.
@@ -1110,11 +1110,30 @@ func toolRepoOf(tool string, args []string) toolRepo {
 	return r
 }
 
+// joinDir is where a chdir to next ends up from dir, as git's -C does it.
 func joinDir(dir, next string) string {
 	if dir == "" || filepath.IsAbs(next) {
 		return next
 	}
-	return filepath.Join(dir, next)
+	// Windows only: C:foo is from that drive's folder, and \foo from the root of the
+	// drive git is on by then. Neither is under dir.
+	vol := filepath.VolumeName(next)
+	if vol == "" && (next == "" || !os.IsPathSeparator(next[0])) {
+		return filepath.Join(dir, next)
+	}
+	base, err := filepath.Abs(dir)
+	if err != nil {
+		return next
+	}
+	switch baseVol := filepath.VolumeName(base); {
+	case vol == "":
+		return baseVol + next
+	case strings.EqualFold(vol, baseVol):
+		return filepath.Join(base, next[len(vol):])
+	}
+	// Another drive's: the move takes it from that drive's current folder, as git
+	// does unless an earlier -C was on that drive.
+	return next
 }
 
 // enterToolRepo moves this run to r for the account work, and gives back what

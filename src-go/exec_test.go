@@ -284,6 +284,66 @@ func TestToolRepoOf(t *testing.T) { // [dffz8]
 	}
 }
 
+// git's -C options end where a chdir per -C ends, so raw takes that folder's account.
+// On Windows that takes in C:foo and \foo after another -C. 2026112017135400.
+func TestToolRepoOfFollowsChdir(t *testing.T) { // [dfnev]
+	t.Setenv("GIT_DIR", "")
+	root := t.TempDir()
+	for _, dir := range []string{"a/b", "c", "top/foo"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := filepath.Join(root, "top")
+	t.Chdir(start)
+	vol := filepath.VolumeName(root)
+	rooted := root[len(vol):]
+	seqs := [][]string{
+		{".."}, {"..", "c"}, {"..", "a", "b"}, {filepath.Join(root, "a"), "b"}, {"..", filepath.Join(root, "c")}, {"foo", "..", "foo"},
+	}
+	if vol != "" {
+		seqs = append(seqs,
+			[]string{vol + "foo"}, []string{"..", vol + "top"}, []string{"..", vol + "c"}, []string{"..", "a", vol}, []string{vol + "foo", vol + ".."},
+			[]string{"..", filepath.Join(rooted, "top", "foo")}, []string{"foo", filepath.Join(rooted, "c")}, []string{vol + "..", filepath.Join(rooted, "a"), "b"},
+		)
+	}
+	where := func(dirs ...string) string {
+		t.Helper()
+		defer func() {
+			if err := os.Chdir(start); err != nil {
+				t.Fatal(err)
+			}
+		}()
+		for _, d := range dirs {
+			if err := os.Chdir(d); err != nil {
+				return "<" + err.Error() + ">"
+			}
+		}
+		wd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return wd
+	}
+	for _, seq := range seqs {
+		var args []string
+		for _, d := range seq {
+			args = append(args, "-C", d)
+		}
+		r := toolRepoOf("git", append(args, "status"))
+		want := where(seq...)
+		if strings.HasPrefix(want, "<") {
+			t.Fatalf("git %q leads nowhere: %s", args, want)
+		}
+		if got := where(r.dir); got != want {
+			t.Errorf("git %q: toolRepoOf gives %q, which is %s, but git would be in %s", args, r.dir, got, want)
+		}
+		if r = toolRepoOf("tig", append(args, "status")); where(r.dir) != where(seq...) {
+			t.Errorf("tig %q: toolRepoOf gives %q", args, r.dir)
+		}
+	}
+}
+
 // A batch file is told by its extension alone, in any case, and only on Windows,
 // where cmd runs it. The refusal for a tool found only as one names it.
 func TestBatchFile(t *testing.T) { // [dfhmh]

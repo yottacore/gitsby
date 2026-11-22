@@ -33,6 +33,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- On Windows, repo clone into a rooted or drive-relative folder takes its account from the wrong folder
+	- ID: 2026112214033583
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261122-140335
+	- Opened by:
+	- Related IDs: 2026112017135400
+	- Target OS: Windows
+	- Steps to reproduce [Bug]: On Windows, from a folder of one account, run gitsby repo clone <url> into \Users\<you>\<a folder of another account>\x, or into C: followed by that folder's path from the current one.
+	- Incorrect behavior [Bug]: absDir in config.go puts any path filepath.IsAbs doesn't call absolute under the current folder, so /foo and c:foo become <cwd>//foo and <cwd>/c:foo, and the clone's account comes from rules for that folder. By reading; not run.
+	- Expected behavior [Bug]: The clone's account comes from the folder the clone goes into, as git resolves it.
+	- Origin: f4d53c3, 2026-08-19. Found while sweeping 2026112017135400, the same class in raw's -C. Plausible.
+
 - pr ok on a pull request from dev or main deletes that branch
 	- ID: 2026112212332136
 	- Type: Bug
@@ -298,7 +313,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 33: raw git acts as the wrong account when a drive-relative -C follows another -C
 	- ID: 2026112017135400
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171354
@@ -309,11 +324,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on vm925w in Git Bash. Confirmed.
 	- Possible cause [Bug]: joinDir at main.go:1108 uses filepath.IsAbs, so C:foo and \foo are joined onto the earlier folder, and the chdir fails.
 	- Origin: 12f1bc2, nov18, Code Review 20261110b item 7. Missed twin for Windows.
+	- Actual cause [Bug]: As read. joinDir took any -C that filepath.IsAbs doesn't call absolute as under the folder before it. On Windows C:foo and \foo after another -C were joined under it, the move there failed, and the account work stayed in the starting folder.
+	- Actual fix [Bug]: joinDir takes C:foo from the earlier folder when that is on drive C, and \foo from the root of that folder's drive. tig's -C goes through the same code.
+	- Decisions: A drive-relative -C for another drive is left for the move, which takes it from that drive's current folder. git does the same, except after an earlier -C in the same command on that drive, where git starts from there. Left as is, since it takes 3 -C options over 2 drives.
+	- Test case: Go [dfnev] TestToolRepoOfFollowsChdir.
+	- Verified: [dfnev] changes folder once per -C, as git does, and checks that toolRepoOf ends in the same folder, for git and tig. The Windows test build under wine failed 7 sequences for each before the fix and passed after. On Linux it passes before and after, since no path there has a drive or a bare root. Quick run of every area passed: test.bash 2408/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Needs external testing: vm925w: Go [dfnev] in the Windows Go tests, and the 2 steps above in Git Bash with real git, on c44a7d3 or later.
+	- Swept: every joinDir caller: git's -C and --bare, and tig's -C, in toolRepoOf. lazygit's options go through filepath.Abs, and git's --git-dir and --work-tree are read after the move, so Windows resolves those itself. The other filepath.IsAbs sites in src-go: a .git file's gitdir line, which git writes, PATH entries, and show.go's display. absDir in config.go has the same fault for repo clone's destination, filed as 2026112214033583.
+	- Branch: nov22-2026112017135400
+	- Commit: c44a7d3
 
 - Code Review 20261120 item 34: 4 paste lines skip typedArg, so PowerShell misreads them
 	- ID: 2026112017135384
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171353
@@ -325,6 +349,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: branchcmd.go:29, :32 and :213, and main.go:494 print the name bare.
 	- Sweep: The 4 sites above, and a grep for every paste line that prints a branch, tag or path.
 	- Origin: 4918b5b (Go port). Missed twins of Code Review 20261119 items 14 and 29.
+	- Actual cause [Bug]: As read. 4 lines printed the branch bare, and 2 repo lines did the same with a path or URL.
+	- Actual fix [Bug]: br create's 2 'already exists' lines, br switch's 'To create it' line, the offline hotfix land warning, repo connect's 'clone it instead' line and repo create's 'repo connect' line spell the word through typedArg.
+	- Decisions: The 2 repo lines name a URL or a path, and go through typedArg rather than shellQuote, since typedArg spells for PowerShell on Windows and the sh way elsewhere. A URL or path with nothing to quote prints as before. Exec lines such as [ git merge m;x ... ] and plan lines aren't paste lines and are left alone, per 2026111910223104.
+	- Test case: test.bash [dfnew] to [dfnf1].
+	- Verified: [dfnew] to [dfnf1] cut each line from gitsby's output and run it through sh with a gitsby function that prints its words. All 6 fail on the build before the fix and pass after. Quick run of every area passed: test.bash 2408/0, fuzz 310/0, parity 31/0. gosec 37, as before. The Windows spelling is typedArg's, which [dfhfc] reads back through pwsh and Windows PowerShell on vm925w.
+	- Swept: every usagef, status and Fix line in src-go that prints a gitsby or git command with a word in it, by grep for '" + meName + " ', '%s <verb> %s' and '"git <verb> " +'. The rest already use typedArg or shellQuote, or name a PR number or a checked owner/name (repo.go's 2 github.com lines).
+	- Branch: nov22-2026112017135400
+	- Commit: 8ebc6a8
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-140407
 
 - Code Review 20261120 item 35: On Windows, a held old-format accounts file fails conversion with no Fix
 	- ID: 2026112017135370

@@ -29,10 +29,10 @@ func (a *app) checkNewBranchName(name string) error {
 		return usagef("'%s' is not a valid branch name.", name)
 	}
 	if a.branchExistsLocal(name) {
-		return usagef("Branch '%s' already exists; use: %s br switch %s", name, meName, name)
+		return usagef("Branch '%s' already exists; use: %s br switch %s", name, meName, typedArg(name, runtime.GOOS))
 	}
 	if a.branchExistsRemote(name) {
-		return usagef("Branch '%s' already exists on origin; use: %s br switch %s", name, meName, name)
+		return usagef("Branch '%s' already exists on origin; use: %s br switch %s", name, meName, typedArg(name, runtime.GOOS))
 	}
 	// Origin may have it unfetched, and if not, its first push makes a branch the
 	// fetch never updates, which reads as gone from then on.
@@ -326,7 +326,7 @@ func (a *app) cmdMerge() error {
 		// - stale on origin. The switch's park push publishes dev on the way, so two
 		// commands cover both.
 		if wasHotfix {
-			a.out.status("WARNING: remote unreachable; the merge to '" + targetBranch + "' is local only - once online, '" + meName + " br switch " + targetBranch + "' then '" + meName + " sync' publishes it.")
+			a.out.status("WARNING: remote unreachable; the merge to '" + targetBranch + "' is local only - once online, '" + meName + " br switch " + typedArg(targetBranch, runtime.GOOS) + "' then '" + meName + " sync' publishes it.")
 		} else {
 			a.out.status("WARNING: remote unreachable; the merge to '" + targetBranch + "' is local only - '" + meName + " sync' publishes it.")
 		}

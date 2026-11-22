@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 )
@@ -138,7 +139,7 @@ func probedConnect(url string, state repoExistence, reason string) error {
 	case repoMissing:
 		return usagef("'%s' doesn't exist, or you have no access to it. Create it first, or on GitHub: %s repo create <owner/name>", maskURL(url), meName)
 	case repoNonEmpty:
-		return usagef("'%s' already has history; clone it instead (%s repo clone %s), or reconcile with raw git.", maskURL(url), meName, maskURL(url))
+		return usagef("'%s' already has history; clone it instead (%s repo clone %s), or reconcile with raw git.", maskURL(url), meName, typedArg(maskURL(url), runtime.GOOS))
 	default:
 		// Nothing but reaching the host settles it, so no command is offered.
 		return usagef("Couldn't get an answer from '%s', so there is no telling whether it exists: %s", maskURL(url), reason)
@@ -357,7 +358,7 @@ func (a *app) settleRepoCreate() error {
 		return usageOf("repo create").refuse("No target given.")
 	}
 	if !ownerNameRE.MatchString(a.cmd.arg) || pathExists(a.cmd.arg) {
-		return usagef("'%s' isn't a GitHub 'owner/name'; only GitHub repos can be created from here. For a remote that already exists: %s repo connect %s", a.cmd.arg, meName, a.cmd.arg)
+		return usagef("'%s' isn't a GitHub 'owner/name'; only GitHub repos can be created from here. For a remote that already exists: %s repo connect %s", a.cmd.arg, meName, typedArg(a.cmd.arg, runtime.GOOS))
 	}
 	if err := mustBeInPath("gh"); err != nil {
 		return err
