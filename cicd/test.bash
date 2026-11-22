@@ -2178,6 +2178,17 @@ fRunSuite(){
 	fAssert     "[dfgx3] the same from a feature branch"  fPlanEnds "${cloneA}"  bash -c "cd '${cloneA}' && '${gitsby}' -q release v1.7.3 && [[ \"\$(git branch --show-current)\" == relend ]]"
 	( cd "${cloneA}" || exit 1; git checkout --quiet dev && git branch --quiet -D relend && git push --quiet origin --delete relend )
 
+	## The failed run leaves you on main. Finishing it parked an edit made there, so it
+	## committed past the tag, pushed main and moved dev onto it.
+	( cd "${cloneA}" || exit 1; echo end5 > end5.txt && git add end5.txt && git commit --quiet -m end5 && git push --quiet && git checkout --quiet main && mv "${origin}/hooks/pre-receive.off" "${origin}/hooks/pre-receive" )
+	fAssert     "[dfndg] a release from main whose push of main is refused fails, and stays on main"  bash -c "cd '${cloneA}' && ! '${gitsby}' -q release v1.8.0 && [[ \"\$(git branch --show-current)\" == main ]]"
+	( cd "${cloneA}" || exit 1; mv "${origin}/hooks/pre-receive" "${origin}/hooks/pre-receive.off"; echo edit >> end5.txt )
+	fAssertFail "[dfndh] then a bare release there with an edit is refused"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
+	fAssertOut  "[dfndj] and says the edit is why"  "^gitsby: Release v1\.8\.0 is tagged here but never reached origin, and 'main' has uncommitted changes\. Nothing was done\.$"  bash -c "cd '${cloneA}' && '${gitsby}' -q release"
+	fAssert     "[dfndk] and commits and pushes nothing, and leaves the edit"  bash -c "cd '${cloneA}' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse v1.8.0^{commit})\" && \"\$(git rev-parse dev)\" != \"\$(git rev-parse main)\" ]] && ! git ls-remote --exit-code origin refs/tags/v1.8.0 >/dev/null && ! git diff --quiet -- end5.txt"
+	( cd "${cloneA}" || exit 1; git checkout --quiet -- end5.txt )
+	fAssert     "[dfndm] with the edit gone, it finishes that release"  bash -c "cd '${cloneA}' && '${gitsby}' -q release && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse origin/main)\" && \"\$(git rev-parse main)\" == \"\$(git rev-parse v1.8.0^{commit})\" && \"\$(git branch --show-current)\" == dev ]] && git ls-remote --exit-code origin refs/tags/v1.8.0 >/dev/null"
+
 	## Work parked on a feature branch never reaches the release, which merges only dev, yet a
 	## commit or an edit there counted as something new, so a bare release tagged the commit
 	## already released. So did dev's lead after a release whose dev push failed.
@@ -2213,7 +2224,10 @@ fRunSuite(){
 	## The same from a feature branch, which also finishes it rather than saying nothing is new.
 	( cd "${rf}/c" || exit 1; echo g > g.txt && git add g.txt && git commit --quiet -m g && git push --quiet && mv "${rf}/pre-receive.off" "${rf}/origin.git/hooks/pre-receive" )
 	fAssertFail "[dfjyb] a second refused push of dev"  bash -c "cd '${rf}/c' && '${gitsby}' -q release v1.2.0"
-	( cd "${rf}/c" || exit 1; mv "${rf}/origin.git/hooks/pre-receive" "${rf}/pre-receive.off"; git checkout --quiet feat )
+	( cd "${rf}/c" || exit 1; mv "${rf}/origin.git/hooks/pre-receive" "${rf}/pre-receive.off"; git checkout --quiet main && echo i > i.txt )
+	fAssertOut  "[dfndn] on main with a new file, a bare release refuses to finish the dev push"  "^gitsby: Release v1\.2\.0 is out, but 'dev' never reached origin, and 'main' has uncommitted changes\. Nothing was done\.$"  bash -c "cd '${rf}/c' && '${gitsby}' -q release"
+	fAssert     "[dfndp] and commits and pushes nothing"  bash -c "cd '${rf}/c' && [[ \"\$(git rev-parse main)\" == \"\$(git rev-parse v1.2.0^{commit})\" && \"\$(git rev-parse dev)\" == \"\$(git rev-parse main)\" && \"\$(git rev-parse origin/dev)\" != \"\$(git rev-parse dev)\" && -f i.txt ]] && [[ -z \"\$(git log --oneline origin/main..main)\" ]]"
+	( cd "${rf}/c" || exit 1; mv i.txt "${rf}/i.txt"; git checkout --quiet feat )
 	fAssert     "[dfjyc] a bare release from a feature branch then pushes dev, cuts no tag and ends there"  bash -c "cd '${rf}/c' && '${gitsby}' -q release && [[ \"\$(git rev-parse dev)\" == \"\$(git rev-parse origin/dev)\" && \"\$(git tag --points-at v1.2.0^{commit})\" == v1.2.0 && \"\$(git branch --show-current)\" == feat ]] && ! git rev-parse -q --verify refs/tags/v1.2.1 >/dev/null"
 	## A dev that gained a commit since the refused push is new work, not that release's push.
 	( cd "${rf}/c" || exit 1; git checkout --quiet dev && mv "${rf}/pre-receive.off" "${rf}/origin.git/hooks/pre-receive"; "${gitsby}" -q release v1.3.0 >/dev/null 2>&1; mv "${rf}/origin.git/hooks/pre-receive" "${rf}/pre-receive.off"; echo h > h.txt && git add h.txt && git commit --quiet -m h )
@@ -11165,3 +11179,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261121 JC: pr create bases the pull request on the branch its push lands on, the head pr ok reads back, in the run and the plan, [dfm0q] to [dfm0s].
 ##		- 20261122 JC: With submodule.recurse set, the pull updates the submodules after its merge, and its plan says so. A failed update warns and the run goes on. The warning for a submodule left out names git add and --staged, for a move back made on purpose, [dfnaw] to [dfnb0].
 ##		- 20261122 JC: pr ok merges into the base the git host gives the pull request, through gh, tea and glab, and owes dev a back-merge only when that base is main, [dfnbj] to [dfnbw]. Through glab it deletes the merged branch here too, and pr create's plan names --target-branch, [dfnbx] to [dfnc2].
+##		- 20261122 JC: Finishing a release whose push was refused, from main with an edit or a new file, refuses and leaves them, rather than committing past the tag, [dfndg] to [dfndp].

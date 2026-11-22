@@ -95,6 +95,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - After a `release` whose push of `dev` was refused, running `release` again pushes `dev`. It used to tag the same commit with the next version.
 
+- Finishing a `release` whose push was refused, from the default branch with uncommitted changes, now refuses before it starts, and says to set them aside with `git stash`. It used to commit them onto the default branch past the release's tag, push that, and move `dev` onto it.
+
 - The plan for `release` started on `main` no longer ends with `git checkout main`. The run ends on `dev`, as it always has, and the plan's last step now says so.
 
 - `release` with no version counts on from a release, not from its candidate, when the candidate's suffix follows a dot, as in `v3.0.0.rc1`. git sorts that tag above `v3.0.0`, so the next version came out as `v3.0.0` again and the run stopped on a tag that exists. Finishing a refused push takes the release's tag over its candidate's the same way.

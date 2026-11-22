@@ -147,7 +147,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 19: A resumed release started on main with an edited file pushes a commit past the tag
 	- ID: 2026112017135608
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171356
@@ -158,6 +158,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
 	- Possible cause [Bug]: cmdPush runs ahead of the resume check at release.go:228-236.
 	- Origin: The resume from 2026111016332417. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: release parks the current branch before its pushes, resumed or not. Run on the default branch, the park committed the edit past the release's tag, pushed it with the release, and dev then fast-forwarded onto it.
+	- Actual fix [Bug]: Before the plan, a resume run on the default branch with uncommitted changes, staged ones under --staged, is refused. It names the release, says the changes would land past its tag, and says to set them aside with 'git stash --include-untracked', run it again, then 'git stash pop'. The changelog says so.
+	- Test case: test.bash [dfndg] to [dfndp].
+	- Verified: [dfndh] to [dfndn] and [dfndp] fail on the build before the fix and pass with it, as does [dfjyc], which the old build's commit on main broke. [dfndg] passes on both, as setup. The whole quick gate passed: test.bash 2394/0, fuzz 310/0, parity 31/0. gosec 37, as before, none in release.go.
+	- Swept: the one park ahead of a resume, cmdPush in cmdRelease, for both resumes: the default branch's refused push ([dfndh]) and dev's ([dfndn]). On dev, the park lands on dev, which the dev resume then pushes as it is, and on a feature branch it stays off the release. A typed version other than the pending one cuts its own release, and keeps parking on the default branch, as a fresh release from there does.
+	- Decisions: Refuse, rather than finish the pushes and leave the edit in the tree. The run checks out dev next with the edit still in the tree, and git can refuse that checkout after the default branch and the tag are pushed. Only the default branch is refused, since a park elsewhere doesn't reach the release. Check: entry filed.
+	- Branch: nov22-2026112017135608
+	- Commit: 39338ec
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-131946
 
 - Code Review 20261120 item 20: With glab, pr ok leaves the local branch behind
 	- ID: 2026112017135592

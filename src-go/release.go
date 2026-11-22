@@ -137,12 +137,21 @@ func (a *app) releasePreflight() error {
 	// deliberate, so it still cuts its own.
 	typed := strings.TrimPrefix(a.cmd.arg, "v") != ""
 	if pending, devOnly := a.unpushedRelease(); pending != "" && (!typed || strings.TrimPrefix(pending, "v") == ver) {
-		a.rel = releasePlan{tag: pending, resume: true}
+		head := "Release " + pending + " is tagged here but never reached origin"
 		if devOnly {
-			a.out.status("Release " + pending + " is out, but 'dev' never reached origin; finishing it.")
-		} else {
-			a.out.status("Release " + pending + " is tagged here but never reached origin; finishing it.")
+			head = "Release " + pending + " is out, but 'dev' never reached origin"
 		}
+		// cmdRelease parks the current branch before the pushes. On the default
+		// branch that commits past the tag and pushes it, then dev fast-forwards onto
+		// it. Elsewhere the park stays off the release.
+		if relMain := a.defaultBranch(); a.currentBranch() == relMain && a.commitPending() {
+			return refusalBlock(head+", and '"+relMain+"' has uncommitted changes. Nothing was done.", [][]string{
+				noteLines("Why", "Finishing it pushes '"+relMain+"' as it was tagged. Committing the changes first would put them on '"+relMain+"' past "+pending+"."),
+				noteLines("Fix", "Set them aside with 'git stash --include-untracked', and run this again. Then put them back with 'git stash pop' on the branch they belong on."),
+			}, nil)
+		}
+		a.rel = releasePlan{tag: pending, resume: true}
+		a.out.status(head + "; finishing it.")
 		return nil
 	}
 	// Either spelling, or 'release 1.2.3' in a repo tagged v1.2.3 cuts a second tag
