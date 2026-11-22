@@ -232,16 +232,21 @@ fPsPathTold(){ PS_FILE="$1" pwsh -NoProfile -Command '$ast = [Management.Automat
 		if ($t.Extent.StartOffset -le $write[0].Extent.EndOffset) { "told before the write"; exit 1 }
 		if ($inner -and $t.Extent.StartOffset -lt $inner.Extent.EndOffset) { "told inside the write'"'"'s try"; exit 1 }
 	}' </dev/null 2>&1 ;}
-## Defines install.ps1's Test-OnPath from the file and asks it about each PATH below, Windows
-## ones with LOCALAPPDATA set. Prints one y or n per case, in order.
+## Defines install.ps1's Test-OnPath from the file and asks it about each PATH in <set>, Windows
+## ones with LOCALAPPDATA set. spellings expands %VAR%, as for a stored REG_EXPAND_SZ value;
+## expand gives each case its own say. Prints one y or n per case, in order.
 # shellcheck disable=SC2016  ## pwsh's own variables; pwsh does the expanding.
-fPsOnPath(){ PS_FILE="$1" POWERSHELL_TELEMETRY_OPTOUT=1 pwsh -NoProfile -Command '$ErrorActionPreference = "Stop"
+fPsOnPath(){ PS_FILE="$1" PS_SET="$2" POWERSHELL_TELEMETRY_OPTOUT=1 pwsh -NoProfile -Command '$ErrorActionPreference = "Stop"
 	$fn = [Management.Automation.Language.Parser]::ParseFile($env:PS_FILE, [ref]$null, [ref]$null).Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq "Test-OnPath" }, $true)
 	if (-not $fn) { "no Test-OnPath"; exit 1 }
 	. ([scriptblock]::Create($fn.Extent.Text))
 	$env:LOCALAPPDATA = "C:\Users\u\AppData\Local"
 	$dir = "C:\Users\u\AppData\Local\Programs/gitsby"
-	$cases = @(
+	$cases = if ($env:PS_SET -eq "expand") { @(
+		@("C:\Windows;%LOCALAPPDATA%\Programs\gitsby", $dir, $true, $false),
+		@("C:\Users\u\AppData\Local\Programs\gitsby;C:\Windows", $dir, $true, $false),
+		@("%LOCALAPPDATA%\Programs\gitsby\", $dir, $true, $true))
+	} else { @(
 		@("C:\Windows;%LOCALAPPDATA%\Programs\gitsby", $dir, $true),
 		@("C:\Users\u\AppData\Local\Programs\gitsby\;C:\Windows", $dir, $true),
 		@("c:\users\U\appdata\local\programs\GITSBY", $dir, $true),
@@ -250,7 +255,8 @@ fPsOnPath(){ PS_FILE="$1" POWERSHELL_TELEMETRY_OPTOUT=1 pwsh -NoProfile -Command
 		@("", $dir, $false),
 		@("/usr/bin:/home/u/.local/bin/", "/home/u/.local/bin", $false),
 		@("/usr/bin:/home/U/.local/bin", "/home/u/.local/bin", $false))
-	-join @($cases | ForEach-Object { if (Test-OnPath $_[0] $_[1] $_[2]) { "y" } else { "n" } })' </dev/null 2>&1 ;}
+	}
+	-join @($cases | ForEach-Object { $expand = if ($_.Count -gt 3) { $_[3] } else { $true }; if (Test-OnPath $_[0] $_[1] $_[2] $expand) { "y" } else { "n" } })' </dev/null 2>&1 ;}
 ## Defines install.ps1's Install-Binary from the file and runs its Windows branch over an old
 ## gitsby.exe in <dir>. <mode> ok lets every move through, fail refuses the move of the staged
 ## file, and fail2 also refuses moving the old copy back. Prints what's left in <dir>.
@@ -5047,12 +5053,17 @@ GHEOF
 	local rlGo="SHA256SUMS,gitsby-linux-amd64,gitsby-linux-arm64,gitsby-freebsd-amd64,gitsby-freebsd-arm64,gitsby-darwin-universal,gitsby-windows-amd64.exe"
 	local rlOld="gitsby,gitsby.ps1,SHA256SUMS"
 	printf '%s *gitsby\n%s *gitsby.ps1\n' "$(printf '%064d' 1)" "$(printf '%064d' 2)" > "${rl}/sums/v2.1.0"
-	for rlTag in v3.0.0 v3.0.0-beta.1 v3.0.0-rc.1 v3.1.0-beta.1; do cp "${ei}/SHA256SUMS" "${rl}/sums/${rlTag}"; done
+	for rlTag in v3.0.0 v3.0.0-beta.1 v3.0.0-rc.1 v3.1.0-beta.1 v3.1.0.rc1 v3.0.0.1; do cp "${ei}/SHA256SUMS" "${rl}/sums/${rlTag}"; done
 	fReleaseList "v3.0.0-beta.1:true:${rlGo}" "v2.1.0:false:${rlOld}" "v2.0.2:false:${rlOld}" > "${rl}/beta.json"
 	fReleaseList "v3.1.0-beta.1:true:${rlGo}" "v3.0.0:false:${rlGo}" "v3.0.0-beta.1:true:${rlGo}" "v2.1.0:false:${rlOld}" > "${rl}/full.json"
 	fReleaseList "v2.1.1-rc.1:true:${rlOld}" "v2.1.0:false:${rlOld}" "v2.0.2:false:${rlOld}" > "${rl}/none.json"
 	## A candidate listed above its own release, as a late re-tag would put it.
 	fReleaseList "v3.0.0-rc.1:true:${rlGo}" "v3.0.0:false:${rlGo}" "v3.0.0-beta.1:true:${rlGo}" > "${rl}/rc.json"
+	## A suffix after a dot is a candidate too, as release.bash publishes it: v3.1.0.rc1 is one of
+	## 3.1.0, and v3.0.0.1 one of 3.0.0, so it stays below v3.0.0.
+	fReleaseList "v3.1.0.rc1:true:${rlGo}" "v3.0.0:false:${rlGo}" "v3.0.0-rc.1:true:${rlGo}" > "${rl}/dot.json"
+	fReleaseList "v3.0.0.1:true:${rlGo}" "v3.0.0:false:${rlGo}" > "${rl}/four.json"
+	fReleaseList "v3.1.0.rc1:true:${rlGo}" "v3.0.0-beta.1:true:${rlGo}" "v2.1.0:false:${rlOld}" > "${rl}/dotpre.json"
 	fStub "${rl}/bin/curl" <<-'CURLEOF'
 		#!/usr/bin/env bash
 		url=""
@@ -5096,6 +5107,12 @@ GHEOF
 		fRlInstall devrc "" "${rl}/rc.json" --release dev -y
 	fAssertOut "[dfjr6] and says when no release publishes a binary"  'No release of yottacore/gitsby publishes a gitsby binary yet' \
 		fRlInstall devnone "" "${rl}/none.json" --release dev -y
+	fAssertOut "[dfne4] go installer --release dev ranks a dot-suffixed candidate by its own version"  '\(v3\.1\.0\.rc1\) from' \
+		fRlInstall devdot "" "${rl}/dot.json" --release dev -y
+	fAssertOut "[dfne5] and puts a full release above a 4-number tag of its own version"  '\(v3\.0\.0\) from' \
+		fRlInstall devfour "" "${rl}/four.json" --release dev -y
+	fAssertOut "[dfne6] go installer ranks a dot-suffixed pre-release by its own version while no full release has a binary"  'newest pre-release, v3\.1\.0\.rc1' \
+		fRlInstall dotpre v2.1.0 "${rl}/dotpre.json" -y
 	## An explicit tag asks neither the redirect nor the list, and is refused or installed as before.
 	fAssertOut "[ddf9f] go installer still refuses a --tag release with no binary for this platform"  'release v2\.1\.0 publishes no gitsby binary for' \
 		fRlInstall tag21 v3.0.0 "${rl}/full.json" --tag v2.1.0 -y
@@ -5141,9 +5158,16 @@ GHEOF
 		## A PATH holding the folder as %LOCALAPPDATA%\... or with a trailing slash was read as
 		## lacking it, so a second entry went in and the result said Added.
 		fAssertOut "[dfjab] go install.ps1 finds its folder on PATH however the entry is written" '^yyyynnyn$' \
-			fPsOnPath "${goInstPs}"
+			fPsOnPath "${goInstPs}" spellings
 		fAssert    "[dfjac] and every PATH check in it goes through that" \
 			bash -c "! grep -nE 'contains[[:space:]]+\\\$destDir' '${goInstPs}' && [[ \$(grep -c 'Test-OnPath ' '${goInstPs}') -ge 3 ]]"
+		## Windows expands %VAR% only in a REG_EXPAND_SZ value. In a REG_SZ one, and in the session
+		## PATH, which has had its expanding, a %VAR% entry names no folder.
+		fAssertOut "[dfnea] go install.ps1 counts a %VAR% PATH entry only where it's told Windows expands it" '^nyy$' \
+			fPsOnPath "${goInstPs}" expand
+		fAssert    "[dfneb] and is told so only for the stored PATH, by its registry kind" \
+			bash -c "[[ \$(grep -cF 'Test-OnPath -list \$env:PATH -dir \$destDir -onWindows \$onWindows -expand \$false)' '${goInstPs}') == 2 && \$(grep -c 'Test-OnPath -list' '${goInstPs}') == 3 ]] \
+				&& grep -qF 'Test-OnPath -list \$stored -dir \$destDir -onWindows \$true -expand (\$storedKind -eq [Microsoft.Win32.RegistryValueKind]::ExpandString)' '${goInstPs}'"
 		## The old copy was moved aside and deleted before the new one went in, so a failed last
 		## move left no gitsby.exe at all. The Windows branch is only renames, so it runs here.
 		fAssertOut "[dfha2] go install.ps1 replaces an old gitsby.exe and leaves nothing beside it" '^dest=new left=gitsby\.exe err=$' \
@@ -5423,6 +5447,12 @@ GHEOF
 				bash -c "grep -q '/repos/' '${rlp}/calls' && ! grep -q 'releases/latest' '${rlp}/calls'"
 			fAssertOut "[dfjr9] and puts a full release above pre-releases of its own version"  '\(v3\.0\.0\) from' \
 				fRlPsInstall devrc "" "${rl}/rc.json" -Release dev -Yes
+			fAssertOut "[dfne7] go ps installer -Release dev ranks a dot-suffixed candidate by its own version"  '\(v3\.1\.0\.rc1\) from' \
+				fRlPsInstall devdot "" "${rl}/dot.json" -Release dev -Yes
+			fAssertOut "[dfne8] and puts a full release above a 4-number tag of its own version"  '\(v3\.0\.0\) from' \
+				fRlPsInstall devfour "" "${rl}/four.json" -Release dev -Yes
+			fAssertOut "[dfne9] go ps installer ranks a dot-suffixed pre-release by its own version while no full release has a binary"  'newest pre-release, v3\.1\.0\.rc1' \
+				fRlPsInstall dotpre v2.1.0 "${rl}/dotpre.json" -Yes
 			fAssertOut "[ddf9m] go ps installer says when no release publishes a binary"  'No release of yottacore/gitsby publishes a gitsby binary yet' \
 				fRlPsInstall none v2.1.0 "${rl}/none.json" -Yes
 			fAssert    "[ddf9n] and downloads nothing"  bash -c "grep -q '/repos/' '${rlp}/calls' && ! grep -q '/gitsby-' '${rlp}/calls'"

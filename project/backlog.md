@@ -224,7 +224,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 26: install.ps1 picks a different release than install.bash when a tag has a dot suffix or 4 numbers
 	- ID: 2026112017135503
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171355
@@ -235,11 +235,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on vm925w in 5.1 and 7, and in pwsh on b23 with stubs. Confirmed.
 	- Possible cause [Bug]: install.ps1:247 strips only a `-` or `+` suffix, so `[version]` fails on 3.1.0.rc1 and reads 3.0.0.1 as newer than 3.0.0.
 	- Origin: 4ccd133 (2026-10-03). `-Release dev` (7c6a66a, 2026112015351403) now reaches it. Missed twin of 2026111920273377, whose Swept row left the installers out.
+	- Closed reason: Done
+	- Actual cause [Bug]: As read. install.ps1 read a tag's version with [version] after cutting a dash or plus suffix, so v3.1.0.rc1 read as 0.0 and v3.0.0.1 as newer than v3.0.0. install.bash's vkey takes the first 3 numbers. The stable fallback to the newest pre-release had the same fault.
+	- Actual fix [Bug]: install.ps1 ranks a tag by its first 3 numbers, split at a dot, underscore or dash, as install.bash does. A dot suffix is then a candidate of its own version in all 3 picks, and a fourth number doesn't outrank the release. changelog.md has a line under vNEXT Fixed.
+	- Decisions: Match install.bash's vkey rather than port [version] rules to bash, since install.bash, release.bash and Go already treat any suffix after X.Y.Z as a candidate (2026111910222928). Two candidates of one version, such as v3.0.0.1 and v3.0.0.2, now go by publish order, as design.md says.
+	- Branch: nov22-2026112017135503
+	- Commit: c403d19
+	- Test case: test.bash [dfne7] -Release dev takes v3.1.0.rc1 over v3.0.0 and v3.0.0-rc.1, [dfne8] takes v3.0.0 over v3.0.0.1, [dfne9] the stable fallback takes v3.1.0.rc1 over v3.0.0-beta.1. [dfne4] to [dfne6] put the same 3 lists to install.bash.
+	- Verified: [dfne7] to [dfne9] fail on the previous install.ps1 and pass after. [dfne4] to [dfne6] pass on both, since install.bash was already right. Quick run of every area passed on c403d19's tree: test.bash 2402/0, fuzz 310/0, parity 31/0, PSScriptAnalyzer clean. Ran in pwsh 7 on Linux with stubbed downloads. Windows PowerShell 5.1 didn't run here; the change uses only -split, -match and string padding.
+	- Swept: every place a release tag is ranked. install.bash's fPickTag was right. config.bash's fReleaseTags and Go's newestReleaseTag were fixed in 2026111920273377. legacy/ is frozen. No other .ps1 parses a version.
+	- Acceptance signoff: Self-closed: the tests that pin it failed before and pass after.
+	- Closed: 20261122-134013
 
 - Code Review 20261120 item 31: design.md says a later candidate is installed only with --tag
 	- ID: 2026112017135430
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171354
@@ -249,11 +260,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: design.md agrees with --release dev.
 	- Reproduced [Bug]: 2026-11-20, by reading. Confirmed.
 	- Origin: 7c6a66a (2026112015351403) left them.
+	- Closed reason: Done
+	- Actual cause [Bug]: As read. Both sentences predate --release dev and weren't updated when it came back.
+	- Actual fix [Bug]: design.md's Release policy says a later candidate is installed with --release dev or --tag, that a full release wins by default, that a tag's version is its first 3 numbers, and that only --release dev compares a release with a pre-release, putting the release above its own candidates. README's one-liners section already said so.
+	- Branch: nov22-2026112017135503
+	- Commit: c403d19
+	- Test case: Docs only. The claims are pinned by test.bash [dfjr3] to [dfjr9] and [dfne4] to [dfne9] in both installers.
+	- Verified: markdown check and markdownlint clean on design.md.
+	- Acceptance signoff: Self-closed: docs now match the tested behavior.
+	- Closed: 20261122-134013
 
 - Code Review 20261120 item 32: install.ps1 may count an unexpanded %VAR% PATH entry as present
 	- ID: 2026112017135414
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171354
@@ -265,6 +285,15 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: install.ps1:298-306 expands every entry, the ones from `$env:PATH` included.
 	- Against: Code Review 20261119 item 34's fix, which expands %VAR% entries.
 	- Origin: 808235d, 2856951 and fb6ae4c (Code Review 20261119 item 34).
+	- Needs external testing: vm925w, Windows PowerShell 5.1 and pwsh 7: private/claude_simple/tools/install-ps1-path-rig/win-run.bash under claude_vm-state.bash wrap, on c403d19's install.ps1, for the new pctsz case (user PATH holding %LOCALAPPDATA%\Programs\gitsby as REG_SZ, and the same text unexpanded in the session PATH). It should say Added and append the literal folder, with the other 4 cases as before. Run it on c403d19^'s install.ps1 too, where pctsz should fail.
+	- Actual cause [Bug]: As read. Test-OnPath expanded every %VAR% entry, the session PATH's and a REG_SZ stored PATH's included, where Windows leaves it as text.
+	- Actual fix [Bug]: Test-OnPath expands %VAR% only when told to. The 2 session PATH checks don't. The stored PATH check does only when the registry value is REG_EXPAND_SZ. A REG_SZ value holding the folder only as %LOCALAPPDATA%\... now gets the literal folder appended, keeping its kind. changelog.md's line for item 34 says so.
+	- Decisions: Keeps item 34's intent, no second copy of an entry that already works, and narrows what counts as working to what Windows expands. The broken %VAR% entry is left in place rather than rewritten, since the installer only appends to PATH.
+	- Branch: nov22-2026112017135503
+	- Commit: c403d19
+	- Test case: test.bash [dfnea] asks Test-OnPath about a %VAR% entry not expanded (n), the session's literal folder (y) and an expanded REG_EXPAND_SZ entry (y). [dfneb] the 2 session checks pass -expand $false and the stored one passes the value's kind. [dfjab] keeps its 8 spellings, now asked with expanding on. On Windows, the path rig's pctsz case.
+	- Verified: [dfnea] and [dfneb] fail on the previous install.ps1 (yyy where nyy is wanted) and pass after. [dfjab] and [dfjac] pass on both. Quick run of every area passed on c403d19's tree. The Windows branch didn't run here; the rig's pctsz case was added for it and parses.
+	- Swept: every %VAR% expansion in the tree. install.ps1's Test-OnPath is the only one, with 3 callers. legacy/install.ps1 is frozen. Go and cicd don't read the Windows PATH this way.
 
 - Code Review 20261120 item 33: raw git acts as the wrong account when a drive-relative -C follows another -C
 	- ID: 2026112017135400

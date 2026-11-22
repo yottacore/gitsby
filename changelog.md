@@ -55,7 +55,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - When the PowerShell installer can't put the new `gitsby.exe` in place over an old one, it puts the old one back. It used to delete the old copy first, so a failed upgrade left no gitsby at all. If the old copy can't be put back either, the error says where it is.
 
-- The PowerShell installer no longer adds gitsby's folder to PATH a second time when PATH already names it as `%LOCALAPPDATA%\Programs\gitsby` or with a trailing backslash. It used to add it again and say Added. Now it says the folder is already on PATH, and the plan and the result both call it the account or system PATH.
+- The PowerShell installer no longer adds gitsby's folder to PATH a second time when PATH already names it as `%LOCALAPPDATA%\Programs\gitsby` or with a trailing backslash. It used to add it again and say Added. Now it says the folder is already on PATH, and the plan and the result both call it the account or system PATH. A `%LOCALAPPDATA%` entry counts only where Windows expands it, in a PATH stored as an expandable string (REG_EXPAND_SZ).
+
+- The PowerShell installer picks the same release as the Bash one when a tag has a suffix after a dot or a fourth number, as in `v3.1.0.rc1` or `v3.0.0.1`. It used to pass over `v3.1.0.rc1`, and take `v3.0.0.1` over `v3.0.0`.
 
 - The Bash installer no longer says its folder isn't on PATH when PATH names it with a trailing slash.
 

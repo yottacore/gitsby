@@ -700,11 +700,11 @@ A version whose tag has a suffix - `v3.0.0-beta.1`, or `v3.0.0.rc1` after a dot 
 
 GitHub's `releases/latest` returns the newest release not flagged as a pre-release. A candidate sits beside the full release without displacing it.
 
-With no tag, the installers take the newest full release that publishes a gitsby binary. While no full release does, they take the newest pre-release that does, and say so. A full release with a binary always wins, so once there is one, a later candidate is installed only by naming it with `--tag`/`-Tag`.
+With no tag, the installers take the newest full release that publishes a gitsby binary. While no full release does, they take the newest pre-release that does, and say so. A full release with a binary always wins by default, so once there is one, a later candidate is installed only with `--release dev`/`-Release dev`, or by naming it with `--tag`/`-Tag`.
 
 - A binary is an asset named `gitsby-<os>-<arch>`, for any platform, not only the one installing. Every machine is then pointed at the same release, and one it leaves out is told what that release does publish. v2.1.0 and older publish the scripts that came before the binaries, so they don't count.
 
-- Newest is the highest version, not the latest listed, so a backported fix doesn't displace a newer line. Two pre-releases of one version go by publish order. A full release and a pre-release are never compared by version, so the trap where `1.0.0-rc1` sorts above `1.0.0` can't arise.
+- Newest is the highest version, not the latest listed, so a backported fix doesn't displace a newer line. Two pre-releases of one version go by publish order. A tag's version is its first 3 numbers, so `v3.1.0.rc1` is a candidate of 3.1.0 like `v3.1.0-rc.1`, and `v3.0.0.1` one of 3.0.0. Only `--release dev` compares a full release with a pre-release, and it puts the full one above pre-releases of its own version, so the trap where `1.0.0-rc1` sorts above `1.0.0` can't arise.
 
 - `releases/latest` is asked first, since it is a redirect with no API rate limit, and when its `SHA256SUMS` lists a binary that is the answer. Otherwise the installers read the release list once, which says what every release published. That costs one of the 60 unauthenticated API requests an hour, and an explicit tag needs neither.
 
