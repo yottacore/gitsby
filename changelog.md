@@ -111,6 +111,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `pr ok` on GitLab deletes the merged branch here too, as it does on GitHub and Gitea. glab deleted only GitLab's copy.
 
+- `pr ok` refuses a pull request from `main`, `dev` or the default branch, before anything runs, and says to merge it on the git host's page. Its merge deletes the branch it merged, so one from `dev` into `main`, opened on the git host's page, deleted `dev` on origin where the git host allowed it, and here. For `dev` into `main` it names `release`.
+
 - The plan for `pr create` on GitLab names `--target-branch`, the flag glab runs with. It said `--base`, which glab doesn't have.
 
 - `br merge` on a branch that tracks one of another name deletes that branch from origin once it's merged. It named the current branch, so the branch it pushed to stayed on origin, and the leased delete of an older branch of that name warned that it had commits the merge didn't, which wasn't so. Where its push goes to another remote, to a ref that isn't a branch, or to `main` or `dev`, it's refused before the plan.

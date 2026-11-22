@@ -618,6 +618,9 @@ func (a *app) prAcceptPreflight(prBranch string) error {
 	if err := refuseOptionShapedRefs(a.pr.headBranch, a.pr.baseBranch); err != nil {
 		return err
 	}
+	if err := a.refuseProtectedPrHead(); err != nil {
+		return err
+	}
 	// The base can be any branch the PR was opened against, and the checkout after
 	// the merge would fail on one this clone has never fetched, with the merge done.
 	if a.prOkMoves() && !a.branchExistsLocal(a.pr.baseBranch) && !a.branchExistsRemote(a.pr.baseBranch) {
@@ -645,6 +648,24 @@ func (a *app) prAcceptPreflight(prBranch string) error {
 		}
 	}
 	return nil
+}
+
+// refuseProtectedPrHead: every tool's merge deletes the PR's branch, on the git
+// host and here, so a PR from main or dev (opened on the git host's page, since
+// pr create won't) would take that branch with it. Refused, as br merge refuses
+// landing one, rather than merged with the delete left off, which a git host's
+// own delete-on-merge setting could still undo.
+func (a *app) refuseProtectedPrHead() error {
+	head := a.pr.headBranch
+	if !a.isProtectedBranch(head) {
+		return nil
+	}
+	release := ""
+	if head == a.mergeTarget() && a.pr.baseBranch == a.defaultBranch() {
+		release = " To merge " + head + " into " + a.pr.baseBranch + " as a release: " + meName + " release"
+	}
+	return usagef("PR #%s proposes '%s', a protected branch, and pr ok deletes the branch it merges, on %s and here. Nothing was done. Merge it on %s's page, keeping the branch.%s",
+		a.pr.num, head, a.hostName(), a.hostName(), release)
 }
 
 // cmdPrView: bare lists open PRs; a number views one plus its diff.

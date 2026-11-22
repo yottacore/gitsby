@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - pr ok on a pull request from dev or main deletes that branch
 	- ID: 2026112212332136
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261122-123321
@@ -46,6 +46,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: gh's merge runs with --delete-branch, glab's with --remove-source-branch, and tea's clean follows, so dev is deleted on origin where the git host allows it, and here. Nothing before the plan asks whether the head is a protected branch. By reading; not run.
 	- Expected behavior [Bug]: Refuse before the plan when the head is main, dev or the default branch, as pr create and br merge do, or merge it and keep the branch.
 	- Origin: Go port. Found while fixing 2026112113223086, whose change lets a pull request into main owe dev a back-merge. Plausible.
+	- Closed reason: Done
+	- Reproduced [Bug]: 2026-11-22 on b23, with the fake gh: pr ok 9 with a head of dev and a base of main ran the merge, and one from main into dev did too. Confirmed.
+	- Actual cause [Bug]: prAcceptPreflight checked the PR's head for unpushed work only, never whether it was a protected branch, and every tool's merge deletes the head.
+	- Actual fix [Bug]: pr ok refuses before the plan when the PR's head is main, master, dev or the default branch, and says to merge it on the git host's page, keeping the branch. For dev into the default branch it also names release. design.md and the changelog say so.
+	- Branch: nov22-2026112212332136
+	- Commit: 3ffb35d
+	- Test case: test.bash [dfncq] to [dfnct].
+	- Verified: [dfncq], [dfncr] and [dfncs] fail on the build before the fix and pass with it. [dfnct] passes on both, as a guard. test.bash 2387/0 on the fixed build, and the quick gate's lint and unit areas passed. The whole quick gate didn't fit in 4 minutes at load 26, so fuzz and parity are left to the gate step. gosec isn't on this box.
+	- Swept: every branch delete: gh's --delete-branch, glab's --remove-source-branch and its local git branch -D, and tea's clean all sit behind the new refusal in prAcceptPreflight. br merge refuses a protected branch, br prune skips one, and pr create refuses a push landing on one.
+	- Decisions: Refuse, rather than merge with the delete left off. A git host's own delete-on-merge setting can still take an unprotected dev, and release is how dev goes into main. A fork's PR from a branch named dev is refused too, since readPr gets only the branch name. Check: entry filed.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261122-130030
 
 - The warning for a submodule that is behind names no way to commit a move back made on purpose
 	- ID: 2026112118464455

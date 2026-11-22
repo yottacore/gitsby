@@ -4549,6 +4549,15 @@ GHEOF
 	fAssertOut     "[dfnbs] and a base this clone has no copy of, naming the fetch"  "git fetch origin pbgone:refs/remotes/origin/pbgone" \
 		bash -c "cd '${pbc}' && git checkout --quiet pbnext && PATH='${ghp}' FAKE_GH_HEAD=pbnext FAKE_GH_BASE=pbgone '${gitsby}' -q pr ok 9 2>&1 || true"
 	fAssert        "[dfnbt] before anything merged"  bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prbase3.log' FAKE_GH_HEAD=pbnext FAKE_GH_BASE=pbgone '${gitsby}' -q pr ok 9 >/dev/null 2>&1; [[ \$? == 1 ]] && ! grep -q '^pr merge' '${gh}/prbase3.log' && git ls-remote --exit-code --heads origin pbnext >/dev/null"
+	## Every tool's merge deletes the PR's branch, so a PR from dev or main, opened on the git host's
+	## page, is refused before the plan rather than taking that branch with it.
+	fAssertOut     "[dfncq] pr ok refuses a PR from dev into main, naming release"  "PR #9 proposes 'dev', a protected branch.*as a release:" \
+		bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=dev FAKE_GH_BASE=main '${gitsby}' -q pr ok 9 2>&1 || true"
+	fAssert        "[dfncr] before anything merged, with dev kept on origin and here"  bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_LOG='${gh}/prbase4.log' FAKE_GH_HEAD=dev FAKE_GH_BASE=main '${gitsby}' -q pr ok 9 >/dev/null 2>&1; [[ \$? == 1 ]] && ! grep -q '^pr merge' '${gh}/prbase4.log' && git ls-remote --exit-code --heads origin dev >/dev/null && git rev-parse --verify --quiet refs/heads/dev >/dev/null"
+	fAssertOut     "[dfncs] and a PR from main into dev"  "PR #9 proposes 'main', a protected branch" \
+		bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=main FAKE_GH_BASE=dev '${gitsby}' -q pr ok 9 2>&1 || true"
+	fAssertNotOut  "[dfnct] without the release hint, which is only for dev into main"  "as a release" \
+		bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=main FAKE_GH_BASE=dev '${gitsby}' -q pr ok 9 2>&1 || true"
 
 	## The bash version gate. Bash build only - the PowerShell one needs no bash at all.
 	local vg="${work}/vgate"
