@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - On Windows, repo clone into a rooted or drive-relative folder takes its account from the wrong folder
 	- ID: 2026112214033583
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261122-140335
@@ -47,6 +47,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Incorrect behavior [Bug]: absDir in config.go puts any path filepath.IsAbs doesn't call absolute under the current folder, so /foo and c:foo become <cwd>//foo and <cwd>/c:foo, and the clone's account comes from rules for that folder. By reading; not run.
 	- Expected behavior [Bug]: The clone's account comes from the folder the clone goes into, as git resolves it.
 	- Origin: f4d53c3, 2026-08-19. Found while sweeping 2026112017135400, the same class in raw's -C. Plausible.
+	- Reproduced [Bug]: 2026-11-22 in the Windows test build under wine, by [dfnff]. Confirmed.
+	- Actual cause [Bug]: As read. absDir joined any path filepath.IsAbs doesn't call absolute onto the current folder, so C:foo and \foo came out under it.
+	- Actual fix [Bug]: absDir takes the folder from filepath.Abs, which on Windows puts \foo on the current drive's root and C:foo on that drive's current folder, as git does.
+	- Decisions: filepath.Abs rather than 2026112017135400's joinDir. joinDir starts from an earlier -C, while a clone starts from the current folder, which is what Abs reads. Abs also takes D:foo from drive D's current folder, which joinDir leaves as typed.
+	- Test case: Go [dfnff] TestAbsDirFollowsChdir.
+	- Verified: [dfnff] compares absDir with a chdir to each folder. The Windows test build under wine failed 5 cases before the fix and passes after. On Linux it passes before and after, since no path there has a drive or a bare root. The other Windows Go test failures under wine are the same 5 before and after. Quick run of every area passed: test.bash 2408/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+	- Needs external testing: vm925w: Go [dfnff] in the Windows Go tests, and the 2 steps above with real git, on 1678410 or later.
+	- Swept: absDir's one caller, repo clone's account in settleAccount. The other filepath.IsAbs and os.Getwd sites in src-go, per 2026112017135400's Swept, and the rest only read the current folder.
+	- Branch: nov22-2026112214033583
+	- Commit: 1678410
 
 - pr ok on a pull request from dev or main deletes that branch
 	- ID: 2026112212332136
