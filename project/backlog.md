@@ -33,6 +33,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- pr ok reads a fork's pull request as a branch of origin
+	- ID: 2026112309121204
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261123-091212
+	- Opened by:
+	- Related IDs: 2026112212332136
+	- Steps to reproduce [Bug]: Have a contributor open a pull request from their fork's main into dev, then run `gitsby pr ok <n>`.
+	- Incorrect behavior [Bug]: It's refused, saying the pull request proposes main, a protected branch, which pr ok would delete on the git host and here. Nothing of origin's is at risk on the git host, since no tool deletes a fork's branch. A fork's branch with the name of a local branch that isn't on origin is refused too, with advice to push that local branch. The way through is the git host's page.
+	- Expected behavior [Bug]: pr ok reads whether the pull request's branch is on another repo: gh's isCrossRepository, glab's source_project_id against target_project_id, and the owner tea puts before the branch. For such a pull request it merges with no branch delete, on the git host or here, and skips the checks on a local branch of the same name. A pull request from origin's own main or dev is still refused. The comment on refuseProtectedPrHead drops the delete-on-merge reason, as design.md did on 2026-11-23, since the page's own merge is open to that setting too.
+	- Reproduced [Bug]: 2026-11-23 on b23 with the stand-in gh, on 24cb249. It gives pr ok the same answer for a fork's main as for origin's, and that was refused as a protected branch. A branch named like a local-only one was told to push it. By reading for glab and tea.
+	- Possible cause [Bug]: readPr asks for the branch's name only, and headBranchName drops tea's owner. refuseProtectedPrHead and the local-branch checks in prAcceptPreflight read that name as origin's.
+	- Origin: 3ffb35d, the fix of 2026112212332136, for the main and dev refusal, and the Go port for the local-branch checks. Confirmed for gh, plausible for glab and tea. Found while answering the Check: entry of 2026112212332136.
+	- Note: gh's merge with --delete-branch deletes the local branch of that name even for a fork's pull request, and leaves alone only the fork's copy. That was read in gh's merge.go on its trunk, 2026-11-23, and not run. So the refusal keeps a local main today, and the fix has to drop the flag for a fork rather than only skip the refusal.
+
 - Code Review 20261120 item 38: 5 spawn-count rows sit at their limits, since their expected counts weren't raised
 	- ID: 2026112017135327
 	- Type: Bug
@@ -209,6 +226,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, by a script over the backlog. Confirmed.
 	- Possible cause [Bug]: backlog-check has no rule for it.
 	- Origin: The 4 items, closed by hand over several rounds. No round saw it.
+
+- pr ok shows the pull request's branch and its base before it asks
+	- ID: 2026112309120161
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261123-091201
+	- Opened by:
+	- Related IDs: 2026112113223086
+	- Requirements [Feature]: Before the prompt, pr ok names the pull request's branch and the base it merges into, such as hotfix/x into dev. The plan's only line about the merge is `gh pr merge 8 --merge --delete-branch`, and since 2026112113223086 the merge goes wherever the git host's base says. GitHub's page offers the default branch as the base, so a feature branch opened there goes into main unless that's changed, and nothing shows it before the answer. Both names are already read in prAcceptPreflight, so it costs no process. The line follows design.md's output rules.
+	- Decisions: No warning and no refusal for a base the branch's name doesn't give, per the 2026-11-23 answer to 2026112113223086. A fix branch made with plain git and opened against main is an ordinary pull request, so showing both names is enough.
+	- Origin: 1acf747, the fix of 2026112113223086. Found while answering its Check: entry.
+	- Note: Tried 2026-11-23 on b23 with the stand-in gh, on 24cb249, from dev. A hotfix/x pull request against dev and a plain one against main gave the same first 4 plan lines, with no branch named in either. The second differed only by its 3 back-merge lines.
 
 - Stage 7's Go test runs on other boxes have no time limit, so one hung test holds the stage
 	- ID: 2026112021514129
@@ -4818,6 +4849,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: [dfncq], [dfncr] and [dfncs] fail on the build before the fix and pass with it. [dfnct] passes on both, as a guard. test.bash 2387/0 on the fixed build, and the quick gate's lint and unit areas passed. The whole quick gate didn't fit in 4 minutes at load 26, so fuzz and parity are left to the gate step. gosec isn't on this box.
 	- Swept: every branch delete: gh's --delete-branch, glab's --remove-source-branch and its local git branch -D, and tea's clean all sit behind the new refusal in prAcceptPreflight. br merge refuses a protected branch, br prune skips one, and pr create refuses a push landing on one.
 	- Decisions: Refuse, rather than merge with the delete left off. A git host's own delete-on-merge setting can still take an unprotected dev, and release is how dev goes into main. A fork's PR from a branch named dev is refused too, since readPr gets only the branch name. Check: entry filed.
+		- Answered 2026-11-23: the refusal stays. release is how dev goes into main, and it also tags and brings dev level. It matches pr create, br merge, and br prune, and keeping the branch would need a second path through gh, glab, and tea. The delete-on-merge reason is dropped, since the page's own merge is open to that setting too. The fork case is filed as 2026112309121204.
 	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
 	- Closed: 20261122-130030
 
@@ -4901,6 +4933,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: [dfnbk], [dfnbm], [dfnbp] to [dfnbt], [dfnbv] and [dfnbw] fail on the build before the fix and pass with it. [dfm0t], [dfhg8] and [dfh8b] fail with prOkBackMerges reading the head's name, and [dfm0t] with prTarget doing so. The quick gate passed with every area: test.bash 2383/0, fuzz 310/0, parity 31/0, spawn counts unchanged. gosec 37, as before, none in the changed files.
 	- Swept: every reader of pr ok's target or back-merge: cmdPrAccept, previewPr, checkoutsAhead and mergePushesOwn, by grep for prTarget and isHotfixBranch(a.pr.headBranch), which has no caller left. readPr for gh, tea and glab. pr create still takes its base off the pushed head's name, which is its own call (2026112017135624). br merge merges locally, so its target and the branch's name agree.
 	- Decisions: The base wins over the head's name, rather than refusing a PR whose base differs. The git host merges into the base either way, and refusing would leave the user to merge on the web page, where nothing merges main back into dev, and release then refuses. Check: entry filed.
+		- Answered 2026-11-23: the base stays. A refusal would depend on the branch's name, and a fix branch made with plain git and opened against main is an ordinary pull request. The plan names neither the branch nor the base, which is filed as 2026112309120161.
 	- Against: 2026112017135624's call to keep isHotfixBranch(a.pr.headBranch) at its 4 sites without a helper. That rested on each site reading the head; they now read the base, through prOkBackMerges.
 	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
 	- Closed: 20261122-123242
@@ -4927,6 +4960,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: [dfndh] to [dfndn] and [dfndp] fail on the build before the fix and pass with it, as does [dfjyc], which the old build's commit on main broke. [dfndg] passes on both, as setup. The whole quick gate passed: test.bash 2394/0, fuzz 310/0, parity 31/0. gosec 37, as before, none in release.go.
 	- Swept: the one park ahead of a resume, cmdPush in cmdRelease, for both resumes: the default branch's refused push ([dfndh]) and dev's ([dfndn]). On dev, the park lands on dev, which the dev resume then pushes as it is, and on a feature branch it stays off the release. A typed version other than the pending one cuts its own release, and keeps parking on the default branch, as a fresh release from there does.
 	- Decisions: Refuse, rather than finish the pushes and leave the edit in the tree. The run checks out dev next with the edit still in the tree, and git can refuse that checkout after the default branch and the tag are pushed. Only the default branch is refused, since a park elsewhere doesn't reach the release. Check: entry filed.
+		- Answered 2026-11-23: the refusal stays. A new release from main takes the tree along, so a resume that left an edit out without a word could push the release without the edit made to fix it, and a pushed tag stays. The cost is a stash and a pop in a rare case.
 	- Branch: nov22-2026112017135608
 	- Commit: 39338ec
 	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
