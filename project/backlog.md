@@ -268,7 +268,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 28: The image's markdownlint version check passes when markdownlint prints nothing
 	- ID: 2026111910222900
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102229
@@ -279,6 +279,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, with dash. Confirmed.
 	- Possible cause [Bug]: A pipe into awk at Dockerfile line 132.
 	- Origin: 1c16940, round-20261111. Regression, a check that passes on nothing.
+	- Actual cause [Bug]: Every tool version check in the recipe judged the line in awk's main rule, so no line meant no check. ruff, pip-audit, gifsicle and codeql had the same shape as markdownlint.
+	- Actual fix [Bug]: Each check keeps the first line and judges it at awk's END, so a tool that prints nothing fails the step.
+	- Branch: nov23-2026111910222900
+	- Commit: c072f2a
+	- Test case: test.bash [dfq4k]
+	- Verified: [dfq4k] runs each check line from the recipe under dash with a stub tool. On the old recipe all 5 passed with the tool missing; on the new one each passes on its version and fails on another and on a missing tool. The quick gate passed with every area, test.bash 2436/0, fuzz 310/0.
+	- Swept: every '| awk -v want=' line in the recipe, 5, which [dfq4k] reads by that pattern and requires at least 5 of. The Pillow check is a python assert, which fails on a missing module.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before and passes after.
+	- Closed: 20261123-184709
+	- Closed reason: Done
 
 - Code Review 20261119 item 32: design.md says the suites run on Windows under Git Bash
 	- ID: 2026111910222845
@@ -401,13 +411,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Put an ssh client in the cicd image, so the ssh stall tests run in the quick gate
 	- ID: 2026112020462150
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-204621
 	- Opened by:
 	- Requirements [Feature]: The image has no ssh, so Go tests [dfk1m] and [dfk1n] skip in the container run and pass only in the --no-container arm. Add openssh-client to cicd/container/Dockerfile. The edit rebuilds the image, about 8 minutes once.
 	- Note: The literal asserts in [dbfvz], [dcnp4], [deyth] and [dfg26] check the ssh options in the container meanwhile.
+	- Closed reason: Done
+	- Actual fix: openssh-client in the image. ssh won't start for a uid with no passwd entry, which the run's is in the image, so the image also has libnss-wrapper, and cicd.bash in the container gives the run's uid an entry in its run folder and preloads it for the run's processes.
+	- Decisions:
+		- libnss-wrapper rather than a writable /etc/passwd, which would let the run's uid add a root entry and su to it, or a mounted passwd file, which every docker run would need. Only cicd.bash's run in the container gets it, since fImageGo's builds run no ssh.
+		- Departs from the wording: the client alone made [dfk1m] and [dfk1n] fail in the container rather than skip, so the passwd entry came with it.
+	- Branch: nov23-2026111910222900
+	- Commit: c072f2a
+	- Test case: test.bash [dfq4m], and Go [dfk1m] [dfk1n], which now run in the container.
+	- Verified: the quick gate passed with every area in the new image, with [dfk1m], [dfk1n] and [dfq4m] passing there, test.bash 2436/0, fuzz 310/0. Without the entry, ssh in the image exits 255 with 'No user exists for uid', which [dfq4m] would fail on.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261123-184719
 
 - Code Review 20261120 enhancement 1: One list of each command's pushes, read by preflight, the plan and the run
 	- ID: 2026112017135211

@@ -1669,6 +1669,32 @@ ok = pkg.get("dependencies") == deps and pk[""].get("dependencies") == deps and 
 	and all(re.fullmatch(r"sha512-[A-Za-z0-9+/]{86}==", v.get("integrity", "")) and v.get("resolved", "").startswith("https://registry.npmjs.org/") for v in others)
 sys.exit(0 if ok else 1)' "${want}" "${dir}"
 }
+## Each tool version check in the image's recipe, run as the build runs it, under sh with only
+## the check's version set: it passes on that version, and fails on another and on a tool that
+## isn't there. Prints each one that doesn't, and nothing when all do. $1 the recipe, the
+## repo's own by default.
+fImageVersionChecks(){
+	local dockerfile="${1:-${root}/cicd/container/Dockerfile}" dir="${work}/version-checks" line="" tool="" var="" want="9.8.7" rc=0
+	local -i n=0
+	mkdir -p "${dir}/bin" && ln -sf "$(command -v awk)" "${dir}/bin/awk" || return 1
+	while IFS= read -r line; do
+		n+=1
+		line="${line#*&& }"; line="${line% \\}"
+		var="$(sed -n 's/.*want="\${\([A-Za-z_]*\)}".*/\1/p' <<< "${line}")"
+		tool="${line#PATH=\"* }"; tool="${tool%% *}"
+		[[ -n "${var}" && "${tool}" =~ ^[a-z][a-z-]*$ ]] || { echo "can't read: ${line}"; continue; }
+		# shellcheck disable=SC2016  ## The stub's own variable.
+		printf '#!/bin/sh\nprintf "%%s\\n" "${STUB}"\n' > "${dir}/bin/${tool}" && chmod +x "${dir}/bin/${tool}"
+		rc=0; env -i PATH="${dir}/bin" "${var}=${want}" STUB="${want} ${want} ${want}" /bin/sh -c "${line}" >/dev/null 2>&1 || rc=$?
+		((rc == 0)) || echo "${tool}: fails on its own version"
+		rc=0; env -i PATH="${dir}/bin" "${var}=${want}" STUB="0.0 0.0 0.0" /bin/sh -c "${line}" >/dev/null 2>&1 || rc=$?
+		((rc != 0)) || echo "${tool}: passes on another version"
+		rm -f -- "${dir:?}/bin/${tool:?}"
+		rc=0; env -i PATH="${dir}/bin" "${var}=${want}" /bin/sh -c "${line}" >/dev/null 2>&1 || rc=$?
+		((rc != 0)) || echo "${tool}: passes when it isn't there"
+	done < <(grep -E '\| awk -v want=' "${dockerfile}")
+	((n >= 5)) || echo "found ${n} version checks, not 5"
+}
 ## Whether the script $1 refuses a bash below its floor before running anything: a copy with the
 ## floor raised past any real bash, named as the original, has to exit 1 with the one line. A
 ## copy the raise didn't change has no floor and is not run, since some of these do real work.
@@ -8652,6 +8678,16 @@ LGEOF
 		fPyYamlFromLock
 	fAssert "[df50y] markdownlint-cli and its packages come from the lock, pinned by sha512, at the version config.bash records, and the image runs none of their scripts" \
 		fMarkdownlintFromLock
+	## awk with no input exits 0, and sh has no pipefail, so a check reading only in its main rule passed on nothing.
+	fAssert "[dfq4k] each tool version check in the image's recipe fails on another version and on a missing tool" \
+		test -z "$(fImageVersionChecks)"
+	## The image's run has the caller's uid, which has no passwd entry there, and ssh won't start without one.
+	## printenv, since fGateRun's subshells set the marker and shellcheck reads that as lost here.
+	if [[ -n "$(printenv GITSBY_CICD_IN_CONTAINER)" ]]; then
+		fAssert "[dfq4m] in the image, ssh starts for the run's uid"  ssh -F /dev/null -G stall.example.test
+	else
+		fSkip "[dfq4m] runs in the image"
+	fi
 	## What --leakcheck makes of CodeQL's report, on reports written here.
 	if command -v python3 >/dev/null 2>&1; then
 		local cqAll="main.go main_test.go vendor/x/y.go" cqMissing=""
@@ -11426,3 +11462,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261123 JC: pr ok merges a pull request from a fork's main, or from a fork's branch named like one only here, with no branch delete, and stays on the branch it ran from, through gh, [dfq0w] to [dfq11]. tea and glab read a fork's head, [dfq12] to [dfq14].
 ##		- 20261123 JC: The Ctrl+C check puts INT back to default for its run, since a suite started with INT ignored passed that down, [dfq33].
 ##		- 20261123 JC: Every check that brings no gh of its own gets the suite's, logged in nowhere, rather than the box's, [dfq34].
+##		- 20261123 JC: Each tool version check in the image's recipe fails on a missing tool, [dfq4k]. ssh starts for the run's uid in the image, [dfq4m].
