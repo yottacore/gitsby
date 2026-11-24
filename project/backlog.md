@@ -33,387 +33,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- 43 closed items have no Acceptance signoff row, and backlog-check doesn't look for it
-	- ID: 2026112317125579
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261123-171255
-	- Opened by:
-	- Related IDs: 2026112017135312, 2026111910222773
-	- Steps to reproduce [Bug]: List the items whose Status is Closed and that have no Acceptance signoff row.
-	- Incorrect behavior [Bug]: 43 of 344 have none, most closed by hand before the row was asked for. backlog-check passes.
-	- Expected behavior [Bug]: Each closed item says why it closed, and backlog-check fails one that doesn't, as it does for a missing Closed row.
-	- Reproduced [Bug]: 2026-11-23 on b23, by a script over the backlog. Confirmed.
-	- Origin: Found while fixing 2026112017135312, which added the Closed row rule. Older items predate the signoff rule.
-	- Closed reason: Done
-	- Actual cause [Bug]: The items were closed by hand, most before the row was asked for, and backlog-check read the Closed row only. 41 were left at the start of this fix, since 2026112017135312 and 2026111910222773 each gave one its row.
-	- Actual fix [Bug]: backlog-check has a fourth rule: a closed item in the new format with no Acceptance signoff row, or an empty one, is a finding, named by ID. The 41 items have the row. Each names the standing close rule with the date from its Closed row, 2 closed before that rule say so, and 2 name the answer their item records.
-	- Decisions: An empty row counts as missing, since it says nothing. Canceled and old-format items aren't read, as for rule 3. A parent closed with its children says that. The 2 items closed 2026-09-30 predate the standing close rule (2026-10-03), so their row says they were closed by hand before it.
-		- 2026-11-23: [defny], [ddf4q], [ddf4r], [dfq27] and [dfq28] each have closed items in their fixtures, which now have an Acceptance signoff row. Nothing else they check changed.
-	- Test case: test.bash [dfq2k] fails a closed item with no Acceptance signoff row or an empty one, by ID, and leaves a sub-bullet, open, Canceled and old-format ones be. [dfq2m] passes once each has one.
-	- Branch: nov23-2026112317125579
-	- Swept: every closed item in the new format, 346, by the new rule over the real backlog. The 41 it named have the row, and it passes.
-	- Verified: [dfq2k] and [dfq2m] fail with the backlog-check.bash from before this fix and pass with it. [dfq2k] also fails with the rule made to take an empty row. The new rule named 41 items on the real backlog and passes with their rows in. shellcheck and test-id.bash --check clean.
-	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
-	- Closed: 20261123-172525
-	- Commit: 544668d
-
-- pr ok reads a fork's pull request as a branch of origin
-	- ID: 2026112309121204
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261123-091212
-	- Opened by:
-	- Related IDs: 2026112212332136
-	- Steps to reproduce [Bug]: Have a contributor open a pull request from their fork's main into dev, then run `gitsby pr ok <n>`.
-	- Incorrect behavior [Bug]: It's refused, saying the pull request proposes main, a protected branch, which pr ok would delete on the git host and here. Nothing of origin's is at risk on the git host, since no tool deletes a fork's branch. A fork's branch with the name of a local branch that isn't on origin is refused too, with advice to push that local branch. The way through is the git host's page.
-	- Expected behavior [Bug]: pr ok reads whether the pull request's branch is on another repo: gh's isCrossRepository, glab's source_project_id against target_project_id, and the owner tea puts before the branch. For such a pull request it merges with no branch delete, on the git host or here, and skips the checks on a local branch of the same name. A pull request from origin's own main or dev is still refused. The comment on refuseProtectedPrHead drops the delete-on-merge reason, as design.md did on 2026-11-23, since the page's own merge is open to that setting too.
-	- Reproduced [Bug]: 2026-11-23 on b23 with the stand-in gh, on 24cb249. It gives pr ok the same answer for a fork's main as for origin's, and that was refused as a protected branch. A branch named like a local-only one was told to push it. By reading for glab and tea.
-	- Possible cause [Bug]: readPr asks for the branch's name only, and headBranchName drops tea's owner. refuseProtectedPrHead and the local-branch checks in prAcceptPreflight read that name as origin's.
-	- Origin: 3ffb35d, the fix of 2026112212332136, for the main and dev refusal, and the Go port for the local-branch checks. Confirmed for gh, plausible for glab and tea. Found while answering the Check: entry of 2026112212332136.
-	- Note: gh's merge with --delete-branch deletes the local branch of that name even for a fork's pull request, and leaves alone only the fork's copy. That was read in gh's merge.go on its trunk, 2026-11-23, and not run. So the refusal keeps a local main today, and the fix has to drop the flag for a fork rather than only skip the refusal.
-	- Closed reason: Done
-	- Actual cause [Bug]: readPr asked each tool for the branch's name only, and tea's owner was dropped, so refuseProtectedPrHead, the local-branch checks in prAcceptPreflight and prOkMoves read a fork's branch as origin's branch of that name. gh's merge ran with --delete-branch, which takes a local branch of that name even for a fork.
-	- Actual fix [Bug]: readPr reads whether the branch is on another repo: gh's isCrossRepository, glab's source_project_id against target_project_id, and a colon in tea's head. For such a pull request the merge runs with no branch delete through every tool, the protected-head refusal and the checks on a local branch of that name are skipped, and pr ok stays on the branch it ran from unless that has no upstream. A pull request from origin's own main or dev is still refused. The comment on refuseProtectedPrHead no longer gives the delete-on-merge reason. design.md and the changelog say so.
-	- Branch: nov23-2026112309121204
-	- Test case: test.bash [dfq0w] to [dfq14]; Go TestPrForkDeletesNothing [dfq0v], TestReadGlabMR [df04m] and FuzzReadGlabMR [df04n] with the project IDs.
-		- 20261123: each glabMR value in TestReadGlabMR [df04m] gained 2 empty project IDs, for the reader's 2 new fields. What each case checks is unchanged.
-	- Verified: [dfq0w], [dfq0x], [dfq0y], [dfq10], [dfq11], [dfq12] and [dfq13] fail on the build before the fix and pass with it. [dfq0z] and [dfq14] pass on both, as guards. [dfq0v] fails with gh's --delete-branch kept for a fork. The quick gate's lint and unit areas passed. Its suite area passed whole (test.bash 2423 passes) before the fake gh's fork line was limited to when it's asked for. The rerun after that was cut off by time at 2141 passes and no failures, past [dfq0w] to [dfq11]. FuzzReadGlabMR ran 20 s clean. Fuzz and parity are left to the gate step, since the whole gate didn't fit in 4 minutes at load 30 to 40.
-	- Swept: every branch delete: gh's --delete-branch and glab's --remove-source-branch in prMergeArgs, tea's clean in prCleanArgs, and glab's local git branch -D in prLocalCleanArgs. Every reader of the head as origin's branch: refuseProtectedPrHead, the dirty-tree wording and local-branch checks in prAcceptPreflight, and prOkMoves, which previewPr, cmdPrAccept and checkoutsAhead read. headTip is read only with a local clean. openPrForBranch is pr create's, whose head is always origin's.
-	- Decisions: pr ok stays on the branch it ran from for a fork's pull request, unless that branch has no upstream, since origin's branch of that name isn't touched, so the rule in prOkMoves gives that. A glab merge request with no project IDs reads as from origin, since GitLab always gives both. The fake gh prints isCrossRepository only when asked, as gh prints only the fields asked for.
-	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
-	- Closed: 20261123-164606
-
-- Code Review 20261120 item 38: 5 spawn-count rows sit at their limits, since their expected counts weren't raised
-	- ID: 2026112017135327
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171353
-	- Opened by:
-	- Steps to reproduce [Bug]: Run cicd/utility/spawn-count.bash on 576d891.
-	- Incorrect behavior [Bug]: [dbftk] is 23 of 23, [ddf68] 30 of 30, [dbftm] 30 of 30, [df37t] 45 of 45 and [df051] 29 of 29. [df052] is 46 against an expected 43, and [df37v] 56 against 52. One more spawn fails them.
-	- Expected behavior [Bug]: A deliberate rise raises the expected count beside the command, per spawn-count.bash's header.
-	- Reproduced [Bug]: 2026-11-20 on b23, on both builds. Confirmed.
-	- Possible cause [Bug]: be87857 and 397c85f added 2, fb7a6d6 added 1 to br merge, and ca1848e added 1 to pr create, and none of them raised the numbers. Item 14's fix takes 2 of them back.
-	- Origin: Those 4 commits, nov19b and nov19c. No round saw it.
-	- Closed reason: Done
-	- Actual cause [Bug]: A count over its expected one but inside the headroom passes with nothing said, so each rise from our own code sat there unseen. On dda0343 the rows the review named are back at their numbers, after item 14's fix and others. 4 still sat over theirs, each from a deliberate change: a4fa440 reads every global git config file, 1 more for both account list rows, 7 to 8 and 11 to 12. fb7a6d6's no-shared-history refusal and e419011's read of the target's upstream after the checkout, 2 more for both br merge rows, 41 to 43 and 52 to 54. pr create in the GitLab folder went from 31 to 30.
-	- Actual fix [Bug]: Those 5 expected counts are today's. spawn-count.bash now names each count over its expected one that the headroom let pass, in a line beside the under-count one, so a rise is seen when it comes in.
-	- Decisions: The headroom stays, and a count over its expected one stays a pass, per the 2026-10-03 history line: a git update that starts one more helper must not fail the gate. The new line only names it. The rises are fixes for wrong answers, so the numbers go up rather than the spawns coming out. e419011's upstream read could come from the branch list already read, 1 spawn, not worth a change of its own.
-	- Branch: nov23-2026112017135327
-	- Test case: test.bash [dfq1m] (a count one over its expected one is named in the over line). spawn-count.bash itself, every measure at its expected count.
-	- Verified: spawn-count.bash on dda0343 passes with every count equal to its expected one and no over or under line. Each rise was bisected by build: account list 7 at 12f1bc2, 8 at a4fa440; br merge 41 at 8dfe5ff, 42 at e419011, 43 with fb7a6d6's merge-base. [dfq1m]'s check fails against the old spawn-count.bash and passes against the new. Quick run of every area passed: test.bash 2424/0, fuzz 310/0, parity 31/0, spawn counts clean. shellcheck, backlog-check.bash and test-id.bash --check clean.
-	- Swept: all 24 measures, each against today's count. None sits above or below its number.
-	- Acceptance signoff: Self-closed: numbers and a note line, its test passed.
-	- Closed: 20261123-165403
-
-- Code Review 20261120 item 39: 6 closed items don't say their tests were watched to fail, and 1 has no signoff row
-	- ID: 2026112017135312
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171353
-	- Opened by:
-	- Steps to reproduce [Bug]: Read 2026111910223233, 2026111910223074, 2026111910222973, 2026111910222815, 2026111917564808, 2026111910223016 and 2026112015351403.
-	- Incorrect behavior [Bug]: The first 6 don't say whether [dfh5v] and [dfh5w], [dfhh3] and [dfhh5], [dfhkc], [dfjaj], [dcnmn] and [dfg0h] failed before the fix, or why not. 2026112015351403 has no Acceptance signoff row.
-	- Expected behavior [Bug]: Each says it was run both ways, per the review rules, and a self-closed item says why it closed.
-	- Reproduced [Bug]: 2026-11-20, by reading. Confirmed.
-	- Origin: nov19b, nov19c, nov20 and release-dev. Like Code Review 20261119 item 37, backlog-check doesn't look for it.
-	- Actual cause [Bug]: The rows were left out when the items closed. Nothing checks for them.
-	- Actual fix [Bug]: Each of the 6 has a dated Verified sub-bullet saying how its test ran both ways, or why it has no before, with the run that showed it red. 2026112015351403 has an Acceptance signoff row.
-	- Decisions: A test of a helper that came with its fix has no build before it, so it was watched to fail by breaking the helper. A guard that passes on both builds says so. The signoff gap across the backlog is 2026112317125579, since 43 items lack the row. Whether a test was watched to fail is not something a backlog rule can read.
-	- Test case: none, backlog rows only. The runs named in each row are the check.
-	- Branch: nov23-2026112017135312
-	- Swept: all 7 items named in Steps to reproduce.
-	- Closed reason: Done
-	- Commit: cd655bc, for the gate on the Closed row that 2026111910222773 added
-	- Verified: Each run named in the 6 new sub-bullets, on b23. test.bash at 5c6bdc8 with the mutate.go before it: [dfhh3] and [dfhh5] pass, [dfhh4] fails. test.bash at 2856951 with the install.bash before it: [dfjaj] passes, [dfjah] fails. go test at 7ab6156 with the prune.go before it: [dcnmn] fails on 2 cases. On the current tree, [dfh5v], [dfh5w], [dfhkc] and [dfg0h] each fail with their helper broken, and all pass as they are.
-	- Acceptance signoff: Self-closed: backlog rows only, each backed by a run.
-	- Closed: 20261123-172103
-
-- Code Review 20261120 item 41: [df33r] fails whenever another copy of the suite runs
-	- ID: 2026112017135283
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171352
-	- Opened by:
-	- Steps to reproduce [Bug]: Run 2 copies of test.bash at once.
-	- Incorrect behavior [Bug]: [df33r] failed in all 17 runs that overlapped another copy, and passed in all 3 runs alone.
-	- Expected behavior [Bug]: It passes under load.
-	- Reproduced [Bug]: 2026-11-20 on b23. The failure is confirmed and the cause is plausible.
-	- Possible cause [Bug]: fGateCtrlC waits at most 5 seconds for the hung marker at test.bash:793, and the vet stub sleeps only 5 seconds at test.bash:479.
-	- Origin: c7caa93 (2026-11-09). No round saw it.
-	- Closed reason: Done
-	- Actual cause [Bug]: The suite passed down an ignored INT. A copy started with '&' from a script starts with INT ignored, and bash can't trap a signal ignored on entry, so cicd.bash's 'exit 130' trap never ran and the run went on to the end. The 5-second wait wasn't it: the hung marker came within 0.2 s in every run, alone or beside another copy.
-	- Actual fix [Bug]: fGateCtrlC starts the run through 'env --default-signal=INT', so INT is live whatever the suite started with.
-	- Decisions: Fixed in the check, not in cicd.bash. A run started in the background gets no Ctrl+C from a terminal, so only the check's own kill was affected.
-	- Test case: test.bash [dfq33] (fGateCtrlC under an ignored INT), beside [df33r].
-	- Verified: [dfq33] fails on the unfixed fGateCtrlC (2 of 2, the run ended 'done') and passes after. The whole suite started with '&' passed 2430/0, [df33r] and [dfq33] included. Quick gate passed, all areas: test.bash 2430/0, fuzz 310/0, parity 32/0.
-	- Swept: every INT sent in cicd/*.bash, cicd/utility/*.bash and the Go tests. fGateCtrlC's kill is the only one. fGateRunTmp and the docker-hang stop send TERM, which a background job doesn't start out ignoring.
-	- Branch: nov23-2026112017135283
-	- Commit: cd219ac
-	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
-	- Progress log: 2026-11-23: Rig: private/claude_simple/tools/ctrlc-rig.bash runs fGateCtrlC alone, N times.
-	- Closed: 20261123-175734
-
-- Code Review 20261120 item 42: Some test.bash checks run the real gh
-	- ID: 2026112017135269
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171352
-	- Opened by:
-	- Steps to reproduce [Bug]: Put a gh that logs its calls first on PATH and run test.bash.
-	- Incorrect behavior [Bug]: The sshid block at test.bash:3170-3215 and the repourl block from 6495 run with the real HOME. gitsby runs `gh auth token --user` 30 times against the real gh config and keyring, and gh writes its device-id there. [dfh7j] and [dfh7k] run the real `gh config get` and `gh api user`.
-	- Expected behavior [Bug]: Every check runs a stub gh, or a gh config folder inside the work folder.
-	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
-	- Origin: The 2 blocks are older, renumbered in a5ce9cc. [dfh7j] and [dfh7k] are 88a9013 (2026111910223162). No round saw it.
-	- Closed reason: Done
-	- Actual cause [Bug]: Neither test.bash nor parity.bash put a gh of its own on PATH for checks that bring none, so gitsby's token, login and protocol probes, and the v2.1.0 build's, ran the box's gh. A logging gh first on PATH got 47 calls from test.bash and 18 from parity.bash, most with the real HOME.
-	- Actual fix [Bug]: Both suites put a gh of their own first on PATH at the start. It answers as logged in nowhere, exits 1, and notes each call in the work folder. A check's own gh still goes ahead of it.
-	- Decisions: One gh for the whole suite, rather than a stub per block, so a new block can't miss it. It answers as logged in nowhere. The suites passed with the box's logged-in gh, with none in the image, and with a failing gh ahead of both, so no check leans on its answer.
-	- Test case: test.bash [dfq34] (status with no gh of its own reaches the suite's), parity.bash [dfq35] (both builds' token probes reach it).
-	- Verified: [dfq34] fails with the suite's gh taken off PATH and passes after, and so does [dfq35] (parity 31/1, then 32/0). With a logging gh first on PATH, the fixed test.bash sent it no calls, against 47 before. Quick gate passed, all areas: test.bash 2430/0, fuzz 310/0, parity 32/0. test.bash on the box with --no-container: 2430/0.
-	- Swept: the sshid, repourl, sparse, GIT_DIR ([dfh7j], [dfh7k]) and v2.1.0 flat-file blocks, and the 2 calls from the work folder, all now reach the suite's gh. fuzz.bash has its own gh and sent the logging one nothing. glab got no calls from any suite. tea isn't on this box, so not measured. Windows boxes don't run test.bash, where the build would skip the stub's .cmd.
-	- Branch: nov23-2026112017135283
-	- Commit: f13b8c9
-	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
-	- Closed: 20261123-175734
-
-- Code Review 20261120 item 43: [dfh4h] misses a git status call with an option ahead of status
-	- ID: 2026112017135255
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171352
-	- Opened by:
-	- Steps to reproduce [Bug]: Rewrite treeDirty as a `git --no-optional-locks status` call with no --untracked-files flag, and run TestStatusNamesUntracked.
-	- Incorrect behavior [Bug]: It passes. It also accepts --untracked-files=no.
-	- Expected behavior [Bug]: It fails on any status call without --untracked-files=normal or all.
-	- Reproduced [Bug]: 2026-11-20 on b23, by mutation. Confirmed. [dfh4g] catches treeDirty itself, so only a new site depends on the gate.
-	- Possible cause [Bug]: mutate_test.go:320 matches `"git", "status"` side by side.
-	- Origin: e45bad2, Code Review 20261119 item 2.
-	- Closed reason: Done
-	- Actual cause [Bug]: The check matched the source line by line, with "git", any -c pairs, then "status". A global option such as --no-optional-locks or -C, or a call split over lines, hid the call, and any --untracked-files= value passed, no included.
-	- Actual fix [Bug]: A shared helper, gitSites in mutate_test.go, parses src-go and finds every argument list that runs a git subcommand, skipping global options and the values -c, -C and the like take. [dfh4h] wants --untracked-files=normal or all at each status site. [dfjwg], the git diff twin, uses the same helper.
-	- Test case: Go [dfh4h] TestStatusNamesUntracked, [dfjwg] TestDiffReadsUseDiffArgs.
-	- Verified: Mutations of treeDirty's status call with --no-optional-locks, -C, --untracked-files=no, and a call split over 2 lines pass the old [dfh4h] and fail the new one. A git diff call with --no-pager ahead passes the old [dfjwg] and fails the new one. A plain one fails both. The quick gate with every area passed: test.bash 2432/0, fuzz 310/0, parity 32/0. gosec 37, as before.
-	- Swept: The only other source scan keyed on a git subcommand is [dfjwg], now on the same helper. [de8a0] TestOneSpawnSite looks for exec.Command, not a subcommand. The helper finds 5 status sites and the one diffArgs body.
-	- Decisions: A list built at runtime, such as a slice variable spread into the call, still isn't seen, since only literals can be read. No site does that today.
-	- Branch: nov23-2026112017135255
-	- Commit: 2d37c4a
-	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the twin is swept.
-	- Closed: 20261123-181224
-
-- Code Review 20261120 item 44: [dcnqy]'s label no longer says what it checks
-	- ID: 2026112017135240
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171352
-	- Opened by:
-	- Steps to reproduce [Bug]: Read test.bash:3921.
-	- Incorrect behavior [Bug]: Since 46156d6 it matches the "shares no history" refusal. The "couldn't tell whether this hotfix" note it was named for has no check, and shows only when the target branch is missing.
-	- Expected behavior [Bug]: The label says what the check matches, and the note has its own check or goes.
-	- Reproduced [Bug]: No. Read only. Plausible.
-	- Origin: 46156d6 (2026111919473452).
-	- Closed reason: Done
-	- Actual cause [Bug]: 46156d6 made br merge refuse a branch that shares no history with its target, and [dcnqy] was moved to that refusal under its old label. A missing target is refused before the plan too, so only a diff that fails on its own reaches the note.
-	- Actual fix [Bug]: [dcnqy] is labeled for the refusal it matches. The note keeps its own check, [dfq48], with a git that refuses only that diff.
-	- Decisions: The note stays. Without it a failed diff reads as a docs-only hotfix and says nothing, which is what [dcnqy] was first written against.
-	- Test case: test.bash [dcnqy], [dfq48].
-	- Verified: [dfq48] fails with the note's case taken out of warnHotfixTouchedCode and passes on the build. A missing target, with origin/HEAD left dangling or gone, is refused in preflight, so it can't stand in. Quick gate passed, all areas: test.bash 2434/0, fuzz 310/0, parity 32/0.
-	- Branch: nov23-2026112017135240
-	- Commit: 3036bb6
-	- Acceptance signoff: Self-closed: label and check match what they test, and the new check was watched to fail.
-	- Closed: 20261123-182213
-
-- Code Review 20261119 item 24: [daf7x] passes with the code it checks taken out
-	- ID: 2026111910222957
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102229
-	- Opened by:
-	- Steps to reproduce [Bug]: Replace the showLines call in refuseConflicts with nothing, rebuild, and run test.bash's [daf7w] block.
-	- Incorrect behavior [Bug]: [daf7w] to [daf7z] stay green. The file name they grep for comes from the status header, not the refusal.
-	- Expected behavior [Bug]: The check fails when refuseConflicts stops listing the file.
-	- Reproduced [Bug]: 2026-11-19 on b23, by mutation in a copy. Confirmed.
-	- Possible cause [Bug]: It greps all output rather than the refusal's own line, as [dfg1f] does.
-	- Origin: 9630f8f, 2026-07-27. No round saw it.
-	- Closed reason: Done
-	- Actual cause [Bug]: [daf7x] ran update a second time and grepped all its output. That run's status block lists the file as UU, so the check passed with the refusal's list taken out.
-	- Actual fix [Bug]: [daf7w] keeps the first run's output, and [daf7x] looks for the file on the line after the refusal's header, as [dfg1f] does.
-	- Test case: test.bash [daf7x].
-	- Verified: with the showLines call in refuseConflicts taken out, the old [daf7x] passed and the new one failed. Both pass on the real build. Quick gate passed, all areas: test.bash 2434/0, fuzz 310/0, parity 32/0.
-	- Swept: [daf7y] and [daf7z] check repo state rather than output, so the list doesn't reach them. [dfg1f] already reads the list line.
-	- Branch: nov23-2026112017135240
-	- Commit: 3036bb6
-	- Acceptance signoff: Self-closed: reproduced, the new check fails on the mutation and passes on the build.
-	- Closed: 20261123-182213
-
-- Code Review 20261119 item 28: The image's markdownlint version check passes when markdownlint prints nothing
-	- ID: 2026111910222900
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102229
-	- Opened by:
-	- Steps to reproduce [Bug]: Run the Dockerfile's check with markdownlint missing.
-	- Incorrect behavior [Bug]: awk with no input exits 0, and sh has no pipefail, so the step passes.
-	- Expected behavior [Bug]: The step fails unless the version matches.
-	- Reproduced [Bug]: 2026-11-19 on b23, with dash. Confirmed.
-	- Possible cause [Bug]: A pipe into awk at Dockerfile line 132.
-	- Origin: 1c16940, round-20261111. Regression, a check that passes on nothing.
-	- Actual cause [Bug]: Every tool version check in the recipe judged the line in awk's main rule, so no line meant no check. ruff, pip-audit, gifsicle and codeql had the same shape as markdownlint.
-	- Actual fix [Bug]: Each check keeps the first line and judges it at awk's END, so a tool that prints nothing fails the step.
-	- Branch: nov23-2026111910222900
-	- Commit: c072f2a
-	- Test case: test.bash [dfq4k]
-	- Verified: [dfq4k] runs each check line from the recipe under dash with a stub tool. On the old recipe all 5 passed with the tool missing; on the new one each passes on its version and fails on another and on a missing tool. The quick gate passed with every area, test.bash 2436/0, fuzz 310/0.
-	- Swept: every '| awk -v want=' line in the recipe, 5, which [dfq4k] reads by that pattern and requires at least 5 of. The Pillow check is a python assert, which fails on a missing module.
-	- Acceptance signoff: Self-closed: reproduced, its test failed before and passes after.
-	- Closed: 20261123-184709
-	- Closed reason: Done
-
-- Code Review 20261119 item 32: design.md says the suites run on Windows under Git Bash
-	- ID: 2026111910222845
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102228
-	- Opened by:
-	- Steps to reproduce [Bug]: Read design.md near line 619 and remote-tests.bash fRunWindows.
-	- Incorrect behavior [Bug]: Only the Go tests run on the Windows box. test.bash never runs there.
-	- Expected behavior [Bug]: design.md says what stage 7 runs.
-	- Reproduced [Bug]: 2026-11-19, by reading. Confirmed.
-	- Possible cause [Bug]: The line dates from the bash era.
-	- Origin: 4f9ef7b, 2026-08-08. No round saw it.
-	- Closed reason: Done
-	- Closed: 20261124-024900
-	- Test case: none, docs only. The line is a plain statement of what remote-tests.bash runs.
-	- Branch: nov23-2026111910222845
-	- Commit: a7a1004
-	- Acceptance signoff: Self-closed: mechanical doc fix against remote-tests.bash fRunWindows.
-	- Fixed: design.md's Testing section now says stage 7 runs only the Go tests on the Windows box, and test.bash runs there only by hand under Git Bash.
-
-- Code Review 20261119 item 35: lockFix is production code that only tests call
-	- ID: 2026111910222801
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102228
-	- Opened by:
-	- Steps to reproduce [Bug]: staticcheck -tests=false -checks U1000 on src-go.
-	- Incorrect behavior [Bug]: It reports lockFix in accountcmd.go as unused.
-	- Expected behavior [Bug]: No test-only code in the build.
-	- Reproduced [Bug]: 2026-11-19 on b23. d5e76f2 reports nothing. Confirmed.
-	- Possible cause [Bug]: Item 8's lockBeside rework left it for the tests only.
-	- Origin: a4fa440, round-20261111 (Code Review 20261110b item 8). Regression in dead code.
-	- Closed reason: Done
-	- Actual cause [Bug]: lockFix was a wrapper only the tests called. The lint stage's staticcheck run counts a test as a caller, so it never flagged it.
-	- Actual fix [Bug]: lockFix is gone, and its tests call lockFixFor with the accounts lock's words. The lint stage also runs staticcheck -tests=false -checks U1000, so code only a test calls fails the gate.
-	- Test case: test.bash [dfq3x] and [dfq3y] for the lint step. [dcnkc] TestLockFix still checks the Fix lines.
-	- Verified: staticcheck -tests=false -checks U1000 reports lockFix on the tree before the fix and nothing after. With lockFix put back and a test calling it, --backlog-run-quick lint fails with the new message. The quick gate with every area passed: test.bash 2432/0, fuzz 310/0, parity 32/0. gosec 37, as before.
-	- Swept: The new step runs over all of src-go and finds nothing else.
-	- Decisions: The check runs on every gate rather than once, so the next helper left for the tests fails then. It adds about 2 seconds.
-	- Branch: nov23-2026112017135255
-	- Commit: dbaeda4
-	- Acceptance signoff: Self-closed: reproduced, the new lint step fails on the old code and passes on the fix.
-	- Closed: 20261123-181224
-
-- Code Review 20261119 item 36: parity.bash defines 2 helpers nothing calls
-	- ID: 2026111910222787
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102227
-	- Opened by:
-	- Steps to reproduce [Bug]: grep cicd/parity.bash for fSameStripped and fSameField.
-	- Incorrect behavior [Bug]: Both are defined and never called.
-	- Expected behavior [Bug]: No dead code in the gates.
-	- Reproduced [Bug]: 2026-11-19 on b23, by grep. Confirmed.
-	- Possible cause [Bug]: Left from an older parity layout.
-	- Origin: Already there at d5e76f2. No round saw it.
-	- Closed reason: Done
-	- Actual cause [Bug]: fSameStripped and fSameField were left from an older parity layout, and nothing checked for unused functions.
-	- Actual fix [Bug]: Both are gone. [dfq49] fails on any function in cicd/*.bash whose name shows up nowhere else in those files.
-	- Test case: test.bash [dfq49].
-	- Verified: [dfq49]'s function named both helpers before they were removed and nothing after. Quick gate passed, all areas: test.bash 2434/0, fuzz 310/0, parity 32/0.
-	- Swept: every tracked bash file outside `legacy/`. Only `cicd/utility/n8git_backup-and-publish` has others, 3 `fDefineTrap_*` variants from its shared boilerplate, left alone and outside the `cicd/*.bash` that [dfq49] reads.
-	- Branch: nov23-2026112017135240
-	- Commit: 3036bb6
-	- Acceptance signoff: Self-closed: mechanical, with a check watched to fail.
-	- Closed: 20261123-182213
-
-- Code Review 20261119 item 37: 4 closed items have no Closed row, and backlog-check doesn't notice
-	- ID: 2026111910222773
-	- Type: Bug
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102227
-	- Opened by:
-	- Steps to reproduce [Bug]: Look at 2026111016331881, 2026102416313106, 2026110611063063 and 2026100507345200.
-	- Incorrect behavior [Bug]: Each is Status: Closed with no Closed: date. 2026111016331881 has no Acceptance signoff either.
-	- Expected behavior [Bug]: Every closed item has a Closed: row, and backlog-check fails one without it.
-	- Reproduced [Bug]: 2026-11-19 on b23, by a script over the backlog. Confirmed.
-	- Possible cause [Bug]: backlog-check has no rule for it.
-	- Origin: The 4 items, closed by hand over several rounds. No round saw it.
-	- Actual cause [Bug]: As guessed. backlog-check read the Origin row and removed checks only, so a hand close with no date passed.
-	- Actual fix [Bug]: backlog-check has a third rule: a closed item in the new format with no Closed: row is a finding, named by ID. The 4 items have Closed rows, dated from the commit that closed each, and 2026111016331881 an Acceptance signoff row.
-	- Decisions: The rule reads the new format only. Old-format items close by emoji and never had a date row. Closed reason: doesn't count as the row.
-		- 2026-11-23: [ddf4q], [ddf4r] and [defny] each have a closed item in their fixture, which now has a Closed row. Nothing else they check changed.
-	- Test case: test.bash [dfq27] fails a closed item with no Closed row by ID, leaving open, Canceled and old-format ones be. [dfq28] passes once each has one.
-	- Branch: nov23-2026112017135312
-	- Swept: every closed item in the new format, by the new rule over the real backlog: the 4 named here were the only ones.
-	- Closed reason: Done
-	- Commit: cd655bc
-	- Verified: [dfq27] and [dfq28] fail with the backlog-check.bash from before cd655bc and pass with it. [dfq27] also fails with the rule made to take a Closed reason row as the date. On the real backlog the new rule named the 4 items, and passes with their rows in. Quick run, suite area: test.bash 2426/0. lint and unit passed in the run before. shellcheck and test-id.bash --check clean.
-	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
-	- Closed: 20261123-172103
-
-- pr ok shows the pull request's branch and its base before it asks
-	- ID: 2026112309120161
-	- Type: Enhancement
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261123-091201
-	- Opened by:
-	- Related IDs: 2026112113223086
-	- Requirements [Feature]: Before the prompt, pr ok names the pull request's branch and the base it merges into, such as hotfix/x into dev. The plan's only line about the merge is `gh pr merge 8 --merge --delete-branch`, and since 2026112113223086 the merge goes wherever the git host's base says. GitHub's page offers the default branch as the base, so a feature branch opened there goes into main unless that's changed, and nothing shows it before the answer. Both names are already read in prAcceptPreflight, so it costs no process. The line follows design.md's output rules.
-	- Decisions: No warning and no refusal for a base the branch's name doesn't give, per the 2026-11-23 answer to 2026112113223086. A fix branch made with plain git and opened against main is an ordinary pull request, so showing both names is enough.
-		- The line goes in the state block, beside the 'New branch ...:' line br create and br hotfix print, rather than in the plan, which lists only the git and git host calls the run makes. It names the PR's number too, so it reads against the one typed.
-	- Origin: 1acf747, the fix of 2026112113223086. Found while answering its Check: entry.
-	- Note: Tried 2026-11-23 on b23 with the stand-in gh, on 24cb249, from dev. A hotfix/x pull request against dev and a plain one against main gave the same first 4 plan lines, with no branch named in either. The second differed only by its 3 back-merge lines.
-	- Closed reason: Done
-	- Actual fix [Feature]: The state block above the plan has a line for pr ok, such as 'Pull request .: #8 from hotfix/x into dev', and 'from a fork's main' for a fork's branch. It reads the head, base and fork that prAcceptPreflight already has, so it costs no process. design.md, the UI style guide and the changelog say so.
-	- Branch: nov23-2026112309120161
-	- Commit: 4d2319c
-	- Test case: test.bash [dfq5b] [dfq5c]; Go TestPrOkLine [dfq5d].
-	- Verified: [dfq5b], [dfq5c] and [dfq5d] fail with the line left out and pass with it. The whole quick gate passed with every area (parity 32/0), and lint and unit again after the doc edits.
-	- Swept: every place that shows a PR's branch or base: pr create's plan line already names its base through prCreateDisp, the line is left out for it, and the read-only pr view prints the git host's own view.
-	- Acceptance signoff: Self-closed: its tests failed without the line and pass with it, and the wording follows the state block's label style.
-	- Closed: 20261123-190343
-
 - Stage 7's Go test runs on other boxes have no time limit, so one hung test holds the stage
 	- ID: 2026112021514129
 	- Type: Enhancement
@@ -436,79 +55,6 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions: The native limit is one config.bash setting in seconds, REMOTE_GO_TEST_TIMEOUT=600, about 3 times vm925w's 215 s, the slowest native run. The run under Wine has its own, REMOTE_GO_TEST_TIMEOUT_WINE=1400, about 3 times its 471 s, since 600 left too little room on a busy box. Both are checked as whole numbers before they go into a remote command. Wine's outer limit is its own plus 300, above the test's, so a hung test prints its stacks first. The flag goes ahead of -test.v, so -test.v stays where the harness stub looks for it.
 	- Fixed: every Go test run in remote-tests.bash passes -test.timeout: REMOTE_GO_TEST_TIMEOUT on the Macs, the Unix boxes and Windows, and REMOTE_GO_TEST_TIMEOUT_WINE under Wine, inside an outer limit 300 s longer. A value that isn't whole seconds stops the stage before any box is reached.
 	- Test case: test.bash [dfq5x] every native Go test run passes the native limit, [dfq5y] the Wine run passes its own, longer one, inside its outer limit, [dfq5z] either limit that isn't whole seconds is refused. [dedq5] and [dee74] want the flag on the Unix and Windows command lines.
-
-- Put an ssh client in the cicd image, so the ssh stall tests run in the quick gate
-	- ID: 2026112020462150
-	- Type: Enhancement
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-204621
-	- Opened by:
-	- Requirements [Feature]: The image has no ssh, so Go tests [dfk1m] and [dfk1n] skip in the container run and pass only in the --no-container arm. Add openssh-client to cicd/container/Dockerfile. The edit rebuilds the image, about 8 minutes once.
-	- Note: The literal asserts in [dbfvz], [dcnp4], [deyth] and [dfg26] check the ssh options in the container meanwhile.
-	- Closed reason: Done
-	- Actual fix: openssh-client in the image. ssh won't start for a uid with no passwd entry, which the run's is in the image, so the image also has libnss-wrapper, and cicd.bash in the container gives the run's uid an entry in its run folder and preloads it for the run's processes.
-	- Decisions:
-		- libnss-wrapper rather than a writable /etc/passwd, which would let the run's uid add a root entry and su to it, or a mounted passwd file, which every docker run would need. Only cicd.bash's run in the container gets it, since fImageGo's builds run no ssh.
-		- Departs from the wording: the client alone made [dfk1m] and [dfk1n] fail in the container rather than skip, so the passwd entry came with it.
-	- Branch: nov23-2026111910222900
-	- Commit: c072f2a
-	- Test case: test.bash [dfq4m], and Go [dfk1m] [dfk1n], which now run in the container.
-	- Verified: the quick gate passed with every area in the new image, with [dfk1m], [dfk1n] and [dfq4m] passing there, test.bash 2436/0, fuzz 310/0. Without the entry, ssh in the image exits 255 with 'No user exists for uid', which [dfq4m] would fail on.
-	- Acceptance signoff: Self-closed: its tests passed.
-	- Closed: 20261123-184719
-
-- Code Review 20261120 enhancement 1: One list of each command's pushes, read by preflight, the plan and the run
-	- ID: 2026112017135211
-	- Type: Enhancement
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171352
-	- Opened by:
-	- Requirements [Feature]: Which guard covers which push has been fixed one command list at a time: 2026111016332380 (directPush), Code Review 20261119 item 1 (parkPushes), item 9 (pushesGoneBranch), item 17 (mergePushesOwn), and item 10 here. Give each command one plannedPushes list, with each push's branch, destination and kind, and have the guards, the plan and the run read it. Item 18's PR base is the same kind of problem, so give pr create and pr ok one target helper.
-	- Decisions: Answered 2026-11-20: fix it with items 10 and 45 as one change, though defects are still open.
-	- Origin: Repeat class, 5 command-list fixes since 2026-11-10.
-	- Branch: nov20c-2026112017135211
-	- Test case: its children's: 2026112020293534: test.bash [dfq6c] to [dfq6f]; Go TestOtherBranchPushes [dfq6b].
-	- Progress log:
-		- 20261120: The core is in, with items 10 (2026112017135749) and 45 (2026112017135225). Each command's pushes of the branch it stands on are one list, plannedPushes in mutate.go, with each push's branch, remote, ref and kind. The refusal before the plan, the --direct and gone-branch checks, and the plan's push line read it, and the step builds its push the same way. [dfk0z] walks the usages table, so a new mutating command fails until it's put on the list or named as one that doesn't push.
-		- The pushes of other branches, and the one target helper for pr create and pr ok, are child 2026112020293534. The helper comes with item 18's fix (2026112017135624). That child closed 2026-11-23, so no child is open.
-	- Commit: ccb0c7f
-	- Closed: 20261123-194426
-	- Closed reason: Done
-	- Acceptance signoff: Self-closed under the standing close rule on 2026-11-23, once its last child closed.
-
-- Put the pushes of other branches on the push list: br merge's target, the hotfix back-merge, and release's default branch and dev
-	- ID: 2026112020293534
-	- Type: Enhancement
-	- Status: Closed
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-202935
-	- Opened by:
-	- Parent ID: 2026112017135211
-	- Related IDs: 2026112017135624
-	- Requirements [Feature]: The push list holds only pushes of the branch a command stands on. br merge's push of its target, the hotfix back-merge's push of dev (br merge and pr ok), and release's pushes of the default branch and dev are still refused by git only at the step, after the merge or the tag. Add them to the list, so a push git would refuse is refused before the plan, mergePushesOwn reads its targets from it, and the plan's 'git push *' lines name where each goes. Give pr create and pr ok one target helper, through item 18's fix (2026112017135624).
-	- Estimated effort: Avg
-	- Progress log: Open questions for the design: a target that isn't local yet has no push fields to read until the checkout makes it, so where remote.pushDefault sends it would mean copying git's rule. The atomic push names origin and the target's own name, and release pushes dev only when it has an upstream.
-		- 20261121: the pr create and pr ok target helper is done, as prTarget in pr.go, through 2026112017135624. The other pushes are still open.
-	- Closed reason: Done
-	- Actual fix [Feature]: br merge's push of its target, the back-merge into dev after a hotfix from br merge or pr ok, and release's pushes of the default branch and dev are on plannedPushes in mutate.go, as kinds merge, back-merge and release. A push git would refuse is refused before the plan, naming 'git branch --unset-upstream <branch>'. mergePushesOwn reads its targets from the list, and the plan's push line for each of those branches names where it goes. The step still builds each push once the branch is checked out, with the same function. design.md and the changelog say so.
-	- Branch: nov23-2026112020293534
-	- Test case: test.bash [dfq6c] to [dfq6f]; Go TestOtherBranchPushes [dfq6b].
-	- Verified: [dfq6c] and [dfq6d] fail on the build before the fix, which merged into dev or cut the tag and then had the push refused, and pass with it. [dfq6b] fails with git's rule for a branch not here yet taken out, with every refusal held to something left to push, with the old unset text, and with release's dev push left off. The quick gate passed with every area: test.bash 2445/0, fuzz 310/0, parity 32/0, spawn counts unchanged. gosec 37, as before, none in the changed lines.
-	- Swept: every push the Go build makes. The pushCurrent and pushIfOnline callers are the park pushes, br merge's target, the back-merge, release's default branch and dev, and repo connect's, all on the list now. br merge's atomic push, the tag push, the leased deletes and a new branch's first publish name their refs in full, so push.default can't refuse them. Every 'git push *' plan line for another branch reads pushLine.
-	- Decisions: A branch the checkout has yet to make follows git's rule for its push: its own pushRemote, then remote.pushDefault, then origin, through that remote's push refspecs. One git config call reads them, and only when such a branch is on the list.
-		- br merge's atomic push still names origin and the target's own name, since the merge has to reach origin before origin's copy of the branch is deleted. Its plan line already says so.
-		- A push of another branch is refused before the plan whether or not anything new would go, since the merge or the release nearly always sends something. The one case where nothing goes is a back-merge with nothing new, which is refused too.
-		- release's dev push shows in the plan only when dev has an upstream, which is when cmdRelease pushes it. The plan showed it always.
-		- The refusal names the branch in 'git branch --unset-upstream <branch>', since the bare form acts on the current branch.
-		- 20261123: TestPlannedPushesEveryCommand [dfk0z] wants park and merge for br merge, and park and release for release, where it wanted park alone. The rest of the test is as it was.
-	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after, and the sweep is answered.
-	- Closed: 20261123-193951
-	- Commit: 0b18d49
 
 - Code Review 20261120 enhancement 4: Every park push runs the full branch query again
 	- ID: 2026112017135167
@@ -5030,6 +4576,363 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Acceptance signoff: Self-closed: tested on every box, and its one question is answered.
 	- Closed: 20261004-190953
 
+- 43 closed items have no Acceptance signoff row, and backlog-check doesn't look for it
+	- ID: 2026112317125579
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261123-171255
+	- Opened by:
+	- Related IDs: 2026112017135312, 2026111910222773
+	- Steps to reproduce [Bug]: List the items whose Status is Closed and that have no Acceptance signoff row.
+	- Incorrect behavior [Bug]: 43 of 344 have none, most closed by hand before the row was asked for. backlog-check passes.
+	- Expected behavior [Bug]: Each closed item says why it closed, and backlog-check fails one that doesn't, as it does for a missing Closed row.
+	- Reproduced [Bug]: 2026-11-23 on b23, by a script over the backlog. Confirmed.
+	- Origin: Found while fixing 2026112017135312, which added the Closed row rule. Older items predate the signoff rule.
+	- Closed reason: Done
+	- Actual cause [Bug]: The items were closed by hand, most before the row was asked for, and backlog-check read the Closed row only. 41 were left at the start of this fix, since 2026112017135312 and 2026111910222773 each gave one its row.
+	- Actual fix [Bug]: backlog-check has a fourth rule: a closed item in the new format with no Acceptance signoff row, or an empty one, is a finding, named by ID. The 41 items have the row. Each names the standing close rule with the date from its Closed row, 2 closed before that rule say so, and 2 name the answer their item records.
+	- Decisions: An empty row counts as missing, since it says nothing. Canceled and old-format items aren't read, as for rule 3. A parent closed with its children says that. The 2 items closed 2026-09-30 predate the standing close rule (2026-10-03), so their row says they were closed by hand before it.
+		- 2026-11-23: [defny], [ddf4q], [ddf4r], [dfq27] and [dfq28] each have closed items in their fixtures, which now have an Acceptance signoff row. Nothing else they check changed.
+	- Test case: test.bash [dfq2k] fails a closed item with no Acceptance signoff row or an empty one, by ID, and leaves a sub-bullet, open, Canceled and old-format ones be. [dfq2m] passes once each has one.
+	- Branch: nov23-2026112317125579
+	- Swept: every closed item in the new format, 346, by the new rule over the real backlog. The 41 it named have the row, and it passes.
+	- Verified: [dfq2k] and [dfq2m] fail with the backlog-check.bash from before this fix and pass with it. [dfq2k] also fails with the rule made to take an empty row. The new rule named 41 items on the real backlog and passes with their rows in. shellcheck and test-id.bash --check clean.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261123-172525
+	- Commit: 544668d
+
+- pr ok reads a fork's pull request as a branch of origin
+	- ID: 2026112309121204
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261123-091212
+	- Opened by:
+	- Related IDs: 2026112212332136
+	- Steps to reproduce [Bug]: Have a contributor open a pull request from their fork's main into dev, then run `gitsby pr ok <n>`.
+	- Incorrect behavior [Bug]: It's refused, saying the pull request proposes main, a protected branch, which pr ok would delete on the git host and here. Nothing of origin's is at risk on the git host, since no tool deletes a fork's branch. A fork's branch with the name of a local branch that isn't on origin is refused too, with advice to push that local branch. The way through is the git host's page.
+	- Expected behavior [Bug]: pr ok reads whether the pull request's branch is on another repo: gh's isCrossRepository, glab's source_project_id against target_project_id, and the owner tea puts before the branch. For such a pull request it merges with no branch delete, on the git host or here, and skips the checks on a local branch of the same name. A pull request from origin's own main or dev is still refused. The comment on refuseProtectedPrHead drops the delete-on-merge reason, as design.md did on 2026-11-23, since the page's own merge is open to that setting too.
+	- Reproduced [Bug]: 2026-11-23 on b23 with the stand-in gh, on 24cb249. It gives pr ok the same answer for a fork's main as for origin's, and that was refused as a protected branch. A branch named like a local-only one was told to push it. By reading for glab and tea.
+	- Possible cause [Bug]: readPr asks for the branch's name only, and headBranchName drops tea's owner. refuseProtectedPrHead and the local-branch checks in prAcceptPreflight read that name as origin's.
+	- Origin: 3ffb35d, the fix of 2026112212332136, for the main and dev refusal, and the Go port for the local-branch checks. Confirmed for gh, plausible for glab and tea. Found while answering the Check: entry of 2026112212332136.
+	- Note: gh's merge with --delete-branch deletes the local branch of that name even for a fork's pull request, and leaves alone only the fork's copy. That was read in gh's merge.go on its trunk, 2026-11-23, and not run. So the refusal keeps a local main today, and the fix has to drop the flag for a fork rather than only skip the refusal.
+	- Closed reason: Done
+	- Actual cause [Bug]: readPr asked each tool for the branch's name only, and tea's owner was dropped, so refuseProtectedPrHead, the local-branch checks in prAcceptPreflight and prOkMoves read a fork's branch as origin's branch of that name. gh's merge ran with --delete-branch, which takes a local branch of that name even for a fork.
+	- Actual fix [Bug]: readPr reads whether the branch is on another repo: gh's isCrossRepository, glab's source_project_id against target_project_id, and a colon in tea's head. For such a pull request the merge runs with no branch delete through every tool, the protected-head refusal and the checks on a local branch of that name are skipped, and pr ok stays on the branch it ran from unless that has no upstream. A pull request from origin's own main or dev is still refused. The comment on refuseProtectedPrHead no longer gives the delete-on-merge reason. design.md and the changelog say so.
+	- Branch: nov23-2026112309121204
+	- Test case: test.bash [dfq0w] to [dfq14]; Go TestPrForkDeletesNothing [dfq0v], TestReadGlabMR [df04m] and FuzzReadGlabMR [df04n] with the project IDs.
+		- 20261123: each glabMR value in TestReadGlabMR [df04m] gained 2 empty project IDs, for the reader's 2 new fields. What each case checks is unchanged.
+	- Verified: [dfq0w], [dfq0x], [dfq0y], [dfq10], [dfq11], [dfq12] and [dfq13] fail on the build before the fix and pass with it. [dfq0z] and [dfq14] pass on both, as guards. [dfq0v] fails with gh's --delete-branch kept for a fork. The quick gate's lint and unit areas passed. Its suite area passed whole (test.bash 2423 passes) before the fake gh's fork line was limited to when it's asked for. The rerun after that was cut off by time at 2141 passes and no failures, past [dfq0w] to [dfq11]. FuzzReadGlabMR ran 20 s clean. Fuzz and parity are left to the gate step, since the whole gate didn't fit in 4 minutes at load 30 to 40.
+	- Swept: every branch delete: gh's --delete-branch and glab's --remove-source-branch in prMergeArgs, tea's clean in prCleanArgs, and glab's local git branch -D in prLocalCleanArgs. Every reader of the head as origin's branch: refuseProtectedPrHead, the dirty-tree wording and local-branch checks in prAcceptPreflight, and prOkMoves, which previewPr, cmdPrAccept and checkoutsAhead read. headTip is read only with a local clean. openPrForBranch is pr create's, whose head is always origin's.
+	- Decisions: pr ok stays on the branch it ran from for a fork's pull request, unless that branch has no upstream, since origin's branch of that name isn't touched, so the rule in prOkMoves gives that. A glab merge request with no project IDs reads as from origin, since GitLab always gives both. The fake gh prints isCrossRepository only when asked, as gh prints only the fields asked for.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261123-164606
+
+- Code Review 20261120 item 38: 5 spawn-count rows sit at their limits, since their expected counts weren't raised
+	- ID: 2026112017135327
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171353
+	- Opened by:
+	- Steps to reproduce [Bug]: Run cicd/utility/spawn-count.bash on 576d891.
+	- Incorrect behavior [Bug]: [dbftk] is 23 of 23, [ddf68] 30 of 30, [dbftm] 30 of 30, [df37t] 45 of 45 and [df051] 29 of 29. [df052] is 46 against an expected 43, and [df37v] 56 against 52. One more spawn fails them.
+	- Expected behavior [Bug]: A deliberate rise raises the expected count beside the command, per spawn-count.bash's header.
+	- Reproduced [Bug]: 2026-11-20 on b23, on both builds. Confirmed.
+	- Possible cause [Bug]: be87857 and 397c85f added 2, fb7a6d6 added 1 to br merge, and ca1848e added 1 to pr create, and none of them raised the numbers. Item 14's fix takes 2 of them back.
+	- Origin: Those 4 commits, nov19b and nov19c. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: A count over its expected one but inside the headroom passes with nothing said, so each rise from our own code sat there unseen. On dda0343 the rows the review named are back at their numbers, after item 14's fix and others. 4 still sat over theirs, each from a deliberate change: a4fa440 reads every global git config file, 1 more for both account list rows, 7 to 8 and 11 to 12. fb7a6d6's no-shared-history refusal and e419011's read of the target's upstream after the checkout, 2 more for both br merge rows, 41 to 43 and 52 to 54. pr create in the GitLab folder went from 31 to 30.
+	- Actual fix [Bug]: Those 5 expected counts are today's. spawn-count.bash now names each count over its expected one that the headroom let pass, in a line beside the under-count one, so a rise is seen when it comes in.
+	- Decisions: The headroom stays, and a count over its expected one stays a pass, per the 2026-10-03 history line: a git update that starts one more helper must not fail the gate. The new line only names it. The rises are fixes for wrong answers, so the numbers go up rather than the spawns coming out. e419011's upstream read could come from the branch list already read, 1 spawn, not worth a change of its own.
+	- Branch: nov23-2026112017135327
+	- Test case: test.bash [dfq1m] (a count one over its expected one is named in the over line). spawn-count.bash itself, every measure at its expected count.
+	- Verified: spawn-count.bash on dda0343 passes with every count equal to its expected one and no over or under line. Each rise was bisected by build: account list 7 at 12f1bc2, 8 at a4fa440; br merge 41 at 8dfe5ff, 42 at e419011, 43 with fb7a6d6's merge-base. [dfq1m]'s check fails against the old spawn-count.bash and passes against the new. Quick run of every area passed: test.bash 2424/0, fuzz 310/0, parity 31/0, spawn counts clean. shellcheck, backlog-check.bash and test-id.bash --check clean.
+	- Swept: all 24 measures, each against today's count. None sits above or below its number.
+	- Acceptance signoff: Self-closed: numbers and a note line, its test passed.
+	- Closed: 20261123-165403
+
+- Code Review 20261120 item 39: 6 closed items don't say their tests were watched to fail, and 1 has no signoff row
+	- ID: 2026112017135312
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171353
+	- Opened by:
+	- Steps to reproduce [Bug]: Read 2026111910223233, 2026111910223074, 2026111910222973, 2026111910222815, 2026111917564808, 2026111910223016 and 2026112015351403.
+	- Incorrect behavior [Bug]: The first 6 don't say whether [dfh5v] and [dfh5w], [dfhh3] and [dfhh5], [dfhkc], [dfjaj], [dcnmn] and [dfg0h] failed before the fix, or why not. 2026112015351403 has no Acceptance signoff row.
+	- Expected behavior [Bug]: Each says it was run both ways, per the review rules, and a self-closed item says why it closed.
+	- Reproduced [Bug]: 2026-11-20, by reading. Confirmed.
+	- Origin: nov19b, nov19c, nov20 and release-dev. Like Code Review 20261119 item 37, backlog-check doesn't look for it.
+	- Actual cause [Bug]: The rows were left out when the items closed. Nothing checks for them.
+	- Actual fix [Bug]: Each of the 6 has a dated Verified sub-bullet saying how its test ran both ways, or why it has no before, with the run that showed it red. 2026112015351403 has an Acceptance signoff row.
+	- Decisions: A test of a helper that came with its fix has no build before it, so it was watched to fail by breaking the helper. A guard that passes on both builds says so. The signoff gap across the backlog is 2026112317125579, since 43 items lack the row. Whether a test was watched to fail is not something a backlog rule can read.
+	- Test case: none, backlog rows only. The runs named in each row are the check.
+	- Branch: nov23-2026112017135312
+	- Swept: all 7 items named in Steps to reproduce.
+	- Closed reason: Done
+	- Commit: cd655bc, for the gate on the Closed row that 2026111910222773 added
+	- Verified: Each run named in the 6 new sub-bullets, on b23. test.bash at 5c6bdc8 with the mutate.go before it: [dfhh3] and [dfhh5] pass, [dfhh4] fails. test.bash at 2856951 with the install.bash before it: [dfjaj] passes, [dfjah] fails. go test at 7ab6156 with the prune.go before it: [dcnmn] fails on 2 cases. On the current tree, [dfh5v], [dfh5w], [dfhkc] and [dfg0h] each fail with their helper broken, and all pass as they are.
+	- Acceptance signoff: Self-closed: backlog rows only, each backed by a run.
+	- Closed: 20261123-172103
+
+- Code Review 20261120 item 41: [df33r] fails whenever another copy of the suite runs
+	- ID: 2026112017135283
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171352
+	- Opened by:
+	- Steps to reproduce [Bug]: Run 2 copies of test.bash at once.
+	- Incorrect behavior [Bug]: [df33r] failed in all 17 runs that overlapped another copy, and passed in all 3 runs alone.
+	- Expected behavior [Bug]: It passes under load.
+	- Reproduced [Bug]: 2026-11-20 on b23. The failure is confirmed and the cause is plausible.
+	- Possible cause [Bug]: fGateCtrlC waits at most 5 seconds for the hung marker at test.bash:793, and the vet stub sleeps only 5 seconds at test.bash:479.
+	- Origin: c7caa93 (2026-11-09). No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: The suite passed down an ignored INT. A copy started with '&' from a script starts with INT ignored, and bash can't trap a signal ignored on entry, so cicd.bash's 'exit 130' trap never ran and the run went on to the end. The 5-second wait wasn't it: the hung marker came within 0.2 s in every run, alone or beside another copy.
+	- Actual fix [Bug]: fGateCtrlC starts the run through 'env --default-signal=INT', so INT is live whatever the suite started with.
+	- Decisions: Fixed in the check, not in cicd.bash. A run started in the background gets no Ctrl+C from a terminal, so only the check's own kill was affected.
+	- Test case: test.bash [dfq33] (fGateCtrlC under an ignored INT), beside [df33r].
+	- Verified: [dfq33] fails on the unfixed fGateCtrlC (2 of 2, the run ended 'done') and passes after. The whole suite started with '&' passed 2430/0, [df33r] and [dfq33] included. Quick gate passed, all areas: test.bash 2430/0, fuzz 310/0, parity 32/0.
+	- Swept: every INT sent in cicd/*.bash, cicd/utility/*.bash and the Go tests. fGateCtrlC's kill is the only one. fGateRunTmp and the docker-hang stop send TERM, which a background job doesn't start out ignoring.
+	- Branch: nov23-2026112017135283
+	- Commit: cd219ac
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
+	- Progress log: 2026-11-23: Rig: private/claude_simple/tools/ctrlc-rig.bash runs fGateCtrlC alone, N times.
+	- Closed: 20261123-175734
+
+- Code Review 20261120 item 42: Some test.bash checks run the real gh
+	- ID: 2026112017135269
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171352
+	- Opened by:
+	- Steps to reproduce [Bug]: Put a gh that logs its calls first on PATH and run test.bash.
+	- Incorrect behavior [Bug]: The sshid block at test.bash:3170-3215 and the repourl block from 6495 run with the real HOME. gitsby runs `gh auth token --user` 30 times against the real gh config and keyring, and gh writes its device-id there. [dfh7j] and [dfh7k] run the real `gh config get` and `gh api user`.
+	- Expected behavior [Bug]: Every check runs a stub gh, or a gh config folder inside the work folder.
+	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
+	- Origin: The 2 blocks are older, renumbered in a5ce9cc. [dfh7j] and [dfh7k] are 88a9013 (2026111910223162). No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: Neither test.bash nor parity.bash put a gh of its own on PATH for checks that bring none, so gitsby's token, login and protocol probes, and the v2.1.0 build's, ran the box's gh. A logging gh first on PATH got 47 calls from test.bash and 18 from parity.bash, most with the real HOME.
+	- Actual fix [Bug]: Both suites put a gh of their own first on PATH at the start. It answers as logged in nowhere, exits 1, and notes each call in the work folder. A check's own gh still goes ahead of it.
+	- Decisions: One gh for the whole suite, rather than a stub per block, so a new block can't miss it. It answers as logged in nowhere. The suites passed with the box's logged-in gh, with none in the image, and with a failing gh ahead of both, so no check leans on its answer.
+	- Test case: test.bash [dfq34] (status with no gh of its own reaches the suite's), parity.bash [dfq35] (both builds' token probes reach it).
+	- Verified: [dfq34] fails with the suite's gh taken off PATH and passes after, and so does [dfq35] (parity 31/1, then 32/0). With a logging gh first on PATH, the fixed test.bash sent it no calls, against 47 before. Quick gate passed, all areas: test.bash 2430/0, fuzz 310/0, parity 32/0. test.bash on the box with --no-container: 2430/0.
+	- Swept: the sshid, repourl, sparse, GIT_DIR ([dfh7j], [dfh7k]) and v2.1.0 flat-file blocks, and the 2 calls from the work folder, all now reach the suite's gh. fuzz.bash has its own gh and sent the logging one nothing. glab got no calls from any suite. tea isn't on this box, so not measured. Windows boxes don't run test.bash, where the build would skip the stub's .cmd.
+	- Branch: nov23-2026112017135283
+	- Commit: f13b8c9
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261123-175734
+
+- Code Review 20261120 item 43: [dfh4h] misses a git status call with an option ahead of status
+	- ID: 2026112017135255
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171352
+	- Opened by:
+	- Steps to reproduce [Bug]: Rewrite treeDirty as a `git --no-optional-locks status` call with no --untracked-files flag, and run TestStatusNamesUntracked.
+	- Incorrect behavior [Bug]: It passes. It also accepts --untracked-files=no.
+	- Expected behavior [Bug]: It fails on any status call without --untracked-files=normal or all.
+	- Reproduced [Bug]: 2026-11-20 on b23, by mutation. Confirmed. [dfh4g] catches treeDirty itself, so only a new site depends on the gate.
+	- Possible cause [Bug]: mutate_test.go:320 matches `"git", "status"` side by side.
+	- Origin: e45bad2, Code Review 20261119 item 2.
+	- Closed reason: Done
+	- Actual cause [Bug]: The check matched the source line by line, with "git", any -c pairs, then "status". A global option such as --no-optional-locks or -C, or a call split over lines, hid the call, and any --untracked-files= value passed, no included.
+	- Actual fix [Bug]: A shared helper, gitSites in mutate_test.go, parses src-go and finds every argument list that runs a git subcommand, skipping global options and the values -c, -C and the like take. [dfh4h] wants --untracked-files=normal or all at each status site. [dfjwg], the git diff twin, uses the same helper.
+	- Test case: Go [dfh4h] TestStatusNamesUntracked, [dfjwg] TestDiffReadsUseDiffArgs.
+	- Verified: Mutations of treeDirty's status call with --no-optional-locks, -C, --untracked-files=no, and a call split over 2 lines pass the old [dfh4h] and fail the new one. A git diff call with --no-pager ahead passes the old [dfjwg] and fails the new one. A plain one fails both. The quick gate with every area passed: test.bash 2432/0, fuzz 310/0, parity 32/0. gosec 37, as before.
+	- Swept: The only other source scan keyed on a git subcommand is [dfjwg], now on the same helper. [de8a0] TestOneSpawnSite looks for exec.Command, not a subcommand. The helper finds 5 status sites and the one diffArgs body.
+	- Decisions: A list built at runtime, such as a slice variable spread into the call, still isn't seen, since only literals can be read. No site does that today.
+	- Branch: nov23-2026112017135255
+	- Commit: 2d37c4a
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the twin is swept.
+	- Closed: 20261123-181224
+
+- Code Review 20261120 item 44: [dcnqy]'s label no longer says what it checks
+	- ID: 2026112017135240
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171352
+	- Opened by:
+	- Steps to reproduce [Bug]: Read test.bash:3921.
+	- Incorrect behavior [Bug]: Since 46156d6 it matches the "shares no history" refusal. The "couldn't tell whether this hotfix" note it was named for has no check, and shows only when the target branch is missing.
+	- Expected behavior [Bug]: The label says what the check matches, and the note has its own check or goes.
+	- Reproduced [Bug]: No. Read only. Plausible.
+	- Origin: 46156d6 (2026111919473452).
+	- Closed reason: Done
+	- Actual cause [Bug]: 46156d6 made br merge refuse a branch that shares no history with its target, and [dcnqy] was moved to that refusal under its old label. A missing target is refused before the plan too, so only a diff that fails on its own reaches the note.
+	- Actual fix [Bug]: [dcnqy] is labeled for the refusal it matches. The note keeps its own check, [dfq48], with a git that refuses only that diff.
+	- Decisions: The note stays. Without it a failed diff reads as a docs-only hotfix and says nothing, which is what [dcnqy] was first written against.
+	- Test case: test.bash [dcnqy], [dfq48].
+	- Verified: [dfq48] fails with the note's case taken out of warnHotfixTouchedCode and passes on the build. A missing target, with origin/HEAD left dangling or gone, is refused in preflight, so it can't stand in. Quick gate passed, all areas: test.bash 2434/0, fuzz 310/0, parity 32/0.
+	- Branch: nov23-2026112017135240
+	- Commit: 3036bb6
+	- Acceptance signoff: Self-closed: label and check match what they test, and the new check was watched to fail.
+	- Closed: 20261123-182213
+
+- Code Review 20261119 item 24: [daf7x] passes with the code it checks taken out
+	- ID: 2026111910222957
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Steps to reproduce [Bug]: Replace the showLines call in refuseConflicts with nothing, rebuild, and run test.bash's [daf7w] block.
+	- Incorrect behavior [Bug]: [daf7w] to [daf7z] stay green. The file name they grep for comes from the status header, not the refusal.
+	- Expected behavior [Bug]: The check fails when refuseConflicts stops listing the file.
+	- Reproduced [Bug]: 2026-11-19 on b23, by mutation in a copy. Confirmed.
+	- Possible cause [Bug]: It greps all output rather than the refusal's own line, as [dfg1f] does.
+	- Origin: 9630f8f, 2026-07-27. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: [daf7x] ran update a second time and grepped all its output. That run's status block lists the file as UU, so the check passed with the refusal's list taken out.
+	- Actual fix [Bug]: [daf7w] keeps the first run's output, and [daf7x] looks for the file on the line after the refusal's header, as [dfg1f] does.
+	- Test case: test.bash [daf7x].
+	- Verified: with the showLines call in refuseConflicts taken out, the old [daf7x] passed and the new one failed. Both pass on the real build. Quick gate passed, all areas: test.bash 2434/0, fuzz 310/0, parity 32/0.
+	- Swept: [daf7y] and [daf7z] check repo state rather than output, so the list doesn't reach them. [dfg1f] already reads the list line.
+	- Branch: nov23-2026112017135240
+	- Commit: 3036bb6
+	- Acceptance signoff: Self-closed: reproduced, the new check fails on the mutation and passes on the build.
+	- Closed: 20261123-182213
+
+- Code Review 20261119 item 28: The image's markdownlint version check passes when markdownlint prints nothing
+	- ID: 2026111910222900
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102229
+	- Opened by:
+	- Steps to reproduce [Bug]: Run the Dockerfile's check with markdownlint missing.
+	- Incorrect behavior [Bug]: awk with no input exits 0, and sh has no pipefail, so the step passes.
+	- Expected behavior [Bug]: The step fails unless the version matches.
+	- Reproduced [Bug]: 2026-11-19 on b23, with dash. Confirmed.
+	- Possible cause [Bug]: A pipe into awk at Dockerfile line 132.
+	- Origin: 1c16940, round-20261111. Regression, a check that passes on nothing.
+	- Actual cause [Bug]: Every tool version check in the recipe judged the line in awk's main rule, so no line meant no check. ruff, pip-audit, gifsicle and codeql had the same shape as markdownlint.
+	- Actual fix [Bug]: Each check keeps the first line and judges it at awk's END, so a tool that prints nothing fails the step.
+	- Branch: nov23-2026111910222900
+	- Commit: c072f2a
+	- Test case: test.bash [dfq4k]
+	- Verified: [dfq4k] runs each check line from the recipe under dash with a stub tool. On the old recipe all 5 passed with the tool missing; on the new one each passes on its version and fails on another and on a missing tool. The quick gate passed with every area, test.bash 2436/0, fuzz 310/0.
+	- Swept: every '| awk -v want=' line in the recipe, 5, which [dfq4k] reads by that pattern and requires at least 5 of. The Pillow check is a python assert, which fails on a missing module.
+	- Acceptance signoff: Self-closed: reproduced, its test failed before and passes after.
+	- Closed: 20261123-184709
+	- Closed reason: Done
+
+- Code Review 20261119 item 32: design.md says the suites run on Windows under Git Bash
+	- ID: 2026111910222845
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Steps to reproduce [Bug]: Read design.md near line 619 and remote-tests.bash fRunWindows.
+	- Incorrect behavior [Bug]: Only the Go tests run on the Windows box. test.bash never runs there.
+	- Expected behavior [Bug]: design.md says what stage 7 runs.
+	- Reproduced [Bug]: 2026-11-19, by reading. Confirmed.
+	- Possible cause [Bug]: The line dates from the bash era.
+	- Origin: 4f9ef7b, 2026-08-08. No round saw it.
+	- Closed reason: Done
+	- Closed: 20261124-024900
+	- Test case: none, docs only. The line is a plain statement of what remote-tests.bash runs.
+	- Branch: nov23-2026111910222845
+	- Commit: a7a1004
+	- Acceptance signoff: Self-closed: mechanical doc fix against remote-tests.bash fRunWindows.
+	- Fixed: design.md's Testing section now says stage 7 runs only the Go tests on the Windows box, and test.bash runs there only by hand under Git Bash.
+
+- Code Review 20261119 item 35: lockFix is production code that only tests call
+	- ID: 2026111910222801
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102228
+	- Opened by:
+	- Steps to reproduce [Bug]: staticcheck -tests=false -checks U1000 on src-go.
+	- Incorrect behavior [Bug]: It reports lockFix in accountcmd.go as unused.
+	- Expected behavior [Bug]: No test-only code in the build.
+	- Reproduced [Bug]: 2026-11-19 on b23. d5e76f2 reports nothing. Confirmed.
+	- Possible cause [Bug]: Item 8's lockBeside rework left it for the tests only.
+	- Origin: a4fa440, round-20261111 (Code Review 20261110b item 8). Regression in dead code.
+	- Closed reason: Done
+	- Actual cause [Bug]: lockFix was a wrapper only the tests called. The lint stage's staticcheck run counts a test as a caller, so it never flagged it.
+	- Actual fix [Bug]: lockFix is gone, and its tests call lockFixFor with the accounts lock's words. The lint stage also runs staticcheck -tests=false -checks U1000, so code only a test calls fails the gate.
+	- Test case: test.bash [dfq3x] and [dfq3y] for the lint step. [dcnkc] TestLockFix still checks the Fix lines.
+	- Verified: staticcheck -tests=false -checks U1000 reports lockFix on the tree before the fix and nothing after. With lockFix put back and a test calling it, --backlog-run-quick lint fails with the new message. The quick gate with every area passed: test.bash 2432/0, fuzz 310/0, parity 32/0. gosec 37, as before.
+	- Swept: The new step runs over all of src-go and finds nothing else.
+	- Decisions: The check runs on every gate rather than once, so the next helper left for the tests fails then. It adds about 2 seconds.
+	- Branch: nov23-2026112017135255
+	- Commit: dbaeda4
+	- Acceptance signoff: Self-closed: reproduced, the new lint step fails on the old code and passes on the fix.
+	- Closed: 20261123-181224
+
+- Code Review 20261119 item 36: parity.bash defines 2 helpers nothing calls
+	- ID: 2026111910222787
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102227
+	- Opened by:
+	- Steps to reproduce [Bug]: grep cicd/parity.bash for fSameStripped and fSameField.
+	- Incorrect behavior [Bug]: Both are defined and never called.
+	- Expected behavior [Bug]: No dead code in the gates.
+	- Reproduced [Bug]: 2026-11-19 on b23, by grep. Confirmed.
+	- Possible cause [Bug]: Left from an older parity layout.
+	- Origin: Already there at d5e76f2. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: fSameStripped and fSameField were left from an older parity layout, and nothing checked for unused functions.
+	- Actual fix [Bug]: Both are gone. [dfq49] fails on any function in cicd/*.bash whose name shows up nowhere else in those files.
+	- Test case: test.bash [dfq49].
+	- Verified: [dfq49]'s function named both helpers before they were removed and nothing after. Quick gate passed, all areas: test.bash 2434/0, fuzz 310/0, parity 32/0.
+	- Swept: every tracked bash file outside `legacy/`. Only `cicd/utility/n8git_backup-and-publish` has others, 3 `fDefineTrap_*` variants from its shared boilerplate, left alone and outside the `cicd/*.bash` that [dfq49] reads.
+	- Branch: nov23-2026112017135240
+	- Commit: 3036bb6
+	- Acceptance signoff: Self-closed: mechanical, with a check watched to fail.
+	- Closed: 20261123-182213
+
+- Code Review 20261119 item 37: 4 closed items have no Closed row, and backlog-check doesn't notice
+	- ID: 2026111910222773
+	- Type: Bug
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102227
+	- Opened by:
+	- Steps to reproduce [Bug]: Look at 2026111016331881, 2026102416313106, 2026110611063063 and 2026100507345200.
+	- Incorrect behavior [Bug]: Each is Status: Closed with no Closed: date. 2026111016331881 has no Acceptance signoff either.
+	- Expected behavior [Bug]: Every closed item has a Closed: row, and backlog-check fails one without it.
+	- Reproduced [Bug]: 2026-11-19 on b23, by a script over the backlog. Confirmed.
+	- Possible cause [Bug]: backlog-check has no rule for it.
+	- Origin: The 4 items, closed by hand over several rounds. No round saw it.
+	- Actual cause [Bug]: As guessed. backlog-check read the Origin row and removed checks only, so a hand close with no date passed.
+	- Actual fix [Bug]: backlog-check has a third rule: a closed item in the new format with no Closed: row is a finding, named by ID. The 4 items have Closed rows, dated from the commit that closed each, and 2026111016331881 an Acceptance signoff row.
+	- Decisions: The rule reads the new format only. Old-format items close by emoji and never had a date row. Closed reason: doesn't count as the row.
+		- 2026-11-23: [ddf4q], [ddf4r] and [defny] each have a closed item in their fixture, which now has a Closed row. Nothing else they check changed.
+	- Test case: test.bash [dfq27] fails a closed item with no Closed row by ID, leaving open, Canceled and old-format ones be. [dfq28] passes once each has one.
+	- Branch: nov23-2026112017135312
+	- Swept: every closed item in the new format, by the new rule over the real backlog: the 4 named here were the only ones.
+	- Closed reason: Done
+	- Commit: cd655bc
+	- Verified: [dfq27] and [dfq28] fail with the backlog-check.bash from before cd655bc and pass with it. [dfq27] also fails with the rule made to take a Closed reason row as the date. On the real backlog the new rule named the 4 items, and passes with their rows in. Quick run, suite area: test.bash 2426/0. lint and unit passed in the run before. shellcheck and test-id.bash --check clean.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261123-172103
+
 - On Windows, repo clone into a rooted or drive-relative folder takes its account from the wrong folder
 	- ID: 2026112214033583
 	- Type: Bug
@@ -8868,6 +8771,103 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddf4q] and [ddf4r] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- pr ok shows the pull request's branch and its base before it asks
+	- ID: 2026112309120161
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261123-091201
+	- Opened by:
+	- Related IDs: 2026112113223086
+	- Requirements [Feature]: Before the prompt, pr ok names the pull request's branch and the base it merges into, such as hotfix/x into dev. The plan's only line about the merge is `gh pr merge 8 --merge --delete-branch`, and since 2026112113223086 the merge goes wherever the git host's base says. GitHub's page offers the default branch as the base, so a feature branch opened there goes into main unless that's changed, and nothing shows it before the answer. Both names are already read in prAcceptPreflight, so it costs no process. The line follows design.md's output rules.
+	- Decisions: No warning and no refusal for a base the branch's name doesn't give, per the 2026-11-23 answer to 2026112113223086. A fix branch made with plain git and opened against main is an ordinary pull request, so showing both names is enough.
+		- The line goes in the state block, beside the 'New branch ...:' line br create and br hotfix print, rather than in the plan, which lists only the git and git host calls the run makes. It names the PR's number too, so it reads against the one typed.
+	- Origin: 1acf747, the fix of 2026112113223086. Found while answering its Check: entry.
+	- Note: Tried 2026-11-23 on b23 with the stand-in gh, on 24cb249, from dev. A hotfix/x pull request against dev and a plain one against main gave the same first 4 plan lines, with no branch named in either. The second differed only by its 3 back-merge lines.
+	- Closed reason: Done
+	- Actual fix [Feature]: The state block above the plan has a line for pr ok, such as 'Pull request .: #8 from hotfix/x into dev', and 'from a fork's main' for a fork's branch. It reads the head, base and fork that prAcceptPreflight already has, so it costs no process. design.md, the UI style guide and the changelog say so.
+	- Branch: nov23-2026112309120161
+	- Commit: 4d2319c
+	- Test case: test.bash [dfq5b] [dfq5c]; Go TestPrOkLine [dfq5d].
+	- Verified: [dfq5b], [dfq5c] and [dfq5d] fail with the line left out and pass with it. The whole quick gate passed with every area (parity 32/0), and lint and unit again after the doc edits.
+	- Swept: every place that shows a PR's branch or base: pr create's plan line already names its base through prCreateDisp, the line is left out for it, and the read-only pr view prints the git host's own view.
+	- Acceptance signoff: Self-closed: its tests failed without the line and pass with it, and the wording follows the state block's label style.
+	- Closed: 20261123-190343
+
+- Put an ssh client in the cicd image, so the ssh stall tests run in the quick gate
+	- ID: 2026112020462150
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-204621
+	- Opened by:
+	- Requirements [Feature]: The image has no ssh, so Go tests [dfk1m] and [dfk1n] skip in the container run and pass only in the --no-container arm. Add openssh-client to cicd/container/Dockerfile. The edit rebuilds the image, about 8 minutes once.
+	- Note: The literal asserts in [dbfvz], [dcnp4], [deyth] and [dfg26] check the ssh options in the container meanwhile.
+	- Closed reason: Done
+	- Actual fix: openssh-client in the image. ssh won't start for a uid with no passwd entry, which the run's is in the image, so the image also has libnss-wrapper, and cicd.bash in the container gives the run's uid an entry in its run folder and preloads it for the run's processes.
+	- Decisions:
+		- libnss-wrapper rather than a writable /etc/passwd, which would let the run's uid add a root entry and su to it, or a mounted passwd file, which every docker run would need. Only cicd.bash's run in the container gets it, since fImageGo's builds run no ssh.
+		- Departs from the wording: the client alone made [dfk1m] and [dfk1n] fail in the container rather than skip, so the passwd entry came with it.
+	- Branch: nov23-2026111910222900
+	- Commit: c072f2a
+	- Test case: test.bash [dfq4m], and Go [dfk1m] [dfk1n], which now run in the container.
+	- Verified: the quick gate passed with every area in the new image, with [dfk1m], [dfk1n] and [dfq4m] passing there, test.bash 2436/0, fuzz 310/0. Without the entry, ssh in the image exits 255 with 'No user exists for uid', which [dfq4m] would fail on.
+	- Acceptance signoff: Self-closed: its tests passed.
+	- Closed: 20261123-184719
+
+- Code Review 20261120 enhancement 1: One list of each command's pushes, read by preflight, the plan and the run
+	- ID: 2026112017135211
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171352
+	- Opened by:
+	- Requirements [Feature]: Which guard covers which push has been fixed one command list at a time: 2026111016332380 (directPush), Code Review 20261119 item 1 (parkPushes), item 9 (pushesGoneBranch), item 17 (mergePushesOwn), and item 10 here. Give each command one plannedPushes list, with each push's branch, destination and kind, and have the guards, the plan and the run read it. Item 18's PR base is the same kind of problem, so give pr create and pr ok one target helper.
+	- Decisions: Answered 2026-11-20: fix it with items 10 and 45 as one change, though defects are still open.
+	- Origin: Repeat class, 5 command-list fixes since 2026-11-10.
+	- Branch: nov20c-2026112017135211
+	- Test case: its children's: 2026112020293534: test.bash [dfq6c] to [dfq6f]; Go TestOtherBranchPushes [dfq6b].
+	- Progress log:
+		- 20261120: The core is in, with items 10 (2026112017135749) and 45 (2026112017135225). Each command's pushes of the branch it stands on are one list, plannedPushes in mutate.go, with each push's branch, remote, ref and kind. The refusal before the plan, the --direct and gone-branch checks, and the plan's push line read it, and the step builds its push the same way. [dfk0z] walks the usages table, so a new mutating command fails until it's put on the list or named as one that doesn't push.
+		- The pushes of other branches, and the one target helper for pr create and pr ok, are child 2026112020293534. The helper comes with item 18's fix (2026112017135624). That child closed 2026-11-23, so no child is open.
+	- Commit: ccb0c7f
+	- Closed: 20261123-194426
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed under the standing close rule on 2026-11-23, once its last child closed.
+
+- Put the pushes of other branches on the push list: br merge's target, the hotfix back-merge, and release's default branch and dev
+	- ID: 2026112020293534
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-202935
+	- Opened by:
+	- Parent ID: 2026112017135211
+	- Related IDs: 2026112017135624
+	- Requirements [Feature]: The push list holds only pushes of the branch a command stands on. br merge's push of its target, the hotfix back-merge's push of dev (br merge and pr ok), and release's pushes of the default branch and dev are still refused by git only at the step, after the merge or the tag. Add them to the list, so a push git would refuse is refused before the plan, mergePushesOwn reads its targets from it, and the plan's 'git push *' lines name where each goes. Give pr create and pr ok one target helper, through item 18's fix (2026112017135624).
+	- Estimated effort: Avg
+	- Progress log: Open questions for the design: a target that isn't local yet has no push fields to read until the checkout makes it, so where remote.pushDefault sends it would mean copying git's rule. The atomic push names origin and the target's own name, and release pushes dev only when it has an upstream.
+		- 20261121: the pr create and pr ok target helper is done, as prTarget in pr.go, through 2026112017135624. The other pushes are still open.
+	- Closed reason: Done
+	- Actual fix [Feature]: br merge's push of its target, the back-merge into dev after a hotfix from br merge or pr ok, and release's pushes of the default branch and dev are on plannedPushes in mutate.go, as kinds merge, back-merge and release. A push git would refuse is refused before the plan, naming 'git branch --unset-upstream <branch>'. mergePushesOwn reads its targets from the list, and the plan's push line for each of those branches names where it goes. The step still builds each push once the branch is checked out, with the same function. design.md and the changelog say so.
+	- Branch: nov23-2026112020293534
+	- Test case: test.bash [dfq6c] to [dfq6f]; Go TestOtherBranchPushes [dfq6b].
+	- Verified: [dfq6c] and [dfq6d] fail on the build before the fix, which merged into dev or cut the tag and then had the push refused, and pass with it. [dfq6b] fails with git's rule for a branch not here yet taken out, with every refusal held to something left to push, with the old unset text, and with release's dev push left off. The quick gate passed with every area: test.bash 2445/0, fuzz 310/0, parity 32/0, spawn counts unchanged. gosec 37, as before, none in the changed lines.
+	- Swept: every push the Go build makes. The pushCurrent and pushIfOnline callers are the park pushes, br merge's target, the back-merge, release's default branch and dev, and repo connect's, all on the list now. br merge's atomic push, the tag push, the leased deletes and a new branch's first publish name their refs in full, so push.default can't refuse them. Every 'git push *' plan line for another branch reads pushLine.
+	- Decisions: A branch the checkout has yet to make follows git's rule for its push: its own pushRemote, then remote.pushDefault, then origin, through that remote's push refspecs. One git config call reads them, and only when such a branch is on the list.
+		- br merge's atomic push still names origin and the target's own name, since the merge has to reach origin before origin's copy of the branch is deleted. Its plan line already says so.
+		- A push of another branch is refused before the plan whether or not anything new would go, since the merge or the release nearly always sends something. The one case where nothing goes is a back-merge with nothing new, which is refused too.
+		- release's dev push shows in the plan only when dev has an upstream, which is when cmdRelease pushes it. The plan showed it always.
+		- The refusal names the branch in 'git branch --unset-upstream <branch>', since the bare form acts on the current branch.
+		- 20261123: TestPlannedPushesEveryCommand [dfk0z] wants park and merge for br merge, and park and release for release, where it wanted park alone. The rest of the test is as it was.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261123-193951
+	- Commit: 0b18d49
 
 - Code Review 20261120 enhancement 2: One token grant per run, given only to the child that needs it
 	- ID: 2026112017135196
