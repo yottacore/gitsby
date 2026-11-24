@@ -460,7 +460,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 enhancement 1: One list of each command's pushes, read by preflight, the plan and the run
 	- ID: 2026112017135211
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171352
@@ -469,11 +469,14 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions: Answered 2026-11-20: fix it with items 10 and 45 as one change, though defects are still open.
 	- Origin: Repeat class, 5 command-list fixes since 2026-11-10.
 	- Branch: nov20c-2026112017135211
-	- Test case: test.bash [dfk10] to [dfk1c]; Go TestPlannedPushesEveryCommand [dfk0z] and TestPlannedPushDisp [dfk0y].
+	- Test case: its children's: 2026112020293534: test.bash [dfq6c] to [dfq6f]; Go TestOtherBranchPushes [dfq6b].
 	- Progress log:
 		- 20261120: The core is in, with items 10 (2026112017135749) and 45 (2026112017135225). Each command's pushes of the branch it stands on are one list, plannedPushes in mutate.go, with each push's branch, remote, ref and kind. The refusal before the plan, the --direct and gone-branch checks, and the plan's push line read it, and the step builds its push the same way. [dfk0z] walks the usages table, so a new mutating command fails until it's put on the list or named as one that doesn't push.
 		- The pushes of other branches, and the one target helper for pr create and pr ok, are child 2026112020293534. The helper comes with item 18's fix (2026112017135624). That child closed 2026-11-23, so no child is open.
 	- Commit: ccb0c7f
+	- Closed: 20261123-194426
+	- Closed reason: Done
+	- Acceptance signoff: Self-closed under the standing close rule on 2026-11-23, once its last child closed.
 
 - Put the pushes of other branches on the push list: br merge's target, the hotfix back-merge, and release's default branch and dev
 	- ID: 2026112020293534
