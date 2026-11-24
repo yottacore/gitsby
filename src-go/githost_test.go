@@ -296,6 +296,30 @@ func TestPrLocalCleanArgs(t *testing.T) { // [dfnbh]
 	try("glab, staying on it", toolGlab, "feat", nil)
 }
 
+// A fork's PR proposes the fork's branch, which shares at most a name with ours,
+// so no tool's merge or clean deletes a branch for it. gh's --delete-branch would
+// still take ours. Origin's own branch still goes.
+func TestPrForkDeletesNothing(t *testing.T) { // [dfq0v]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "branch", "-q", "feat")
+	t.Chdir(clone)
+	deletes := map[string]bool{"--delete-branch": true, "--remove-source-branch": true}
+	for _, tool := range []hostTool{toolGh, toolTea, toolGlab} {
+		for _, fork := range []bool{false, true} {
+			a := newApp(newPrinter())
+			a.pr.tool, a.pr.num, a.pr.sub, a.pr.headBranch, a.pr.baseBranch, a.pr.fork = tool, "7", "ok", "feat", "main", fork
+			merge := a.prMergeArgs()
+			deleted := slices.ContainsFunc(merge, func(arg string) bool { return deletes[arg] }) || a.prCleanArgs() != nil || a.prLocalCleanArgs() != nil
+			if deleted == fork {
+				t.Errorf("tool %d, fork %v: merge %q, clean %q, local clean %q", tool, fork, merge, a.prCleanArgs(), a.prLocalCleanArgs())
+			}
+			if len(merge) < 3 || merge[2] != "7" {
+				t.Errorf("tool %d, fork %v: merge %q doesn't name the PR", tool, fork, merge)
+			}
+		}
+	}
+}
+
 // 'pr <n>' is the PR and its diff. gh takes a call for each; tea's detail view
 // has the diff in one.
 func TestPrViewArgsPerTool(t *testing.T) { // [dd5ga]
@@ -736,14 +760,14 @@ func TestReadGlabMR(t *testing.T) { // [df04m]
 		ok   bool
 		want glabMR
 	}{
-		{`{"iid":7,"state":"opened","source_branch":"feat"}`, false, true, glabMR{"7", "opened", "feat", ""}},
-		{"\n {\n\t\"source_branch\" : \"feat\" ,\r\n \"state\":\"merged\", \"iid\" : 12 }\n", false, true, glabMR{"12", "merged", "feat", ""}},
-		{`{"author":{"state":"active","id":3},"labels":["a","b"],"state":"opened","source_branch":"feat"}`, false, true, glabMR{"", "opened", "feat", ""}},
-		{`{"title":"a \"quoted\", title}","source_branch":"x\"y,z","state":"opened"}`, false, true, glabMR{"", "opened", `x"y,z`, ""}},
-		{`{"source_branch":"café\/\\ 😀","state":"opened"}`, false, true, glabMR{"", "opened", "café/\\ \U0001F600", ""}},
-		{`{"draft":false,"merged_at":null,"x":-1.5e3,"state":"closed","source_branch":"b"}`, false, true, glabMR{"", "closed", "b", ""}},
-		{`[{"iid":3,"source_branch":"a"},{"iid":4}]`, true, true, glabMR{"3", "", "a", ""}},
-		{`{"source_branch":"hotfix/x","author":{"target_branch":"no"},"target_branch":"dev","state":"opened"}`, false, true, glabMR{"", "opened", "hotfix/x", "dev"}},
+		{`{"iid":7,"state":"opened","source_branch":"feat"}`, false, true, glabMR{"7", "opened", "feat", "", "", ""}},
+		{"\n {\n\t\"source_branch\" : \"feat\" ,\r\n \"state\":\"merged\", \"iid\" : 12 }\n", false, true, glabMR{"12", "merged", "feat", "", "", ""}},
+		{`{"author":{"state":"active","id":3},"labels":["a","b"],"state":"opened","source_branch":"feat"}`, false, true, glabMR{"", "opened", "feat", "", "", ""}},
+		{`{"title":"a \"quoted\", title}","source_branch":"x\"y,z","state":"opened"}`, false, true, glabMR{"", "opened", `x"y,z`, "", "", ""}},
+		{`{"source_branch":"café\/\\ 😀","state":"opened"}`, false, true, glabMR{"", "opened", "café/\\ \U0001F600", "", "", ""}},
+		{`{"draft":false,"merged_at":null,"x":-1.5e3,"state":"closed","source_branch":"b"}`, false, true, glabMR{"", "closed", "b", "", "", ""}},
+		{`[{"iid":3,"source_branch":"a"},{"iid":4}]`, true, true, glabMR{"3", "", "a", "", "", ""}},
+		{`{"source_branch":"hotfix/x","author":{"target_branch":"no"},"target_branch":"dev","state":"opened"}`, false, true, glabMR{"", "opened", "hotfix/x", "dev", "", ""}},
 		{`{"target_branch":null}`, false, false, glabMR{}},
 		{`[]`, true, false, glabMR{}},
 		{` [ ] `, true, false, glabMR{}},
@@ -763,6 +787,11 @@ func TestReadGlabMR(t *testing.T) { // [df04m]
 		{`{"source_branch":"a\u00"}`, false, false, glabMR{}},
 		{`{"source_branch":"a`, false, false, glabMR{}},
 		{`{"x":` + strings.Repeat("[", 2000) + strings.Repeat("]", 2000) + `}`, false, false, glabMR{}},
+		{`{"iid":9,"source_project_id":41,"target_project_id":7,"author":{"source_project_id":7},"source_branch":"main","target_branch":"dev"}`, false, true, glabMR{"9", "", "main", "dev", "41", "7"}},
+		{`{"source_project_id":7,"target_project_id":7}`, false, true, glabMR{"", "", "", "", "7", "7"}},
+		{`{"source_project_id":"41"}`, false, false, glabMR{}},
+		{`{"source_project_id":-4}`, false, false, glabMR{}},
+		{`{"target_project_id":null}`, false, false, glabMR{}},
 	} {
 		got, ok := readGlabMR(c.in, c.list)
 		if ok != c.ok || got != c.want {

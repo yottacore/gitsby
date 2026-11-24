@@ -59,7 +59,7 @@ func FuzzParseTeaTable(f *testing.F) { // [dcpv0]
 }
 
 // encoding/json is the reference for the hand reader: on any object they agree on
-// whether it reads and on the 4 fields. Keys match exactly in glab's output, so
+// whether it reads and on the 6 fields. Keys match exactly in glab's output, so
 // the reference decodes into a map rather than a struct, which folds case.
 func FuzzReadGlabMR(f *testing.F) { // [df04n]
 	f.Add(`{"iid":7,"state":"opened","source_branch":"feat"}`)
@@ -67,6 +67,7 @@ func FuzzReadGlabMR(f *testing.F) { // [df04n]
 	f.Add(`{"source_branch":"\ud83d\ude00\ud83d\u0041","x":[1,{"a":null}],"state":"a"}`)
 	f.Add(`{"iid":3,}`)
 	f.Add(`{"target_branch":"dev","x":{"target_branch":"main"},"source_branch":"hotfix/x"}`)
+	f.Add(`{"source_project_id":41,"target_project_id":7,"x":{"source_project_id":7}}`)
 	f.Fuzz(func(t *testing.T, in string) {
 		got, ok := readGlabMR(in, false)
 		var raw map[string]json.RawMessage
@@ -77,9 +78,11 @@ func FuzzReadGlabMR(f *testing.F) { // [df04n]
 				wantOK = v[0] == '"' && json.Unmarshal(v, field) == nil
 			}
 		}
-		if v, found := raw["iid"]; wantOK && found {
-			want.IID = string(v)
-			wantOK = strings.Trim(want.IID, "0123456789") == ""
+		for key, field := range map[string]*string{"iid": &want.IID, "source_project_id": &want.SourceProject, "target_project_id": &want.TargetProject} {
+			if v, found := raw[key]; wantOK && found {
+				*field = string(v)
+				wantOK = strings.Trim(*field, "0123456789") == ""
+			}
 		}
 		if !utf8.ValidString(in) {
 			return

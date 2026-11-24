@@ -3682,7 +3682,9 @@ case "$1 $2" in
 	               [[ "${FAKE_GH_PRVIEW:-}" == fail ]] && { echo "GraphQL: Could not resolve to a PullRequest" >&2; exit 1 ;}
 	               echo "${FAKE_GH_HEAD:-$(git branch --show-current)}"     ## the PR's own head branch
 	               echo "${FAKE_GH_BASE:-dev}"                               ## ... the one it goes into, where pr merge puts it
-	               echo "${FAKE_GH_STATE:-OPEN}" ;;                          ## ... and whether it is still open
+	               echo "${FAKE_GH_STATE:-OPEN}"                             ## ... whether it is still open
+	               ## ... and whether it is on a fork, when asked, since gh prints only the fields asked for.
+	               if [[ "$*" == *isCrossRepository* ]]; then if [[ -n "${FAKE_GH_FORK:-}" ]]; then echo true; else echo false; fi; fi ;;
 	"pr diff")     echo "diff --git a/work.txt b/work.txt" ;;
 	"pr merge")    ## Merge the branch into the base, then drop it from the remote. Real gh does the delete
 	               ## over the API, so the caller's origin/* copy survives it - restore the ref to match.
@@ -3690,6 +3692,14 @@ case "$1 $2" in
 	               ## It merges what ORIGIN has, not the local branch - the whole point of the
 	               ## unpushed-commit guard - and deletes the local copy too, with -D, like gh does.
 	               prBranch="${FAKE_GH_HEAD:-$(git branch --show-current)}"
+	               ## A fork's PR is merged from the refs/pull/<n>/head GitHub keeps on origin. gh skips
+	               ## the git host's delete for it, and with --delete-branch still takes ours of that name.
+	               if [[ -n "${FAKE_GH_FORK:-}" ]]; then
+	                 prKeep="$(git ls-remote origin "refs/pull/$3/head")"
+	                 git push --quiet origin "${prKeep%%[[:space:]]*}:refs/heads/${FAKE_GH_BASE:-dev}"
+	                 [[ " $* " == *" --delete-branch "* && "${prBranch}" != "$(git branch --show-current)" ]] && git branch -D "${prBranch}" >/dev/null
+	                 exit 0
+	               fi
 	               prKeep="$(git rev-parse "refs/remotes/origin/${prBranch}")"
 	               git push --quiet origin "${prKeep}:refs/heads/${FAKE_GH_BASE:-dev}"
 	               git push --quiet origin --delete "${prBranch}"
@@ -4655,6 +4665,29 @@ GHEOF
 		bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=main FAKE_GH_BASE=dev '${gitsby}' -q pr ok 9 2>&1 || true"
 	fAssertNotOut  "[dfnct] without the release hint, which is only for dev into main"  "as a release" \
 		bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=main FAKE_GH_BASE=dev '${gitsby}' -q pr ok 9 2>&1 || true"
+	## A fork's pull request proposes the fork's branch, whatever it's called, and its merge takes
+	## nothing of origin's or ours. So one from a fork's main merges, and a branch here that only
+	## shares the name of a fork's isn't asked about or deleted. GitHub keeps the fork's commits on
+	## origin as refs/pull/<n>/head.
+	(
+		cd "${pbc}" || exit 1
+		git fetch --quiet origin && git checkout --quiet main
+		git checkout --quiet -b pbfork origin/dev && echo fork > fork.txt && git add --all && git commit --quiet -m fork
+		git push --quiet origin pbfork:refs/pull/10/head && git checkout --quiet main && git branch --quiet -D pbfork
+		git checkout --quiet -b pblocal main && echo mine > mine.txt && git add --all && git commit --quiet -m mine && git checkout --quiet main
+	)
+	local pbFork="PATH='${ghp}' FAKE_GH_FORK=1 FAKE_GH_BASE=dev"
+	fAssert        "[dfq0w] pr ok of a fork's PR from its main into dev runs"  bash -c "cd '${pbc}' && ${pbFork} FAKE_GH_HEAD=main FAKE_GH_LOG='${gh}/prfork.log' '${gitsby}' -q pr ok 10 > '${gh}/prfork1.log' 2>&1"
+	fAssert        "[dfq0x] and gh merges it with no branch delete"  bash -c "grep -q '^pr merge 10 --merge \[' '${gh}/prfork.log'"
+	fAssert        "[dfq0y] and main is kept here and on origin, with the fork's work in dev"  bash -c "cd '${pbc}' && git rev-parse --verify --quiet refs/heads/main >/dev/null && git ls-remote --exit-code --heads origin main >/dev/null && git cat-file -e origin/dev:fork.txt"
+	fAssert        "[dfq0z] and stays on main, which it pulls, since origin's main is still there"  bash -c "cd '${pbc}' && [[ \"\$(git branch --show-current)\" == main ]] && ! grep -q 'git checkout' '${gh}/prfork1.log'"
+	(
+		cd "${pbc}" || exit 1
+		git checkout --quiet -b pbfork2 origin/dev && echo fork2 > fork2.txt && git add --all && git commit --quiet -m fork2
+		git push --quiet origin pbfork2:refs/pull/11/head && git checkout --quiet main && git branch --quiet -D pbfork2
+	)
+	fAssert        "[dfq10] a fork's PR from a branch named like one only here runs, with no push asked for"  bash -c "cd '${pbc}' && ${pbFork} FAKE_GH_HEAD=pblocal '${gitsby}' -q pr ok 11 >/dev/null 2>&1"
+	fAssert        "[dfq11] and that branch is kept here, with its own commit"  bash -c "cd '${pbc}' && [[ \"\$(git log -1 --pretty=%s pblocal)\" == mine ]] && git cat-file -e origin/dev:fork2.txt"
 
 	## The bash version gate. Bash build only - the PowerShell one needs no bash at all.
 	local vg="${work}/vgate"
@@ -10391,10 +10424,23 @@ GLEOF
 	## The base comes from the git host, through each tool's own field for it.
 	fAssertOut "[dfnbv] pr ok reads the PR's base through tea" "Branch '-tb' starts with a dash" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_HEAD=feat FAKE_TEA_BASE=-tb '${gitsby}' -q -NoFetch pr ok 7 2>&1 || true"
+	## A fork's main isn't origin's, so it isn't refused as a protected branch. It gets as far as
+	## the base this clone has no copy of. tea puts the fork's owner before the branch.
+	fAssertOut "[dfq12] pr ok reads a fork's head through tea, and doesn't refuse its main"  "goes into 'tbgone', which this clone has no copy of" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_HEAD=someone:main FAKE_TEA_BASE=tbgone '${gitsby}' -q -NoFetch pr ok 7 2>&1 || true"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssertOut "[dfnbw] and through glab, where a merge request with no target_branch can't be read" "Can't read PR #7" \
 		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
 		'{"iid":7,"state":"opened","source_branch":"glfeat"}' "${gitsby}"
+	## glab gives the project each branch is in. They differ for a fork's merge request.
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssertOut "[dfq13] pr ok reads a fork's merge request through glab, and doesn't refuse its main"  "goes into 'glgone', which this clone has no copy of" \
+		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
+		'{"iid":7,"state":"opened","source_branch":"main","target_branch":"glgone","source_project_id":41,"target_project_id":7}' "${gitsby}"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssertOut "[dfq14] and refuses origin's own main, from the same project"  "PR #7 proposes 'main', a protected branch" \
+		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
+		'{"iid":7,"state":"opened","source_branch":"main","target_branch":"glgone","source_project_id":7,"target_project_id":7}' "${gitsby}"
 	## glab's merge takes only GitLab's copy of the branch, so pr ok deletes ours after it, as gh and
 	## tea do in theirs. Origin is a GitLab ssh url, carried to a local bare by a stub ssh.
 	local fgMr="${fg}/glmerge"
@@ -11297,3 +11343,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261122 JC: pr ok merges into the base the git host gives the pull request, through gh, tea and glab, and owes dev a back-merge only when that base is main, [dfnbj] to [dfnbw]. Through glab it deletes the merged branch here too, and pr create's plan names --target-branch, [dfnbx] to [dfnc2].
 ##		- 20261122 JC: Finishing a release whose push was refused, from main with an edit or a new file, refuses and leaves them, rather than committing past the tag, [dfndg] to [dfndp].
 ##		- 20261122 JC: pr create asks about an open PR from the branch its push lands on, [dfngf]. raw gh pointed at another host says it isn't acting as the account, [dfngg] [dfngh]. pr ok --no-fetch on the PR's own branch moves to the merge target, [dfngj] [dfngk]. install.ps1's stored PATH update runs over a stand-in key, [dfngz].
+##		- 20261123 JC: pr ok merges a pull request from a fork's main, or from a fork's branch named like one only here, with no branch delete, and stays on the branch it ran from, through gh, [dfq0w] to [dfq11]. tea and glab read a fork's head, [dfq12] to [dfq14].

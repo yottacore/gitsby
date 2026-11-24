@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - pr ok reads a fork's pull request as a branch of origin
 	- ID: 2026112309121204
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261123-091212
@@ -49,6 +49,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Possible cause [Bug]: readPr asks for the branch's name only, and headBranchName drops tea's owner. refuseProtectedPrHead and the local-branch checks in prAcceptPreflight read that name as origin's.
 	- Origin: 3ffb35d, the fix of 2026112212332136, for the main and dev refusal, and the Go port for the local-branch checks. Confirmed for gh, plausible for glab and tea. Found while answering the Check: entry of 2026112212332136.
 	- Note: gh's merge with --delete-branch deletes the local branch of that name even for a fork's pull request, and leaves alone only the fork's copy. That was read in gh's merge.go on its trunk, 2026-11-23, and not run. So the refusal keeps a local main today, and the fix has to drop the flag for a fork rather than only skip the refusal.
+	- Closed reason: Done
+	- Actual cause [Bug]: readPr asked each tool for the branch's name only, and tea's owner was dropped, so refuseProtectedPrHead, the local-branch checks in prAcceptPreflight and prOkMoves read a fork's branch as origin's branch of that name. gh's merge ran with --delete-branch, which takes a local branch of that name even for a fork.
+	- Actual fix [Bug]: readPr reads whether the branch is on another repo: gh's isCrossRepository, glab's source_project_id against target_project_id, and a colon in tea's head. For such a pull request the merge runs with no branch delete through every tool, the protected-head refusal and the checks on a local branch of that name are skipped, and pr ok stays on the branch it ran from unless that has no upstream. A pull request from origin's own main or dev is still refused. The comment on refuseProtectedPrHead no longer gives the delete-on-merge reason. design.md and the changelog say so.
+	- Branch: nov23-2026112309121204
+	- Test case: test.bash [dfq0w] to [dfq14]; Go TestPrForkDeletesNothing [dfq0v], TestReadGlabMR [df04m] and FuzzReadGlabMR [df04n] with the project IDs.
+		- 20261123: each glabMR value in TestReadGlabMR [df04m] gained 2 empty project IDs, for the reader's 2 new fields. What each case checks is unchanged.
+	- Verified: [dfq0w], [dfq0x], [dfq0y], [dfq10], [dfq11], [dfq12] and [dfq13] fail on the build before the fix and pass with it. [dfq0z] and [dfq14] pass on both, as guards. [dfq0v] fails with gh's --delete-branch kept for a fork. The quick gate's lint and unit areas passed. Its suite area passed whole (test.bash 2423 passes) before the fake gh's fork line was limited to when it's asked for. The rerun after that was cut off by time at 2141 passes and no failures, past [dfq0w] to [dfq11]. FuzzReadGlabMR ran 20 s clean. Fuzz and parity are left to the gate step, since the whole gate didn't fit in 4 minutes at load 30 to 40.
+	- Swept: every branch delete: gh's --delete-branch and glab's --remove-source-branch in prMergeArgs, tea's clean in prCleanArgs, and glab's local git branch -D in prLocalCleanArgs. Every reader of the head as origin's branch: refuseProtectedPrHead, the dirty-tree wording and local-branch checks in prAcceptPreflight, and prOkMoves, which previewPr, cmdPrAccept and checkoutsAhead read. headTip is read only with a local clean. openPrForBranch is pr create's, whose head is always origin's.
+	- Decisions: pr ok stays on the branch it ran from for a fork's pull request, unless that branch has no upstream, since origin's branch of that name isn't touched, so the rule in prOkMoves gives that. A glab merge request with no project IDs reads as from origin, since GitLab always gives both. The fake gh prints isCrossRepository only when asked, as gh prints only the fields asked for.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261123-164606
 
 - Code Review 20261120 item 38: 5 spawn-count rows sit at their limits, since their expected counts weren't raised
 	- ID: 2026112017135327
