@@ -667,7 +667,7 @@ The first 4 of these output rules came back after 2 sweeps, each time at sites t
 
 - The `gh` paths are covered by a stub on `PATH`, so the GitHub-facing branches are exercised without a network or an account.
 
-- The suites run on Windows as well as Linux, under Git Bash. Path spelling is the recurring trap there, and a handful of checks are gated on the platform for that reason rather than skipped.
+- Stage 7 runs only the Go tests on the Windows box. test.bash runs there only when started by hand under Git Bash, and stage 7 runs it on the Mac and the other Unix boxes. Both shell suites have Git Bash handling for that. Path spelling is the recurring trap, and a handful of checks are gated on the platform for that reason rather than skipped.
 	- Stubs are shebang scripts, which some Windows tooling locates on `PATH` but cannot start - silently, so a check passes or fails for the wrong reason. The regression suite gives each stub a `.cmd` sibling that hands the body back to bash.
 	- The fuzz suite deliberately does not, and skips the affected checks with a printed reason. A `.cmd` goes through `cmd.exe`, which re-parses an unquoted `&` or `>` in an argument - so a vector this suite hands gitsby would partly run for real, and be reported as an injection that gitsby never had. Its glob vectors break the same way. A named skip is worth more than a green that means nothing.
 	- Checks that reach a confirmation need it to refuse rather than wait, which `setsid` does where it exists. The Bash installer falls back to `/dev/tty`, so its checks additionally require that open to fail.

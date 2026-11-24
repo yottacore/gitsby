@@ -293,7 +293,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 32: design.md says the suites run on Windows under Git Bash
 	- ID: 2026111910222845
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102228
@@ -304,6 +304,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19, by reading. Confirmed.
 	- Possible cause [Bug]: The line dates from the bash era.
 	- Origin: 4f9ef7b, 2026-08-08. No round saw it.
+	- Closed reason: Done
+	- Closed: 20261124-024900
+	- Test case: none, docs only. The line is a plain statement of what remote-tests.bash runs.
+	- Branch: nov23-2026111910222845
+	- Commit: a7a1004
+	- Acceptance signoff: Self-closed: mechanical doc fix against remote-tests.bash fRunWindows.
+	- Fixed: design.md's Testing section now says stage 7 runs only the Go tests on the Windows box, and test.bash runs there only by hand under Git Bash.
 
 - Code Review 20261119 item 35: lockFix is production code that only tests call
 	- ID: 2026111910222801
