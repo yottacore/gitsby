@@ -36,7 +36,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - 43 closed items have no Acceptance signoff row, and backlog-check doesn't look for it
 	- ID: 2026112317125579
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261123-171255
@@ -47,6 +47,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: Each closed item says why it closed, and backlog-check fails one that doesn't, as it does for a missing Closed row.
 	- Reproduced [Bug]: 2026-11-23 on b23, by a script over the backlog. Confirmed.
 	- Origin: Found while fixing 2026112017135312, which added the Closed row rule. Older items predate the signoff rule.
+	- Closed reason: Done
+	- Actual cause [Bug]: The items were closed by hand, most before the row was asked for, and backlog-check read the Closed row only. 41 were left at the start of this fix, since 2026112017135312 and 2026111910222773 each gave one its row.
+	- Actual fix [Bug]: backlog-check has a fourth rule: a closed item in the new format with no Acceptance signoff row, or an empty one, is a finding, named by ID. The 41 items have the row. Each names the standing close rule with the date from its Closed row, 2 closed before that rule say so, and 2 name the answer their item records.
+	- Decisions: An empty row counts as missing, since it says nothing. Canceled and old-format items aren't read, as for rule 3. A parent closed with its children says that. The 2 items closed 2026-09-30 predate the standing close rule (2026-10-03), so their row says they were closed by hand before it.
+		- 2026-11-23: [defny], [ddf4q], [ddf4r], [dfq27] and [dfq28] each have closed items in their fixtures, which now have an Acceptance signoff row. Nothing else they check changed.
+	- Test case: test.bash [dfq2k] fails a closed item with no Acceptance signoff row or an empty one, by ID, and leaves a sub-bullet, open, Canceled and old-format ones be. [dfq2m] passes once each has one.
+	- Branch: nov23-2026112317125579
+	- Swept: every closed item in the new format, 346, by the new rule over the real backlog. The 41 it named have the row, and it passes.
+	- Verified: [dfq2k] and [dfq2m] fail with the backlog-check.bash from before this fix and pass with it. [dfq2k] also fails with the rule made to take an empty row. The new rule named 41 items on the real backlog and passes with their rows in. shellcheck and test-id.bash --check clean.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261123-172525
+	- Commit: 544668d
 
 - pr ok reads a fork's pull request as a branch of origin
 	- ID: 2026112309121204
@@ -1025,6 +1037,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed reason: Done
 	- Priority|Severity [Bug]: High
 	- Opened: 20261006-074900
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-10-06.
 	- Closed: 20261006-104608
 	- Opened by: jim-collier
 	- Incorrect behavior [Bug]: With no folder given, `repo clone` names it after the URL's last part. A URL ending in `--upload-pack=<cmd>.git` put that text in git's argument list as an option. On a local or `file://` clone git runs it as a command.
@@ -1342,6 +1355,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-26: 2026102617594206 is done, with 2 new checks. The other 7 are Queued.
 		- 2026-11-06: All 6 children done in round-20261106, so every Done item now has a Test row. 12 new checks came with them.
 	- Test case: each child's own Test case row; the children are 2026102617594210, 2026102617594212, 2026102617594214, 2026102617594216, 2026102617594218 and 2026102617594221
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-06: every child is closed with its tests passing.
 	- Closed: 20261106-123311
 	- 2026-10-26: Children 2026102617594206 and 2026102617594208 are Done. The other 6 are Queued.
 
@@ -3374,6 +3388,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261107b
 	- Test case: test.bash `[df024]`, the data and BSS of the unstripped probe build under 2 MB by `go tool nm`, and `[df025]`, no `crypto/` package in `go list -deps`.
 	- Verified: both fail on gover's source and pass after. Go tests, test.bash 1826 -> 1833, 0 failed.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-07.
 	- Closed: 20261107-084700
 
 - Code Review 20261107 item 2: The wrong-account warning names gh and its GitHub login on a Gitea remote
@@ -3396,6 +3411,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261107b
 	- Test case: test.bash `[df026]`, an interactive tea pr create mismatch with a gh login on PATH prints no gh line.
 	- Verified: fails on the gover build, passes after. `[dd5cv]` still passes for gh.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-07.
 	- Closed: 20261107-084700
 
 - Code Review 20261107 item 4: `pr ok` fetches mid-run without showing it in the plan, even with `--no-fetch`
@@ -3415,6 +3431,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261107b
 	- Test case: test.bash `[df027]`, the plan line is announced when it runs, and `[df028]`, `--no-fetch` leaves it out of the plan.
 	- Verified: `[df027]` fails on the gover build, passes after. `[df028]` passes on both, since the old plan had no fetch line; it guards the flag.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-07.
 	- Closed: 20261107-084700
 
 - test.bash [dd5e4] fails on the macOS workflow: install.ps1 leaves its bracketed temp dir
@@ -3463,6 +3480,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: lint passes.
 	- Reproduced [Bug]: 2026-11-06, in the image, while working 2026102617594210.
 	- Test case: the lint step's markdownlint run, which is clean again
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-06.
 	- Closed: 20261106-110950
 	- 2026-11-06: The code span in 2026102620355012's log ended in a space. It now reads `freed about <size>`.
 
@@ -3633,6 +3651,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: Put it under `hasPty`.
 	- Branch: ptyguard
 	- Verified: test.bash 1222/0 on vmFreeBSD.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-10-06.
 	- Closed: 20261006-111818
 	- Test case: test.bash [ddj6s] itself, which failed on vmFreeBSD before the fix. Stage 7 runs it on vmFreeBSD and b26, where the BSD `script` is.
 
@@ -3662,6 +3681,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: direct
 	- Commit: e1cc030
 	- Test case: test.bash [ddj6q] refuses under `-q`, [ddj6r] pushed nothing, [ddj6s] warns above the prompt on a pty, [ddj6t] help lists it. Each red on `gover`. [ddj6v] a clean re-run and [ddj6w] a merge published from `dev` stay quiet, each red with the merge and clean-tree tests taken out.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-10-05.
 	- Closed: 20261005-190835
 
 - `br switch HEAD` commits and pushes the working tree, then fails
@@ -3827,6 +3847,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: Repeated keys are checked per account after the whole file is read, in both layouts. `account set` edits the block holding the key, and refuses when more than one does.
 	- Branch: dup-acct
 	- Test case: TestRepeatedAccountKeys, TestAccountSetFindsTheKeyInAnyPiece, and one account list check in test.bash.
+	- Acceptance signoff: Closed by hand, 2026-09-30, before the standing close rule was given.
 	- Closed: 2026-09-30
 
 - CICD process gaps: stage 0 stops on any branch that diverged from origin
@@ -4425,6 +4446,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddrrn] in test.bash.
 	- Done 2026-10-10: a plain run uses the container, set by `CICD_CONTAINER` in config.bash. `--no-container` runs on the box. A box without a working docker does too, with a warning, so a contributor isn't blocked, and `--container` there stops. `--gate` stays on the box.
 	- Test case: [ddrs1] to [ddrs4] in test.bash. 1519/0 in the container and on the host. With the default off, the 3 checks that need it failed.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-10-10.
 	- Closed: 20261010-100500
 
 - `raw` runs tea and other common CLIs, not only git and gh
@@ -4447,6 +4469,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: raw-tools
 	- Test case: test.bash, 12 new checks and 1 reworded. 10 are red on `gover`, and the other 3 went red with the fix broken. 2 Go tests, and 2 fuzz vectors.
 	- Verified: test.bash 1509/0, fuzz.bash 313/0, parity.bash 29/0, the gate. Only against stubs. No real tea 0.11 or glab here.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-10-06.
 	- Closed: 20261006-115243
 
 - macOS release gets a universal binary
@@ -4518,6 +4541,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: cda31a7
 	- Test case: stage 7's Wine run on vmDebARM64. The 6 symlink tests failed under Wine before the fix, and pass or skip after.
 	- Swept: every `os.Symlink` in the Go tests, 8 sites. Code outside the tests makes no links.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-10-05.
 	- Closed: 20261005-110510
 
 - Code Review 20261003 enhancement 2: Network probes run one after another
@@ -4794,6 +4818,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- lipo only exists on a Mac, so a small script writes the universal file. Each build goes in unchanged.
 	- Branch: macfat
 	- Test case: four checks in test.bash for the joined file, its refusals and the dogfood target.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-10-03.
 	- Closed: 2026-10-03
 
 - Convert an accounts file from an older SHCL format
@@ -4814,6 +4839,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Done on the first run that reads the file, with a note on stderr. Where it can't be written, the run reads it converted and `account set` refuses.
 	- Branch: cfgmig
 	- Test case: TestOldFormat, TestOldFormatFileIsConverted, TestUnmarkedFileIsLeftAlone, TestOldFormatUnwritable, TestOldFormatThroughALink, TestOldFormatConvertedByAnotherRun, and three checks in test.bash.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-10-03.
 	- Closed: 2026-10-03
 
 - Run the tests on FreeBSD and on Linux arm64 in stage 7 too
@@ -5291,6 +5317,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: openPrForBranch has one caller. tea's identity warning is pinned by [ddk6a] to [df047], and glab's by [df4w7]. The pr ok move is read by previewPr, cmdPrAccept and checkoutsAhead through prOkMoves, and only the run's side had no check under --no-fetch.
 	- Decisions: Part 5 split off, since it needs a change to install.ps1 (a function the AST rig can run, with an installerVersion bump) and a Windows run. Part 2 got no new check, since the code it named moved into plannedPush.disp and the existing checks fail with it undone.
 	- Progress log: Parts 1 to 4 done in nov22 (dd03f69). Part 5 is child 2026112214483821, done in nov22 (26ea275) and closed after its vm925w run on 2026-11-22.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-22.
 	- Closed: 20261122-152538
 	- Closed reason: Done
 
@@ -7198,6 +7225,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: The stand-in HOST_TEMP is a folder named tmp, as /tmp is. The check asserts the same thing.
 	- Branch: rc1prep
 	- Test case: [df4c4] itself, kept under its ID since what it asserts didn't change. It passed on b26 and vmKt6m at 4159937. Under a path with no tmp in it, the old fixture fails and the new one passes. With the parent-folder removal taken out of demo-repo, the new one fails.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-10.
 	- Closed: 20261110-1512
 
 - Go [df35x] fails on Windows
@@ -7219,6 +7247,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: The shellQuote part runs everywhere. The folder part skips on Windows, since it makes those names and tests commands for a POSIX shell.
 	- Branch: rc1prep
 	- Test case: [df35x] itself. The full run showed it failing on b29w and under Wine. It skips there now, passed on b29w at 4159937, and the whole Windows test binary passes under Wine on b23.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-10.
 	- Closed: 20261110-1512
 
 - A missing option value names the option wrong
@@ -7240,6 +7269,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: The refusal keeps the option as typed and says `<option> needs a value.`
 	- Branch: rc1prep
 	- Test case: Go [df4hb] TestMissingValueNamesOption, which fails 4 of 4 cases with the old name put back.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-10.
 	- Closed: 20261110-1301
 
 - test.bash [dee5h] fails when the gate run starts more than 6 seconds after its fixture
@@ -7261,6 +7291,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: The fixture makes the `_001` folders for 120 seconds ahead.
 	- Branch: cr1110
 	- Test case: [dee5h] itself. With a 7-second sleep put in ahead of the run, it passes. The old 6-second window can't, and it failed on its own once at load 10.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-10.
 	- Closed: 20261110-1142
 
 - Code Review 20261110 item 1: An option a command doesn't read is taken and dropped
@@ -7310,6 +7341,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: every "machine-readable" in the Go source, the docs and the scripts.
 	- Branch: cr1110
 	- Test case: none, wording only. What the guide now says `-q` does is pinned by [dbshn], [dbfhk] and the no-terminal checks.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-10.
 	- Closed: 20261110-1127
 
 - Code Review 20261110 item 3: One placeholder has several names across the help, the README and the Syntax lines
@@ -7358,6 +7390,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: demomerge
 	- Test case: test.bash [df4c4], [df4c5], [df4c6]
 	- Verified: [df4c4] and [df4c5] fail against dev's demo-repo.bash, and [df4c6] fails with the new builder and dev's scenario. All 3 pass on the branch. A render in the image no longer warns, and leaves no /tmp/gitsby-demo.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-10.
 	- Closed: 20261110-102000
 
 - test.bash [dee5h] fails on a box not on UTC
@@ -7382,6 +7415,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: utcstamp
 	- Test case: test.bash [dee5h]
 	- Verified: [dee5h] fails on dev run outside cicd.bash, and passes after. test.bash 1922/0 on its own, in the image through `--backlog-run-quick`, and on the box with `--no-container`.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-09.
 	- Closed: 20261109-204000
 
 - Native fuzz step fails on a fuzz deadline, not a crasher
@@ -7404,6 +7438,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: fuzzretry
 	- Test case: test.bash [df3gx], [df3gy], [df3gz]
 	- Verified: [df3gy] and [df3gz] fail on dev's cicd.bash. [df3gx] fails with crashers retried too. `--backlog-run-quick` passed, test.bash 1922/0. The real fuzz step passed on all 9 targets.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-09.
 	- Closed: 20261109-195600
 
 - spawn-count.bash names its records in local time, and the run in the image in UTC
@@ -7734,6 +7769,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 20261109: [ddf81] `The hotfix landed on 'main'` -> `The hotfix is in 'main'`, [dafqx] `no main, master or trunk` -> `no main, master, or trunk`, [dd5es] `carries a semver suffix` -> `has a semver suffix`.
 	- Verified: gofmt, go vet and go test passed. The quick gate passed: test.bash 1916/0, fuzz 314/0, parity 30/0.
 	- Swept: Go comments, cicd/, install.bash, install.ps1 and ruff.toml for each word on the list. test.bash was swept in child 2026110914395015, which is done.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-09.
 	- Closed: 20261109-144810
 
 - Code Review 20261109 item 10, part 2: test.bash comments and check labels
@@ -7962,6 +7998,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[df029]`, the offline refusal on a non-GitHub origin, and `[df02a]`, `--help`.
 	- Verified: both fail on the gover build, pass after.
 	- Swept: every `GitHub` left in an output string belongs to `repo create`, which is a GitHub command by design, or to the gh line of the wrong-account warning, now shown only for gh.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-07.
 	- Closed: 20261107-084700
 
 - Code Review 20261107 item 7: Go errors discarded with `_` and no comment
@@ -7981,6 +8018,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261107b
 	- Test case: Not applicable; comments and test strictness.
 	- Verified: Go tests pass, `go vet` clean.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-07.
 	- Closed: 20261107-084700
 
 - Code Review 20261107 item 8: `sshConnectTarget` mangles a URL with `@` in its path
@@ -8000,6 +8038,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261107b
 	- Test case: Go `[dbfrr]`, 2 new rows: `ssh://host/team@x/r.git` and `ssh://git@host:2222/team@x/r.git`.
 	- Verified: the first row fails on gover's code, both pass after.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-07.
 	- Closed: 20261107-084700
 
 - backlog_sort.py exits 1 after a sort that moves items
@@ -8214,6 +8253,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [de8q2]. [de54e] and [de54k] had used `--no-fuzz` to skip the rest of stage 3, so they pass `--no-leakcheck` now, with the same IDs.
 	- Verified: [de8q2] fails against the old cicd.bash and passes with the fix. test.bash 1597 -> 1598, 0 failed, and `cicd.bash --gate` passes.
 	- Swept: the help's stage list and option lines, README (no mention), contributing.md, where `--leakcheck` adding the leak checks back to `--no-fuzz` still holds, config.bash's pip-audit comment, and the history footers of cicd.bash and test.bash. The run in the container already gets `--no-fuzz` as given.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-10-21.
 	- Closed: 20261021-194000
 
 - Code Review 20261005 item 3: The help and design.md disagree on which commands are daily
@@ -8233,6 +8273,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: direct
 	- Commit: e1cc030
 	- Test case: none, docs only.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-10-05.
 	- Closed: 20261005-190835
 
 - Code Review 20261005 item 4: Help says "GitHub accounts" where an account can be on any git host
@@ -8256,6 +8297,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: direct
 	- Commit: e1cc030
 	- Test case: none, wording only.
+	- Acceptance signoff: OK'd by jim-collier, 2026-10-05, per its Progress log.
 	- Closed: 20261005-190835
 
 - Code Review 20261005 item 5: The README's count of subcommands is stale
@@ -8275,6 +8317,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: docfix
 	- Commit: f4f624b, 2206206
 	- Test case: [ddj3j] in test.bash counts the help's top-level commands and needs 10, with "Gitsby has ten" in the README. Red with the README saying eleven, green as committed.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-10-05.
 	- Closed: 20261005-172300
 
 - `account` prints a value with a newline in it across 2 lines
@@ -8760,6 +8803,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Closed reason: Won't fix
 	- Decisions: Answered 2026-11-20: no. Dogfood stays a single executable in the synced tool folder on PATH, with no versions folder or rotation.
 	- Test case: n/a, nothing changes.
+	- Acceptance signoff: Answered no by jim-collier, 2026-11-20, so it closes as Won't fix.
 	- Closed: 20261120-141207
 
 - Conflict advice after a --staged run drops --staged
@@ -8913,6 +8957,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Enhancement]: The README's Commands section ends with what a script can rely on: `-q` answers yes and asks nothing, `raw` hands stdout to its tool, and the exit status table, copied from the UI style guide.
 	- Branch: cr1110
 	- Test case: test.bash [df4f7]. It fails against the README before the change, and with the guide's table changed by one letter.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-10.
 	- Closed: 20261110-1213
 
 - Code Review 20261110 enhancement 1: pr takes no list, and an unknown word after it gets the Syntax block
@@ -8933,6 +8978,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Swept: design.md's `pr <n>` is `pr <number>`.
 	- Branch: cr1110
 	- Test case: Go [df4em], test.bash [df4en] and [df4ep]. [df4em] fails with the `pr` case taken out of collapseCommand, and [df4en] and [df4ep] fail against the build before it.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-10.
 	- Closed: 20261110-1150
 
 - Code Review 20261110 enhancement 2: -- isn't taken as the end of options
@@ -8951,6 +8997,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: cr1110
 	- Test case: Go [df4eq], test.bash [df4er]. [df4eq] fails against the parser before it, and [df4er]'s command made no commit with the build before it.
 	- Checks changed: fuzz.bash's bad subcommands no longer include `--`, so [dadv5], [db002] and [db003] don't feed it. After a noun it now leaves the bare noun, which `br`, `repo url` and `account` take. It stays among the bad commands for [dabe3], where it is still refused.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-10.
 	- Closed: 20261110-1155
 
 - Code Review 20261110 enhancement 3: A command's --help prints the whole help screen, not that command's syntax
@@ -8971,6 +9018,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Enhancement]: `helpFor` in usage.go reads the command words past the options and prints that entry of the `usages` table: its Syntax block, its help line, and its options. `raw --help` stops at gitsby's parser instead of being refused as an option after `raw`.
 	- Branch: cr1110
 	- Test case: Go [df4f1], test.bash [df4f2] to [df4f5]. [df4f1] fails with helpFor stubbed out, and [df4f2] to [df4f5] each fail against the build before it.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-10.
 	- Closed: 20261110-1205
 
 - Code Review 20261110 enhancement 4: The help's opening lines leave out the plan and the question
@@ -8987,6 +9035,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Enhancement]: The help's opening says a command that changes anything shows the repo state and the exact git it will run, then asks first, before the state checks. `--about` prints the same lines.
 	- Branch: cr1110
 	- Test case: test.bash [df4f6], which fails against the build before it.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-10.
 	- Closed: 20261110-1208
 
 - Code Review 20261109 enhancement 2: The last rounds left Go duplicates and leftovers
@@ -9042,6 +9091,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- Swept: config.bash, cicd.bash, test.bash, src-go, README.md and project/*.md for "leak rules", "Skipped by --quick", "these rules only" and the per-branch re-check.
 	- Branch: round-20261109
 	- Test case: none, comments and one test label only.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-11-09.
 	- Closed: 20261109-152208
 
 - Code Review 20261109 enhancement 4: fuzz.bash's config vectors are in the v2.1.0 flat layout, which the build converts on first read
@@ -9500,6 +9550,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Branch: round-20261023c
 	- Test case: test.bash `[debe8]`. Go `[debe5]`.
 	- Verified: 2026-10-23, `[debe5]` fails with every version taken as a release, and with the date in UTC. Release.bash reads the build line only from release builds, which have no date.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-10-23.
 	- Closed: 20261023-180940
 
 - gitsby refuses to run under the name of a tool `raw` runs
@@ -9523,6 +9574,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash `[debe7]`, a link under each of the 7 names. Go `[debe6]`.
 	- Verified: 2026-10-23, `[debe6]` fails 27 ways with the check stubbed out. A bare `gh` through a link answered "Unknown command 'auth'" before.
 	- Swept: the names come from `rawTools` plus `tea-cli`, the same list `raw` takes. design.md and the changelog updated.
+	- Acceptance signoff: Self-closed under the standing close rule, 2026-10-23.
 	- Closed: 20261023-174007
 
 - Code Review 20261005 enhancement 1: Step lines print their arguments unquoted
@@ -9881,6 +9933,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- A fragment no rule uses any more is named in the output, not deleted. Nothing proves gitsby wrote it.
 	- Branch: acct-files
 	- Test case: TestFragmentNames, plus two apply checks in test.bash.
+	- Acceptance signoff: Closed by hand, 2026-09-30, before the standing close rule was given.
 	- Closed: 2026-09-30
 
 - `raw gh` loops forever behind a wrapper that clears the environment first
