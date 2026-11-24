@@ -593,6 +593,8 @@ fStageLint(){
 	fEcho "OK: gofmt + go vet clean"
 	if command -v staticcheck >/dev/null 2>&1; then
 		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" staticcheck ./...) || fDie "staticcheck findings"
+		## The run above counts a test as a caller, so code only the tests call passes it.
+		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" staticcheck -tests=false -checks U1000 ./...) || fDie "staticcheck: code only the tests call"
 		fEcho "OK: staticcheck clean"
 	else
 		fEcho "WARNING: staticcheck skipped (not installed: go install honnef.co/go/tools/cmd/staticcheck@latest)"
@@ -1570,3 +1572,4 @@ fEcho_Clean
 ##		- 2026-11-20 JC: Stage 0 also stops when the edits it carried over clash with what came in, which git reports at exit 0. The merge or fast-forward is backed out and the edits put back.
 ##		- 2026-11-21 JC: The message prompt, the plan and --help say a blank answer gets an automatic message, which the publisher writes under --quiet. They said it opened the editor.
 ##		- 2026-11-21 JC: Stage 0 stashes the edits itself and puts them back with --index, so staged edits stay staged across a merge or fast-forward that goes in clean. Stage 6 leaves a demo gif that was edited before the run as it is.
+##		- 2026-11-23 JC: Lint also runs staticcheck's unused check without the tests, so code only a test calls fails the gate.

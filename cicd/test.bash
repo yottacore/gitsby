@@ -490,7 +490,9 @@ fMakeGateFixture(){
 	fGateStub "${gateDir}/cicd/utility/n8git_backup-and-publish" n8git_backup-and-publish "[[ ! -v GIT_BACKUP_AND_PUBLISH_PATHS ]] || printf 'paths=[%s]\\n' \"\${GIT_BACKUP_AND_PUBLISH_PATHS}\" >> '${gateCalls}'"
 	for s in markdownlint golangci-lint govulncheck ruff pip-audit; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
 	## Says what GOFLAGS it was handed.
-	fGateStub "${gateDir}/bin/staticcheck" staticcheck "printf 'staticcheck GOFLAGS=%s\\n' \"\${GOFLAGS:-}\" >> '${gateCalls}'"
+	## 'staticcheck-tests' fails only the run without the tests.
+	fGateStub "${gateDir}/bin/staticcheck" staticcheck "printf 'staticcheck GOFLAGS=%s\\n' \"\${GOFLAGS:-}\" >> '${gateCalls}'
+		[[ \"\${1:-}\" != -tests=false || ! -e '${gateFail}/staticcheck-tests' ]] || exit 1"
 	## A build leaves its -o file. 'docker-run' fails a run, 'docker-hang' stalls one. 'images',
 	## 'vols' and 'running' are what it lists, 'modprune' what the prune prints; 'docker-noimage'
 	## and 'docker-novol' say none.
@@ -8893,6 +8895,10 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dcmam] and runs every lint check and the unit tests" \
 			fGateCalled '^shellcheck [^-]' '^markdownlint ' '^python3 -m py_compile' 'Invoke-ScriptAnalyzer -Path' '^gofmt -l' \
 				'^go vet -p [0-9]+ ' '^staticcheck ' '^golangci-lint run --concurrency [0-9]+ ' '^gen-winres\.bash --check -q' '^backlog-check\.bash -q' '^go test -race -p [0-9]+ '
+		fAssert "[dfq3x] and staticcheck's unused check without the tests"  fGateCalled '^staticcheck -tests=false -checks U1000 \./\.\.\.$'
+		: > "${gateFail}/staticcheck-tests"
+		fAssert "[dfq3y] which fails the gate on code only a test calls"  fGateSays 1 'staticcheck: code only the tests call' --no-container --gate
+		rm -f -- "${gateFail:?}/staticcheck-tests"
 		## Each pwsh start costs about a second, and the version check used to start its own.
 		fAssert "[ddf5g] and starts pwsh once, handing it every PowerShell file" \
 			bash -c "[[ \$(grep -c '^pwsh ' '${gateCalls}') == 1 ]] && grep '^pwsh ' '${gateCalls}' | grep -qF \"'install.ps1','cicd/utility/run-latest.ps1'\""

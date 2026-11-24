@@ -11,11 +11,14 @@ package main
 
 import (
 	"cmp"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -528,35 +531,98 @@ func TestTreeDirtyUntrackedHidden(t *testing.T) { // [dfh4g]
 	}
 }
 
-// Every git status a check or the plan reads says which untracked files it wants,
-// so the user's status.showUntrackedFiles can't hide one that add will take.
-func TestStatusNamesUntracked(t *testing.T) { // [dfh4h]
+// gitSite is one git call or argument list in src-go: where it is, and the words
+// after the subcommand, with "" for any that isn't a string literal.
+type gitSite struct {
+	at   string
+	args []string
+}
+
+// gitSites finds every argument list in src-go that runs git's sub, by parsing
+// rather than by line, so global options ahead of it, -c and -C with their values,
+// and a call split over lines all count. A list that starts with sub counts too,
+// such as the one diffArgs builds. A list made at runtime isn't seen.
+func gitSites(t *testing.T, sub string) []gitSite {
+	t.Helper()
 	files, err := filepath.Glob("*.go")
 	if err != nil || len(files) < 10 {
 		t.Fatalf("found %d sources: %v", len(files), err)
 	}
-	call := regexp.MustCompile(`"git",\s*("-c",\s*"[^"]*",\s*)*"status"`)
-	found := 0
+	lit := func(e ast.Expr) (string, bool) {
+		b, ok := e.(*ast.BasicLit)
+		if !ok || b.Kind != token.STRING {
+			return "", false
+		}
+		s, err := strconv.Unquote(b.Value)
+		return s, err == nil
+	}
+	// git's global options that take their value as the next word.
+	valued := map[string]bool{"-C": true, "-c": true, "--git-dir": true, "--work-tree": true, "--namespace": true, "--config-env": true, "--super-prefix": true}
+	fset := token.NewFileSet()
+	var sites []gitSite
 	for _, file := range files {
 		if strings.HasSuffix(file, "_test.go") {
 			continue
 		}
-		src, err := os.ReadFile(file)
+		f, err := parser.ParseFile(fset, file, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for i, line := range strings.Split(string(src), "\n") {
-			if !call.MatchString(line) {
-				continue
+		ast.Inspect(f, func(n ast.Node) bool {
+			var list []ast.Expr
+			switch n := n.(type) {
+			case *ast.CallExpr:
+				list = n.Args
+			case *ast.CompositeLit:
+				list = n.Elts
+			default:
+				return true
 			}
-			found++
-			if !strings.Contains(line, `"--untracked-files=`) {
-				t.Errorf("%s:%d runs git status without --untracked-files: %s", file, i+1, strings.TrimSpace(line))
+			if len(list) == 0 {
+				return true
 			}
+			i := 0
+			if first, _ := lit(list[0]); first == "git" {
+				for i = 1; i < len(list); i++ {
+					word, ok := lit(list[i])
+					if !ok || !strings.HasPrefix(word, "-") {
+						break
+					}
+					if valued[word] {
+						i++
+					}
+				}
+			}
+			if i >= len(list) {
+				return true
+			}
+			if word, _ := lit(list[i]); word != sub {
+				return true
+			}
+			site := gitSite{at: fset.Position(list[i].Pos()).String()}
+			for _, e := range list[i+1:] {
+				word, _ := lit(e)
+				site.args = append(site.args, word)
+			}
+			sites = append(sites, site)
+			return true
+		})
+	}
+	return sites
+}
+
+// Every git status a check or the plan reads says which untracked files it wants,
+// so the user's status.showUntrackedFiles can't hide one that add will take. "no"
+// would hide them as the setting did.
+func TestStatusNamesUntracked(t *testing.T) { // [dfh4h]
+	sites := gitSites(t, "status")
+	for _, site := range sites {
+		if !slices.Contains(site.args, "--untracked-files=normal") && !slices.Contains(site.args, "--untracked-files=all") {
+			t.Errorf("%s runs git status without --untracked-files=normal or all: %q", site.at, site.args)
 		}
 	}
-	if found < 4 {
-		t.Errorf("found %d git status calls, want at least 4; the pattern no longer matches the source", found)
+	if len(sites) < 4 {
+		t.Errorf("found %d git status calls, want at least 4; the search no longer finds them", len(sites))
 	}
 }
 
@@ -649,12 +715,23 @@ func TestDiffReadsSeeSubmoduleMove(t *testing.T) { // [dfjwh]
 // Every git diff read in src-go goes through diffArgs, so no new one can come back
 // blind to the conflict or the edit [dfjwf] makes.
 func TestDiffReadsUseDiffArgs(t *testing.T) { // [dfjwg]
-	files, err := filepath.Glob("*.go")
-	if err != nil || len(files) < 10 {
-		t.Fatalf("found %d sources: %v", len(files), err)
+	want := []string{"--no-relative", "--no-textconv", "--no-ext-diff", "--ignore-submodules=none"}
+	helper := 0
+	for _, site := range gitSites(t, "diff") {
+		if slices.Equal(site.args, want) {
+			helper++
+			continue
+		}
+		t.Errorf("%s runs git diff without diffArgs: %q", site.at, site.args)
 	}
-	call := regexp.MustCompile(`("git",\s*|\[\]string\{)"diff"`)
-	helper, found := 0, 0
+	if helper != 1 {
+		t.Errorf("found %d diffArgs bodies, want 1", helper)
+	}
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
 	for _, file := range files {
 		if strings.HasSuffix(file, "_test.go") {
 			continue
@@ -663,22 +740,7 @@ func TestDiffReadsUseDiffArgs(t *testing.T) { // [dfjwg]
 		if err != nil {
 			t.Fatal(err)
 		}
-		for i, line := range strings.Split(string(src), "\n") {
-			if strings.Contains(line, "diffArgs(") && !strings.Contains(line, "func diffArgs(") {
-				found++
-			}
-			if !call.MatchString(line) {
-				continue
-			}
-			if strings.Contains(line, `"diff", "--no-relative", "--no-textconv", "--no-ext-diff", "--ignore-submodules=none"`) {
-				helper++
-				continue
-			}
-			t.Errorf("%s:%d runs git diff without diffArgs: %s", file, i+1, strings.TrimSpace(line))
-		}
-	}
-	if helper != 1 {
-		t.Errorf("found %d diffArgs bodies, want 1", helper)
+		found += strings.Count(string(src), "diffArgs(") - strings.Count(string(src), "func diffArgs(")
 	}
 	if found < 5 {
 		t.Errorf("found %d diffArgs calls, want at least 5; the pattern no longer matches the source", found)

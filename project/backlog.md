@@ -193,7 +193,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 43: [dfh4h] misses a git status call with an option ahead of status
 	- ID: 2026112017135255
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171352
@@ -204,6 +204,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, by mutation. Confirmed. [dfh4g] catches treeDirty itself, so only a new site depends on the gate.
 	- Possible cause [Bug]: mutate_test.go:320 matches `"git", "status"` side by side.
 	- Origin: e45bad2, Code Review 20261119 item 2.
+	- Closed reason: Done
+	- Actual cause [Bug]: The check matched the source line by line, with "git", any -c pairs, then "status". A global option such as --no-optional-locks or -C, or a call split over lines, hid the call, and any --untracked-files= value passed, no included.
+	- Actual fix [Bug]: A shared helper, gitSites in mutate_test.go, parses src-go and finds every argument list that runs a git subcommand, skipping global options and the values -c, -C and the like take. [dfh4h] wants --untracked-files=normal or all at each status site. [dfjwg], the git diff twin, uses the same helper.
+	- Test case: Go [dfh4h] TestStatusNamesUntracked, [dfjwg] TestDiffReadsUseDiffArgs.
+	- Verified: Mutations of treeDirty's status call with --no-optional-locks, -C, --untracked-files=no, and a call split over 2 lines pass the old [dfh4h] and fail the new one. A git diff call with --no-pager ahead passes the old [dfjwg] and fails the new one. A plain one fails both. The quick gate with every area passed: test.bash 2432/0, fuzz 310/0, parity 32/0. gosec 37, as before.
+	- Swept: The only other source scan keyed on a git subcommand is [dfjwg], now on the same helper. [de8a0] TestOneSpawnSite looks for exec.Command, not a subcommand. The helper finds 5 status sites and the one diffArgs body.
+	- Decisions: A list built at runtime, such as a slice variable spread into the call, still isn't seen, since only literals can be read. No site does that today.
+	- Branch: nov23-2026112017135255
+	- Commit: 2d37c4a
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the twin is swept.
+	- Closed: 20261123-181224
 
 - Code Review 20261120 item 44: [dcnqy]'s label no longer says what it checks
 	- ID: 2026112017135240
@@ -267,7 +278,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 35: lockFix is production code that only tests call
 	- ID: 2026111910222801
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102228
@@ -278,6 +289,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23. d5e76f2 reports nothing. Confirmed.
 	- Possible cause [Bug]: Item 8's lockBeside rework left it for the tests only.
 	- Origin: a4fa440, round-20261111 (Code Review 20261110b item 8). Regression in dead code.
+	- Closed reason: Done
+	- Actual cause [Bug]: lockFix was a wrapper only the tests called. The lint stage's staticcheck run counts a test as a caller, so it never flagged it.
+	- Actual fix [Bug]: lockFix is gone, and its tests call lockFixFor with the accounts lock's words. The lint stage also runs staticcheck -tests=false -checks U1000, so code only a test calls fails the gate.
+	- Test case: test.bash [dfq3x] and [dfq3y] for the lint step. [dcnkc] TestLockFix still checks the Fix lines.
+	- Verified: staticcheck -tests=false -checks U1000 reports lockFix on the tree before the fix and nothing after. With lockFix put back and a test calling it, --backlog-run-quick lint fails with the new message. The quick gate with every area passed: test.bash 2432/0, fuzz 310/0, parity 32/0. gosec 37, as before.
+	- Swept: The new step runs over all of src-go and finds nothing else.
+	- Decisions: The check runs on every gate rather than once, so the next helper left for the tests fails then. It adds about 2 seconds.
+	- Branch: nov23-2026112017135255
+	- Commit: dbaeda4
+	- Acceptance signoff: Self-closed: reproduced, the new lint step fails on the old code and passes on the fix.
+	- Closed: 20261123-181224
 
 - Code Review 20261119 item 36: parity.bash defines 2 helpers nothing calls
 	- ID: 2026111910222787
