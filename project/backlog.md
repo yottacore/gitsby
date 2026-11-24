@@ -33,6 +33,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- 43 closed items have no Acceptance signoff row, and backlog-check doesn't look for it
+	- ID: 2026112317125579
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261123-171255
+	- Opened by:
+	- Related IDs: 2026112017135312, 2026111910222773
+	- Steps to reproduce [Bug]: List the items whose Status is Closed and that have no Acceptance signoff row.
+	- Incorrect behavior [Bug]: 43 of 344 have none, most closed by hand before the row was asked for. backlog-check passes.
+	- Expected behavior [Bug]: Each closed item says why it closed, and backlog-check fails one that doesn't, as it does for a missing Closed row.
+	- Reproduced [Bug]: 2026-11-23 on b23, by a script over the backlog. Confirmed.
+	- Origin: Found while fixing 2026112017135312, which added the Closed row rule. Older items predate the signoff rule.
+
 - pr ok reads a fork's pull request as a branch of origin
 	- ID: 2026112309121204
 	- Type: Bug
@@ -89,7 +104,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 39: 6 closed items don't say their tests were watched to fail, and 1 has no signoff row
 	- ID: 2026112017135312
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171353
@@ -99,6 +114,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: Each says it was run both ways, per the review rules, and a self-closed item says why it closed.
 	- Reproduced [Bug]: 2026-11-20, by reading. Confirmed.
 	- Origin: nov19b, nov19c, nov20 and release-dev. Like Code Review 20261119 item 37, backlog-check doesn't look for it.
+	- Actual cause [Bug]: The rows were left out when the items closed. Nothing checks for them.
+	- Actual fix [Bug]: Each of the 6 has a dated Verified sub-bullet saying how its test ran both ways, or why it has no before, with the run that showed it red. 2026112015351403 has an Acceptance signoff row.
+	- Decisions: A test of a helper that came with its fix has no build before it, so it was watched to fail by breaking the helper. A guard that passes on both builds says so. The signoff gap across the backlog is 2026112317125579, since 43 items lack the row. Whether a test was watched to fail is not something a backlog rule can read.
+	- Test case: none, backlog rows only. The runs named in each row are the check.
+	- Branch: nov23-2026112017135312
+	- Swept: all 7 items named in Steps to reproduce.
+	- Closed reason: Done
+	- Commit: cd655bc, for the gate on the Closed row that 2026111910222773 added
+	- Verified: Each run named in the 6 new sub-bullets, on b23. test.bash at 5c6bdc8 with the mutate.go before it: [dfhh3] and [dfhh5] pass, [dfhh4] fails. test.bash at 2856951 with the install.bash before it: [dfjaj] passes, [dfjah] fails. go test at 7ab6156 with the prune.go before it: [dcnmn] fails on 2 cases. On the current tree, [dfh5v], [dfh5w], [dfhkc] and [dfg0h] each fail with their helper broken, and all pass as they are.
+	- Acceptance signoff: Self-closed: backlog rows only, each backed by a run.
+	- Closed: 20261123-172103
 
 - Code Review 20261120 item 41: [df33r] fails whenever another copy of the suite runs
 	- ID: 2026112017135283
@@ -236,7 +262,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 37: 4 closed items have no Closed row, and backlog-check doesn't notice
 	- ID: 2026111910222773
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102227
@@ -247,6 +273,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, by a script over the backlog. Confirmed.
 	- Possible cause [Bug]: backlog-check has no rule for it.
 	- Origin: The 4 items, closed by hand over several rounds. No round saw it.
+	- Actual cause [Bug]: As guessed. backlog-check read the Origin row and removed checks only, so a hand close with no date passed.
+	- Actual fix [Bug]: backlog-check has a third rule: a closed item in the new format with no Closed: row is a finding, named by ID. The 4 items have Closed rows, dated from the commit that closed each, and 2026111016331881 an Acceptance signoff row.
+	- Decisions: The rule reads the new format only. Old-format items close by emoji and never had a date row. Closed reason: doesn't count as the row.
+		- 2026-11-23: [ddf4q], [ddf4r] and [defny] each have a closed item in their fixture, which now has a Closed row. Nothing else they check changed.
+	- Test case: test.bash [dfq27] fails a closed item with no Closed row by ID, leaving open, Canceled and old-format ones be. [dfq28] passes once each has one.
+	- Branch: nov23-2026112017135312
+	- Swept: every closed item in the new format, by the new rule over the real backlog: the 4 named here were the only ones.
+	- Closed reason: Done
+	- Commit: cd655bc
+	- Verified: [dfq27] and [dfq28] fail with the backlog-check.bash from before cd655bc and pass with it. [dfq27] also fails with the rule made to take a Closed reason row as the date. On the real backlog the new rule named the 4 items, and passes with their rows in. Quick run, suite area: test.bash 2426/0. lint and unit passed in the run before. shellcheck and test-id.bash --check clean.
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261123-172103
 
 - pr ok shows the pull request's branch and its base before it asks
 	- ID: 2026112309120161
@@ -732,6 +770,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 22554f6
 	- Test case: test.bash [dfh5s] and [dfh5t] (shared with item 4), Go [dfh5v] for the hosts a gh command line names, [dfh5w] for which runs keep the token from gh.
 	- Verified: real gh 2.96 through the built gitsby, with a fake token. With GH_HOST on the Enterprise host, raw gh auth token --hostname evil.example printed the token before, and after prints 'no oauth token found' under the 'not acting as the account' line, while the same with no --hostname still prints it. From a github.com account, --hostname acme.ghe.com and github.localhost printed the token before and don't after. [dfh5s]'s 6 gh paths fail on the unfixed build and pass after. Quick gate passed, all areas: test.bash 2129/0, fuzz 310/0, parity 31/0.
+		- 2026-11-23: [dfh5v] and [dfh5w] test ghNamedHosts and tokenElsewhere, which came with the fix, so there is no build before it to run them on. [dfh5v] fails with ghNamedHosts finding no host, and [dfh5w] with tokenElsewhere finding none elsewhere. Both pass as they are.
 	- Swept: gh's own variables, set only in selectAccount. raw gh, and gitsby's own gh calls (pr, repo create, repo view, the token check), all after it. glab through the same tokenElsewhere. tea and git are scoped to the host already, per item 4's Swept.
 	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
 	- Closed reason: Done
@@ -1303,6 +1342,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 		- 2026-10-26: 2026102617594206 is done, with 2 new checks. The other 7 are Queued.
 		- 2026-11-06: All 6 children done in round-20261106, so every Done item now has a Test row. 12 new checks came with them.
 	- Test case: each child's own Test case row; the children are 2026102617594210, 2026102617594212, 2026102617594214, 2026102617594216, 2026102617594218 and 2026102617594221
+	- Closed: 20261106-123311
 	- 2026-10-26: Children 2026102617594206 and 2026102617594208 are Done. The other 6 are Queued.
 
 - CICD reset: a test for every Done item, the 20260812 groups and the 20260819 to 20260821 reviews
@@ -3423,6 +3463,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: lint passes.
 	- Reproduced [Bug]: 2026-11-06, in the image, while working 2026102617594210.
 	- Test case: the lint step's markdownlint run, which is clean again
+	- Closed: 20261106-110950
 	- 2026-11-06: The code span in 2026102620355012's log ended in a space. It now reads `freed about <size>`.
 
 - The Pillow lock check fails on FreeBSD
@@ -4477,6 +4518,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: cda31a7
 	- Test case: stage 7's Wine run on vmDebARM64. The 6 symlink tests failed under Wine before the fix, and pass or skip after.
 	- Swept: every `os.Symlink` in the Go tests, 8 sites. Code outside the tests makes no links.
+	- Closed: 20261005-110510
 
 - Code Review 20261003 enhancement 2: Network probes run one after another
 	- ID: 2026100313123988
@@ -5818,6 +5860,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 7ab6156
 	- Test case: Go [dfhfc] TestPasteLinesReadBack, with 10 words that hold a double quote and a new pwsh Legacy leg, and [dcnmn] TestTypedArg.
 	- Verified: [dfhfc] fails on the code before the fix and passes after, on b23 (pwsh 7.6 Legacy leg) and on vm925w (Windows PowerShell 5.1 and the pwsh Legacy leg, 20 lines each before the fix). Quick run of every area passed: test.bash 2209/0, fuzz 310/0, parity 31/0. gosec 37, as before.
+		- 2026-11-23: [dcnmn] fails on prune.go from before 7ab6156, on its 2 new Windows cases, and passes after. Its new Linux case passes on both, as a guard.
 	- Swept: every typedArg caller (branch.go, branchcmd.go, main.go, mutate.go, pr.go, release.go, and leaseDeleteLine in prune.go) goes through the one function. No other code in src-go, cicd or the docs spells a PowerShell argument.
 	- Closed reason: Done
 	- Acceptance signoff: Self-closed: reproduced on vm925w, its test failed before the fix and passes after there.
@@ -5875,6 +5918,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: 808235d, 2856951, fb6ae4c
 	- Test case: test.bash [dfjab] pulls Test-OnPath out of install.ps1 and asks it about 8 PATHs: %LOCALAPPDATA%, trailing backslash, other case, quoted, a near miss, empty, and 2 POSIX ones. [dfjac] no -contains against $destDir is left, and Test-OnPath is called at least 3 times. [dfjah] install.bash with its folder on PATH with a trailing slash gives no not-on-PATH note, and [dfjaj] gives it when PATH lacks the folder. On Windows, whole installs with stubbed downloads, under PowerShell 5.1 and 7, with the account PATH holding the folder as %LOCALAPPDATA%\Programs\gitsby, with a trailing backslash, as both, and not at all.
 	- Verified: [dfjab] and [dfjac] fail on the previous install.ps1 (no Test-OnPath, 3 raw checks) and pass after. [dfjab] goes red with the expansion, the / swap, the backslash trim or the quote trim taken out. The previous install.bash printed the note with a trailing-slash entry, which [dfjah] refuses. Quick run of every area passed on 2856951's tree: test.bash 2213/0, fuzz 310/0, parity 31/0. PSScriptAnalyzer clean on install.ps1. The Windows branch didn't run here. It ran on vm925w on 2026-11-20, in PowerShell 5.1.26100 and 7.6.10, at nov20 e8870e8: each of the 3 spellings left one entry, wrote nothing and said it was already on your account PATH. The install from a PATH without it said Added and appended one entry. 62 of 62 checks passed. The install.ps1 before 808235d failed the same cases: a second entry and Added for each spelling, and User in place of account.
+		- 2026-11-23: [dfjaj] passes on install.bash from before 2856951 too, since the note for a missing folder was already there. It is a guard. [dfjah] fails there.
 	- Swept: every PATH test in both installers. install.ps1 has the 3 named above. install.bash only checks for a note, and missed a trailing slash, fixed here. legacy/install.ps1 has the same raw checks and is frozen. No Go or cicd code reads the Windows PATH this way.
 	- Closed reason: Done
 	- Closed: 20261120-083446
@@ -6011,6 +6055,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Actual fix [Bug]: One helper builds the advice from the command as typed, with its branch, version or remote. cmdCommit and the pull check in pullIfOnline both use it.
 	- Test case: test.bash [dfhh3] to [dfhh5]; Go [dfhh2] TestRerunNamesTheCommand.
 	- Verified: [dfhh4] fails on the build before the fix, where all 5 commands named pullcom, and passes with it. [dfhh2] fails with the helper made to name pullcom. The quick gate passed with every area: test.bash 2178/0, fuzz 310/0, parity 31/0.
+		- 2026-11-23: [dfhh3] and [dfhh5] pass on the build before the fix too, since the commands already refused and stayed on the branch then. They are guards. [dfhh4] fails there.
 	- Swept: every refuseConflicts caller, by grep: cmdCommit (pullcom, sync, every cmdPush park, repo create and repo connect) and pullIfOnline. Both now take the same helper. release is covered by [dfhh2] only, not by a suite check.
 	- Decisions: The advice keeps the target argument for br create, br hotfix, br switch, release, repo create and repo connect, and --staged where the run had it (2026111918550541). It leaves off a commit message, a PR title and the other options, as pullcom's advice did.
 	- Branch: nov19c-2026111910223074
@@ -6174,6 +6219,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Commit: be87857
 	- Test case: test.bash [dfhk8] to [dfhkb]; Go [dfhkc] TestSparseAddPaths.
 	- Verified: [dfhk8] and [dfhk9] fail on the build before the fix and pass with it. [dfhka] (--staged) and [dfhkb] (br create off dev) pass on both, as guards. The fixture turns advice.updateSparsePath off, since git still lists the files then. The quick gate passed with every area: test.bash 2191/0, fuzz 310/0, parity 31/0. gosec reports nothing new in the changed files.
+		- 2026-11-23: [dfhkc] tests sparseAddPaths, which came with the fix, so there is no build before it to run it on. It fails with sparseAddPaths finding no paths, and passes as it is.
 	- Swept: git add runs only in cmdCommit, by grep for "git", "add" in src-go. Its callers are pullcom, sync, br switch, br merge, br create and br hotfix off a feature branch, pr create, release, repo create and repo connect; stagesTree names each. --staged never stages, so it isn't checked.
 	- Decisions: Refuse rather than stage with --sparse, since the sparse checkout is a choice the run shouldn't undo, and the expected behavior asks for a refusal. Only git's sparse-path failure is refused; any other dry-run failure, such as a held index lock, is left to the real add. LC_ALL=C keeps git's lead in English; no git translation is installed here, so that part isn't pinned. An edited tracked file outside the checkout is a separate case, filed and fixed as 2026111920000538.
 	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after, and the sweep is answered.
@@ -6338,6 +6384,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions: The plan names the added lines rather than a general note, since every line of an unset is already named (2026111016332330). Only the shared tail is trimmed before the table, so of 2 like lines the one above the key is still the one named. The compare gives up past about 2000 by 2000 differing lines.
 	- Test case: Go TestAccountUnsetPlanNamesLinesTheSaveAdds [dfh9q] and TestLineChangesGivesUpOnAHugeDiff [dfh9r], test.bash [dfh9s]. [dfg0h] also checks that no other unset adds a line.
 	- Verified: [dfh9s] fails on the build before the fix and passes after. [dfh9q] fails with the old fallback put back, [dfh9r] with the cap lifted. Quick gate, every area: test.bash 2156/0, fuzz 310/0, parity 31/0.
+		- 2026-11-23: [dfg0h]'s new check that an unset adds no line reads plan.added, which came with the fix, so there is no build before it to run it on. It fails with every compare made to add a line, and passes as it is.
 	- Swept: src-go has one remove of a config key, in accountUnsetPlan. account set on a dotted line is a rewrite and its plan says so. A set that adds a new account block shows it as add: account[name].key, which names the block.
 	- Branch: nov19b-2026111910223016
 	- Commit: 8df1160
@@ -8696,6 +8743,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Decisions: Answered 2026-11-20: yes to --release dev, no to dropping --arch, which stays as design.md records it.
 	- Branch: release-dev
 	- Test case: [dfjr3] to [dfjr9]. [dbfkc] [dbfkd] [dbfks] [dd5cx] [dbfm0] [dbfm1] now check what replaced the old refusal. All failed on the old installers.
+	- Acceptance signoff: Self-closed: the call was answered 2026-11-20, and its tests failed on the old installers and pass now.
 
 - CICD process gaps: dogfood builds don't go to the synced app folders, and there's no dogfood script
 	- ID: 2026112013542597
@@ -8844,6 +8892,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Verified: --backlog-run-quick lint suite passed, backlog-check passed.
 	- Swept: grep for gh-account across the repo outside logs, artifacts and backlog history.
 	- Branch: round-20261111
+	- Closed: 20261110-211602
+	- Acceptance signoff: Self-closed: a deletion, and the lint and suite gates passed without the file.
 
 - Code Review 20261110 enhancement 5: The README says nothing about exit statuses to someone scripting gitsby
 	- ID: 2026111010494722

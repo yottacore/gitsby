@@ -3,7 +3,7 @@
 #  shellcheck enable=require-variable-braces  ## Every expansion braced: "${var}", not "$var".
 
 ##	Purpose:
-##		Two backlog rules that review rounds kept leaking through, checked in cicd
+##		Three backlog rules that rounds kept leaking through, checked in cicd
 ##		stage 1 instead of by hand:
 ##		1. Every open code-review item (not ✅ ✋ 🚫, or in the new format not Done,
 ##		   Canceled, Moot, or Deferred) has an "Origin:" sub-bullet -
@@ -17,6 +17,7 @@
 ##		A removed one is named by its ID as a word, or by its label as written, so a
 ##		label with a shell variable has to be quoted that way. A check that keeps its
 ##		ID under a new label was edited, not removed. Needs test-id.bash beside it.
+##		3. Every closed item in the new format (Status: Closed) has a "Closed:" row.
 ##	Syntax:
 ##		backlog-check.bash [-q] [--base REF] [--backlog FILE]
 ##		  -q              print findings only
@@ -157,6 +158,33 @@ else
 	fi
 fi
 
+## 3. Closed items with no Closed: date. New format only, a top-level item whose Status row says
+## Closed. Old-format items close by emoji and carry no date row.
+closedScan="$(awk '
+	function flush() {
+		if (cur != "" && closed) { print "closed " cur; if (!found) print "missing " cur }
+		cur = ""; found = 0; closed = 0
+	}
+	/^#/ || /^- / { flush() }
+	/^- / { cur = substr($0, 3) }
+	cur != "" && /^\t- ID:/ { id = $0; sub(/^\t- ID:[ \t]*/, "", id); if (id != "") cur = id " " cur }
+	cur != "" && /^\t- Closed:/ { found = 1 }
+	cur != "" && /^\t- Status:/ {
+		status = $0; sub(/^\t- Status:[ \t]*/, "", status)
+		if (status ~ /^Closed([^A-Za-z]|$)/) closed = 1
+	}
+	END { flush() }
+' "${backlog}")"
+noClosed="$(sed -n 's/^missing //p' <<< "${closedScan}")"
+closedCount="$(grep -c '^closed ' <<< "${closedScan}" || true)"
+if [[ -n "${noClosed}" ]]; then
+	echo "backlog-check: closed items with no 'Closed:' row:"
+	while IFS= read -r line; do echo "  ${line}"; done <<< "${noClosed}"
+	findings=1
+else
+	fEcho_Clean "backlog-check: Closed: present on every closed item (${closedCount} listed)"
+fi
+
 exit "${findings}"
 
 
@@ -169,3 +197,4 @@ exit "${findings}"
 ##		- 20261107 JC: Errors go through fUsage.
 ##		- 20261108 JC: gover retired, so the default base is dev.
 ##		- 20261111 JC: A removed check has to be named on a line the branch adds, not anywhere in the backlog. Checks are found by test-id.bash's scan, so every helper counts, at any place on its line, and spawn-count.bash's too.
+##		- 20261123 JC: A closed item with no Closed: row is a finding.
