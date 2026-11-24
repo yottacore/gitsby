@@ -1575,6 +1575,19 @@ fEarlyClose(){
 	done < <(fTrackedBash)
 	((n)) || echo "(no files)"
 }
+## Functions defined in the pipeline's bash whose name shows up nowhere else in it, as file: name.
+## Any other mention counts as a call, so a name only a comment keeps is missed, not flagged.
+fUnusedFunctions(){
+	local f="" n=""
+	local -a files=()
+	while IFS= read -r f; do files+=("${root}/${f}"); done < <(cd "${root}" && git ls-files 'cicd/*.bash')
+	((${#files[@]})) || { echo "(no files)"; return 0; }
+	for f in "${files[@]}"; do
+		while IFS= read -r n; do
+			(($(cat -- "${files[@]}" | grep -cwF -- "${n}") > 1)) || printf '%s: %s\n' "${f#"${root}"/}" "${n}"
+		done < <(sed -nE 's/^[[:space:]]*(function[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\(\)[[:space:]]*\{.*/\2/p' "${f}" | sort -u)
+	done
+}
 ## Tracked scripts and Go files, legacy/ too, that name a terminal multiplexer or a kill by process
 ## name. A file with no extension counts when it starts with #!.
 fKillByName(){
@@ -4294,8 +4307,21 @@ GHEOF
 		bash -c "cd '${hn}/c' && '${gitsby}' -q -NoFetch br hotfix code >/dev/null 2>&1; echo v2 > src-go/main.go; '${gitsby}' -q -NoFetch br land 'Fix' 2>&1"
 	## An empty answer read as nothing changed, when the comparison couldn't run at all.
 	( cd "${hn}/c" || exit 1; git checkout --quiet main && git tag -a v1.0.0 -m v1.0.0 && git checkout --quiet --orphan hotfix/stray && git rm -rfq . && echo x > stray.go && git add stray.go && git commit --quiet -m stray )
-	fAssertOut "[dcnqy] a hotfix that can't be compared says so"  "'hotfix/stray' shares no history with 'main'" \
+	fAssertOut "[dcnqy] a hotfix that shares no history with main is refused, not read as unchanged"  "'hotfix/stray' shares no history with 'main'" \
 		bash -c "cd '${hn}/c' && '${gitsby}' -q -NoFetch br land 'Stray' 2>&1"
+	## The refusal above comes before the comparison, so only a diff that fails on its own reaches
+	## the note now. A git that refuses just that diff stands in for one.
+	local cmpShim="${work}/$1-cmpshim"
+	mkdir -p "${cmpShim}"
+	fStub "${cmpShim}/git" <<-EOF
+		#!/usr/bin/env bash
+		for a in "\$@"; do
+			if [[ "\${a}" == *'...refs/heads/hotfix/nocompare' ]]; then echo "fatal: diff refused for this check" >&2; exit 128; fi
+		done
+		exec '$(command -v git)' "\$@"
+	EOF
+	fAssertOut "[dfq48] a hotfix whose comparison fails says it couldn't tell"  "NOTE: couldn't tell whether this hotfix changes more than documentation\." \
+		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix nocompare >/dev/null 2>&1; echo v5 > src-go/main.go; env PATH='${cmpShim}':\"\${PATH}\" '${gitsby}' -q -NoFetch br land 'No compare' 2>&1"
 	## A back-merge conflict must leave dev untouched and the tree clean, not half-merged.
 	fAssert    "[daenh] a conflicting back-merge leaves dev alone"  \
 		bash -c "cd '${hfc}' && git checkout --quiet dev && echo devtext > README.md && git commit --quiet -am devtext && git push --quiet && '${gitsby}' -q -NoFetch br hotfix clash >/dev/null 2>&1 && echo hftext > README.md && '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1 && '${gitsby}' -q -NoFetch br land Clash >/dev/null 2>&1; [[ \"\$(git show origin/main:README.md)\" == hftext && \"\$(git show origin/dev:README.md)\" == devtext ]]"
@@ -5621,8 +5647,10 @@ GHEOF
 	git clone --quiet "${cf}/origin.git" "${cf}/theirs"
 	( cd "${cf}/theirs" && printf 'line1\nTHEIRS\nline3\n' > shared.txt && git add --all && git commit --quiet -m "their edit" && git push --quiet origin main )
 	( cd "${cf}/mine" && printf 'line1\nMINE\nline3\n' > shared.txt )
-	fAssertFail "[daf7w] update refuses a conflicted autostash reapply"  bash -c "cd '${cf}/mine' && '${gitsby}' -q update 'mine'"
-	fAssertOut  "[daf7x] and names the conflicted file"  'shared\.txt'  bash -c "cd '${cf}/mine' && '${gitsby}' -q update 'mine' 2>&1"
+	## The refusal's own list, from the first run: the status block names the file too, and a
+	## second run's names it as UU, so a grep of all output passed with the list taken out.
+	fAssertFail "[daf7w] update refuses a conflicted autostash reapply"  bash -c "cd '${cf}/mine' && '${gitsby}' -q update 'mine' > '${cf}/update.out' 2>&1"
+	fAssert     "[daf7x] and names the conflicted file"  bash -c "grep -qx '    shared\.txt' <<< \"\$(grep -A1 -F 'Unresolved conflicts; nothing was committed:' '${cf}/update.out')\""
 	fAssert     "[daf7y] and commits no conflict markers"  bash -c "cd '${cf}/mine' && ! git log -p | grep -q '<<<<<<<'"
 	fAssert     "[daf7z] and leaves the merge unresolved for the user"  bash -c "cd '${cf}/mine' && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]]"
 
@@ -8610,6 +8638,8 @@ LGEOF
 		test -z "$(fKillByName)"
 	fAssert "[deyrt] no tracked bash outside legacy/ pipes into head or grep -q where pipefail would see the writer's SIGPIPE" \
 		test -z "$(fEarlyClose)"
+	fAssert "[dfq49] every function the pipeline's bash defines is called somewhere in it" \
+		test -z "$(fUnusedFunctions)"
 	## CodeQL comes from the image, checked against the sum config.bash keeps beside its version.
 	fAssert "[de55x] the image installs CodeQL's Go bundle and checks it against config.bash's sum" \
 		bash -c "grep -qx 'ARG CODEQL_SHA256' '${root}/cicd/container/Dockerfile' && grep -q 'codeql-bundle-go-linux64\.tar\.zst' '${root}/cicd/container/Dockerfile' && grep -qF 'echo \"\${CODEQL_SHA256}  cq.tar.zst\" | sha256sum -c -' '${root}/cicd/container/Dockerfile' && grep -qE '^CODEQL_SHA256=\"[0-9a-f]{64}\"\$' '${root}/cicd/config.bash'"

@@ -219,7 +219,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 44: [dcnqy]'s label no longer says what it checks
 	- ID: 2026112017135240
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171352
@@ -229,11 +229,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: The label says what the check matches, and the note has its own check or goes.
 	- Reproduced [Bug]: No. Read only. Plausible.
 	- Origin: 46156d6 (2026111919473452).
+	- Closed reason: Done
+	- Actual cause [Bug]: 46156d6 made br merge refuse a branch that shares no history with its target, and [dcnqy] was moved to that refusal under its old label. A missing target is refused before the plan too, so only a diff that fails on its own reaches the note.
+	- Actual fix [Bug]: [dcnqy] is labeled for the refusal it matches. The note keeps its own check, [dfq48], with a git that refuses only that diff.
+	- Decisions: The note stays. Without it a failed diff reads as a docs-only hotfix and says nothing, which is what [dcnqy] was first written against.
+	- Test case: test.bash [dcnqy], [dfq48].
+	- Verified: [dfq48] fails with the note's case taken out of warnHotfixTouchedCode and passes on the build. A missing target, with origin/HEAD left dangling or gone, is refused in preflight, so it can't stand in. Quick gate passed, all areas: test.bash 2434/0, fuzz 310/0, parity 32/0.
+	- Branch: nov23-2026112017135240
+	- Commit: 3036bb6
+	- Acceptance signoff: Self-closed: label and check match what they test, and the new check was watched to fail.
+	- Closed: 20261123-182213
 
 - Code Review 20261119 item 24: [daf7x] passes with the code it checks taken out
 	- ID: 2026111910222957
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102229
@@ -244,6 +254,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, by mutation in a copy. Confirmed.
 	- Possible cause [Bug]: It greps all output rather than the refusal's own line, as [dfg1f] does.
 	- Origin: 9630f8f, 2026-07-27. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: [daf7x] ran update a second time and grepped all its output. That run's status block lists the file as UU, so the check passed with the refusal's list taken out.
+	- Actual fix [Bug]: [daf7w] keeps the first run's output, and [daf7x] looks for the file on the line after the refusal's header, as [dfg1f] does.
+	- Test case: test.bash [daf7x].
+	- Verified: with the showLines call in refuseConflicts taken out, the old [daf7x] passed and the new one failed. Both pass on the real build. Quick gate passed, all areas: test.bash 2434/0, fuzz 310/0, parity 32/0.
+	- Swept: [daf7y] and [daf7z] check repo state rather than output, so the list doesn't reach them. [dfg1f] already reads the list line.
+	- Branch: nov23-2026112017135240
+	- Commit: 3036bb6
+	- Acceptance signoff: Self-closed: reproduced, the new check fails on the mutation and passes on the build.
+	- Closed: 20261123-182213
 
 - Code Review 20261119 item 28: The image's markdownlint version check passes when markdownlint prints nothing
 	- ID: 2026111910222900
@@ -304,7 +324,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 item 36: parity.bash defines 2 helpers nothing calls
 	- ID: 2026111910222787
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102227
@@ -315,6 +335,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-19 on b23, by grep. Confirmed.
 	- Possible cause [Bug]: Left from an older parity layout.
 	- Origin: Already there at d5e76f2. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: fSameStripped and fSameField were left from an older parity layout, and nothing checked for unused functions.
+	- Actual fix [Bug]: Both are gone. [dfq49] fails on any function in cicd/*.bash whose name shows up nowhere else in those files.
+	- Test case: test.bash [dfq49].
+	- Verified: [dfq49]'s function named both helpers before they were removed and nothing after. Quick gate passed, all areas: test.bash 2434/0, fuzz 310/0, parity 32/0.
+	- Swept: every tracked bash file outside `legacy/`. Only `cicd/utility/n8git_backup-and-publish` has others, 3 `fDefineTrap_*` variants from its shared boilerplate, left alone and outside the `cicd/*.bash` that [dfq49] reads.
+	- Branch: nov23-2026112017135240
+	- Commit: 3036bb6
+	- Acceptance signoff: Self-closed: mechanical, with a check watched to fail.
+	- Closed: 20261123-182213
 
 - Code Review 20261119 item 37: 4 closed items have no Closed row, and backlog-check doesn't notice
 	- ID: 2026111910222773

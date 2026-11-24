@@ -162,38 +162,6 @@ fSame(){
 	fi
 }
 
-## Same as fSame, with one deliberate difference removed from both sides first. Used where this
-## build says something the frozen one never did and the rest of the line still has to match; the
-## removal is spelled out at the call site so it cannot quietly widen.
-fSameStripped(){
-	local -r label="${1}"; local -r drop="${2}"; local -r dir="${3}"; shift 3
-	local a="" b=""
-	a="$(fRunNew "${dir}" "${@}" | sed -E "${drop}")"
-	b="$(fRunRef "${dir}" "${@}" | sed -E "${drop}")"
-	if [[ "${a}" == "${b}" ]]; then
-		fOk "${label}"
-	else
-		fBad "${label}"
-		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
-	fi
-}
-
-fSameField(){
-	## One labeled line out of each build's output, compared. Used where the surrounding block
-	## legitimately differs: each runtime echoes a path the way it spells one, and 'C:\x' against
-	## '/c/x' is not a finding - what the two must agree on is what they RESOLVED from it.
-	local -r label="${1}"; local -r pattern="${2}"; local -r dir="${3}"; shift 3
-	local a="" b=""
-	a="$(fRunNew "${dir}" "${@}" | grep -E "${pattern}" || true)"
-	b="$(fRunRef "${dir}" "${@}" | grep -E "${pattern}" || true)"
-	if [[ "${a}" == "${b}" ]]; then
-		fOk "${label}"
-	else
-		fBad "${label}"
-		printf '      this build: %s\n      frozen:     %s\n' "${a:-(no such line)}" "${b:-(no such line)}"
-	fi
-}
-
 fSameLead(){
 	## The labeled line with its trailing explanation cut off, compared. Used where what the two
 	## builds must agree on is the value the line reports and not the prose after it: the frozen
