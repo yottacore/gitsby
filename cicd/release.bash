@@ -53,7 +53,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -301,8 +301,8 @@ fpChangelogAddDownloads(){
 echo
 fEcho "Phase 1: prepare and verify"
 
-[[ -x "${gitsby}" ]] || fDie "no build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd/cicd.bash, or 'go build' there."
-command -v go >/dev/null 2>&1 || fDie "the go toolchain is needed to build the release assets."
+[[ -x "${gitsby}" ]] || fDie "No build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd/cicd.bash, or 'go build' there."
+command -v go >/dev/null 2>&1 || fDie "The go toolchain is needed to build the release assets."
 command -v gh >/dev/null 2>&1 || fDie "gh is needed to publish the release."
 ## The Windows resource is regenerated for the version being cut, so the tool is required here
 ## rather than probe-gated the way the pipeline has it. Refusing now costs nothing; discovering
@@ -315,28 +315,28 @@ winres=("${here}/utility/gen-winres.bash"); winresStatus=0
 ## The last release, for the guards below. The version itself comes from the tag this cuts, not
 ## from anything in the tree - there is no longer a string in a source file that can disagree.
 ## Listed whole and then cut, since a 'head' downstream fails git's write once there are enough tags.
-lastTags="$(fReleaseTags)" || fDie "couldn't list the v* tags."
+lastTags="$(fReleaseTags)" || fDie "Couldn't list the v* tags."
 lastTag="${lastTags%%$'\n'*}"
 
 ## The changelog has to have something to release. 'vNEXT' is this project's convention for
 ## "merged but not cut", and releasing with no such section means the notes would be empty.
 ## Already retitled when only publishing.
-((publishOnly)) || [[ -n "$(fpChangelogVnext)" ]] || fDie "changelog has no '## vNEXT' section, so there is nothing to release."
+((publishOnly)) || [[ -n "$(fpChangelogVnext)" ]] || fDie "Changelog has no '## vNEXT' section, so there is nothing to release."
 ## Phase 2 writes the downloads table from the files it built, so one already there is stale.
 if ((! publishOnly)) && awk -v at="$(fpChangelogVnext)" 'NR > at && /^## /{exit} NR > at && /^### Downloads[[:space:]]*$/{found = 1; exit} END{exit !found}' "${changelog}"; then
-	fDie "the changelog's vNEXT section already has a '### Downloads' heading. Take it out; the release writes that table itself."
+	fDie "The changelog's vNEXT section already has a '### Downloads' heading. Take it out; the release writes that table itself."
 fi
 
 ## Where the version comes from: the argument, else the same bump 'gitsby release' would choose.
 ((publishOnly)) && [[ -z "${version}" ]] && fDie "--publish needs the version to publish."
 if [[ -z "${version}" ]]; then
-	[[ -n "${lastTag}" ]] || fDie "no v* tag to bump from; pass a version explicitly."
+	[[ -n "${lastTag}" ]] || fDie "No v* tag to bump from; pass a version explicitly."
 	if fpIsCandidate "${lastTag}"; then
 		## A candidate promotes to its own plain version rather than bumping past it.
 		version="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
 	else
 		## Only digits reach the arithmetic, and 10# keeps a leading zero from reading as octal.
-		[[ "${lastTag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fDie "can't work out the version after ${lastTag}; pass one explicitly."
+		[[ "${lastTag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fDie "Can't work out the version after ${lastTag}; pass one explicitly."
 		IFS='.' read -r major minor patch <<< "${lastTag#v}"
 		version="v${major}.${minor}.$((10#${patch} + 1))"
 	fi
@@ -349,7 +349,7 @@ if ((publishOnly)); then
 	git rev-parse -q --verify "refs/tags/${version}" >/dev/null || fDie "--publish: there is no tag ${version} here."
 	[[ -n "$(git ls-remote --tags origin "refs/tags/${version}" 2>/dev/null || true)" ]] || fDie "--publish: origin has no tag ${version}; push it first."
 else
-	git rev-parse -q --verify "refs/tags/${version}" >/dev/null && fDie "tag ${version} already exists."
+	git rev-parse -q --verify "refs/tags/${version}" >/dev/null && fDie "Tag ${version} already exists."
 fi
 
 ## A suffixed version is a candidate, and GitHub is told so. The tag decides it, because the tag
@@ -381,18 +381,18 @@ fi
 ## State: a clean tree, on the branch 'gitsby release' cuts from, level with origin's. Phase 2's
 ## 'br create' and 'gitsby release' pull that branch first, so a local copy that is behind, or
 ## another branch, would test one commit and tag another. --publish builds from the tag instead.
-[[ -z "$(git status --porcelain)" ]] || fDie "working tree isn't clean."
+[[ -z "$(git status --porcelain)" ]] || fDie "Working tree isn't clean."
 relSource="$(fpReleaseSource)"
 if ((! publishOnly)); then
 	branch="$(fpCurrentBranch)"
-	[[ "${branch}" == "${relSource}" ]] || fDie "on '${branch}', and a release is cut from '${relSource}'. Switch to it, then run again."
+	[[ "${branch}" == "${relSource}" ]] || fDie "On '${branch}', and a release is cut from '${relSource}'. Switch to it, then run again."
 	case "$(fpOriginState)" in
 		level)     ;;
-		unfetched) fDie "couldn't fetch origin, which the release pushes to." ;;
+		unfetched) fDie "Couldn't fetch origin, which the release pushes to." ;;
 		gone)      fDie "origin has no '${relSource}' branch." ;;
-		behind)    fDie "branch '${relSource}' is behind origin's. Pull it, then run again." ;;
-		ahead)     fDie "branch '${relSource}' has unpushed commits." ;;
-		*)         fDie "branch '${relSource}' and origin's have gone different ways. Settle them, then run again." ;;
+		behind)    fDie "Branch '${relSource}' is behind origin's. Pull it, then run again." ;;
+		ahead)     fDie "Branch '${relSource}' has unpushed commits." ;;
+		*)         fDie "Branch '${relSource}' and origin's have gone different ways. Settle them, then run again." ;;
 	esac
 	## The release merge takes in whatever the default branch has that this one doesn't, such as
 	## a hotfix not merged back, and none of that is tested here.
@@ -417,7 +417,7 @@ if ((publishOnly)); then
 	fEcho_Clean "--publish: the pipeline ran when ${version} was cut, so it is skipped."
 elif ! fWould "run ${pipelineName}"; then
 	fEcho_Clean "running the full pipeline before touching anything ..."
-	"${pipeline[@]}" || fDie "the pipeline did not pass; nothing was changed."
+	"${pipeline[@]}" || fDie "The pipeline did not pass; nothing was changed."
 fi
 
 ## Every release target, compiled here as a gate. A target that stopped building is a phase 1
@@ -436,13 +436,13 @@ elif ! fWould "cross-build ${#RELEASE_TARGETS[@]} targets at ${version}"; then
 	## The .exe files have to be stamped with ${version}, and the committed resource still says the last
 	## one. Stamp it, build, then restore - phase 1 is the phase that changes nothing, and phase
 	## 2 regenerates it for real, on the release branch, next to the changelog edit.
-	"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; nothing has been changed."
+	"${winres[@]}" -q "${version}" || fDie "Couldn't stamp the Windows resource; nothing has been changed."
 	built=0
 	fpCrossBuild "$(git -C "${root}" log -1 --format=%ct)" "${root}" || built=$?
 	## Put the stamp back whether that worked or not, so 'nothing has been changed' stays true
 	## of the failure path as well.
-	git -C "${root}" checkout -q -- "${GO_MODULE_DIR}"/*.syso || fDie "couldn't restore the Windows resource; check 'git status'."
-	((built == 0)) || fDie "couldn't build or checksum ${crossBuildFailed:-the release assets}; nothing has been changed."
+	git -C "${root}" checkout -q -- "${GO_MODULE_DIR}"/*.syso || fDie "Couldn't restore the Windows resource; check 'git status'."
+	((built == 0)) || fDie "Couldn't build or checksum ${crossBuildFailed:-the release assets}; nothing has been changed."
 	fEcho_Clean "built: $(cd "${assets}" && echo *)"
 fi
 
@@ -451,10 +451,10 @@ fi
 ## in with the pull. The commit tested is HEAD now, since the pipeline's sync runs before its checks.
 if ((! publishOnly)); then
 	changed="$(git status --porcelain)"
-	[[ -z "${changed}" ]] || fDie "the pipeline left the working tree changed, and the version PR would take that in: $(cut -c4- <<< "${changed}" | paste -sd ' '). Commit it through a PR, or put it back, then run again. Nothing is pushed."
+	[[ -z "${changed}" ]] || fDie "The pipeline left the working tree changed, and the version PR would take that in: $(cut -c4- <<< "${changed}" | paste -sd ' '). Commit it through a PR, or put it back, then run again. Nothing is pushed."
 	case "$(fpOriginState)" in
 		level)     ;;
-		unfetched) fDie "couldn't fetch origin after the pipeline ran. Nothing is pushed." ;;
+		unfetched) fDie "Couldn't fetch origin after the pipeline ran. Nothing is pushed." ;;
 		*)         fDie "origin's '${relSource}' moved while the pipeline ran, so phase 2 would release commits it didn't test. Pull, then run again. Nothing is pushed." ;;
 	esac
 	tested="$(git rev-parse HEAD)"
@@ -480,7 +480,7 @@ else
 	## The version bump goes in through a branch and a PR, like everything else. 'gitsby release'
 	## below is the only push to the default branch.
 	if ! fWould "branch ${relBranch}, retitle the changelog's vNEXT as '${version} - ${today}', add its downloads table, and merge it through a PR"; then
-		"${gitsby}" -q br create "${relBranch}" || fDie "couldn't create ${relBranch}."
+		"${gitsby}" -q br create "${relBranch}" || fDie "Couldn't create ${relBranch}."
 		## 'br create' pulls first, so a commit origin gained since the check above starts the
 		## branch past the one tested.
 		[[ "$(git rev-parse HEAD)" == "${tested}" ]] \
@@ -490,28 +490,28 @@ else
 		## file a release edits.
 		## By line number, so the substitution cannot wander to a heading somewhere else in the file.
 		clLine="$(fpChangelogVnext)"
-		[[ -n "${clLine}" ]] || fDie "the changelog's '## vNEXT' heading went missing after phase 1."
+		[[ -n "${clLine}" ]] || fDie "The changelog's '## vNEXT' heading went missing after phase 1."
 		sed -i.bak "${clLine}s/^## vNEXT.*$/## ${version} - ${today}/" "${changelog}" && rm -f "${changelog:?}.bak"
 		## From the files phase 1 built. Phase 3 builds the same set again from the tag.
 		dlTable="$(fpDownloadsTable)"
 		if [[ -z "${dlTable}" ]]; then
-			fEcho_Clean "WARNING: phase 1 built no binaries to link, so the changelog gets no downloads table."
+			fEcho_Clean "WARNING: Phase 1 built no binaries to link, so the changelog gets no downloads table."
 		else
-			fpChangelogAddDownloads "${clLine}" "${dlTable}" || fDie "couldn't add the downloads table to the changelog; ${relBranch} is pushed, with no PR. Delete it, then run again."
+			fpChangelogAddDownloads "${clLine}" "${dlTable}" || fDie "Couldn't add the downloads table to the changelog; ${relBranch} is pushed, with no PR. Delete it, then run again."
 		fi
 		## And the Windows resource, which is the other thing in the tree that names a version. It
 		## goes in the same commit, so the tag it is reachable from is the one it claims.
-		"${winres[@]}" -q "${version}" || fDie "couldn't stamp the Windows resource; ${relBranch} is pushed, with no PR. Delete it, then run again."
+		"${winres[@]}" -q "${version}" || fDie "Couldn't stamp the Windows resource; ${relBranch} is pushed, with no PR. Delete it, then run again."
 		## gitsby's own 'pr create' rather than gh directly: it already knows this repo's merge target,
 		## which is the one thing a hand-written --base can get wrong.
-		prOut="$("${gitsby}" -q pr create "${version}" 2>&1)" || { printf '%s\n' "${prOut}" >&2; fDie "couldn't open the version-bump PR."; }
+		prOut="$("${gitsby}" -q pr create "${version}" 2>&1)" || { printf '%s\n' "${prOut}" >&2; fDie "Couldn't open the version-bump PR."; }
 		prNum="$(printf '%s\n' "${prOut}" | grep -oE 'https://github\.com/[^ ]+/pull/[0-9]+' | tail -n 1 || true)"
 		prNum="${prNum##*/}"
-		[[ "${prNum}" =~ ^[0-9]+$ ]] || { printf '%s\n' "${prOut}" >&2; fDie "couldn't read a PR number out of 'pr create' output."; }
+		[[ "${prNum}" =~ ^[0-9]+$ ]] || { printf '%s\n' "${prOut}" >&2; fDie "Couldn't read a PR number out of 'pr create' output."; }
 		fEcho_Clean "opened PR #${prNum} for the version bump"
 		## The tested tree plus the bump, which is what the merge and the tag must hold.
 		relTree="$(git rev-parse 'HEAD^{tree}')"
-		"${gitsby}" -q pr ok "${prNum}" || fDie "couldn't merge PR #${prNum}; the bump is pushed but nothing is tagged."
+		"${gitsby}" -q pr ok "${prNum}" || fDie "Couldn't merge PR #${prNum}; the bump is pushed but nothing is tagged."
 		[[ "$(git rev-parse "refs/heads/${relSource}^{tree}")" == "${relTree}" ]] \
 			|| fDie "'${relSource}' holds more than PR #${prNum} on the tested commit, since origin's moved. The bump is merged, and nothing is tagged."
 	fi
@@ -519,7 +519,7 @@ else
 		"${gitsby}" -q release "${version}" || fDie "'gitsby release' failed; the version commit is pushed and nothing is published. If it stopped at a push, ${version} may be tagged here only: 'gitsby release ${version}' finishes it, then 'cicd/release.bash ${version} --publish'."
 		## 'gitsby release' pulls both branches before it merges, so the tag is checked as well.
 		[[ "$(git rev-parse "refs/tags/${version}^{tree}")" == "${relTree}" ]] \
-			|| fDie "the ${version} tag holds more than PR #${prNum} on the tested commit. It's pushed, and nothing is published. Check it, then run 'cicd/release.bash ${version} --publish'."
+			|| fDie "The ${version} tag holds more than PR #${prNum} on the tested commit. It's pushed, and nothing is published. Check it, then run 'cicd/release.bash ${version} --publish'."
 	fi
 	if ((dryRun)); then fEcho "Phase 2 OK: dry run, ${version} not tagged"; else fEcho "Phase 2 OK: ${version} tagged and pushed"; fi
 fi
@@ -538,9 +538,9 @@ if ! fWould "rebuild ${#RELEASE_TARGETS[@]} targets from the ${version} commit";
 	## Phase 2 checked that the tag holds the tested tree plus the bump.
 	tagTree="$(mktemp -d "${safeTmp}/gitsby-tag.XXXXXX")"
 	git -C "${root}" archive "${version}^{commit}" | tar -x -C "${tagTree}" \
-		|| fDie "couldn't export ${version} to build from; the tag is pushed but nothing is published."
+		|| fDie "Couldn't export ${version} to build from; the tag is pushed but nothing is published."
 	fpCrossBuild "$(git -C "${root}" log -1 --format=%ct "${version}^{commit}")" "${tagTree}" \
-		|| fDie "couldn't rebuild or checksum ${crossBuildFailed:-the release assets}; the tag is pushed but nothing is published."
+		|| fDie "Couldn't rebuild or checksum ${crossBuildFailed:-the release assets}; the tag is pushed but nothing is published."
 	fEcho_Clean "built: $(cd "${assets}" && echo *)"
 fi
 
@@ -549,7 +549,7 @@ fi
 notes="$(mktemp)"
 awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
 	'NR>=start && index($0, ver)==1 {f=1; next} f && /^## /{exit} f' "${changelog}" > "${notes}" || true
-[[ -s "${notes}" ]] || fEcho_Clean "WARNING: no changelog section found for ${version}; the release body will be empty."
+[[ -s "${notes}" ]] || fEcho_Clean "WARNING: No changelog section found for ${version}; the release body will be empty."
 ## The table was written from phase 1's build, and these are phase 3's files. Same targets, so
 ## they should match; say so where they don't.
 if ((! dryRun)); then
@@ -558,10 +558,10 @@ if ((! dryRun)); then
 		{ s = $0; while ((i = index(s, ENVIRON["DL"])) > 0) { s = substr(s, i + length(ENVIRON["DL"])); j = index(s, ")"); if (j) print substr(s, 1, j - 1) } }' "${notes}")
 	for f in "${linkedList[@]}"; do
 		linked["${f}"]=1
-		[[ -f "${assets}/${f}" ]] || fEcho_Clean "WARNING: the release notes link ${f}, which isn't being published."
+		[[ -f "${assets}/${f}" ]] || fEcho_Clean "WARNING: The release notes link ${f}, which isn't being published."
 	done
 	for f in "${assets}"/*; do
-		[[ -n "${linked[${f##*/}]:-}" ]] || fEcho_Clean "WARNING: the release notes don't link ${f##*/}, which is being published."
+		[[ -n "${linked[${f##*/}]:-}" ]] || fEcho_Clean "WARNING: The release notes don't link ${f##*/}, which is being published."
 	done
 fi
 nativeAsset="$(fpAssetName "$(go env GOOS)" "$(go env GOARCH)")"
@@ -570,7 +570,7 @@ buildLine=""
 if [[ -n "${buildLine}" ]]; then
 	printf '\n---\n\n%s\n' "${buildLine}" >> "${notes}"
 else
-	fEcho_Clean "WARNING: couldn't read a build number out of ${nativeAsset}; the notes will not name one."
+	fEcho_Clean "WARNING: Couldn't read a build number out of ${nativeAsset}; the notes will not name one."
 fi
 
 preArgs=(); preSay=""
@@ -578,7 +578,7 @@ if ((prerelease)); then preArgs=(--prerelease); preSay=" as a pre-release"; fi
 if ! fWould "gh release create ${version}${preSay} with ${#RELEASE_TARGETS[@]} binaries and SHA256SUMS"; then
 	"${gitsby}" -q raw gh release create "${version}" --title "${version}" --notes-file "${notes}" \
 		"${preArgs[@]}" "${assets}"/* \
-		|| fDie "publishing the release failed; the tag is pushed, so re-run 'gh release create ${version}${preSay:+ --prerelease}' by hand."
+		|| fDie "Publishing the release failed; the tag is pushed, so re-run 'gh release create ${version}${preSay:+ --prerelease}' by hand."
 fi
 
 ## Prove it the way a user meets it, not by trusting the steps above: fetch the asset for THIS
@@ -622,15 +622,15 @@ if ! fWould "verify releases/latest, download and run this platform's published 
 		fSafeRm "${lineHome:?}" >/dev/null
 		lineTag="$(printf '%s\n' "${lineOut}" | sed -n 's/^  - Download [^ ]* (\(.*\)) from .*/\1/p' | sed -n '1p')"
 		if [[ -z "${lineTag}" ]]; then
-			fEcho_Clean "WARNING: the install line stopped before naming a release: $(printf '%s\n' "${lineOut}" | sed -n 's/^Error: //p' | sed -n '1p')"
+			fEcho_Clean "WARNING: The install line stopped before naming a release: $(printf '%s\n' "${lineOut}" | sed -n 's/^Error: //p' | sed -n '1p')"
 		elif [[ "${lineTag}" == "${version}" ]]; then
 			fEcho_Clean "the install line takes ${version}"
 		elif ((prerelease)) && ! fpIsCandidate "${lineTag}"; then
 			fEcho_Clean "the install line stays on ${lineTag}, a full release with a binary; ${version} is taken by naming it"
 		elif ((prerelease)); then
-			fEcho_Clean "WARNING: the install line takes ${lineTag}, neither ${version} nor a full release."
+			fEcho_Clean "WARNING: The install line takes ${lineTag}, neither ${version} nor a full release."
 		else
-			fEcho_Clean "WARNING: the install line takes ${lineTag}, not ${version}."
+			fEcho_Clean "WARNING: The install line takes ${lineTag}, not ${version}."
 		fi
 	else
 		fEcho_Clean "WARNING: ${version} has no install.bash, so which release the install line takes went unchecked."
@@ -690,3 +690,4 @@ echo
 ##		- 20261110 JC: The version is checked against RELEASE_VERSION_RE, the shape 'gitsby release' takes. A version it refused, such as v3.0.0-, got the bump merged first. A stop after 'br create' says the branch is pushed, which it is.
 ##		- 20261119 JC: A suffix after a dot, as in v3.0.0.rc1, makes a pre-release and promotes to its plain version, as a dash does. Only a dash did, so that one published as a full release.
 ##		- 20261120 JC: The tag scan is fReleaseTags, so v3.0.0.rc1 no longer reads as newer than v3.0.0. The default branch is read from origin/HEAD's full ref; --short read a tag named origin/main as the branch, and the check on origin's main was skipped. The current branch comes from branch --show-current, since a tag named dev made it heads/dev and the run refused.
+##		- 20261124 JC: Warnings start with a capital after their label.

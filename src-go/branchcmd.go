@@ -84,8 +84,13 @@ func (a *app) checkoutsAhead() []string {
 // refuseHeldBranch: git won't check out a branch another worktree has, or is
 // rebasing or bisecting, and finds that only at the checkout, after the park push.
 func (a *app) refuseHeldBranch() error {
-	for _, branch := range a.checkoutsAhead() {
-		where, ok := a.branchRefs().held[branch]
+	ahead := a.checkoutsAhead()
+	if len(ahead) == 0 {
+		return nil
+	}
+	held := a.heldElsewhere(ahead)
+	for _, branch := range ahead {
+		where, ok := held[branch]
 		what, fix := "checked out", "Switch that worktree to another branch, then run this again."
 		if !ok {
 			var op string
@@ -112,6 +117,40 @@ func (a *app) refuseHeldBranch() error {
 		}, nil)
 	}
 	return nil
+}
+
+// heldElsewhere maps each of branches that another worktree has checked out to
+// that worktree's folder. %(worktreepath) makes for-each-ref read every worktree,
+// which at a few hundred costs more than the rest of the run's own query, so it's
+// asked only here, for these branches alone. With no linked worktree nothing else
+// can hold a branch, and that needs no spawn to tell.
+func (a *app) heldElsewhere(branches []string) map[string]string {
+	held := map[string]string{}
+	if a.worktreesDir != "" && !hasLinkedWorktree(a.worktreesDir) {
+		return held
+	}
+	args := []string{"for-each-ref", "--format=%(refname)%00%(HEAD)%00%(worktreepath)"}
+	for _, branch := range branches {
+		args = append(args, "refs/heads/"+branch)
+	}
+	for _, line := range runLines("git", args...) {
+		fields := strings.Split(line, "\x00")
+		if len(fields) != 3 || fields[1] == "*" || fields[2] == "" {
+			continue
+		}
+		// A pattern also matches the refs under it, such as dev/x under dev.
+		if name, ok := strings.CutPrefix(fields[0], "refs/heads/"); ok && slices.Contains(branches, name) {
+			held[name] = fields[2]
+		}
+	}
+	return held
+}
+
+// hasLinkedWorktree: whether git keeps a linked worktree's git dir in dir, as git
+// worktree add makes one.
+func hasLinkedWorktree(dir string) bool {
+	entries, _ := os.ReadDir(dir) // none until a worktree is added
+	return slices.ContainsFunc(entries, fs.DirEntry.IsDir)
 }
 
 // busyElsewhere: the folder of another worktree that is rebasing or bisecting
@@ -326,9 +365,9 @@ func (a *app) cmdMerge() error {
 		// - stale on origin. The switch's park push publishes dev on the way, so two
 		// commands cover both.
 		if wasHotfix {
-			a.out.status("WARNING: remote unreachable; the merge to '" + targetBranch + "' is local only - once online, '" + meName + " br switch " + typedArg(targetBranch, runtime.GOOS) + "' then '" + meName + " sync' publishes it.")
+			a.out.status("WARNING: Remote unreachable; the merge to '" + targetBranch + "' is local only - once online, '" + meName + " br switch " + typedArg(targetBranch, runtime.GOOS) + "' then '" + meName + " sync' publishes it.")
 		} else {
-			a.out.status("WARNING: remote unreachable; the merge to '" + targetBranch + "' is local only - '" + meName + " sync' publishes it.")
+			a.out.status("WARNING: Remote unreachable; the merge to '" + targetBranch + "' is local only - '" + meName + " sync' publishes it.")
 		}
 	default:
 		// Where origin has the branch and the target pushes to its own name, one atomic
@@ -396,7 +435,7 @@ func (a *app) mergeDeleteRemote(branch, mergedTip string) {
 	tested := map[string]string{branch: mergedTip}
 	onOrigin, asked := a.askOriginHeads()
 	if !asked {
-		a.out.status("WARNING: couldn't ask origin about its '" + branch + "'; left it alone.")
+		a.out.status("WARNING: Couldn't ask origin about its '" + branch + "'; left it alone.")
 		a.out.clean("  Once origin can be reached, this deletes it. It stops if that branch has moved:")
 		a.out.clean(planPad + leaseDeleteLine(branch, mergedTip, runtime.GOOS))
 		return
@@ -416,7 +455,7 @@ func (a *app) mergeDeleteRemote(branch, mergedTip string) {
 		a.out.status("git push --force-with-lease origin --delete " + branch + " ...")
 		// Non-fatal: the lease can still refuse, if the branch moved after the ask.
 		if !a.inheritOK("git", leaseDeleteBatches(send, tested, leasePushBudget)[0].args...) {
-			a.out.status("WARNING: couldn't delete origin's '" + branch + "'; left it alone.")
+			a.out.status("WARNING: Couldn't delete origin's '" + branch + "'; left it alone.")
 		}
 		a.out.resetBlank()
 	}
@@ -546,12 +585,12 @@ func (a *app) warnHotfixTouchedCode(workBranch, targetBranch string) {
 	switch {
 	case !ok:
 		a.out.clean("")
-		a.out.status("NOTE: couldn't tell whether this hotfix changes more than documentation.")
+		a.out.status("NOTE: Couldn't tell whether this hotfix changes more than documentation.")
 		a.out.clean("  If it does, '" + targetBranch + "' will have changes that no tag contains.")
 		a.out.clean("  Cut a patch release when you're ready: " + meName + " release")
 	case !docsOnly(splitLines(out)):
 		a.out.clean("")
-		a.out.status("NOTE: this hotfix changes more than documentation.")
+		a.out.status("NOTE: This hotfix changes more than documentation.")
 		a.out.clean("  '" + targetBranch + "' will have changes that no tag contains, so the latest release's")
 		a.out.clean("  downloads may no longer match it. Cut a patch release when you're ready: " + meName + " release")
 	}

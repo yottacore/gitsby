@@ -130,3 +130,63 @@ func TestInlinePlaceholders(t *testing.T) { // [df4f8]
 		}
 	}
 }
+
+// lowerAfterLabel is true when the first word after a label's colon starts in
+// lower case and isn't a name that is always spelled that way.
+func lowerAfterLabel(m []string) bool {
+	w := m[len(m)-1]
+	return w[0] >= 'a' && w[0] <= 'z' && !slices.Contains([]string{"git", "gh", "glab", "tea", "tig", "lazygit", "origin", "origin's"}, w)
+}
+
+// The text after a help line's label starts with a capital, as in "No version:
+// Next after latest tag."
+func TestHelpLabelsCapitalize(t *testing.T) { // [dfr27]
+	labelRE := regexp.MustCompile(`(?:^|[.!?] )[A-Z][A-Za-z ]{0,20}: ([A-Za-z][\w']*)`)
+	seen := 0
+	for _, u := range usages {
+		texts := []string{u.help}
+		for _, d := range u.defs {
+			texts = append(texts, d.means)
+		}
+		for _, s := range texts {
+			for _, m := range labelRE.FindAllStringSubmatch(s, -1) {
+				seen++
+				if lowerAfterLabel(m) {
+					t.Errorf("%s: %q starts in lower case after its label", u.cmd, m[0])
+				}
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no label found in the help; the pattern no longer matches it")
+	}
+}
+
+// A WARNING or NOTE line starts its sentence with a capital, unless it starts
+// with a command or a remote's name.
+func TestWarningLabelsCapitalize(t *testing.T) { // [dfr28]
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	labelRE := regexp.MustCompile(`"(?:WARNING|NOTE): ([A-Za-z][\w']*)`)
+	seen := 0
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		body, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range labelRE.FindAllStringSubmatch(string(body), -1) {
+			seen++
+			if lowerAfterLabel(m) {
+				t.Errorf("%s: %q starts in lower case after its label", f, m[0])
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no WARNING or NOTE literal found; the pattern no longer matches the source")
+	}
+}

@@ -43,7 +43,7 @@ import unicodedata
 try:
 	import tomllib
 except ImportError:
-	sys.stderr.write("gen-demo-gif: needs python 3.11+ (tomllib)\n")
+	sys.stderr.write("gen-demo-gif: Needs python 3.11+ (tomllib)\n")
 	sys.exit(2)
 try:
 	from PIL import Image, ImageDraw, ImageFont
@@ -154,7 +154,7 @@ def fFindFont(prefs, size):
 				return ImageFont.truetype(path, size), f"{family} {style}".strip()
 			except OSError:
 				continue
-	fSkip("no usable monospace font found")
+	fSkip("No usable monospace font found")
 
 
 def fLoadScenario(path):
@@ -182,9 +182,9 @@ def fLoadScenario(path):
 		with open(path, "rb") as f:
 			sc = tomllib.load(f)
 	except (OSError, tomllib.TOMLDecodeError) as e:
-		fSkip(f"scenario: {e}")
+		fSkip(f"Scenario: {e}")
 	if not sc.get("step"):
-		fSkip("scenario has no [[step]] entries")
+		fSkip("Scenario has no [[step]] entries")
 	return sc
 
 
@@ -209,7 +209,7 @@ def fRunStep(step, prog, binpath):
 		                     stderr=subprocess.STDOUT, text=True,
 		                     timeout=30, errors="replace")
 	except subprocess.TimeoutExpired:
-		fSkip(f"command timed out: {cmd}")
+		fSkip(f"Command timed out: {cmd}")
 	return [("out", fLines(res.stdout.rstrip("\n")))]
 
 
@@ -231,7 +231,7 @@ def fRunAsked(cmd, ask, answer):
 	while True:
 		if time.monotonic() > deadline:
 			proc.kill()
-			fSkip(f"command never asked {ask!r}, and timed out: {cmd}")
+			fSkip(f"Command never asked {ask!r}, and timed out: {cmd}")
 		if select.select([proc.stdout], [], [], 0.2)[0]:
 			chunk = os.read(proc.stdout.fileno(), 65536)
 			if not chunk:
@@ -244,7 +244,7 @@ def fRunAsked(cmd, ask, answer):
 	os.close(master)
 	text = ANSI_RE.sub("", buf.decode("utf-8", "replace"))
 	if not sent:
-		fSkip(f"command exited without asking {ask!r}: {cmd}")
+		fSkip(f"Command exited without asking {ask!r}: {cmd}")
 	##	The question is written without a newline and the answer is read back, so
 	##	neither is a line yet. Split there: what precedes it is ordinary output, the
 	##	last piece of it shares the question's line, and what follows starts with the
@@ -633,7 +633,7 @@ def fMain():
 		for what, text in (t for t in typed if t):
 			if promptW + len(text) > scr.cols:
 				sys.stderr.write(
-					f"gen-demo-gif: step {stepNo} {what} is {promptW + len(text) - scr.cols}"
+					f"gen-demo-gif: Step {stepNo} {what} is {promptW + len(text) - scr.cols}"
 					f" characters wider than the {scr.cols}-column screen, and will be cut off\n")
 
 	##	Run every command up front: the outputs feed the demo AND tell the

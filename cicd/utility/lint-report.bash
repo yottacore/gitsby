@@ -29,7 +29,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -44,7 +44,7 @@ while (($#)); do case "$1" in
 	--dir)      dir="${2:-}"; shift 2 ;;
 	--file)     file="${2:-}"; shift 2 ;;
 	-h|--help)  grep -E '^##' "$0" | sed 's/^##\t\?//'; exit 0 ;;
-	*) echo "lint-report: unknown option: $1" >&2; exit 2 ;;
+	*) echo "lint-report: Unknown option: $1" >&2; exit 2 ;;
 esac; done
 
 fSkip() { echo "lint-report: $1" >&2; exit 2; }   ## 2 = non-fatal skip (matches the cicd profiler stage)
@@ -63,11 +63,11 @@ fNewest() {
 }
 
 if [[ -n "${file}" ]]; then
-	[[ -f "${file}" ]] || fSkip "no such file: ${file}"
+	[[ -f "${file}" ]] || fSkip "No such file: ${file}"
 	log="${file}"; b="$(basename "${file}")"; ts="${b#run_}"; ts="${ts%%_*}"; ts="${ts%.log}"
 else
-	[[ -d "${dir}" ]] || fSkip "no log dir: ${dir}"
-	nb="$(fNewest "${dir}")" || fSkip "no run logs in ${dir}"
+	[[ -d "${dir}" ]] || fSkip "No log dir: ${dir}"
+	nb="$(fNewest "${dir}")" || fSkip "No run logs in ${dir}"
 	ts="${nb%%$'\t'*}"; log="${nb#*$'\t'}"
 fi
 
@@ -82,7 +82,7 @@ fi
 ##	Record the marker now (before printing the body) so a caller that pipes stdout
 ##	to head/less and closes it early still records the look.
 if ((check)) && ((! noMark)) && [[ -n "${ts}" ]]; then
-	printf '%s\n' "${ts}" > "${marker}" 2>/dev/null || echo "lint-report: could not write marker: ${marker}" >&2
+	printf '%s\n' "${ts}" > "${marker}" 2>/dev/null || echo "lint-report: Could not write marker: ${marker}" >&2
 fi
 
 ##	Findings are matched by each tool's own format, not the words "warning" and "error", which

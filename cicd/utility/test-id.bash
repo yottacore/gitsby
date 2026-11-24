@@ -38,7 +38,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -107,7 +107,7 @@ fSites(){
 		if [[ -n "${rev}" ]]; then
 			git -C "${root}" cat-file -e "${rev}:${f}" 2>/dev/null || continue
 		else
-			[[ -f "${root}/${f}" ]] || { ((! list)) || { printf '%s\n' "test-id: no suite at ${f}" >&2; return 2; }; continue; }
+			[[ -f "${root}/${f}" ]] || { ((! list)) || { printf '%s\n' "test-id: No suite at ${f}" >&2; return 2; }; continue; }
 		fi
 		fSuiteText "${f}" | FILE="${f}" awk '
 			/^[[:space:]]*#/ { next }
@@ -161,10 +161,10 @@ if ((list)); then
 fi
 
 sites="$(fSites)"
-if [[ -z "${sites}" ]]; then echo "test-id: found no tests under ${root}"; exit 1; fi
+if [[ -z "${sites}" ]]; then echo "test-id: Found no tests under ${root}"; exit 1; fi
 findings=""
 missing="$(awk '$1 == "-" { print "  " $3 }' <<< "${sites}")"
-if [[ -n "${missing}" ]]; then findings+="test-id: tests with no ID (mint one with cicd/utility/test-id.bash):"$'\n'"${missing}"$'\n'; fi
+if [[ -n "${missing}" ]]; then findings+="test-id: Tests with no ID (mint one with cicd/utility/test-id.bash):"$'\n'"${missing}"$'\n'; fi
 badForm="$(awk '$1 != "-" && $1 !~ /^[0-9abcdefghjkmnpqrstvwxyz]{5}$/ { print "  " $3 ": [" $1 "]" }' <<< "${sites}")"
 if [[ -n "${badForm}" ]]; then findings+="test-id: IDs that are not five lowercase Crockford base-32 characters:"$'\n'"${badForm}"$'\n'; fi
 ## An ID may appear twice only as an fOk and the fFail right after it, in the same file.
@@ -182,7 +182,7 @@ dupes="$(awk '$1 != "-" { n[$1]++; k[$1] = k[$1] " " $2; w[$1] = w[$1] " " $3 }
 if [[ -n "${dupes}" ]]; then findings+="test-id: IDs used by more than one test:"$'\n'"${dupes}"$'\n'; fi
 
 if [[ -n "${findings}" ]]; then printf '%s' "${findings}"; exit 1; fi
-((quiet)) || echo "test-id: every test has its own ID ($(awk '{ print $1 }' <<< "${sites}" | LC_ALL=C sort -u | grep -c .) tests)"
+((quiet)) || echo "test-id: Every test has its own ID ($(awk '{ print $1 }' <<< "${sites}" | LC_ALL=C sort -u | grep -c .) tests)"
 exit 0
 
 

@@ -93,11 +93,11 @@ What you reach for daily is a one-word command. Everything else is grouped under
 | `sync`          | `[message]`               | Pull, commit, and push. Do infrequently.
 | `status`        |                           | Fetch and show current status.
 | `whoami`        |                           | Show who commands in this folder act as: account, ssh key, commit author, git host login.
-| `release`       | `[version]`               | Cut a release: merge `dev` into `main`, tag, push. No version: the next one after the latest tag.
+| `release`       | `[version]`               | Cut a release: Merge `dev` into `main`, tag, push. No version: The next one after the latest tag.
 | `br`            | `[list]`                  | Fetch and list branches.
 | `br create`     | `<branch>`                | Create a new branch off `dev`/`main`. Uncommitted work on `dev`/`main` comes along; on another branch it is parked there first.
 | `br hotfix`     | `<name>`                  | Branch off the default branch as `hotfix/<name>`, to correct what's already published. Landing it carries the change back to `dev`.
-| `br switch`     | `[branch]`                | Switch to a branch (parks current work first). No arg: back to `dev`/`main`.
+| `br switch`     | `[branch]`                | Switch to a branch (parks current work first). No arg: Back to `dev`/`main`.
 | `br merge`      | `[message]`               | Merge the current branch into `dev`/`main` (`--no-ff`), push, delete it local + remote.
 | `br prune`      |                           | Delete branches already merged into `dev`/`main`, local + remote. Unmerged ones, and the branch you're on, are kept.
 | `repo clone`    | `<url> [directory]`       | Clone a repo you don't have yet (checks out `dev` if it has one). Re-run is a no-op.

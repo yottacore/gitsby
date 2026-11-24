@@ -103,6 +103,70 @@ func TestPushArgs(t *testing.T) { // [df52f]
 	}
 }
 
+// After a step dropped branchRefs, the push step reads the local branches' push
+// fields alone, and gets what branchRefs has for them, so the push is the same
+// either way. The whole query isn't run for it.
+func TestPushStepRefs(t *testing.T) { // [dfr1g]
+	origin, clone := gitTestRepo(t)
+	runGit(t, clone, "checkout", "-q", "-b", "feat")
+	runGit(t, clone, "push", "-q", "-u", "origin", "feat")
+	runGit(t, clone, "push", "-q", "origin", "feat:up")
+	runGit(t, clone, "remote", "add", "fork", origin)
+	runGit(t, clone, "fetch", "-q", "fork")
+	runGit(t, clone, "branch", "-q", "lone")
+	runGit(t, clone, "branch", "-q", "--track", "other", "origin/up")
+	t.Chdir(clone)
+	tests := []struct {
+		name   string
+		config [][2]string
+		branch string
+	}{
+		{"plain", nil, "feat"},
+		{"no upstream", nil, "lone"},
+		{"detached", nil, "--detach"},
+		{"push remote", [][2]string{{"branch.feat.pushRemote", "fork"}}, "feat"},
+		{"push default remote", [][2]string{{"remote.pushDefault", "fork"}}, "feat"},
+		{"upstream on another remote", [][2]string{{"branch.feat.remote", "fork"}}, "feat"},
+		{"upstream by another name, upstream", [][2]string{{"push.default", "upstream"}}, "other"},
+		{"upstream by another name, simple", nil, "other"},
+		{"refspec that renames", [][2]string{{"remote.origin.push", "refs/heads/feat:refs/heads/renamed"}}, "feat"},
+		{"refspec to a ref that isn't a branch", [][2]string{{"remote.origin.push", "refs/heads/feat:refs/for/main"}}, "feat"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runGit(t, clone, "checkout", "-q", tc.branch)
+			for _, kv := range tc.config {
+				runGit(t, clone, "config", kv[0], kv[1])
+			}
+			step := newApp(newPrinter())
+			refs := step.stepPushRefs()
+			stepArgs, stepErr := step.pushArgs()
+			stepRan := step.git.branches.known
+			plan := newApp(newPrinter())
+			whole := plan.branchRefs()
+			planArgs, planErr := plan.pushArgs()
+			for _, kv := range tc.config {
+				runGit(t, clone, "config", "--unset", kv[0])
+			}
+			runGit(t, clone, "config", "branch.feat.remote", "origin")
+			if stepRan {
+				t.Errorf("the push step ran the whole branchRefs query")
+			}
+			if refs.head != whole.head || len(refs.push) != len(whole.push) {
+				t.Errorf("stepPushRefs() head %q with %d branches, branchRefs() head %q with %d", refs.head, len(refs.push), whole.head, len(whole.push))
+			}
+			for branch, p := range whole.push {
+				if refs.push[branch] != p {
+					t.Errorf("stepPushRefs() has %q as %+v, branchRefs() as %+v", branch, refs.push[branch], p)
+				}
+			}
+			if !slices.Equal(stepArgs, planArgs) || (stepErr == nil) != (planErr == nil) {
+				t.Errorf("pushArgs() after a step = %q, %v, with branchRefs read = %q, %v", stepArgs, stepErr, planArgs, planErr)
+			}
+		})
+	}
+}
+
 // The plan's push line names where the step sends it: the remote when it isn't
 // origin, and the branch when it isn't the current one's name. Checked against the
 // step's own arguments, so the two can't drift. An empty want is a push git would

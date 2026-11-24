@@ -23,7 +23,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -31,11 +31,11 @@ fDie(){ printf 'go-modcache-prune: %s\n' "$*" >&2; exit 1 ;}
 
 (($# == 3)) || { printf 'Usage: go-modcache-prune.bash MODCACHE GO_MOD GO_SUM\n' >&2; exit 2; }
 modCache="${1%/}"; goMod="$2"; goSum="$3"
-[[ -f "${goMod}" && -f "${goSum}" ]] || fDie "no go.mod or go.sum at ${goMod} and ${goSum}"
-[[ "${modCache}" == /?* && "${modCache}" != *..* && "${modCache}" != *//* && "${modCache}" != *$'\n'* ]] || fDie "refused, bad path: ${modCache}"
+[[ -f "${goMod}" && -f "${goSum}" ]] || fDie "No go.mod or go.sum at ${goMod} and ${goSum}"
+[[ "${modCache}" == /?* && "${modCache}" != *..* && "${modCache}" != *//* && "${modCache}" != *$'\n'* ]] || fDie "Refused, bad path: ${modCache}"
 ## A cache that was never filled has nothing to prune.
 [[ -d "${modCache}/cache/download" ]] || { echo 0; exit 0; }
-[[ "$(cd -P -- "${modCache}" && pwd -P)" == "${modCache}" ]] || fDie "refused, goes through a link: ${modCache}"
+[[ "$(cd -P -- "${modCache}" && pwd -P)" == "${modCache}" ]] || fDie "Refused, goes through a link: ${modCache}"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
@@ -85,7 +85,7 @@ while IFS= read -r -d '' at; do
 done < <(find "${modCache}/cache/download" -path "${modCache}/cache/download/sumdb" -prune -o -type d -name '@v' -prune -print0)
 
 if ((${#doomed[@]})); then
-	fSafeRm_Under "${modCache}" "${doomed[@]}" || fDie "couldn't remove them all"
+	fSafeRm_Under "${modCache}" "${doomed[@]}" || fDie "Couldn't remove them all"
 	## The folders above that are empty now, no higher than the cache's own two.
 	if ((${#parents[@]})); then (cd "${modCache}" && rmdir -p -- "${!parents[@]}" 2>/dev/null) || true; fi
 	if ((${#dlParents[@]})); then (cd "${modCache}/cache/download" && rmdir -p -- "${!dlParents[@]}" 2>/dev/null) || true; fi

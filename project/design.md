@@ -226,6 +226,7 @@ The rule for every path that hands out a token. The token goes only to the host 
 	- `br create`, `br hotfix`, `br switch`, `br merge`, `pr ok` and `release` ask, each for the branches it checks out. `br prune` already skipped a branch it couldn't delete.
 	- A worktree whose folder was deleted by hand still holds its branch, so the refusal names `git worktree prune` there. `git worktree prune` passes over a locked worktree, so for a locked one the refusal names mounting the folder again, or `git worktree unlock` and then prune (2026-11-21).
 	- A branch another worktree is rebasing or bisecting is held too, since git refuses to check it out the same way (2026-11-20). HEAD is detached there, so git's list of checked-out branches doesn't name it. gitsby reads that worktree's `rebase-merge`, `rebase-apply` and `BISECT_START` as git does, which costs no spawn.
+	- Only a run that checks a branch out asks git which worktree has it, for those branches alone, and only once a linked worktree exists (2026-11-24). That query reads every worktree, which with 200 of them added about 8 ms to `status`, `whoami` and `sync`, none of which checks anything out.
 
 - `--staged` commits the index only, and its pulls go without `--autostash` (2026-10-05).
 	- It is a flag on `pullcom`, `sync`, `pr create`, `release`, and the branch commands that commit before they move. Any other command refuses it, since ignoring it would sweep in the edits it was typed to keep out. It is opt-in: a file staged long ago would otherwise make a commit quietly smaller.
@@ -452,7 +453,7 @@ The rule for every path that hands out a token. The token goes only to the host 
 	- A push to `main` whose changes are all in the paths `MERGE_GATE_SKIP` in `cicd/config.bash` lists, docs and art no build reads, goes out without the gate, with a note. The list is read from the pushed commit, so a change to the list is itself gated. The diff is between the remote's `main` and the pushed commit. A new `main`, or a remote commit not here, is gated.
 	- The gate is `--merge-gate` since 2026-10-25: every check of a plain run, the other boxes included, with nothing synced, dogfooded, published or rewritten. Before that it was `--backlog-run-quick`, which `--gate` names: stage 1, the unit tests, and the regression, fuzz and compatibility suites against a build of the commit, through the same functions the full run calls, so the two cannot drift apart. A lint tool that is not installed warns and is skipped, as it is in the full run. Making it fatal in the gate alone was rejected for that reason. Since 2026-10-25 it runs in the pinned image where docker works, like a full run.
 	- git hands a hook the checkout it pushes from, through `GIT_DIR`, `GIT_WORK_TREE` and `GIT_PREFIX`. The hook drops them before anything else, or its git calls and the unit tests would act on that checkout instead of the gate worktree.
-	- Accepted cost: the gate runs the pushed commit's own pipeline and unit tests, as running the pipeline on that commit would. A push to `main` takes as long as a full run, about 50 minutes. `git push --no-verify` is how to push to `main` without running it.
+	- Accepted cost: The gate runs the pushed commit's own pipeline and unit tests, as running the pipeline on that commit would. A push to `main` takes as long as a full run, about 50 minutes. `git push --no-verify` is how to push to `main` without running it.
 
 - A GitHub Actions workflow, `.github/workflows/macos.yml`, builds and tests on GitHub's hosted Macs, Intel and Apple silicon, on each push to `dev` and `main` and on each pull request.
 	- It is an extra check, not a gate. Nothing waits on it, and nothing is published from it. `cicd/cicd.bash` stays the one pipeline, and its stage 7 still tests a real Mac over ssh.
@@ -659,6 +660,7 @@ The first 4 of these output rules came back after 2 sweeps, each time at sites t
 | A config key spelled the way the file takes it | Every `account set` literal in the Go source, which a Go test checks, and every key named in accounts.md, README.md and the changelog's vNEXT section.
 | One word per thing                             | Every name for the same thing in output: labels, the accounts file, and the old config formats.
 | One name per placeholder                       | The `usages` table in usage.go, which the help and every Syntax line read, and any placeholder written into another message. test.bash compares the README's Commands table with the help.
+| A capital after a label's colon               | Every `WARNING:` and `NOTE:` literal and every help line, which 2 Go tests check, and every bold or plain label in the public docs.
 
 ### Testing
 

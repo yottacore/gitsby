@@ -776,7 +776,7 @@ func (a *app) runMutating(mismatch identityMismatch) error {
 	// on its own terms.
 	if !strings.HasPrefix(a.cmd.name, "repo-") && a.isOffline() {
 		a.out.clean("")
-		a.out.clean("WARNING: remote unreachable - nothing will be pushed; the work stays local.")
+		a.out.clean("WARNING: Remote unreachable - nothing will be pushed; the work stays local.")
 	}
 	// Last thing before the prompt, so it can't scroll away above the plan.
 	if mismatch.text != "" {

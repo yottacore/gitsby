@@ -44,7 +44,7 @@ def read_run(path: str) -> tuple[dict[str, Any], str]:
         with open(path, encoding="utf-8") as fh:
             runs = json.load(fh)["runs"]
     except (OSError, ValueError, KeyError, TypeError) as err:
-        fail(f"can't read {path}: {err}")
+        fail(f"Can't read {path}: {err}")
     if len(runs) != 1:
         fail(f"{path}: expected 1 run, found {len(runs)}")
     run = runs[0]
@@ -88,7 +88,7 @@ def main(argv: list[str]) -> int:
             fail(f"--ignore wants 'RULE PATH', not {spec!r}")
         ignore[(rule, path)] = 0
     if not paths:
-        fail("usage: codeql-findings.py [--ignore \"RULE PATH\"]... SARIF...")
+        fail("Usage: codeql-findings.py [--ignore \"RULE PATH\"]... SARIF...")
 
     ## One finding in code every OS builds shows up in each report, so each is listed once.
     found: dict[tuple[str, str, int], str] = {}

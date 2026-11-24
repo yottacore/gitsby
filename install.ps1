@@ -92,7 +92,7 @@ function Install-Gitsby {
         return
     }
     # The date of the newest History entry below. test.bash holds the two together.
-    $installerVersion = '2026-11-22'
+    $installerVersion = '2026-11-24'
     if ($Version) {
         Write-Output "gitsby installer ${installerVersion}"
         return
@@ -489,7 +489,7 @@ function Install-Gitsby {
                     $what = Add-StoredPath -keyPath $pathKeyPath -destDir $destDir -pathScope $pathScope
                     $env:PATH = $env:PATH.TrimEnd($pathSep) + $pathSep + $destDir
                 } catch {
-                    Write-Host "Note: couldn't update PATH ($($_.Exception.Message)). Add ${destDir} to it to run 'gitsby' by name."
+                    Write-Host "Note: Couldn't update PATH ($($_.Exception.Message)). Add ${destDir} to it to run 'gitsby' by name."
                     $pathScope = ''
                 }
                 if ($pathScope) {
@@ -638,3 +638,4 @@ try {
 #     entry counts only in a stored REG_EXPAND_SZ value, the one place Windows expands it.
 #   - 20261122 JC: The stored PATH update is its own function, Add-StoredPath, so the already-on
 #     result line is checked off Windows too.
+#   - 20261124 JC: The PATH note starts with a capital after its label.

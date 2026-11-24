@@ -1,6 +1,9 @@
-## Lint rules for the cicd Python helpers. cicd.bash runs these, and its leak rules
-## separately under --isolated. No formatter: the older demo script keeps its tabs.
+## Lint rules for the cicd Python helpers.
+## cicd.bash runs these, and its leak rules separately under --isolated.
+## No formatter: the older demo script keeps its tabs.
 target-version = "py311"
+## Lines have no length limit. 320 is ruff's max, for when a rule or formatter reads it.
+line-length = 320
 
 [lint]
 select = ["E4", "E7", "E9", "F", "B", "SIM", "UP", "ANN"]

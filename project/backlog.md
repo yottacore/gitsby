@@ -33,107 +33,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
-- Stage 7's Go test runs on other boxes have no time limit, so one hung test holds the stage
-	- ID: 2026112021514129
-	- Type: Enhancement
-	- Status: Waiting on automated testing
-		- Wine's run is too close to the 600 s limit. Under Wine on vmDebARM64 the Go tests took 471 s of it, so a busy box can fail them on time alone. Wine needs its own, larger limit, or the shared one raised. The Windows and native runs passed well inside it.
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-215141
-	- Opened by:
-	- Related IDs: 2026112021204523
-	- Requirements [Feature]: The Windows run in cicd/remote-tests.bash starts the test binary with no -test.timeout and no outer timeout, and the binary's own default is none. [dfk1m] hung there with no output until the run was stopped. Pass -test.timeout to every remote Go test run, so a hung test fails with every goroutine's stack. test.bash's asserts on those command lines change with it.
-	- Needs external testing: one rerun of the Wine run on vmDebARM64 through stage7-one-box.bash, at the 1400 s limit.
-	- Actual effort: Low
-	- Progress log: A serial run of the Go tests here, GOMAXPROCS=1, took 93 s at load 2, with the longest test at 53 s. On nov23 at 0068ff4, at load 2, the tests' own times summed to 215 s on vm925w, 158 s on vmDebARM64, and 471 s under Wine on vmDebARM64, whose whole run took about 8 minutes with Wine's setup.
-	- Branch: nov23-2026112021514129, nov23-2026112021514129-fix
-	- Commit: 738dc47, 1d36026
-	- Verified: the stage 7 harness block passed 51/0, and against remote-tests.bash before the change [dfq5x], [dfq5y], [dfq5z], [dedq5] and [dee74] fail. With the flag dropped from only the Windows line, [dfq5x], [dfq5y] and [dee74] fail. With it dropped from only the Wine line, [dfq5y] fails. The quick gate of every area passed, test.bash 2441/0, fuzz 310/0, parity 32/0. On nov23 at 0068ff4, stage 7 through stage7-one-box.bash passed the Go tests on vm925w, on vmDebARM64, and under Wine on vmDebARM64. On vm925w with the limit set to 5 s in the clone only, the run failed with "test timed out after 5s" and every goroutine's stack, so the flag gets through start.
-	- Verified: with the Wine limit split out, the stage 7 harness block passed 51/0, and against 738dc47's remote-tests.bash [dfq5y] and [dfq5z] fail. The lint area passed.
-	- Swept: every test binary run in remote-tests.bash: fRunPosix's Go test run and its Wine run, and fRunWindows' run. git grep for -test.v finds no other remote run. cicd.bash's own unit run goes through go test, which has its own 10 minute default.
-	- Decisions: The native limit is one config.bash setting in seconds, REMOTE_GO_TEST_TIMEOUT=600, about 3 times vm925w's 215 s, the slowest native run. The run under Wine has its own, REMOTE_GO_TEST_TIMEOUT_WINE=1400, about 3 times its 471 s, since 600 left too little room on a busy box. Both are checked as whole numbers before they go into a remote command. Wine's outer limit is its own plus 300, above the test's, so a hung test prints its stacks first. The flag goes ahead of -test.v, so -test.v stays where the harness stub looks for it.
-	- Fixed: every Go test run in remote-tests.bash passes -test.timeout: REMOTE_GO_TEST_TIMEOUT on the Macs, the Unix boxes and Windows, and REMOTE_GO_TEST_TIMEOUT_WINE under Wine, inside an outer limit 300 s longer. A value that isn't whole seconds stops the stage before any box is reached.
-	- Test case: test.bash [dfq5x] every native Go test run passes the native limit, [dfq5y] the Wine run passes its own, longer one, inside its outer limit, [dfq5z] either limit that isn't whole seconds is refused. [dedq5] and [dee74] want the flag on the Unix and Windows command lines.
-
-- Code Review 20261120 enhancement 4: Every park push runs the full branch query again
-	- ID: 2026112017135167
-	- Type: Enhancement
+- test.bash [dee5h] failed once in a quick run, then passed
+	- ID: 2026112411401874
+	- Type: Bug
 	- Status: Queued
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171351
+	- Opened: 20261124-114018
 	- Opened by:
-	- Requirements [Feature]: At 5,000 local and 5,000 remote branches, sync went from 694 to 894 ms, pr create from 707 to 961, br create off a feature branch from 1074 to 1292, and br merge from 1161 to 1390. pushDest now reads branchRefs, about 8 times heavier than its old query of heads only, and the commit step clears the cache, so the query runs twice. Read the push fields for the current branch alone, or keep them across the commit.
-	- Origin: ca1f916, nov19b (Code Review 20261119 item 1). Spawn counts didn't change. Measured on 5af785f and 576d891.
-
-- Code Review 20261120 enhancement 5: Every command reads %(worktreepath), read-only ones included
-	- ID: 2026112017135153
-	- Type: Enhancement
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171351
-	- Opened by:
-	- Requirements [Feature]: At 200 worktrees, status went from 17 to 25 ms, whoami from 13 to 21, sync from 57 to 85 and br create from 45 to 64. Only refuseHeldBranch reads the field. Query it only when checkoutsAhead isn't empty.
-	- Origin: d757dc3 (Code Review 20261119 item 13). Measured on 5af785f and 576d891.
-
-- Code Review 20261120 enhancement 6: 28 places start a sentence in lower case after a label and colon
-	- ID: 2026112017135139
-	- Type: Enhancement
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261120-171351
-	- Opened by:
-	- Requirements [Feature]: Directive 2026-11-20: after an introductory word or label and its colon, the next sentence starts with a capital. 7 are in the docs, such as README.md:96 "No version: the next one" and design.md:436 "Accepted cost: the gate". 21 are in src-go, such as 7 "WARNING: remote unreachable; ..." lines and usage.go:45 and :75. A label followed by a command or a path doesn't count. Lines a person wrote stay as they are.
-	- Origin: New directive, not a regression. Counted by grep, then read.
-
-- Code Review 20261119 enhancement 1: Comments are wrapped at a fixed column
-	- ID: 2026111910222759
-	- Type: Enhancement
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102227
-	- Opened by:
-	- Requirements [Feature]: Directive 2026-11-18, Line length: a long comment may be wrapped where it reads best, never at a fixed column. Go comments wrap near 80 and bash near 95. Rewrap a comment by sense when it is next edited, rather than in one sweep. ruff.toml may set line-length = 320.
-	- Origin: New directive, not a regression. About 800 comment runs match.
-
-- Code Review 20261119 enhancement 2: account apply and account list spawn git var more than they need
-	- ID: 2026111910222745
-	- Type: Enhancement
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102227
-	- Opened by:
-	- Requirements [Feature]: Cache the global config list for the run, and skip it when there is no fragment folder. apply went from 18 to 25 git calls, account list from 6 to 7.
-	- Origin: a4fa440 and later round-20261111 and nov18 apply fixes. Measured against d5e76f2.
-
-- Code Review 20261119 enhancement 3: br switch from a protected branch checks the tree twice
-	- ID: 2026111910222732
-	- Type: Enhancement
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102227
-	- Opened by:
-	- Requirements [Feature]: directPush returns early for br switch once ownCommitsAhead is read, since preflight already refused a dirty protected tree.
-	- Origin: bb905b6 and 8dfe5ff (nov18). Two identical git status calls in a row, by strace.
-
-- Code Review 20261119 enhancement 4: gitsby.exe can't start in a folder past 260 characters
-	- ID: 2026111910222718
-	- Type: Enhancement
-	- Status: Queued
-	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261119-102227
-	- Opened by:
-	- Target OS: Windows
-	- Requirements [Feature]: Add a manifest with longPathAware to the Windows resource that gen-winres.bash makes. git.exe needs core.longpaths there too, so the gain is small.
-	- Origin: Found on vm925w. No earlier round saw it.
+	- Progress log:
+		- 20261124: failed once in the container quick run on round nov24 (passed: 2446, failed: 1, skipped: 1), with the line `FAIL dee5h a run's folder is <start time>_<NNN> under HOST_TEMP, with TMPDIR, TEMP and TMP pointed at it and its pid in it`. The next quick run passed it, and so did the round's gate run on 180fe9f.
+		- The round changed only the text of cicd.bash's fDie messages, not the run folder code `fGateRunFolder` checks. A stamp read across a second or minute boundary is one guess, unverified.
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
@@ -8771,6 +8681,248 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: [ddf4q] and [ddf4r] in test.bash.
 	- Acceptance signoff: Self-closed: the intent was clear, and its tests fail before and pass after.
 	- Closed: 20261003-145130
+
+- The pipeline's FAILED lines and the utility scripts' errors start in lower case after their label
+	- ID: 2026112410304905
+	- Type: Enhancement
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261124-103049
+	- Opened by:
+	- Related IDs: 2026112410210775
+	- Requirements [Feature]: About 75 fDie messages in cicd.bash and release.bash print as 'FAILED: ' then lower case, such as "FAILED: can't make ..." and "FAILED: working tree isn't clean." The utility scripts' errors do the same after their own name, such as 'gen-winres: no logo at ...' and 'keep-build: nothing kept yet ...'. A tool's name, a command or a path after the label stays as it is, such as 'FAILED: go test failures' or 'FAILED: shellcheck not installed'.
+	- Estimated effort: Low
+	- Notes: test.bash asserts many of these messages. [dfr2g] skips them, since the label is added inside fDie; a check needs to read fDie's callers.
+	- Origin: Found while working 2026112410210775, whose text named only the WARNING, Error and Note lines.
+	- Progress log: 2026-11-24: Every fDie message in cicd/ starts with a capital after its label, in cicd.bash, release.bash, image-go.bash and the utilities. So does every error a utility prints after its own name: safe-rm in all 3 copies, pre-push, parity, backlog-check, test-id, lint-report, spawn-report, codeql-findings and gen-demo-gif, with their skip and fail helpers. The bash version refusal in every pipeline script says 'Needs bash 4.4'.
+	- Branch: nov24-2026112410304905
+	- Test case: test.bash [dfr2v] reads every fDie caller, every error after a utility's own name, and the utilities' skip and fail helpers. test.bash asserts given new values, below.
+	- Verified: [dfr2v] fails on the scripts before the change, naming 166 lines, and passes after. The quick run passed every area: lint and unit, test.bash 2447/0, fuzz 310/0, parity 32/0. [dee5h] failed once in an earlier run and passed on the rerun, with no change to what it reads.
+	- Swept: every tracked .bash, .sh, .ps1 and .py under cicd/, for fDie callers, fSkip and fail() in the utilities, and each utility's name followed by a colon. The 3 safe-rm copies (.bash, .sh, .ps1) match.
+	- Closed: 20261124-105200
+	- Acceptance signoff: Self-closed: mechanical, and its new check fails before the change and passes after.
+	- Decisions:
+		- Only the first word after the label is judged, as [dfr2g] does. A label nested after a tool's or option's name keeps its case, such as 'FAILED: staticcheck: code only the tests call' and 'FAILED: --publish: there is no tag'.
+		- A tool's, script's or option's name, a remote's name, a variable or a path after the label stays as it is, such as 'FAILED: go test failures', 'FAILED: origin has no tag' and 'test-id: --rev goes with --list'.
+		- Left as they are: fUsage lines with no label, such as 'unknown option: x (try --help)', and errors that carry no label, such as fuzz.bash's 'no build at src-go/gitsby' and gen-checksums' 'no files to checksum'. The rule is about text after a label.
+		- Left as they are: n8git_backup-and-publish, a shared script kept as its upstream ships it, the gen stubs' 'fake gh: unhandled' lines, gfs-rotate's 'rotate: <value>' and remote-tests' 'note:' line on the remote box.
+		- legacy/bin/gitsby keeps 'needs bash 4.4', since the frozen 2.x script is the parity baseline. [daept] asserts it, so it stays.
+		- pre-push's 'Installed' and 'Updated' come from a variable, which [dfr2v] can't read. [dcmbk] and [dcmbm] assert them.
+		- No changelog line, since only the case of one letter changed.
+		- 2026-11-24: test asserts given new values for this change, lower case to capital after the label: [ddf4h] 'Needs bash 4.4', [ddf3v] 'No icon', [dd5m0] 'Found no tests', [df345] 'No build at', [dez5h], [df50j] and [dfhks] 'Refused,', [db6y9] 'The pipeline did not pass', [df4xw] 'The pipeline left', [ddf6d] and [ddf19] 'Not a 64-bit', [ddf6d] 'Couldn't build', [ddgkc] 'The changelog's vNEXT', [df4xt] 'On', [df4xv] 'Branch', [ddf3q] 'Couldn't read', [df4y0] 'The v1.2.4 tag', [df4yq] 'Couldn't stamp', [ddf85] 'Can't work out', [ddf1a] 'Two builds', [de54a] and [de54h] 'Soak test failed', [dd5fq] and [df3gz] 'Fuzzing', [dd5fs] 'Spawn counts regressed', [dd5g3] 'Diverged', [dfk07], [dfk09] and [dfkwp] 'Uncommitted edits', [dd5f2] 'No integration branch', [dcmbk] 'Installed', [dcmbm] 'Updated' and 'Already installed', [dcmb5] and [dcmb7] 'Not gated'.
+
+- The pipeline scripts and installers start a sentence in lower case after a label
+	- ID: 2026112410210775
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261124-102107
+	- Opened by:
+	- Related IDs: 2026112017135139
+	- Requirements [Feature]: Per the 2026-11-20 directive, the text after a label and its colon starts with a capital. About 30 WARNING lines in cicd.bash and release.bash do not, such as "WARNING: markdownlint skipped" and "WARNING: the release notes don't link". install.bash has "Error: release" and install.ps1 has "Note: couldn't update PATH". A label followed by a command, a path or a tool's name doesn't count.
+	- Estimated effort: Low
+	- Notes: test.bash asserts some of these lines, such as [dd5g4] and the release checks. An installer change bumps installerVersion in both installers, since [dfjqe] compares them.
+	- Origin: Found while sweeping 2026112017135139, whose count covered src-go and the docs only.
+	- Closed reason: Done
+	- Progress log: 2026-11-24: 28 lines start their text with a capital after the label: 13 WARNING lines in cicd.bash, 8 in release.bash, 5 SKIP and FAIL lines in remote-tests.bash, install.bash's Error line and install.ps1's Note line. Both installers' installerVersion is 2026-11-24, with a History entry.
+	- Branch: nov24-2026112410210775
+	- Commit: b3d6aa0
+	- Test case: test.bash [dfr2g] reads every WARNING, NOTE, Note, Error, SKIP and FAIL line in the pipeline scripts and installers. test.bash asserts given new values, below.
+	- Verified: [dfr2g] fails on the scripts before the change, naming all 28 lines, and passes after. The quick run passed with every area: test.bash 2446/0, fuzz 310/0, parity 32/0.
+	- Swept: every tracked .bash and .ps1 under cicd/ and both installers, for WARNING, NOTE, Note, Error, SKIP, FAIL and OK labels. The fDie lines, which get 'FAILED: ' inside fDie, and the utility scripts' errors are filed as 2026112410304905.
+	- Acceptance signoff: Self-closed: mechanical, and its new check fails before the change and passes after.
+	- Closed: 20261124-103200
+	- Decisions:
+		- A tool's name after the label stays lower case, as in 2026112017135139. So 'WARNING: markdownlint skipped', and the same lines for ruff, staticcheck, golangci-lint, govulncheck and pip-audit, are left as they are, though the requirements quote the first. 'WARNING: docker isn't usable' stays too, and 'WARNING: releases/latest resolves' is a path.
+		- 'OK:' lines are status words, not sentences, and stay, such as 'OK: demo gif unchanged'.
+		- The fDie lines and the utility scripts' errors are their own item, 2026112410304905, since the label is added inside fDie and the requirements didn't name them.
+		- 2026-11-24: test asserts given new values for this change, lower case to capital after the label: test.bash [dd5g4] 'Can't reach origin', the demo gif checks 'Demo gif differs' and 'Demo build failed', the release checks 'The release notes', 'The install line' and 'No changelog section found', the soak and CodeQL checks 'Kept', the dogfood checks 'No windows/amd64' and 'No darwin/universal', the tool drift checks 'Tool versions differ', [ddf9f] 'Release v2.1.0', and remote-tests' 'Every box' and 'The Go tests'.
+
+- Stage 7's Go test runs on other boxes have no time limit, so one hung test holds the stage
+	- ID: 2026112021514129
+	- Type: Enhancement
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-215141
+	- Opened by:
+	- Related IDs: 2026112021204523
+	- Requirements [Feature]: The Windows run in cicd/remote-tests.bash starts the test binary with no -test.timeout and no outer timeout, and the binary's own default is none. [dfk1m] hung there with no output until the run was stopped. Pass -test.timeout to every remote Go test run, so a hung test fails with every goroutine's stack. test.bash's asserts on those command lines change with it.
+	- Actual effort: Low
+	- Progress log: A serial run of the Go tests here, GOMAXPROCS=1, took 93 s at load 2, with the longest test at 53 s. On nov23 at 0068ff4, at load 2, the tests' own times summed to 215 s on vm925w, 158 s on vmDebARM64, and 471 s under Wine on vmDebARM64, whose whole run took about 8 minutes with Wine's setup.
+	- Branch: nov23-2026112021514129, nov23-2026112021514129-fix
+	- Commit: 738dc47, 1d36026
+	- Verified: the stage 7 harness block passed 51/0, and against remote-tests.bash before the change [dfq5x], [dfq5y], [dfq5z], [dedq5] and [dee74] fail. With the flag dropped from only the Windows line, [dfq5x], [dfq5y] and [dee74] fail. With it dropped from only the Wine line, [dfq5y] fails. The quick gate of every area passed, test.bash 2441/0, fuzz 310/0, parity 32/0. On nov23 at 0068ff4, stage 7 through stage7-one-box.bash passed the Go tests on vm925w, on vmDebARM64, and under Wine on vmDebARM64. On vm925w with the limit set to 5 s in the clone only, the run failed with "test timed out after 5s" and every goroutine's stack, so the flag gets through start.
+	- Verified: with the Wine limit split out, the stage 7 harness block passed 51/0, and against 738dc47's remote-tests.bash [dfq5y] and [dfq5z] fail. The lint area passed.
+	- Verified: on nov24 at 93b8ad6, at the 1400 s limit, stage 7 through stage7-one-box.bash passed the windows/arm64 Go tests under Wine on vmDebARM64, 272 passed and 78 skipped, with exit 0 and no time-out. The native linux/arm64 Go tests passed there too. test.bash was left out of that run.
+	- Swept: every test binary run in remote-tests.bash: fRunPosix's Go test run and its Wine run, and fRunWindows' run. git grep for -test.v finds no other remote run. cicd.bash's own unit run goes through go test, which has its own 10 minute default.
+	- Decisions: The native limit is one config.bash setting in seconds, REMOTE_GO_TEST_TIMEOUT=600, about 3 times vm925w's 215 s, the slowest native run. The run under Wine has its own, REMOTE_GO_TEST_TIMEOUT_WINE=1400, about 3 times its 471 s, since 600 left too little room on a busy box. Both are checked as whole numbers before they go into a remote command. Wine's outer limit is its own plus 300, above the test's, so a hung test prints its stacks first. The flag goes ahead of -test.v, so -test.v stays where the harness stub looks for it.
+	- Fixed: every Go test run in remote-tests.bash passes -test.timeout: REMOTE_GO_TEST_TIMEOUT on the Macs, the Unix boxes and Windows, and REMOTE_GO_TEST_TIMEOUT_WINE under Wine, inside an outer limit 300 s longer. A value that isn't whole seconds stops the stage before any box is reached.
+	- Test case: test.bash [dfq5x] every native Go test run passes the native limit, [dfq5y] the Wine run passes its own, longer one, inside its outer limit, [dfq5z] either limit that isn't whole seconds is refused. [dedq5] and [dee74] want the flag on the Unix and Windows command lines.
+	- Acceptance signoff: Self-closed: the Wine run passed on vmDebARM64 at the 1400 s limit.
+	- Closed: 20261124-115428
+
+- Code Review 20261120 enhancement 4: Every park push runs the full branch query again
+	- ID: 2026112017135167
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171351
+	- Opened by:
+	- Requirements [Feature]: At 5,000 local and 5,000 remote branches, sync went from 694 to 894 ms, pr create from 707 to 961, br create off a feature branch from 1074 to 1292, and br merge from 1161 to 1390. pushDest now reads branchRefs, about 8 times heavier than its old query of heads only, and the commit step clears the cache, so the query runs twice. Read the push fields for the current branch alone, or keep them across the commit.
+	- Origin: ca1f916, nov19b (Code Review 20261119 item 1). Spawn counts didn't change. Measured on 5af785f and 576d891.
+	- Closed reason: Done
+	- Actual fix: The push step builds its push from the cached branch query while the run still has it. Once a commit or checkout dropped it, the step reads only the local branches' push and upstream fields and which one is checked out, in one for-each-ref without the short names or origin's branches, as pushDest did before ca1f916. The plan and the refusals before it still read the whole query, which the other checks share. Spawn counts are unchanged.
+	- Branch: nov24-2026112017135167
+	- Commit: 33bcc0c
+	- Test case: Go TestPushStepRefs [dfr1g].
+	- Verified: [dfr1g] fails all 10 of its cases with pushArgs put back to the whole query, and fails with the push ref left out of the step's read. At 5,000 local and 5,000 remote branches, by user plus system time over 6 runs each at load 3 on 32 cores: sync 828 to 652 ms, br create off a feature branch 1197 to 1037, br merge 1452 to 1295. A trace shows one whole query fewer in sync, br create, br merge and pr create, and the same spawn count. There the step's query takes 13 ms and the whole one 168. The quick gate passed with every area: test.bash 2445/0, fuzz 310/0, parity 32/0, spawn counts unchanged. gosec 37, as before, none in the changed lines.
+	- Swept: every push step goes through pushArgs, through pushCurrent: the park pushes of sync, br switch, br create, br hotfix, br merge, pr create and release, br merge's push of the target, release's pushes and repo connect's. plannedPushes, the plan's push lines and parkHead read while the query is cached. br create and br merge still run the whole query once more after the park push, for reads ahead of the checkout, and br merge once at its end. Those aren't push reads and were left alone.
+	- Decisions: The narrow read is only at the push step, and only once the cache is gone. Before the plan the whole query runs anyway, so a narrow read there would add a spawn. It reads every local branch rather than the checked-out one alone, since naming that one would take a spawn of its own once the step dropped the current branch.
+	- Acceptance signoff: Self-closed: its test failed before the change and passes after, and the timings are back below the regression's.
+	- Closed: 20261124-095813
+
+- Code Review 20261120 enhancement 5: Every command reads %(worktreepath), read-only ones included
+	- ID: 2026112017135153
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171351
+	- Opened by:
+	- Requirements [Feature]: At 200 worktrees, status went from 17 to 25 ms, whoami from 13 to 21, sync from 57 to 85 and br create from 45 to 64. Only refuseHeldBranch reads the field. Query it only when checkoutsAhead isn't empty.
+	- Origin: d757dc3 (Code Review 20261119 item 13). Measured on 5af785f and 576d891.
+	- Closed reason: Done
+	- Actual fix: The run's branch query no longer reads %(worktreepath). refuseHeldBranch asks for it in a for-each-ref of its own, only when checkoutsAhead isn't empty, for those branches alone, and only once a linked worktree exists, which it tells from the worktrees folder enterRepo already names. design.md says so.
+	- Branch: nov24-2026112017135153
+	- Commit: 4023b46
+	- Test case: Go TestWorktreePathOnlyAhead [dfr1s].
+	- Verified: [dfr1s] fails with %(worktreepath) put back in the run's query, and with the linked-worktree check taken out. [dfh8b], [dfkyp] and [dfjzf] pass. At 200 worktrees, by user plus system time over 2 sets of 20 runs each at load 4 on 32 cores: status 28 to 22 ms, whoami 23 to 17, sync 38 to 30, br create off dev 33 to 30. With no linked worktree the 2 builds are level. A br switch refused for a held branch went from 10 to 12 ms, for the spawn it adds. The quick gate passed with every area: test.bash 2445/0, fuzz 310/0, parity 32/0, spawn counts unchanged. gosec 37, as before, none in the changed lines.
+	- Swept: branchRefs was the only reader of %(worktreepath), and refuseHeldBranch the only reader of its held map. No other call runs git worktree list. busyElsewhere and worktreeLocked read files, not git.
+	- Decisions: A run that checks a branch out with a linked worktree present pays one more spawn, about 2 ms, rather than every run paying for the worktree read. Keeping the field in the one query for the 6 commands that may check out would add no spawn, but br create off dev and the others with nothing ahead would still pay. With no linked worktree only this one exists, so the query is skipped.
+	- Acceptance signoff: Self-closed: its test failed before the change and passes after, and each command timed is faster than on the build before it.
+	- Closed: 20261124-100909
+
+- Code Review 20261120 enhancement 6: 28 places start a sentence in lower case after a label and colon
+	- ID: 2026112017135139
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261120-171351
+	- Opened by:
+	- Requirements [Feature]: Directive 2026-11-20: after an introductory word or label and its colon, the next sentence starts with a capital. 7 are in the docs, such as README.md:96 "No version: the next one" and design.md:436 "Accepted cost: the gate". 21 are in src-go, such as 7 "WARNING: remote unreachable; ..." lines and usage.go:45 and :75. A label followed by a command or a path doesn't count. Lines a person wrote stay as they are.
+	- Origin: New directive, not a regression. Counted by grep, then read.
+	- Closed reason: Done
+	- Progress log: 2026-11-24: 22 output lines in src-go start their text with a capital after the label: 19 WARNING and NOTE lines, and 3 help lines in usage.go (No arg, Cut a release, No version). 12 doc lines do too: README.md's 2 Commands rows, workflows.md's 6 labeled bullets, design.md's Accepted cost, and 3 labels in style-guide.md. The UI guide states the rule, and design.md's Output sweep table has a row for it.
+	- Branch: nov24-2026112017135139
+	- Test case: Go [dfr27] the help's labels, [dfr28] every WARNING and NOTE literal in src-go. test.bash asserts given new values, below.
+	- Verified: [dfr27] and [dfr28] fail on the source before the change, naming all 22 sites, and pass after. The quick run passed with every area: test.bash 2445/0, fuzz 310/0, parity 32/0. gosec 37, as before.
+	- Swept: every WARNING and NOTE literal in src-go, every help and placeholder line in usages, every string literal with a capitalized label and a colon before lower case, the labeled notes built by noteLines, and the .md files at the root and under project/. The same lines in cicd/ and the installers are filed as 2026112410210775.
+	- Acceptance signoff: Self-closed: mechanical, and its new checks fail before the change and pass after.
+	- Closed: 20261124-102117
+	- Decisions:
+		- A remote's name, a command or a tool's name after the label stays lower case, as with a command or a path. So origin's lines, 'WARNING: git fetch failed' and 'WARNING: tea acts as' are left as they are, and the Go checks allow those words.
+		- Joining colons inside a sentence, such as 'This is a bare repository: no working tree', and lists after 'One of:', are a different rule and stay.
+		- Left as they are, as a person's writing: trademark.md's 'Short version:' and ai_policy.md's labels. design.md's 'What stays as it is:' introduces a list, not a sentence.
+		- No changelog line, since only the case of one letter changed.
+		- 2026-11-24: test asserts given new values for this change, lower case to capital after the label: test.bash [dae1g] 'Next after latest tag', [dadvz] 'Remote unreachable', [dbfvr] 'Couldn't delete', [dcnqx] and [dfq48] 'NOTE: This' and 'NOTE: Couldn't', [dfkzy] 'WARNING: A submodule', [dfh7n] 'WARNING: Account', [dcmf0], [dcmf2] and [dffzw] 'WARNING: Your global', [dbfs8] 'More than one account claims'.
+
+- Code Review 20261119 enhancement 1: Comments are wrapped at a fixed column
+	- ID: 2026111910222759
+	- Type: Enhancement
+	- Status: Closed
+	- Closed reason: Done
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102227
+	- Opened by:
+	- Requirements [Feature]: Directive 2026-11-18, Line length: a long comment may be wrapped where it reads best, never at a fixed column. Go comments wrap near 80 and bash near 95. Rewrap a comment by sense when it is next edited, rather than in one sweep. ruff.toml may set line-length = 320.
+	- Origin: New directive, not a regression. About 800 comment runs match.
+	- Decisions:
+		- No sweep of the existing comments, as the requirement says. Each is rewrapped by sense when next edited, and the style guide now says so, so no child item tracks them.
+		- ruff.toml's own header comment was rewrapped, since it was edited.
+		- No other config sets a width: gofmt has none, .golangci.yml has no line-length linter, and shellcheck and PSScriptAnalyzerSettings.psd1 check none.
+	- Actual fix [Feature]: style-guide.md's comment rules say lines have no length limit, and a long comment wraps where it reads best, never at a fixed column. ruff.toml sets line-length = 320.
+	- Branch: nov24-2026111910222759
+	- Test case: none. A style rule and a config value that no selected rule reads. Checked that ruff's E501 passes the Python files under ruff.toml and flags 30 lines without it.
+	- Swept: ruff.toml, src-go/.golangci.yml, PSScriptAnalyzerSettings.psd1 and .markdownlint.jsonc for a width setting.
+	- Verified: the quick gate passed with every area, ruff under ruff.toml and markdownlint included.
+	- Acceptance signoff: Self-closed: the requirement's own rule and setting.
+	- Closed: 20261124-105924
+
+- Code Review 20261119 enhancement 2: account apply and account list spawn git var more than they need
+	- ID: 2026111910222745
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102227
+	- Opened by:
+	- Requirements [Feature]: Cache the global config list for the run, and skip it when there is no fragment folder. apply went from 18 to 25 git calls, account list from 6 to 7.
+	- Origin: a4fa440 and later round-20261111 and nov18 apply fixes. Measured against d5e76f2.
+	- Closed reason: Done
+	- Decisions:
+		- apply and its plan still read every global file when the fragment folder is gone, since a rule pointing into it is still ours to take out, and the plan names that removal. Only the 2 warnings skip.
+		- The cache key is PATH and the variables git reads to find its global files, so a run that changes none of them asks once, and a test that moves HOME asks again.
+		- No apply measure in spawn-count.bash, since its fixture points the global config at /dev/null, which apply can't replace. The Go test [dfr3p] counts git var across the plan, the apply and the listing instead.
+	- Actual fix [Feature]: The global config list is asked once per run and kept, keyed on the environment that decides it. account list's relative-rule warning and account set's rerun note skip it when the fragment folder isn't there, since git skips an include whose file is missing.
+	- Branch: nov24-2026111910222745
+	- Commit: a4304ec
+	- Test case: Go [dfr3p], [dfr3q]; spawn counts [dbfth], [ddf52].
+	- Verified:
+		- [dfr3p] fails on the build before this, with git var run 2 times with no fragment folder and 6 times over plan, apply and listing, and passes after. [dfr3q] fails with GIT_CONFIG_GLOBAL dropped from the key, and with the cached list handed out without a copy.
+		- Spawn counts: account list 8 -> 6 and with accounts 12 -> 10. On a 2-account fixture, apply 21 -> 17 the first time and 23 -> 20 after, account set 12 -> 11.
+		- Quick gate, all areas: test.bash 2447/0, fuzz 310/0, parity 32/0. gosec 37, as on dev.
+	- Swept: every call of globalGitConfigs and accountManagedIncludes: apply, its plan, account list and account set. No other code reads git var.
+	- Acceptance signoff: Self-closed: the requirement's own change, and its test failed before and passed after.
+	- Closed: 20261124-110857
+
+- Code Review 20261119 enhancement 3: br switch from a protected branch checks the tree twice
+	- ID: 2026111910222732
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102227
+	- Opened by:
+	- Requirements [Feature]: directPush returns early for br switch once ownCommitsAhead is read, since preflight already refused a dirty protected tree.
+	- Origin: bb905b6 and 8dfe5ff (nov18). Two identical git status calls in a row, by strace.
+	- Closed reason: Done
+	- Decisions: The early return is only for a br switch off a branch that is protected itself, since that is the one preflight's dirty refusal asks about. A branch that isn't protected but whose push lands on one still asks commitPending.
+		- 20261124: spawn-count.bash [dbftm]'s expected count is 27, where it was 28.
+	- Branch: nov24-2026111910222732
+	- Commit: 7c7beed
+	- Test case: test.bash [dfr3z]. spawn-count.bash [dbftm], now 27.
+	- Verified: [dfr3z] fails on the build before the change, with 2 status reads, and passes after. The quick run passed every area: test.bash 2448/0, fuzz 310/0, parity 32/0, spawn counts with [dbftm] 28 -> 27.
+	- Swept: every treeDirty and commitPending caller. sync's directPush has no earlier read. refusePlannedPushes reads commitPending for br switch only where git would refuse the push, and release's 2 reads weren't measured, so both were left alone.
+	- Acceptance signoff: Self-closed: the change does what the item asked, and its test fails before and passes after.
+	- Closed: 20261124-112023
+
+- Code Review 20261119 enhancement 4: gitsby.exe can't start in a folder past 260 characters
+	- ID: 2026111910222718
+	- Type: Enhancement
+	- Status: Closed
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261119-102227
+	- Opened by:
+	- Target OS: Windows
+	- Requirements [Feature]: Add a manifest with longPathAware to the Windows resource that gen-winres.bash makes. git.exe needs core.longpaths there too, so the gain is small.
+	- Origin: Found on vm925w. No earlier round saw it.
+	- Closed reason: Won't fix
+	- Progress log: 2026-11-24: Reproduced on vm925w (build 26300, LongPathsEnabled 1) with a working folder of 310 characters. Windows starts no program there. gitsby.exe fails from pwsh, cmd and a Go launcher, and git.exe from pwsh, with 'The directory name is invalid' when the folder is passed, and 'The parameter is incorrect' when it is inherited. Git Bash refuses with 'Can't start native Windows application from here'.
+	- Decisions: No manifest. A build with longPathAware in its resource failed at the same folder in the same ways, started from a launcher with the manifest and from one without. CreateProcess caps the working folder near 260 characters whatever the manifest says, so the start fails before gitsby runs. gitsby.exe kept in a 325-character folder already starts, with or without it. Once running, Go's runtime turns on long paths for itself (initLongPathSupport in runtime/os_windows.go), so the manifest adds nothing there either.
+	- Verified: on vm925w, the build without the manifest and the build with it both failed to start at a 310-character working folder, and both started and printed their version from a 325-character folder with a short working folder.
+	- Test case: none, since gitsby is unchanged. The vm925w runs above are the evidence.
+	- Branch: nov24-2026111910222718
+	- Closed: 20261124-113301
+	- Acceptance signoff: Self-closed: Won't fix. The limit is in Windows' CreateProcess, measured on vm925w with and without the manifest.
 
 - pr ok shows the pull request's branch and its base before it asks
 	- ID: 2026112309120161

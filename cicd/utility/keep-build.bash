@@ -25,7 +25,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -52,8 +52,8 @@ fNth(){
 	local -i want="10#$1"
 	local -a kept=()
 	mapfile -t kept < <(fKept)
-	((${#kept[@]})) || fDie "nothing kept yet in ${KEEP_BUILD_DIR}; run this with no arguments first."
-	(( want >= 1 && want <= ${#kept[@]} )) || fDie "no kept build ${want}; there are ${#kept[@]} (1 is the newest)."
+	((${#kept[@]})) || fDie "Nothing kept yet in ${KEEP_BUILD_DIR}; run this with no arguments first."
+	(( want >= 1 && want <= ${#kept[@]} )) || fDie "No kept build ${want}; there are ${#kept[@]} (1 is the newest)."
 	## 1 is the NEWEST, which is the end of a chronological listing.
 	printf '%s' "${kept[$(( ${#kept[@]} - want ))]}"
 }
@@ -74,7 +74,7 @@ case "${1:-}" in
 	--diff)
 		[[ $# -ge 2 ]] || fDie "--diff needs a number (see --list)."
 		which="$(fNth "$2")"; shift 2
-		[[ -x "${exe}" ]] || fDie "no current build at ${GO_MODULE_DIR}/${EXE_NAME}."
+		[[ -x "${exe}" ]] || fDie "No current build at ${GO_MODULE_DIR}/${EXE_NAME}."
 		fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
 		tmp="$(mktemp -d "${safeTmp}/gitsby-keep.XXXXXX")"
 		trap 'fSafeRm "${tmp:?}" >/dev/null' EXIT
@@ -87,7 +87,7 @@ case "${1:-}" in
 		fi
 		;;
 	""|--keep)
-		[[ -x "${exe}" ]] || fDie "no build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd.bash, or 'go build' there."
+		[[ -x "${exe}" ]] || fDie "No build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd.bash, or 'go build' there."
 		mkdir -p "${keepDir}"
 		cp -f "${exe}" "${keepDir}/build_$(date +%Y%m%d-%H%M%S).${EXE_NAME}"
 		gfs_rotate "${keepDir}" build "${EXE_NAME}" >/dev/null 2>&1 || true
@@ -97,7 +97,7 @@ case "${1:-}" in
 		sed -n '/^##	Purpose:/,/^##	History:/p' "${BASH_SOURCE[0]}" | sed '$d; s/^##	\{0,1\}//'
 		;;
 	*)
-		fDie "unknown option: $1 (try --help)."
+		fDie "Unknown option: $1 (try --help)."
 		;;
 esac
 

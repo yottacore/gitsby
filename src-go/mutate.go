@@ -50,7 +50,7 @@ func (a *app) cmdCommit() error {
 			for _, path := range behind {
 				files = append(files, nativePath(a.workTop+"/"+path))
 			}
-			a.out.statusNotes("WARNING: a submodule is checked out behind the commit this branch records for it, so it was left out of the commit. A pull or switch leaves a submodule that way, and committing it would take the branch back to the older commit.", append(noteLines("File", files...), noteLines("Fix", a.behindFix(files)...)...))
+			a.out.statusNotes("WARNING: A submodule is checked out behind the commit this branch records for it, so it was left out of the commit. A pull or switch leaves a submodule that way, and committing it would take the branch back to the older commit.", append(noteLines("File", files...), noteLines("Fix", a.behindFix(files)...)...))
 			differs = indexDiffers()
 		}
 		if !differs {
@@ -76,7 +76,7 @@ func (a *app) cmdPull() error {
 	case !a.opt.fetch:
 		a.out.status("Skipping the pull (--no-fetch).")
 	case a.isOffline():
-		a.out.status("WARNING: remote unreachable; skipping the pull. Local changes still get committed.")
+		a.out.status("WARNING: Remote unreachable; skipping the pull. Local changes still get committed.")
 	case a.hasUpstream():
 		return a.pullStep(a.autostash()...)
 	case a.goneUpstream() != "":
@@ -313,7 +313,7 @@ func (a *app) pushIfOnline() error {
 		// True offline too: nothing local is ahead of the last-known origin.
 		a.out.status("Nothing to push.")
 	case a.isOffline():
-		a.out.status("WARNING: remote unreachable; skipping the push. The work stays local on '" + a.currentBranch() + "' - '" + meName + " sync' from it publishes it.")
+		a.out.status("WARNING: Remote unreachable; skipping the push. The work stays local on '" + a.currentBranch() + "' - '" + meName + " sync' from it publishes it.")
 	default:
 		return a.pushCurrent()
 	}
@@ -330,8 +330,7 @@ func (a *app) directPush() (push, committed bool) {
 	if (a.cmd.name != "sync" && a.cmd.name != "br-switch") || a.opt.direct {
 		return false, false
 	}
-	// br switch parks only when it moves, and offline its push is skipped. A dirty
-	// protected tree was refused before this.
+	// br switch parks only when it moves, and offline its push is skipped.
 	p, ok := a.parkPush()
 	if !ok {
 		return false, false
@@ -343,6 +342,12 @@ func (a *app) directPush() (push, committed bool) {
 	}
 	if a.ownCommitsAhead() {
 		return true, true
+	}
+	// br switch refused a dirty protected tree in preflight, so asking status again
+	// would only repeat that answer. One that isn't protected but pushes to one
+	// wasn't asked.
+	if a.cmd.name == "br-switch" && a.isProtectedBranch("") {
+		return false, false
 	}
 	return a.commitPending(), false
 }
@@ -624,11 +629,35 @@ func (a *app) refuseGoneBranch() error {
 // refused the ones in plannedPushes, so one reaching here comes after a commit, a
 // merge or a tag.
 func (a *app) pushArgs() ([]string, error) {
-	p := a.currentPush("")
+	p := a.pushIn(a.stepPushRefs(), "", "")
 	if p.refused != "" {
 		return nil, usagef("%s To publish it under its own name, run 'git branch --unset-upstream' and push it again.", p.refused)
 	}
 	return p.args(), nil
+}
+
+// stepPushRefs is what the push step reads to build its push: branchRefs while the
+// run still has it, else the push fields of the local branches alone. The commit or
+// checkout before the step dropped branchRefs, and the push drops it again, so the
+// whole query would run for this one read. Its short names and origin's branches
+// make it over 10 times heavier at thousands of branches.
+func (a *app) stepPushRefs() branchRefs {
+	if a.git.branches.known {
+		return a.git.branches.value
+	}
+	refs := branchRefs{push: map[string]pushRefs{}}
+	for _, line := range runLines("git", "for-each-ref", "--format=%(refname)%00%(push:remotename)%00%(push:remoteref)%00%(upstream:remotename)%00%(upstream:remoteref)%00%(HEAD)", "refs/heads/") {
+		fields := strings.Split(line, "\x00")
+		name, ok := strings.CutPrefix(fields[0], "refs/heads/")
+		if len(fields) != 6 || !ok {
+			continue
+		}
+		refs.push[name] = pushRefs{pushRemote: fields[1], pushRef: fields[2], upRemote: fields[3], upRef: fields[4]}
+		if fields[5] == "*" {
+			refs.head = name
+		}
+	}
+	return refs
 }
 
 // plannedPush is a push and where it lands. The guards before the plan and the plan's
@@ -652,9 +681,14 @@ func (a *app) currentPush(kind string) plannedPush {
 }
 
 // branchPush is currentPush for any branch, empty meaning the current one. The step
-// pushes it once it's checked out, through currentPush, so the two agree.
+// pushes it once it's checked out, through the same pushIn, so the two agree.
 func (a *app) branchPush(kind, branch string) plannedPush {
-	d := a.pushDestOf(branch)
+	return a.pushIn(a.branchRefs(), kind, branch)
+}
+
+// pushIn is branchPush read from refs.
+func (a *app) pushIn(refs branchRefs, kind, branch string) plannedPush {
+	d := a.pushDestIn(refs, branch)
 	// upstream for the current branch, since upstreamOf would ask its name again
 	// after the commit step dropped it.
 	up := a.upstream()
@@ -816,7 +850,12 @@ func (a *app) pushDest() pushDest { return a.pushDestOf("") }
 
 // pushDestOf is pushDest for any branch, empty meaning the current one.
 func (a *app) pushDestOf(branch string) pushDest {
-	refs := a.branchRefs()
+	return a.pushDestIn(a.branchRefs(), branch)
+}
+
+// pushDestIn is pushDestOf read from refs, of which it needs push and head, and
+// origin for a branch that isn't here.
+func (a *app) pushDestIn(refs branchRefs, branch string) pushDest {
 	if branch == "" {
 		branch = refs.head
 		if branch == "" {
@@ -1075,7 +1114,7 @@ func (a *app) publishBranch(branch string) error {
 		return nil
 	}
 	if a.isOffline() {
-		a.out.status("WARNING: remote unreachable; '" + branch + "' is local only for now - '" + meName + " sync' publishes it.")
+		a.out.status("WARNING: Remote unreachable; '" + branch + "' is local only for now - '" + meName + " sync' publishes it.")
 		return nil
 	}
 	return a.step("git", "push", "-u", "origin", "HEAD")
@@ -1192,7 +1231,7 @@ func (a *app) cmdPrune() error {
 				}
 			}
 			if len(stillHere) > 0 {
-				a.out.status("WARNING: couldn't delete " + strings.Join(stillHere, ", ") + " here (checked out in another worktree?); continuing.")
+				a.out.status("WARNING: Couldn't delete " + strings.Join(stillHere, ", ") + " here (checked out in another worktree?); continuing.")
 			}
 		}
 		a.out.resetBlank()
@@ -1251,7 +1290,7 @@ func (a *app) pruneRemote(branches []string, onOrigin map[string]string, asked b
 		a.out.resetBlank()
 	}
 	if len(stillThere) > 0 {
-		a.out.status("WARNING: couldn't delete " + strings.Join(stillThere, ", ") + " on origin; continuing.")
+		a.out.status("WARNING: Couldn't delete " + strings.Join(stillThere, ", ") + " on origin; continuing.")
 	}
 	return done
 }
@@ -1261,7 +1300,7 @@ func (a *app) pruneRemote(branches []string, onOrigin map[string]string, asked b
 // local branches are gone by then, so another prune would find nothing to look at.
 // It names the deletes themselves instead, leased on what was checked.
 func (a *app) pruneHeldOffline(branches []string) {
-	a.out.status("WARNING: remote unreachable; left origin's copies of " + strings.Join(branches, ", ") + " alone.")
+	a.out.status("WARNING: Remote unreachable; left origin's copies of " + strings.Join(branches, ", ") + " alone.")
 	a.out.clean("  Once origin can be reached, these delete them. Each one stops if that branch has moved:")
 	for _, branch := range branches {
 		a.out.clean(planPad + leaseDeleteLine(branch, a.prune.remoteTip[branch], runtime.GOOS))

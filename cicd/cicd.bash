@@ -94,7 +94,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -389,17 +389,17 @@ fRunTmpDone(){
 fTmpDone(){ ((keepTemp)) || rm -f -- "$@" ;}
 if ((! listOnly)); then
 	## Once, so every path under it is spelled the same: macOS's temp folder sits behind a link.
-	HOST_TEMP="$(realpath -e -- "${HOST_TEMP:-${TMPDIR:-/tmp}}")" || fDie "no temp folder at ${HOST_TEMP:-${TMPDIR:-/tmp}}"
+	HOST_TEMP="$(realpath -e -- "${HOST_TEMP:-${TMPDIR:-/tmp}}")" || fDie "No temp folder at ${HOST_TEMP:-${TMPDIR:-/tmp}}"
 	export HOST_TEMP
 	runRoot="${HOST_TEMP}/${APP_NAME}"
-	mkdir -p -- "${runRoot}" || fDie "can't make ${runRoot}"
+	mkdir -p -- "${runRoot}" || fDie "Can't make ${runRoot}"
 	## A plain mkdir, so a name another run took fails and the counter goes on.
 	for ((runSeq = 1; runSeq < 1000; runSeq++)); do
 		printf -v runTmp '%s/%s_%03d' "${runRoot}" "${stamp}" "${runSeq}"
 		mkdir -- "${runTmp}" 2>/dev/null && break
 		runTmp=""
 	done
-	[[ -n "${runTmp}" ]] || fDie "can't make a run folder in ${runRoot}"
+	[[ -n "${runTmp}" ]] || fDie "Can't make a run folder in ${runRoot}"
 	runName="${runTmp##*/}"
 	echo "$$" > "${runTmp}/run.pid"
 	trap 'fRunTmpDone "$?"' EXIT
@@ -489,9 +489,9 @@ fToolDrift(){ local toolName="" toolSpec="" toolHave=""
 
 fStageLint(){
 	local f g hadNullglob n mdFiles psFiles psList psScript psRc psOut q pyCache toolDrift toolSpec toolName toolWant toolPath toolHave unformatted winresStatus
-	((${#shellFiles[@]})) || fDie "no shell files matched SHELL_LINT_GLOBS"
+	((${#shellFiles[@]})) || fDie "No shell files matched SHELL_LINT_GLOBS"
 	for f in "${shellFiles[@]}"; do
-		bash -n "${f}" || fDie "syntax error: ${f}"
+		bash -n "${f}" || fDie "Syntax error: ${f}"
 	done
 	fEcho "OK: bash -n (${#shellFiles[@]} file(s))"
 	shellcheck --version >/dev/null 2>&1 || fDie "shellcheck not installed"
@@ -500,7 +500,7 @@ fStageLint(){
 	## Legacy files: report findings without gating (the refactor retires this list).
 	if ((${#shellWarnFiles[@]})); then
 		for f in "${shellWarnFiles[@]}"; do
-			bash -n "${f}" || fDie "syntax error: ${f}"
+			bash -n "${f}" || fDie "Syntax error: ${f}"
 			n="$(shellcheck "${f}" 2>/dev/null | grep -c "^In " || true)"
 			if ((n)); then fEcho "WARNING: ${n} shellcheck finding(s) in legacy ${f} (report-only until the refactor)"
 			else fEcho "OK: legacy ${f} clean"; fi
@@ -592,7 +592,7 @@ fStageLint(){
 		[[ "${toolHave}" == "${toolWant}" ]] || toolDrift+=( "${toolName} ${toolHave:-unknown} (recorded ${toolWant})" )
 	done
 	mapfile -t -O "${#toolDrift[@]}" toolDrift < <(fToolDrift "${TOOL_VERSIONS[@]%%=*}")
-	((${#toolDrift[@]} == 0)) || fEcho "WARNING: tool versions differ from the recorded set: ${toolDrift[*]}"
+	((${#toolDrift[@]} == 0)) || fEcho "WARNING: Tool versions differ from the recorded set: ${toolDrift[*]}"
 	unformatted="$(cd "${root}/${GO_MODULE_DIR}" && gofmt -l .)"
 	[[ -z "${unformatted}" ]] || fDie "gofmt wants to reformat: ${unformatted}"
 	## Same core budget as the builds: BUILD_JOBS caps the go tool's workers, and
@@ -622,13 +622,13 @@ fStageLint(){
 	"${WINRES_CMD[@]}" --check -q || winresStatus=$?
 	case "${winresStatus}" in
 		0) fEcho "OK: windows resource current" ;;
-		3) fEcho "WARNING: windows resource check skipped (not installed: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.5.0)" ;;
-		*) fDie "windows resource is stale" ;;
+		3) fEcho "WARNING: Windows resource check skipped (not installed: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.5.0)" ;;
+		*) fDie "Windows resource is stale" ;;
 	esac
 	## Two backlog rules the review rounds kept leaking through: every open review item
 	## names where it came from, and a suite check removed on this branch is named in the
 	## backlog. Both were broken by hand before, and neither showed anywhere.
-	"${BACKLOG_CHECK_CMD[@]}" -q || fDie "backlog check failed (see above)"
+	"${BACKLOG_CHECK_CMD[@]}" -q || fDie "Backlog check failed (see above)"
 	fEcho "OK: backlog check"
 }
 fUnitTests(){
@@ -671,7 +671,7 @@ fNativeBuild(){
 fLeakCheck(){
 	local leakDir="${root}/${LEAKCHECK_DIR}" soakDir="" log="" rc=0 old=""
 	soakDir="${leakDir}/soak_${stamp}"
-	mkdir -p "${soakDir}" || fDie "can't make ${soakDir}"
+	mkdir -p "${soakDir}" || fDie "Can't make ${soakDir}"
 	log="$(mktemp "${runTmp}/soak.XXXXXX")"
 	(cd "${root}/${GO_MODULE_DIR}" && GITSBY_SOAK_ROUNDS="${LEAKCHECK_SOAK_ROUNDS}" GITSBY_SOAK_OUT="${soakDir}" GOMAXPROCS="${HEAVY_JOBS}" \
 		go test -count=1 -run '^TestSoak$' -v .) >"${log}" 2>&1 || rc=$?
@@ -679,7 +679,7 @@ fLeakCheck(){
 	if ((rc)) || ! grep -q '^--- PASS: TestSoak' "${log}"; then
 		grep -vE '^ *(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|SKIP))' "${log}" || true
 		fTmpDone "${log:?}"
-		fDie "soak test failed; heap profiles in ${soakDir}"
+		fDie "Soak test failed; heap profiles in ${soakDir}"
 	fi
 	fTmpDone "${log:?}"
 	sed 's/^/  /' "${soakDir}/soak.txt"
@@ -687,7 +687,7 @@ fLeakCheck(){
 	## Only ever the files the test writes, so no recursive delete.
 	while IFS= read -r old; do
 		rm -f -- "${old:?}"/heap-round-*.pprof "${old:?}/soak.txt"
-		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: kept ${old}, which has more in it than the soak test wrote"
+		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: Kept ${old}, which has more in it than the soak test wrote"
 	done < <(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_[0-9]*-[0-9]*' | sort -r | tail -n +21)
 	if ((soakOnly)); then fEcho_Clean "CodeQL skipped (--quick), add with --leakcheck"; return 0; fi
 	fCodeQL
@@ -732,12 +732,12 @@ fCodeQL(){
 	fi
 	mapfile -t cqOses < <(printf '%s\n' "${RELEASE_TARGETS[@]%%/*}" | sort -u)
 	cqDir="${leakDir}/codeql_${stamp}"
-	mkdir -p "${cqDir}" || fDie "can't make ${cqDir}"
-	cqWork="$(mktemp -d "${runTmp}/gitsby-codeql.XXXXXX")" || fDie "can't make a scratch folder for CodeQL"
+	mkdir -p "${cqDir}" || fDie "Can't make ${cqDir}"
+	cqWork="$(mktemp -d "${runTmp}/gitsby-codeql.XXXXXX")" || fDie "Can't make a scratch folder for CodeQL"
 	log="${cqWork}/codeql.log"; : > "${log}"
 	## The source alone, not the builds beside it.
 	mapfile -t cqFiles < <(cd "${root}" && find "${GO_MODULE_DIR}" -type f \( -name '*.go' -o -name go.mod -o -name go.sum \))
-	((${#cqFiles[@]})) || fDie "found no files under ${GO_MODULE_DIR} for CodeQL"
+	((${#cqFiles[@]})) || fDie "Found no files under ${GO_MODULE_DIR} for CodeQL"
 	(cd "${root}" && tar -cf - -- "${cqFiles[@]}") | tar -C "${cqWork}" -xf - || rc=1
 	((rc)) || (cd "${cqWork}/${GO_MODULE_DIR}" && go mod vendor) >"${log}" 2>&1 || rc=1
 	for goos in "${cqOses[@]}"; do
@@ -767,7 +767,7 @@ fCodeQL(){
 	## Only ever the reports, so no recursive delete.
 	while IFS= read -r old; do
 		rm -f -- "${old:?}"/*.sarif
-		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: kept ${old}, which has more in it than CodeQL's reports"
+		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: Kept ${old}, which has more in it than CodeQL's reports"
 	done < <(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'codeql_[0-9]*-[0-9]*' | sort -r | tail -n +21)
 }
 
@@ -813,7 +813,7 @@ fCpuPlan(){ fEcho_Clean "Cores ...............: ${BUILD_JOBS} of ${cpuCores}, ${
 fListTests(){
 	local title="$1" lines=""
 	shift
-	lines="$("${here}/utility/test-id.bash" --list --root "${root}" "$@")" || fDie "can't list the tests in $*"
+	lines="$("${here}/utility/test-id.bash" --list --root "${root}" "$@")" || fDie "Can't list the tests in $*"
 	fEcho_Clean
 	fEcho_Clean "${title}: $(grep -c . <<< "${lines}" || true) test(s)"
 	[[ -z "${lines}" ]] || sed 's/^/  /' <<< "${lines}"
@@ -835,7 +835,7 @@ fContainerRun(){
 	## The gif's out-of-tree archive, at the path the config spells, through any symlink on the way.
 	## A run that leaves the gif as committed never writes there.
 	if ((DO_DEMOGIF && ! gate)) && [[ -z "${handsOff}" ]]; then
-		mkdir -p "${DEMOGIF_ARCHIVE_DIR}" || fDie "can't make ${DEMOGIF_ARCHIVE_DIR}"
+		mkdir -p "${DEMOGIF_ARCHIVE_DIR}" || fDie "Can't make ${DEMOGIF_ARCHIVE_DIR}"
 		containerMounts+=(-v "$(realpath -m -- "${DEMOGIF_ARCHIVE_DIR}"):$(realpath -s -m -- "${DEMOGIF_ARCHIVE_DIR}")")
 	fi
 	## Named for the run's folder, so it can be found and stopped among other projects' containers.
@@ -859,7 +859,7 @@ fContainerRun(){
 		"${containerImage}" bash "${root}/cicd/cicd.bash" "${innerArgs[@]}" &
 	## Waited on, not run in front: bash defers a trap until a command in front ends, and docker
 	## passes Ctrl+C on into the container rather than ending.
-	wait "$!" || fDie "the run in the container failed (above)"
+	wait "$!" || fDie "The run in the container failed (above)"
 	fEcho "OK: the container run"
 }
 
@@ -915,7 +915,7 @@ if ((gate)); then
 			unit)   fUnitTests ;;
 			suite)  "${TEST_CMD[@]}" ;;
 			fuzz)   "${FUZZ_CMD[@]}"
-			        "${SPAWN_COUNT_CMD[@]}" || fDie "spawn counts regressed"; fEcho "OK: spawn counts" ;;
+			        "${SPAWN_COUNT_CMD[@]}" || fDie "Spawn counts regressed"; fEcho "OK: spawn counts" ;;
 			parity) "${PARITY_CMD[@]}" ;;
 		esac
 		fStepEnd
@@ -1128,14 +1128,14 @@ fi
 fSyncMerge(){
 	local pre="" stashWas="" stashed=0 clash=""
 	pre="$(git rev-parse HEAD)"; stashWas="$(git rev-parse -q --verify refs/stash || true)"
-	git stash push --quiet || fDie "couldn't stash the uncommitted edits to merge from origin. Commit or reconcile them before building."
+	git stash push --quiet || fDie "Couldn't stash the uncommitted edits to merge from origin. Commit or reconcile them before building."
 	## Only a new entry is ours. With nothing to stash there is none, and an older one is the user's.
 	[[ "$(git rev-parse -q --verify refs/stash || true)" == "${stashWas}" ]] || stashed=1
 	if ! git merge "$@" '@{u}'; then
 		git rev-parse -q --verify MERGE_HEAD >/dev/null && git merge --abort
 		((stashed)) || return 1
 		{ git reset --quiet --hard "${pre}" && git stash pop --quiet --index; } && return 1
-		fDie "the merge from origin failed, and putting the uncommitted edits back failed too. They're in stash@{0}."
+		fDie "The merge from origin failed, and putting the uncommitted edits back failed too. They're in stash@{0}."
 	fi
 	((stashed)) || return 0
 	git stash pop --quiet --index >/dev/null 2>&1 && return 0
@@ -1144,9 +1144,9 @@ fSyncMerge(){
 	clash="$(git diff --no-relative --name-only --diff-filter=U | paste -sd ' ')"
 	[[ -n "${clash}" ]] || clash="$(comm -12 <(git diff --no-relative --name-only "${pre}" HEAD | sort) <(git diff --no-relative --name-only 'stash@{0}^1' 'stash@{0}' | sort) | paste -sd ' ')"
 	if ! { git reset --quiet --hard "${pre}" && git stash pop --quiet --index; }; then
-		fDie "uncommitted edits clash with origin, and putting them back failed. They're in stash@{0}."
+		fDie "Uncommitted edits clash with origin, and putting them back failed. They're in stash@{0}."
 	fi
-	fDie "uncommitted edits clash with origin in ${clash:-the tree}, so the merge was backed out and the edits put back. Commit or reconcile them before building."
+	fDie "Uncommitted edits clash with origin in ${clash:-the tree}, so the merge was backed out and the edits put back. Commit or reconcile them before building."
 }
 
 ## Stage 0: remote sync. The publish stage pulls too, but that is after everything
@@ -1160,7 +1160,7 @@ if ((doSync)); then
 		fEcho_Clean "no upstream for this branch - nothing to sync"
 	elif ! git fetch --quiet 2>/dev/null; then
 		## Offline is the other ordinary state. Warn and build what is here.
-		fEcho_Clean "WARNING: can't reach origin - building without refreshing"
+		fEcho_Clean "WARNING: Can't reach origin - building without refreshing"
 	else
 		## Left is behind, right is ahead: what origin has that we don't, and the reverse.
 		counts="$(git rev-list --left-right --count '@{u}...HEAD' 2>/dev/null || echo "0	0")"
@@ -1171,13 +1171,13 @@ if ((doSync)); then
 			## backed out, the stash put back with it, and the run stops before building anything.
 			fEcho_Clean "merging ${behind} commit(s) from origin into ${ahead} local"
 			if ! fSyncMerge --no-ff --no-edit; then
-				fDie "diverged from origin: ${ahead} local, ${behind} remote, and they don't merge clean. Reconcile before building."
+				fDie "Diverged from origin: ${ahead} local, ${behind} remote, and they don't merge clean. Reconcile before building."
 			fi
 		else
 			## Only behind, so this can only be a fast-forward. fSyncMerge carries a dirty tree
 			## over it rather than refusing, and puts it back afterward.
 			fEcho_Clean "fast-forwarding ${behind} commit(s) from origin"
-			fSyncMerge --ff-only || fDie "fast-forward from origin failed"
+			fSyncMerge --ff-only || fDie "Fast-forward from origin failed"
 		fi
 	fi
 	fStepEnd
@@ -1262,9 +1262,9 @@ if ((doFuzz)); then
 			((fuzzRc)) || break
 			fEcho_Clean "$(tail -n 40 <<< "${fuzzOut}")"
 			if grep -qF 'Failing input written to' <<< "${fuzzOut}"; then
-				fEcho_Clean "  FAIL ${fuzzId}${fuzzTarget}"; fDie "fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"
+				fEcho_Clean "  FAIL ${fuzzId}${fuzzTarget}"; fDie "Fuzzing found a crasher in ${fuzzTarget} (reproducer under ${GO_MODULE_DIR}/testdata/fuzz/)"
 			fi
-			((fuzzTry == 1)) || { fEcho_Clean "  FAIL ${fuzzId}${fuzzTarget}"; fDie "fuzzing ${fuzzTarget} failed twice and saved no failing input (go's output is above)"; }
+			((fuzzTry == 1)) || { fEcho_Clean "  FAIL ${fuzzId}${fuzzTarget}"; fDie "Fuzzing ${fuzzTarget} failed twice and saved no failing input (go's output is above)"; }
 			fEcho_Clean "  ${fuzzTarget} failed and saved no failing input, so running it once more"
 		done
 		fEcho_Clean "  PASS ${fuzzId}${fuzzTarget}"
@@ -1312,7 +1312,7 @@ fi
 ## git for effectively all of its wall clock, so a flamegraph has no leaders in it. What
 ## costs anything is how often we fork git, and that is what regresses silently.
 if ((doFuzz)) && [[ -f "${SPAWN_COUNT_CMD[0]:-}" ]]; then
-	"${SPAWN_COUNT_CMD[@]}" || fDie "spawn counts regressed"
+	"${SPAWN_COUNT_CMD[@]}" || fDie "Spawn counts regressed"
 	fEcho "OK: spawn counts"
 fi
 if ((leakcheck)); then
@@ -1351,7 +1351,7 @@ fCrossBuild(){
 		parts+=("${part}")
 	done
 	if ((${#parts[@]} > 1)); then
-		"${root}/cicd/utility/macho-universal.bash" "${out}" "${parts[@]}" || fDie "could not join the ${target} builds"
+		"${root}/cicd/utility/macho-universal.bash" "${out}" "${parts[@]}" || fDie "Could not join the ${target} builds"
 		rm -f -- "${parts[@]}"
 	fi
 }
@@ -1361,7 +1361,7 @@ if ((${#DOGFOOD_TARGETS[@]})); then
 	for t in "${DOGFOOD_TARGETS[@]}"; do
 		exe="${EXE_NAME}"; [[ "${t}" == windows/* ]] && exe="${EXE_NAME}.exe"
 		if [[ -z "${dogfoodDest[${t}]}" ]]; then
-			fEcho "WARNING: no ${t} dogfood dest exists/writable (${dogfoodAll[${t}]}); skipping"
+			fEcho "WARNING: No ${t} dogfood dest exists/writable (${dogfoodAll[${t}]}); skipping"
 			continue
 		fi
 		## Built into the module dir under the target's own name, so the native binary the
@@ -1400,12 +1400,12 @@ else
 		demoVersion="${demoTag#v}"
 		demoBuildEpoch="$(git log -1 --format=%ct "${demoTag}^{commit}" 2>/dev/null || true)"
 	elif [[ -n "${demoTag}" ]]; then
-		fEcho "WARNING: the newest v* tag '${demoTag}' is not a version, so the demo build is stamped 0.0.0"
+		fEcho "WARNING: The newest v* tag '${demoTag}' is not a version, so the demo build is stamped 0.0.0"
 	fi
 	demogifBin="${root}/${GO_MODULE_DIR}/${EXE_NAME}-demo"
 	if ! (cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 \
 		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${demoVersion} -X main.buildEpoch=${demoBuildEpoch}" -o "${demogifBin}" .); then
-		fEcho "WARNING: demo build failed, so no demo gif was rendered (continuing)"
+		fEcho "WARNING: Demo build failed, so no demo gif was rendered (continuing)"
 	elif (cd "${root}" && python3 "${DEMOGIF_CMD[@]}" ${harnessQuiet[@]+"${harnessQuiet[@]}"} --out "${demogifTmp}" --bin "${demogifBin}"); then
 		if [[ -n "${DEMOGIF_OPT_CMD[*]:-}" ]] && command -v "${DEMOGIF_OPT_CMD[0]}" >/dev/null 2>&1; then
 			demogifWas=$(stat -c%s "${demogifTmp}")
@@ -1429,13 +1429,13 @@ else
 			## --no-container, so the difference may be the tool's. A warning, as a tool version
 			## is everywhere else.
 			rm -f -- "${demogifTmp:?}"
-			fEcho "WARNING: demo gif differs, but this box has ${demoDrift[*]}, so the committed one stays"
+			fEcho "WARNING: Demo gif differs, but this box has ${demoDrift[*]}, so the committed one stays"
 		elif [[ -n "${handsOff}" ]]; then
 			rm -f -- "${demogifTmp:?}"
-			fEcho "WARNING: demo gif differs; ${handsOff} rewrites no tracked file, so the committed one stays"
+			fEcho "WARNING: Demo gif differs; ${handsOff} rewrites no tracked file, so the committed one stays"
 		elif ((demogifWasEdited)); then
 			rm -f -- "${demogifTmp:?}"
-			fEcho "WARNING: demo gif differs, but ${DEMOGIF_OUT} was already edited when the run started, so it stays as it is"
+			fEcho "WARNING: Demo gif differs, but ${DEMOGIF_OUT} was already edited when the run started, so it stays as it is"
 		else
 			## Keep the new original out of tree (GFS-pruned), then move it into the repo.
 			mkdir -p "${DEMOGIF_ARCHIVE_DIR}"
@@ -1446,11 +1446,11 @@ else
 		fi
 	else
 		rm -f -- "${demogifTmp:?}"
-		fEcho "WARNING: demo gif generation failed (continuing)"
+		fEcho "WARNING: Demo gif generation failed (continuing)"
 	fi
 	rm -f -- "${demogifBin:?}"
 	## The scenario builds its world at a fixed path, since the path is on camera.
-	bash "${root}/cicd/utility/demo/demo-repo.bash" --remove || fEcho "WARNING: left the demo's repos in place"
+	bash "${root}/cicd/utility/demo/demo-repo.bash" --remove || fEcho "WARNING: Left the demo's repos in place"
 fi
 fStepEnd
 
@@ -1582,3 +1582,4 @@ fEcho_Clean
 ##		- 2026-11-21 JC: Stage 0 stashes the edits itself and puts them back with --index, so staged edits stay staged across a merge or fast-forward that goes in clean. Stage 6 leaves a demo gif that was edited before the run as it is.
 ##		- 2026-11-23 JC: Lint also runs staticcheck's unused check without the tests, so code only a test calls fails the gate.
 ##		- 2026-11-23 JC: In the container, the run's uid gets a passwd entry through nss_wrapper, so ssh starts there.
+##		- 2026-11-24 JC: Warnings start with a capital after their label.

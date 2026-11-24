@@ -62,7 +62,6 @@ type branchRefs struct {
 	origin map[string]string
 	push   map[string]pushRefs
 	head   string            // the branch checked out, so a push needs no second call to name it
-	held   map[string]string // a branch checked out in another worktree, to that worktree's path
 	tip    map[string]string // each ref, by its full name, to its commit
 }
 
@@ -72,23 +71,21 @@ type pushRefs struct{ pushRemote, pushRef, upRemote, upRef string }
 
 func (a *app) branchRefs() branchRefs {
 	return a.git.branches.get(func() branchRefs {
-		refs := branchRefs{local: map[string]upstreamRef{}, origin: map[string]string{}, push: map[string]pushRefs{}, held: map[string]string{}, tip: map[string]string{}}
+		refs := branchRefs{local: map[string]upstreamRef{}, origin: map[string]string{}, push: map[string]pushRefs{}, tip: map[string]string{}}
 		// NUL apart, since a remote can be a URL, which may hold a space. An empty
 		// field still has its place.
-		lines := runLines("git", "for-each-ref", "--format=%(refname)%00%(refname:short)%00%(upstream)%00%(upstream:short)%00%(push:remotename)%00%(push:remoteref)%00%(upstream:remotename)%00%(upstream:remoteref)%00%(HEAD)%00%(worktreepath)%00%(objectname)", "refs/heads/", "refs/remotes/origin/")
+		lines := runLines("git", "for-each-ref", "--format=%(refname)%00%(refname:short)%00%(upstream)%00%(upstream:short)%00%(push:remotename)%00%(push:remoteref)%00%(upstream:remotename)%00%(upstream:remoteref)%00%(HEAD)%00%(objectname)", "refs/heads/", "refs/remotes/origin/")
 		for _, line := range lines {
 			fields := strings.Split(line, "\x00")
-			if len(fields) != 11 {
+			if len(fields) != 10 {
 				continue
 			}
-			refs.tip[fields[0]] = fields[10]
+			refs.tip[fields[0]] = fields[9]
 			if name, ok := strings.CutPrefix(fields[0], "refs/heads/"); ok {
 				refs.local[name] = upstreamRef{full: fields[2], short: fields[3]}
 				refs.push[name] = pushRefs{pushRemote: fields[4], pushRef: fields[5], upRemote: fields[6], upRef: fields[7]}
 				if fields[8] == "*" {
 					refs.head = name
-				} else if fields[9] != "" {
-					refs.held[name] = fields[9]
 				}
 			} else if name, ok := strings.CutPrefix(fields[0], "refs/remotes/origin/"); ok && name != "HEAD" {
 				// origin/HEAD is a pointer at the default branch, not a branch. Counted as

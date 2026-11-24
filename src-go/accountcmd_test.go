@@ -1405,6 +1405,68 @@ func TestGlobalWriteFile(t *testing.T) { // [dffzy]
 	}
 }
 
+// apply asked git var for the global files in its plan, its write and the listing,
+// and account list asked it with no fragment folder to point at
+// (2026111910222745).
+func TestGlobalConfigsAskedOnce(t *testing.T) { // [dfr3p]
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git")
+	}
+	root := t.TempDir()
+	log := filepath.Join(root, "git.log")
+	fakeTool(t, "git", `echo "$*" >> '`+log+`'; exec '`+realGit+`' "$@"`)
+	global := filepath.Join(root, ".gitconfig")
+	if err := os.WriteFile(global, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	asked := func() int {
+		got, _ := os.ReadFile(log) // no log is no git run
+		return strings.Count(string(got), "var GIT_CONFIG_GLOBAL\n")
+	}
+	cfg := writeConfig(t, "account: b\n\tpath: /srv/b\n\temail: b@example.com\n")
+	a := newApp(newPrinter())
+	a.cfg = cfg
+	if stale := cfg.relativeManagedIncludes(); stale != nil || cfg.liveManagedIncludes() != nil {
+		t.Errorf("rules found with no fragment folder: %v", stale)
+	}
+	if n := asked(); n != 0 {
+		t.Errorf("with no fragment folder, git var ran %d times, want 0", n)
+	}
+	a.preview("account-apply")
+	if err := a.cmdAccountApply(); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if got := cfg.liveManagedIncludes(); len(got) != 1 || got[0].file != filepath.ToSlash(global) {
+		t.Errorf("after apply, liveManagedIncludes = %v, want one rule in %s", got, global)
+	}
+	if n := asked(); n != 1 {
+		t.Errorf("plan, apply and listing ran git var %d times, want 1", n)
+	}
+}
+
+// The cache is keyed on what git reads to find the files, so moving one asks again.
+func TestGlobalConfigsFollowTheEnvironment(t *testing.T) { // [dfr3q]
+	root := t.TempDir()
+	t.Setenv("PATH", root) // a fresh key, whatever ran before
+	first, second := filepath.ToSlash(filepath.Join(root, "a")), filepath.ToSlash(filepath.Join(root, "b"))
+	t.Setenv("GIT_CONFIG_GLOBAL", first)
+	if got := globalGitConfigs(); !slices.Equal(got, []string{first}) {
+		t.Errorf("globalGitConfigs() = %q, want %q", got, first)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", second)
+	if got := globalGitConfigs(); !slices.Equal(got, []string{second}) {
+		t.Errorf("after a move, globalGitConfigs() = %q, want %q", got, second)
+	}
+	got := globalGitConfigs()
+	got[0] = "changed"
+	if again := globalGitConfigs(); !slices.Equal(again, []string{second}) {
+		t.Errorf("a caller's edit reached the cache: %q", again)
+	}
+}
+
 func TestLockFix(t *testing.T) { // [dcnkc]
 	tests := []struct {
 		goos, lock string

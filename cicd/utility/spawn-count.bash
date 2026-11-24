@@ -39,7 +39,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -73,7 +73,7 @@ fFail(){ local id="${1%%\] *}"; fEcho_Clean "  FAIL ${id#\[} ${1#*\] }"; }
 ## A SKIP for each command, named as fMeasure names it below.
 command -v strace >/dev/null 2>&1 || { sed -n 's/^fMeasure "\[\([^]]*\)\] \([^"]*\)".*/  SKIP \1 \2 (no strace)/p' "${BASH_SOURCE[0]}"; exit 0; }
 exe="${root}/${GO_MODULE_DIR}/${EXE_NAME}"
-[[ -x "${exe}" ]] || fDie "no build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd.bash stage 2, or 'go build' there"
+[[ -x "${exe}" ]] || fDie "No build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd.bash stage 2, or 'go build' there"
 
 fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
 work="$(mktemp -d "${safeTmp}/gitsby-spawn.XXXXXX")"
@@ -307,11 +307,11 @@ fMeasure(){
 fMeasure "[dbftf] status"                              11 pipe repo        -q --no-fetch status
 fMeasure "[dbjeq] whoami"                               7 pipe repo        -q --no-fetch whoami
 fMeasure "[dbftg] br list"                              7 pipe repo        -q --no-fetch br list
-fMeasure "[dbfth] account list"                         8 pipe repo        -q --no-fetch account list
+fMeasure "[dbfth] account list"                         6 pipe repo        -q --no-fetch account list
 fMeasure "[dbftj] repo url"                             6 pipe repo        -q --no-fetch repo url
 fMeasure "[dbftk] pullcom"                             21 pipe repo        -q --no-fetch pullcom "spawn count"
 fMeasure "[ddf68] pullcom with a fetch"                 28 pipe repo        -q pullcom "spawn count"
-fMeasure "[dbftm] br switch"                           28 pipe repo        -q --no-fetch br switch main
+fMeasure "[dbftm] br switch"                           27 pipe repo        -q --no-fetch br switch main
 fMeasure "[df37t] br merge"                             43 pipe feature     -q --no-fetch br merge
 fMeasure "[df37v] br merge with a fetch"                54 pipe feature     -q br merge
 fMeasure "[df37w] br switch of a staged change"         38 pipe staged      -q --no-fetch --staged br switch dev
@@ -320,7 +320,7 @@ fMeasure "[deytk] br prune of five branches"           31 pipe prune5      -q --
 fMeasure "[ddf4z] status with a fetch"                 17 tty  repo        status
 fMeasure "[ddf50] status in an account folder"         19 tty  acct-ssh    --no-fetch status
 fMeasure "[ddf51] whoami in an account folder"         15 tty  acct-ssh    --no-fetch whoami
-fMeasure "[ddf52] account list with accounts"          12 tty  acct-ssh    --no-fetch account list
+fMeasure "[ddf52] account list with accounts"          10 tty  acct-ssh    --no-fetch account list
 fMeasure "[ddf53] status in an https account folder"   15 tty  acct-https  --no-fetch status
 fMeasure "[df04s] status in a tea ssh folder"          16 tty  acct-gitea  --no-fetch status
 fMeasure "[df04t] whoami in a tea ssh folder"          12 tty  acct-gitea  --no-fetch whoami
@@ -397,16 +397,16 @@ if [[ "$(fOriginRefs)" == "${originRefs}" ]]; then fOk "[dez8s] the fixture's or
 else fFail "[dez8s] the fixture's origins are as built, after every command"; originMoved=1; fi
 
 if ((originMoved)); then
-	fDie "spawn counts ran against an origin a command had changed; nothing recorded."
+	fDie "Spawn counts ran against an origin a command had changed; nothing recorded."
 fi
 if ((failedRun)); then
-	fDie "a measured command failed; nothing recorded."
+	fDie "A measured command failed; nothing recorded."
 fi
 if ((overLimit)); then
-	fDie "spawn counts went over their limits; nothing recorded."$'\n'"  A deliberate rise raises the expected count beside the command in ${BASH_SOURCE[0]##*/}."
+	fDie "Spawn counts went over their limits; nothing recorded."$'\n'"  A deliberate rise raises the expected count beside the command in ${BASH_SOURCE[0]##*/}."
 fi
 if ((regressed)) && ((! record)); then
-	fDie "spawn counts regressed against $(basename "${baseline}"); nothing recorded."$'\n'"  Re-run with --record to accept the new counts as the baseline."
+	fDie "Spawn counts regressed against $(basename "${baseline}"); nothing recorded."$'\n'"  Re-run with --record to accept the new counts as the baseline."
 fi
 
 ## UTC, as the run in the image is, so the newest record is the newest run on any box.
@@ -447,3 +447,4 @@ TZ=UTC0 gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261110 JC: A push that has an upstream asks for-each-ref where it goes, 1 more each: br switch of a staged change 37 -> 38, pr create in the Gitea folder 42 -> 43.
 ##		- 20261120 JC: Reads the baseline once, not once per command, and writes the record in one go.
 ##		- 20261123 JC: Names each count over its expected one that the headroom let pass. Expected counts raised for the rises that sat there: account list 7 -> 8 and 11 -> 12 for reading every global git config file, br merge 41 -> 43 and 52 -> 54 for the no-shared-history refusal and the upstream read after the checkout. pr create in the GitLab folder 31 -> 30.
+##		- 20261124 JC: account list 8 -> 6 and 12 -> 10, since with no account fragment folder it no longer asks git for the global config files.

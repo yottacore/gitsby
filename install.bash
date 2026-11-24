@@ -50,7 +50,7 @@ fSyntax(){
 fMain(){
 	repo="yottacore/gitsby"
 	## The date of the newest History entry below. test.bash holds the two together.
-	installerVersion="2026-11-20"
+	installerVersion="2026-11-24"
 	doSystem=0; doYes=0; tag=""
 	releaseChannel=""; targetScope=""; arch=""
 
@@ -242,7 +242,7 @@ fMain(){
 	if [[ -z "${want}" ]]; then
 		{
 			echo
-			echo "Error: release ${tag} publishes no gitsby binary for ${goOs}/${arch}."
+			echo "Error: Release ${tag} publishes no gitsby binary for ${goOs}/${arch}."
 			[[ -z "${published}" ]] || echo "  It publishes: ${published}"
 			echo "  Build it for yours instead:"
 			echo "    git clone https://github.com/${repo}.git && cd gitsby/src-go && go build -o gitsby ."
@@ -358,5 +358,6 @@ fMain(){
 ##		- 20261120 JC: A PATH entry with a trailing slash counts as having the install folder, so it no longer gets the not-on-PATH note.
 ##		- 20261120 JC: --version prints the installer's own version, the date of its newest change.
 ##		- 20261120 JC: --release dev takes the newest release, pre-releases included. It was refused, since it once meant a branch tip.
+##		- 20261124 JC: The no-binary error starts with a capital after its label.
 
 fMain "${@}"

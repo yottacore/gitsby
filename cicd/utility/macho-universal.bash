@@ -20,7 +20,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -36,18 +36,18 @@ fLe32(){ echo $(( $1 | ($2 << 8) | ($3 << 16) | ($4 << 24) )) ;}
 ## Written as \x escapes for printf '%b'.
 fBe32(){ printf '\\x%02x\\x%02x\\x%02x\\x%02x' $(( ($1 >> 24) & 255 )) $(( ($1 >> 16) & 255 )) $(( ($1 >> 8) & 255 )) $(( $1 & 255 )) ;}
 
-(($# >= 3)) || fDie "usage: macho-universal.bash OUT BUILD BUILD..."
+(($# >= 3)) || fDie "Usage: macho-universal.bash OUT BUILD BUILD..."
 out="$1"; shift
 
 cpus=(); subs=(); sizes=(); offsets=()
 next=$(( 1 << alignPow ))
 for thin in "$@"; do
-	[[ -f "${thin}" ]] || fDie "no such file: ${thin}"
+	[[ -f "${thin}" ]] || fDie "No such file: ${thin}"
 	read -r m0 m1 m2 m3 c0 c1 c2 c3 s0 s1 s2 s3 <<< "$(fBytes "${thin}" 0 12)"
 	## Every Mac target Go builds is 64-bit and little-endian, so that is the only magic taken.
-	[[ "${m0:-} ${m1:-} ${m2:-} ${m3:-}" == "207 250 237 254" ]] || fDie "not a 64-bit Mach-O build: ${thin}"
+	[[ "${m0:-} ${m1:-} ${m2:-} ${m3:-}" == "207 250 237 254" ]] || fDie "Not a 64-bit Mach-O build: ${thin}"
 	cpu="$(fLe32 "${c0}" "${c1}" "${c2}" "${c3}")"
-	for seen in "${cpus[@]}"; do [[ "${seen}" != "${cpu}" ]] || fDie "two builds for one CPU: ${thin}"; done
+	for seen in "${cpus[@]}"; do [[ "${seen}" != "${cpu}" ]] || fDie "Two builds for one CPU: ${thin}"; done
 	size=$(( $(wc -c < "${thin}") ))
 	cpus+=("${cpu}"); subs+=("$(fLe32 "${s0}" "${s1}" "${s2}" "${s3}")"); sizes+=("${size}"); offsets+=("${next}")
 	next=$(( (next + size + (1 << alignPow) - 1) >> alignPow << alignPow ))

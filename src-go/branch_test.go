@@ -446,6 +446,68 @@ func TestRefuseHeldBranchLocked(t *testing.T) { // [dfkyp]
 	}
 }
 
+// %(worktreepath) makes for-each-ref read every worktree, so only a run that
+// checks a branch out asks for it, for that branch alone, and only once a linked
+// worktree exists. Read from git's own trace of the run's calls.
+func TestWorktreePathOnlyAhead(t *testing.T) { // [dfr1s]
+	_, clone := gitTestRepo(t)
+	runGit(t, clone, "branch", "-q", "dev")
+	trace := filepath.Join(t.TempDir(), "trace")
+	t.Chdir(clone)
+	ask := func(cmd, arg string) (queries []string, err error) {
+		t.Helper()
+		if err := os.WriteFile(trace, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("GIT_TRACE", trace)
+		a := newApp(newPrinter())
+		a.cmd = command{name: cmd, arg: arg, mutating: true}
+		if err := a.enterRepo(); err != nil || a.worktreesDir == "" {
+			t.Fatalf("enterRepo: worktreesDir %q, %v", a.worktreesDir, err)
+		}
+		a.branchRefs()
+		err = a.refuseHeldBranch()
+		t.Setenv("GIT_TRACE", "0")
+		b, rerr := os.ReadFile(trace)
+		if rerr != nil {
+			t.Fatal(rerr)
+		}
+		for _, line := range strings.Split(string(b), "\n") {
+			if strings.Contains(line, "worktreepath") {
+				queries = append(queries, line)
+			}
+		}
+		return queries, err
+	}
+	want := func(state string, queries []string, err error, refused bool) {
+		t.Helper()
+		switch {
+		case !refused && (len(queries) != 0 || err != nil):
+			t.Errorf("%s: asked %q, refused %v; want neither", state, queries, err)
+		case refused && (len(queries) != 1 || !strings.Contains(queries[0], "refs/heads/") || strings.Contains(queries[0], "refs/remotes/")):
+			t.Errorf("%s: asked %q, want one query of the branch alone", state, queries)
+		case refused && (err == nil || !strings.Contains(err.Error(), "is checked out in another worktree")):
+			t.Errorf("%s: got %v, want the branch named", state, err)
+		}
+	}
+	q, err := ask("sync", "")
+	want("sync with no linked worktree", q, err, false)
+	q, err = ask("br-switch", "dev")
+	want("br switch with no linked worktree", q, err, false)
+	linked := filepath.Join(filepath.Dir(clone), "linked")
+	runGit(t, clone, "worktree", "add", "-q", linked, "dev")
+	q, err = ask("sync", "")
+	want("sync with a linked worktree", q, err, false)
+	q, err = ask("br-switch", "dev")
+	want("br switch to the linked worktree's branch", q, err, true)
+	// From the linked one, the main worktree holds main.
+	t.Run("from the linked worktree", func(t *testing.T) {
+		t.Chdir(linked)
+		q, err := ask("br-switch", "main")
+		want("br switch from the linked worktree", q, err, true)
+	})
+}
+
 // git won't check out a branch another worktree is rebasing or bisecting either,
 // though HEAD is detached there and %(worktreepath) doesn't name it. Each state is
 // made by real git, read through enterRepo as a run reads it.
