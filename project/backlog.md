@@ -256,15 +256,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 enhancement 4: gitsby.exe can't start in a folder past 260 characters
 	- ID: 2026111910222718
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
-	- Needs external testing: vm925w
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102227
 	- Opened by:
 	- Target OS: Windows
 	- Requirements [Feature]: Add a manifest with longPathAware to the Windows resource that gen-winres.bash makes. git.exe needs core.longpaths there too, so the gain is small.
 	- Origin: Found on vm925w. No earlier round saw it.
+	- Closed reason: Won't fix
+	- Progress log: 2026-11-24: Reproduced on vm925w (build 26300, LongPathsEnabled 1) with a working folder of 310 characters. Windows starts no program there. gitsby.exe fails from pwsh, cmd and a Go launcher, and git.exe from pwsh, with 'The directory name is invalid' when the folder is passed, and 'The parameter is incorrect' when it is inherited. Git Bash refuses with 'Can't start native Windows application from here'.
+	- Decisions: No manifest. A build with longPathAware in its resource failed at the same folder in the same ways, started from a launcher with the manifest and from one without. CreateProcess caps the working folder near 260 characters whatever the manifest says, so the start fails before gitsby runs. gitsby.exe kept in a 325-character folder already starts, with or without it. Once running, Go's runtime turns on long paths for itself (initLongPathSupport in runtime/os_windows.go), so the manifest adds nothing there either.
+	- Verified: on vm925w, the build without the manifest and the build with it both failed to start at a 310-character working folder, and both started and printed their version from a 325-character folder with a short working folder.
+	- Test case: none, since gitsby is unchanged. The vm925w runs above are the evidence.
+	- Branch: nov24-2026111910222718
+	- Closed: 20261124-113301
+	- Acceptance signoff: Self-closed: Won't fix. The limit is in Windows' CreateProcess, measured on vm925w with and without the manifest.
 
 - `raw gh` loops forever when `gh` on PATH leads back to gitsby
 	- ID: 2026101916533300
