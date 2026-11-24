@@ -453,7 +453,7 @@ The rule for every path that hands out a token. The token goes only to the host 
 	- A push to `main` whose changes are all in the paths `MERGE_GATE_SKIP` in `cicd/config.bash` lists, docs and art no build reads, goes out without the gate, with a note. The list is read from the pushed commit, so a change to the list is itself gated. The diff is between the remote's `main` and the pushed commit. A new `main`, or a remote commit not here, is gated.
 	- The gate is `--merge-gate` since 2026-10-25: every check of a plain run, the other boxes included, with nothing synced, dogfooded, published or rewritten. Before that it was `--backlog-run-quick`, which `--gate` names: stage 1, the unit tests, and the regression, fuzz and compatibility suites against a build of the commit, through the same functions the full run calls, so the two cannot drift apart. A lint tool that is not installed warns and is skipped, as it is in the full run. Making it fatal in the gate alone was rejected for that reason. Since 2026-10-25 it runs in the pinned image where docker works, like a full run.
 	- git hands a hook the checkout it pushes from, through `GIT_DIR`, `GIT_WORK_TREE` and `GIT_PREFIX`. The hook drops them before anything else, or its git calls and the unit tests would act on that checkout instead of the gate worktree.
-	- Accepted cost: the gate runs the pushed commit's own pipeline and unit tests, as running the pipeline on that commit would. A push to `main` takes as long as a full run, about 50 minutes. `git push --no-verify` is how to push to `main` without running it.
+	- Accepted cost: The gate runs the pushed commit's own pipeline and unit tests, as running the pipeline on that commit would. A push to `main` takes as long as a full run, about 50 minutes. `git push --no-verify` is how to push to `main` without running it.
 
 - A GitHub Actions workflow, `.github/workflows/macos.yml`, builds and tests on GitHub's hosted Macs, Intel and Apple silicon, on each push to `dev` and `main` and on each pull request.
 	- It is an extra check, not a gate. Nothing waits on it, and nothing is published from it. `cicd/cicd.bash` stays the one pipeline, and its stage 7 still tests a real Mac over ssh.
@@ -660,6 +660,7 @@ The first 4 of these output rules came back after 2 sweeps, each time at sites t
 | A config key spelled the way the file takes it | Every `account set` literal in the Go source, which a Go test checks, and every key named in accounts.md, README.md and the changelog's vNEXT section.
 | One word per thing                             | Every name for the same thing in output: labels, the accounts file, and the old config formats.
 | One name per placeholder                       | The `usages` table in usage.go, which the help and every Syntax line read, and any placeholder written into another message. test.bash compares the README's Commands table with the help.
+| A capital after a label's colon               | Every `WARNING:` and `NOTE:` literal and every help line, which 2 Go tests check, and every bold or plain label in the public docs.
 
 ### Testing
 

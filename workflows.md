@@ -61,13 +61,13 @@ The opinions are mostly informed by industry and conventional best-practices, le
 
 - Releases are annotated semver tags (`vX.Y.Z`). With no version given, take the next one after the latest tag: usually a patch bump, except that a candidate like `v2.0.0-rc1` resolves to `v2.0.0`.
 
-- Look before you leap: fetch first, show the current state and the exact commands about to run, and ask before doing anything that mutates.
+- Look before you leap: Fetch first, show the current state and the exact commands about to run, and ask before doing anything that mutates.
 
 ## How it compares to the named workflows
 
 - [GitFlow](https://nvie.com/posts/a-successful-git-branching-model/): You get most of this with Gitsby when your repo has a `dev` branch.
 
-	- The idea: everyday work is merged into `dev`. `main` holds only versions that have actually been released. When you're ready to release, `dev` is merged into `main` and given a version tag.
+	- The idea: Everyday work is merged into `dev`. `main` holds only versions that have actually been released. When you're ready to release, `dev` is merged into `main` and given a version tag.
 
 	- Gitsby does exactly that. `br create` starts a branch from `dev`, `br merge` merges it back into `dev`, and `release` merges `dev` into `main` and tags it.
 
@@ -77,7 +77,7 @@ The opinions are mostly informed by industry and conventional best-practices, le
 
 - [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow): You get this with Gitsby when your repo has no `dev` branch.
 
-	- The idea: one permanent branch. You branch from it, open a pull request, merge back, delete the branch. Anything on that branch is considered ready to release.
+	- The idea: One permanent branch. You branch from it, open a pull request, merge back, delete the branch. Anything on that branch is considered ready to release.
 
 	- Gitsby does this with the same commands as above. They simply start from, and merge back into, `main` (or whatever your default branch is named) instead of `dev`.
 
@@ -85,13 +85,13 @@ The opinions are mostly informed by industry and conventional best-practices, le
 
 - [GitLab Flow](https://about.gitlab.com/topics/version-control/what-is-gitlab-flow/): Purposely not supported.
 
-	- The idea: extra permanent branches that mirror where the code is running, such as `staging` and `production`. Or one branch per released version, kept alive to receive bug fixes.
+	- The idea: Extra permanent branches that mirror where the code is running, such as `staging` and `production`. Or one branch per released version, kept alive to receive bug fixes.
 
 	- Gitsby has no notion of a deployment environment, and it records a release as a tag rather than a branch. You can still create and merge such branches with plain `git`; Gitsby just won't manage them for you.
 
 - [Trunk-based development](https://trunkbaseddevelopment.com/): Half supported.
 
-	- The idea: everyone works on one shared branch, the trunk. Branches, where used at all, last a day or two. Unfinished features are hidden behind feature flags instead of being parked on a branch.
+	- The idea: Everyone works on one shared branch, the trunk. Branches, where used at all, last a day or two. Unfinished features are hidden behind feature flags instead of being parked on a branch.
 
 	- The short-lived branch half is what Gitsby already encourages. Branches get created, merged, and deleted, and `br prune` removes the ones you forgot about.
 
@@ -99,7 +99,7 @@ The opinions are mostly informed by industry and conventional best-practices, le
 
 - **Any workflow that rewrites history**: Purposely not supported.
 
-	- The idea: keep the history tidy and linear. A branch's commits get squashed into one, or replayed on top of the target branch, so it reads as though the branch never existed.
+	- The idea: Keep the history tidy and linear. A branch's commits get squashed into one, or replayed on top of the target branch, so it reads as though the branch never existed.
 
 	- Gitsby never rebases, amends, squashes, or force-pushes, and its merges leave the branch visible in the history. If your team requires "squash and merge" or "rebase and merge", this isn't the tool.
 

@@ -151,6 +151,8 @@ gitsby: Another run is editing the accounts file.
 
 - Each label has one job. `Why:` says what went wrong and why. `Kept:` says what took effect anyway. `Fix:` says what to type, and `File:` says where. `From:` names where a value came from.
 
+- After a label and its colon, such as `WARNING:` or `No version:`, the text starts with a capital letter. A command, a path, or a name that is always spelled in lower case, such as `origin`, stays as it is.
+
 - A note's text wraps at 56 columns, whatever the terminal's width, so it reads the same on screen as in a bug report. A path or URL longer than that stays whole.
 
 - A path goes on its own labeled line, never inside a sentence or parentheses.

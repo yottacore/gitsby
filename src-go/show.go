@@ -513,7 +513,7 @@ func (a *app) showAccountLine() {
 		a.showAccountApplied()
 	}
 	if a.acct.looseTokenFile != "" {
-		a.out.clean(acctCont + "WARNING: the token file is readable by other users on this machine.")
+		a.out.clean(acctCont + "WARNING: The token file is readable by other users on this machine.")
 		a.showAccountNote("File", nativePath(a.acct.looseTokenFile))
 		a.showAccountFix("Keep it to yourself:", "  chmod 600 "+shellQuote(a.acct.looseTokenFile))
 	}

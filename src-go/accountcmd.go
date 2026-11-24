@@ -472,7 +472,7 @@ func (a *app) cmdAccountList() {
 	warnStale := func() {
 		for _, pattern := range stale {
 			a.out.clean("")
-			a.out.clean("WARNING: your global git config still has the rule 'gitdir/i:" + pattern + "' from an earlier 'account apply'. " +
+			a.out.clean("WARNING: Your global git config still has the rule 'gitdir/i:" + pattern + "' from an earlier 'account apply'. " +
 				"Its folder isn't absolute, so plain git can apply that account far from where it was typed. Run '" + meName + " account apply' to remove it.")
 		}
 	}
@@ -497,7 +497,7 @@ func (a *app) cmdAccountList() {
 	}
 	for _, contested := range a.cfg.contestedRules() {
 		a.out.clean("")
-		a.out.clean("WARNING: more than one account claims " + contested + " - only the first is used.")
+		a.out.clean("WARNING: More than one account claims " + contested + " - only the first is used.")
 	}
 	warnStale()
 }
@@ -674,7 +674,7 @@ func (a *app) cmdAccountApply() error {
 	// git takes an empty email as given, unlike an empty name, so it commits as '<>'
 	// there rather than refusing. Nothing a fragment can write makes it refuse.
 	for _, name := range noEmail {
-		a.out.status("WARNING: account '" + name + "' has no email, and another account's folder rule also covers its folders, so plain git there commits with an empty address. " +
+		a.out.status("WARNING: Account '" + name + "' has no email, and another account's folder rule also covers its folders, so plain git there commits with an empty address. " +
 			"Give it an email, or set user.email in your global git config, then run '" + meName + " account apply' again.")
 	}
 	return nil

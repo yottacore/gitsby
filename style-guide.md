@@ -7,7 +7,7 @@
 
 Canonical coding style for this project's Go, Bash, and PowerShell. For contribution process, see [contributing.md](contributing.md).
 
-Scope: the product itself is Go now. Go's *formatting* is `gofmt` - the lint stage runs it in list mode and gates on any file it would reformat, so layout is not written down here - but the conventions the formatter can't see are, below. The Bash and PowerShell sections govern the frozen, read-only scripts in `legacy/` and the pipeline's own scripts under `cicd/`.
+Scope: The product itself is Go now. Go's *formatting* is `gofmt` - the lint stage runs it in list mode and gates on any file it would reformat, so layout is not written down here - but the conventions the formatter can't see are, below. The Bash and PowerShell sections govern the frozen, read-only scripts in `legacy/` and the pipeline's own scripts under `cicd/`.
 
 <!-- TOC ignore:true -->
 ## Table of contents
@@ -158,11 +158,11 @@ Each of these has cost this pipeline or a sister one a silent failure.
 
 - Prefer the pipeline and cmdlets over manual loops when readable. Use `foreach ($x in $y) {}` for complex per-item logic. Avoid array `+=` in loops (O(n^2) recopy); use a `List[T]` or collect pipeline output.
 
-- Quote deliberately: single quotes for literals, double quotes only when interpolating. Brace variables in strings when ambiguous: `"${name}"`.
+- Quote deliberately: Single quotes for literals, double quotes only when interpolating. Brace variables in strings when ambiguous: `"${name}"`.
 
 - Comment-based help (`.SYNOPSIS`/`.PARAMETER`/`.EXAMPLE`) at script level, and on exported/public functions. Private helpers inside a script take a terse `##` comment instead - full help blocks on every internal function would bury the code.
 
-- Cross-platform: target PowerShell 7+ (`pwsh`). Don't assume Windows-only cmdlets or paths. Use `Join-Path` and `$PSScriptRoot`, not hardcoded separators.
+- Cross-platform: Target PowerShell 7+ (`pwsh`). Don't assume Windows-only cmdlets or paths. Use `Join-Path` and `$PSScriptRoot`, not hardcoded separators.
 
 - Must pass PSScriptAnalyzer clean (settings, if any, live in `PSScriptAnalyzerSettings.psd1`).
 

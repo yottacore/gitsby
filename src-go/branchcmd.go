@@ -365,9 +365,9 @@ func (a *app) cmdMerge() error {
 		// - stale on origin. The switch's park push publishes dev on the way, so two
 		// commands cover both.
 		if wasHotfix {
-			a.out.status("WARNING: remote unreachable; the merge to '" + targetBranch + "' is local only - once online, '" + meName + " br switch " + typedArg(targetBranch, runtime.GOOS) + "' then '" + meName + " sync' publishes it.")
+			a.out.status("WARNING: Remote unreachable; the merge to '" + targetBranch + "' is local only - once online, '" + meName + " br switch " + typedArg(targetBranch, runtime.GOOS) + "' then '" + meName + " sync' publishes it.")
 		} else {
-			a.out.status("WARNING: remote unreachable; the merge to '" + targetBranch + "' is local only - '" + meName + " sync' publishes it.")
+			a.out.status("WARNING: Remote unreachable; the merge to '" + targetBranch + "' is local only - '" + meName + " sync' publishes it.")
 		}
 	default:
 		// Where origin has the branch and the target pushes to its own name, one atomic
@@ -435,7 +435,7 @@ func (a *app) mergeDeleteRemote(branch, mergedTip string) {
 	tested := map[string]string{branch: mergedTip}
 	onOrigin, asked := a.askOriginHeads()
 	if !asked {
-		a.out.status("WARNING: couldn't ask origin about its '" + branch + "'; left it alone.")
+		a.out.status("WARNING: Couldn't ask origin about its '" + branch + "'; left it alone.")
 		a.out.clean("  Once origin can be reached, this deletes it. It stops if that branch has moved:")
 		a.out.clean(planPad + leaseDeleteLine(branch, mergedTip, runtime.GOOS))
 		return
@@ -455,7 +455,7 @@ func (a *app) mergeDeleteRemote(branch, mergedTip string) {
 		a.out.status("git push --force-with-lease origin --delete " + branch + " ...")
 		// Non-fatal: the lease can still refuse, if the branch moved after the ask.
 		if !a.inheritOK("git", leaseDeleteBatches(send, tested, leasePushBudget)[0].args...) {
-			a.out.status("WARNING: couldn't delete origin's '" + branch + "'; left it alone.")
+			a.out.status("WARNING: Couldn't delete origin's '" + branch + "'; left it alone.")
 		}
 		a.out.resetBlank()
 	}
@@ -585,12 +585,12 @@ func (a *app) warnHotfixTouchedCode(workBranch, targetBranch string) {
 	switch {
 	case !ok:
 		a.out.clean("")
-		a.out.status("NOTE: couldn't tell whether this hotfix changes more than documentation.")
+		a.out.status("NOTE: Couldn't tell whether this hotfix changes more than documentation.")
 		a.out.clean("  If it does, '" + targetBranch + "' will have changes that no tag contains.")
 		a.out.clean("  Cut a patch release when you're ready: " + meName + " release")
 	case !docsOnly(splitLines(out)):
 		a.out.clean("")
-		a.out.status("NOTE: this hotfix changes more than documentation.")
+		a.out.status("NOTE: This hotfix changes more than documentation.")
 		a.out.clean("  '" + targetBranch + "' will have changes that no tag contains, so the latest release's")
 		a.out.clean("  downloads may no longer match it. Cut a patch release when you're ready: " + meName + " release")
 	}

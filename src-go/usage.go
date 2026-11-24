@@ -42,7 +42,7 @@ var usages = []cmdUsage{
 	{cmd: "pullcom", args: "[message]", group: grpCommon, help: "Pull updates, then commit all local changes. Do frequently!", defs: []placeholder{messageDef}},
 	{cmd: "br create", args: "<branch>", group: grpCommon, help: "Create a new branch off " + mergeTargetLabel + " (current work is carried or parked).",
 		defs: []placeholder{{"<branch>", "The branch to create off " + mergeTargetLabel + ", e.g. login-form."}}},
-	{cmd: "br switch", args: "[branch]", group: grpCommon, help: "Switch to a branch (parks current work first). No arg: back to " + mergeTargetLabel + ".",
+	{cmd: "br switch", args: "[branch]", group: grpCommon, help: "Switch to a branch (parks current work first). No arg: Back to " + mergeTargetLabel + ".",
 		defs: []placeholder{{"[branch]", "The branch to switch to. Without it, " + mergeTargetLabel + "."}}},
 	{cmd: "br", args: "[list]", group: grpCommon, help: "Fetch and list branches."},
 	{cmd: "status", group: grpCommon, help: "Fetch and show current status."},
@@ -72,7 +72,7 @@ var usages = []cmdUsage{
 	{cmd: "pr create", args: "[title]", group: grpAdmin, help: "Push this branch and open a pull request against " + mergeTargetLabel + ".",
 		defs: []placeholder{{"[title]", "The new pull request's title. Without it, the last commit's subject."}}},
 	{cmd: "pr ok", args: "<number>", group: grpAdmin, help: "Approve and merge a pull request.", defs: []placeholder{prNumberDef}},
-	{cmd: "release", args: "[version]", group: grpAdmin, help: "Cut a release: merge dev into main, tag, push. No version: next after latest tag.",
+	{cmd: "release", args: "[version]", group: grpAdmin, help: "Cut a release: Merge dev into main, tag, push. No version: Next after latest tag.",
 		defs: []placeholder{{"[version]", "X.Y.Z, with an optional -suffix such as 1.4.0-beta.1, and an optional leading v. Without it, the next patch version after the latest tag."}}},
 
 	{cmd: "raw", args: "<tool> <arguments ...>", group: grpScript, help: "Run git, gh, tea, glab, lazygit or tig as the account this folder belongs to.",

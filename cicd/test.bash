@@ -1892,7 +1892,7 @@ fRunSuite(){
 	fAssert     "[dab74] bare 'help' word works"       "${gitsby}" help
 	fAssert     "[dab75] bare 'version' word works"    "${gitsby}" version
 	fAssertOut  "[dae0j] help keeps the pull-then-commit order" 'sync .*: Pull, commit, and push' "${gitsby}" --help
-	fAssertOut  "[dae1g] help doesn't promise a bare patch bump" 'release .*: .*next after latest tag' "${gitsby}" --help
+	fAssertOut  "[dae1g] help doesn't promise a bare patch bump" 'release .*: .*Next after latest tag' "${gitsby}" --help
 	fAssertOut  "[dae1h] help doesn't overpromise br create"    'br create .*: .*carried or parked'   "${gitsby}" --help
 	fAssertOut  "[ddj3h] help lists --yes"                      '^  -q, -y, --quiet, --yes: Assume yes' "${gitsby}" --help
 	fAssertOut  "[ddk4f] help says repo connect takes owner/name"  '^  repo connect .*owner/name' "${gitsby}" --help
@@ -2518,7 +2518,7 @@ fRunSuite(){
 	( cd "${off}" && git remote set-url origin "${work}/nosuch-remote.git" && echo offline > off.txt )
 	fAssert    "[dadvx] update succeeds with an unreachable remote"  bash -c "cd '${off}' && '${gitsby}' -q update 'offline work'"
 	fAssert    "[dadvy] the work was committed anyway"               bash -c "cd '${off}' && git log -1 --format=%s | grep -qx 'offline work'"
-	fAssertOut "[dadvz] and it says why it skipped the pull"  'remote unreachable' bash -c "cd '${off}' && echo more > more.txt && '${gitsby}' -q update 'more offline work'"
+	fAssertOut "[dadvz] and it says why it skipped the pull"  'Remote unreachable' bash -c "cd '${off}' && echo more > more.txt && '${gitsby}' -q update 'more offline work'"
 	## --no-fetch means offline on purpose: commit, and don't reach for the network at all
 	## -NoFetch, not --no-fetch: pwsh has no such parameter and would fail, and the old pattern
 	## matched its complaint about the flag - green for the wrong reason. Bash takes either.
@@ -3044,7 +3044,7 @@ fRunSuite(){
 	)
 	fAssertOut "[dbfvq] a branch git can't delete doesn't stop the prune"  'Pruned 1 local, 1 on origin' \
 		bash -c "cd '${prWork}' && '${gitsby}' -q br prune 2>&1"
-	fAssertOut "[dbfvr] and it names the one it couldn't"  "couldn't delete held here"  bash -c "cd '${prWork}' && '${gitsby}' -q br prune 2>&1"
+	fAssertOut "[dbfvr] and it names the one it couldn't"  "Couldn't delete held here"  bash -c "cd '${prWork}' && '${gitsby}' -q br prune 2>&1"
 	fAssert    "[dbfvs] the deletable one still went"      bash -c "cd '${prWork}' && ! git show-ref --verify --quiet refs/heads/goes"
 	fAssert    "[dbfvt] and origin keeps the held branch"  bash -c "cd '${prOrigin}' && git show-ref --verify --quiet refs/heads/held"
 	( cd "${prWork}" && git worktree remove --force "${work}/$1-prune-held" >/dev/null 2>&1 || true )
@@ -4379,7 +4379,7 @@ GHEOF
 		git add --all && git commit --quiet -m init && git push --quiet -u origin main
 		git checkout --quiet -b dev && git push --quiet -u origin dev
 	)
-	fAssertNotOut "[dcnqx] a code hotfix in a repo with no release tags says nothing"  'NOTE: this hotfix' \
+	fAssertNotOut "[dcnqx] a code hotfix in a repo with no release tags says nothing"  'NOTE: This hotfix' \
 		bash -c "cd '${hn}/c' && '${gitsby}' -q -NoFetch br hotfix code >/dev/null 2>&1; echo v2 > src-go/main.go; '${gitsby}' -q -NoFetch br land 'Fix' 2>&1"
 	## An empty answer read as nothing changed, when the comparison couldn't run at all.
 	( cd "${hn}/c" || exit 1; git checkout --quiet main && git tag -a v1.0.0 -m v1.0.0 && git checkout --quiet --orphan hotfix/stray && git rm -rfq . && echo x > stray.go && git add stray.go && git commit --quiet -m stray )
@@ -4396,7 +4396,7 @@ GHEOF
 		done
 		exec '$(command -v git)' "\$@"
 	EOF
-	fAssertOut "[dfq48] a hotfix whose comparison fails says it couldn't tell"  "NOTE: couldn't tell whether this hotfix changes more than documentation\." \
+	fAssertOut "[dfq48] a hotfix whose comparison fails says it couldn't tell"  "NOTE: Couldn't tell whether this hotfix changes more than documentation\." \
 		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix nocompare >/dev/null 2>&1; echo v5 > src-go/main.go; env PATH='${cmpShim}':\"\${PATH}\" '${gitsby}' -q -NoFetch br land 'No compare' 2>&1"
 	## A back-merge conflict must leave dev untouched and the tree clean, not half-merged.
 	fAssert    "[daenh] a conflicting back-merge leaves dev alone"  \
@@ -5882,7 +5882,7 @@ GHEOF
 		echo "$?" > "${smb}/pullcom2.rc"
 	)
 	fAssert     "[dfkzx] pullcom after origin bumps a submodule keeps the bump and commits the rest"  bash -c "cd '${smb}/mine' && [[ \"\$(cat ../pullcom.rc)\" == 0 && \"\$(git rev-parse HEAD:child)\" == \"\$(git -C '${smb}/origin.git' rev-parse dev:child)\" ]] && git log -1 --pretty=%s | grep -qx mine && git cat-file -e HEAD:m.txt"
-	fAssert     "[dfkzy] and says it left the submodule out, naming its path and git submodule update"  bash -c "cd '${smb}' && grep -qF 'WARNING: a submodule is checked out behind the commit this branch records for it, so it was left out of the commit' pullcom.out && grep -qF 'git submodule update' pullcom.out && grep -qE '^  File: .*/mine/child\$' pullcom.out"
+	fAssert     "[dfkzy] and says it left the submodule out, naming its path and git submodule update"  bash -c "cd '${smb}' && grep -qF 'WARNING: A submodule is checked out behind the commit this branch records for it, so it was left out of the commit' pullcom.out && grep -qF 'git submodule update' pullcom.out && grep -qE '^  File: .*/mine/child\$' pullcom.out"
 	fAssert     "[dfkzz] a second pullcom with the submodule still behind commits nothing and keeps the bump"  bash -c "cd '${smb}/mine' && [[ \"\$(cat ../pullcom2.rc)\" == 0 && \"\$(git rev-parse HEAD)\" == \"\$(cat ../head.1)\" && \"\$(git rev-parse HEAD:child)\" == \"\$(git -C '${smb}/origin.git' rev-parse dev:child)\" ]] && grep -qF 'Nothing to commit.' ../pullcom2.out"
 	fAssert     "[dfm01] once the submodule is updated, the tree is clean"  bash -c "cd '${smb}/mine' && git submodule --quiet update && [[ -z \"\$(git status --porcelain)\" ]]"
 	## The checks made before anything is staged counted that submodule as work too, so br switch
@@ -7029,7 +7029,7 @@ GHEOF
 		"${acCanon}" "${acCanon}" > "${ac}/nem.shcl"
 	local acNemEnv="${acNoDiscovery} HOME='${ac}/nemhome' GIT_CONFIG_GLOBAL='${ac}/nemhome/.gitconfig' PATH='${ac}/bin:${PATH}' GIT_TERMINAL_PROMPT=0"
 	local acNemRun="cd '${ac}/trees/eouter/enested/proj' && env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL ${acNemEnv} '${gitsby}' -q -NoFetch --config '${ac}/nem.shcl'"
-	fAssertOut "[dfh7n] account apply warns that a nested account with no email gets an empty one"  "WARNING: account 'en' has no email" \
+	fAssertOut "[dfh7n] account apply warns that a nested account with no email gets an empty one"  "WARNING: Account 'en' has no email" \
 		bash -c "${acNemRun} account apply"
 	fAssertNotOut "[dfh7p] and plain git there doesn't take the outer account's email"  'eo@example' \
 		bash -c "cd '${ac}/trees/eouter/enested/proj' && env ${acNemEnv} git config user.email"
@@ -7135,11 +7135,11 @@ LGEOF
 		bash -c ": > '${acRel}/home/.gitconfig' && ${acRelRun} '${acRel}/cfg/hand.shcl' account apply >/dev/null && ! grep -qi includeif '${acRel}/home/.gitconfig'"
 	## What an apply from before this left behind stays in force for plain git until the next one.
 	git config --file "${acRel}/home/.gitconfig" --add 'includeIf.gitdir/i:./.path' "${acRel}/cfg/accounts/hand.gitconfig"
-	fAssertOut "[dcmf0] account list warns about a relative rule an earlier apply left behind"  "WARNING: your global git config still has the rule 'gitdir/i:\./'" \
+	fAssertOut "[dcmf0] account list warns about a relative rule an earlier apply left behind"  "WARNING: Your global git config still has the rule 'gitdir/i:\./'" \
 		bash -c "${acRelRun} '${acRel}/cfg/hand.shcl' account list"
 	fAssert "[dcmf1] and account apply removes it" \
 		bash -c "${acRelRun} '${acRel}/cfg/hand.shcl' account apply >/dev/null && ! grep -qF 'gitdir/i:./' '${acRel}/home/.gitconfig'"
-	fAssertNotOut "[dcmf2] and the warning is gone after"  'WARNING: your global git config still has' \
+	fAssertNotOut "[dcmf2] and the warning is gone after"  'WARNING: Your global git config still has' \
 		bash -c "${acRelRun} '${acRel}/cfg/hand.shcl' account list"
 	fAssertFail "[dcmf3] account set refuses another user's '~'" \
 		bash -c "${acRelRun} '${acRel}/cfg/config.shcl' account set rel path '~nobody/x'"
@@ -7281,7 +7281,7 @@ LGEOF
 	fAssert     "[dffzt] and does"  bash -c "grep -q 'accounts/' '${gl}/xhome/.gitconfig' && ! grep -q 'accounts/' '${gl}/xhome/.config/git/config'"
 	fAssert     "[dffzv] so the old account's name no longer reaches the folder"  bash -c "[[ -z \"\$(env ${glXEnv} git -C '${acWork}' config user.name || true)\" ]]"
 	printf '[includeIf "gitdir/i:./"]\n\tpath = %s/accounts/xa.gitconfig\n' "${glCanon}" >> "${gl}/xhome/.config/git/config"
-	fAssertOut  "[dffzw] account list warns about a relative rule left in ~/.config/git/config"  "WARNING: your global git config still has the rule 'gitdir/i:\./'"  bash -c "${glXRun} account list"
+	fAssertOut  "[dffzw] account list warns about a relative rule left in ~/.config/git/config"  "WARNING: Your global git config still has the rule 'gitdir/i:\./'"  bash -c "${glXRun} account list"
 	## The new file is renamed over the old, so a link has to be followed, as git does.
 	if ((! isWindows)); then
 		mv "${gl}/xhome/.gitconfig" "${gl}/real.gitconfig"; ln -s "${gl}/real.gitconfig" "${gl}/xhome/.gitconfig"; chmod 666 "${gl}/real.gitconfig"
@@ -10306,7 +10306,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q account apply >/dev/null"
 	fAssert "[dbfs7] and a second run leaves the rules in place" \
 		bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q account apply >/dev/null && grep -q 'gitsby/accounts' '${dr}/home/.gitconfig'"
-	fAssertOut "[dbfs8] and the contested folder is called out" 'more than one account claims' \
+	fAssertOut "[dbfs8] and the contested folder is called out" 'More than one account claims' \
 		bash -c "cd '${dr}/tree/proj' && env ${drEnv} '${gitsby}' -q account 2>&1"
 	## The two tie-breaks used to disagree: gitsby keeps the first rule declared, git keeps the
 	## last written, and sorting the plan by text put them in opposite orders.

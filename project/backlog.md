@@ -33,6 +33,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- The pipeline scripts and installers start a sentence in lower case after a label
+	- ID: 2026112410210775
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261124-102107
+	- Opened by:
+	- Related IDs: 2026112017135139
+	- Requirements [Feature]: Per the 2026-11-20 directive, the text after a label and its colon starts with a capital. About 30 WARNING lines in cicd.bash and release.bash do not, such as "WARNING: markdownlint skipped" and "WARNING: the release notes don't link". install.bash has "Error: release" and install.ps1 has "Note: couldn't update PATH". A label followed by a command, a path or a tool's name doesn't count.
+	- Estimated effort: Low
+	- Notes: test.bash asserts some of these lines, such as [dd5g4] and the release checks. An installer change bumps installerVersion in both installers, since [dfjqe] compares them.
+	- Origin: Found while sweeping 2026112017135139, whose count covered src-go and the docs only.
+
 - Stage 7's Go test runs on other boxes have no time limit, so one hung test holds the stage
 	- ID: 2026112021514129
 	- Type: Enhancement
@@ -101,13 +115,27 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 enhancement 6: 28 places start a sentence in lower case after a label and colon
 	- ID: 2026112017135139
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171351
 	- Opened by:
 	- Requirements [Feature]: Directive 2026-11-20: after an introductory word or label and its colon, the next sentence starts with a capital. 7 are in the docs, such as README.md:96 "No version: the next one" and design.md:436 "Accepted cost: the gate". 21 are in src-go, such as 7 "WARNING: remote unreachable; ..." lines and usage.go:45 and :75. A label followed by a command or a path doesn't count. Lines a person wrote stay as they are.
 	- Origin: New directive, not a regression. Counted by grep, then read.
+	- Closed reason: Done
+	- Progress log: 2026-11-24: 22 output lines in src-go start their text with a capital after the label: 19 WARNING and NOTE lines, and 3 help lines in usage.go (No arg, Cut a release, No version). 12 doc lines do too: README.md's 2 Commands rows, workflows.md's 6 labeled bullets, design.md's Accepted cost, and 3 labels in style-guide.md. The UI guide states the rule, and design.md's Output sweep table has a row for it.
+	- Branch: nov24-2026112017135139
+	- Test case: Go [dfr27] the help's labels, [dfr28] every WARNING and NOTE literal in src-go. test.bash asserts given new values, below.
+	- Verified: [dfr27] and [dfr28] fail on the source before the change, naming all 22 sites, and pass after. The quick run passed with every area: test.bash 2445/0, fuzz 310/0, parity 32/0. gosec 37, as before.
+	- Swept: every WARNING and NOTE literal in src-go, every help and placeholder line in usages, every string literal with a capitalized label and a colon before lower case, the labeled notes built by noteLines, and the .md files at the root and under project/. The same lines in cicd/ and the installers are filed as 2026112410210775.
+	- Acceptance signoff: Self-closed: mechanical, and its new checks fail before the change and pass after.
+	- Closed: 20261124-102117
+	- Decisions:
+		- A remote's name, a command or a tool's name after the label stays lower case, as with a command or a path. So origin's lines, 'WARNING: git fetch failed' and 'WARNING: tea acts as' are left as they are, and the Go checks allow those words.
+		- Joining colons inside a sentence, such as 'This is a bare repository: no working tree', and lists after 'One of:', are a different rule and stay.
+		- Left as they are, as a person's writing: trademark.md's 'Short version:' and ai_policy.md's labels. design.md's 'What stays as it is:' introduces a list, not a sentence.
+		- No changelog line, since only the case of one letter changed.
+		- 2026-11-24: test asserts given new values for this change, lower case to capital after the label: test.bash [dae1g] 'Next after latest tag', [dadvz] 'Remote unreachable', [dbfvr] 'Couldn't delete', [dcnqx] and [dfq48] 'NOTE: This' and 'NOTE: Couldn't', [dfkzy] 'WARNING: A submodule', [dfh7n] 'WARNING: Account', [dcmf0], [dcmf2] and [dffzw] 'WARNING: Your global', [dbfs8] 'More than one account claims'.
 
 - Code Review 20261119 enhancement 1: Comments are wrapped at a fixed column
 	- ID: 2026111910222759

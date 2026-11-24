@@ -826,7 +826,7 @@ func (a *app) cmdPrAccept() error {
 		} else {
 			a.out.status(gitDisp(localClean) + " ...")
 			if !a.inheritOK("git", localClean...) {
-				a.out.status("WARNING: couldn't delete '" + a.pr.headBranch + "' here; left it alone.")
+				a.out.status("WARNING: Couldn't delete '" + a.pr.headBranch + "' here; left it alone.")
 			}
 		}
 		a.out.resetBlank()
