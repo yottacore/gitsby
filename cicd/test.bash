@@ -8343,6 +8343,9 @@ LGEOF
 		chmod +x "${sc}/cicd/utility/spawn-count-near.bash"
 		fAssert "[ddf82] and passes a count one over its expected one" \
 			bash -c "out=\$('${sc}/cicd/utility/spawn-count-near.bash' 2>&1) && grep -qE '^  PASS dbftf status: 4\$' <<< \"\$out\""
+		## But names it, and only it, or a rise in our own code sits in the headroom until the next one fails it.
+		fAssert "[dfq1m] and names a count over its expected one that the headroom let pass" \
+			bash -c "out=\$('${sc}/cicd/utility/spawn-count-near.bash' 2>&1) && grep -qE '^  1 over their expected count, inside the headroom \(dbftf\); ' <<< \"\$out\""
 		## A command that stops early starts fewer processes, which would read as a gain.
 		cp -R "${sc}" "${work}/scx"
 		fStub "${work}/scx/src-go/gitsby" <<-'EOF'

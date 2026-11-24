@@ -64,7 +64,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 38: 5 spawn-count rows sit at their limits, since their expected counts weren't raised
 	- ID: 2026112017135327
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171353
@@ -75,6 +75,16 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23, on both builds. Confirmed.
 	- Possible cause [Bug]: be87857 and 397c85f added 2, fb7a6d6 added 1 to br merge, and ca1848e added 1 to pr create, and none of them raised the numbers. Item 14's fix takes 2 of them back.
 	- Origin: Those 4 commits, nov19b and nov19c. No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: A count over its expected one but inside the headroom passes with nothing said, so each rise from our own code sat there unseen. On dda0343 the rows the review named are back at their numbers, after item 14's fix and others. 4 still sat over theirs, each from a deliberate change: a4fa440 reads every global git config file, 1 more for both account list rows, 7 to 8 and 11 to 12. fb7a6d6's no-shared-history refusal and e419011's read of the target's upstream after the checkout, 2 more for both br merge rows, 41 to 43 and 52 to 54. pr create in the GitLab folder went from 31 to 30.
+	- Actual fix [Bug]: Those 5 expected counts are today's. spawn-count.bash now names each count over its expected one that the headroom let pass, in a line beside the under-count one, so a rise is seen when it comes in.
+	- Decisions: The headroom stays, and a count over its expected one stays a pass, per the 2026-10-03 history line: a git update that starts one more helper must not fail the gate. The new line only names it. The rises are fixes for wrong answers, so the numbers go up rather than the spawns coming out. e419011's upstream read could come from the branch list already read, 1 spawn, not worth a change of its own.
+	- Branch: nov23-2026112017135327
+	- Test case: test.bash [dfq1m] (a count one over its expected one is named in the over line). spawn-count.bash itself, every measure at its expected count.
+	- Verified: spawn-count.bash on dda0343 passes with every count equal to its expected one and no over or under line. Each rise was bisected by build: account list 7 at 12f1bc2, 8 at a4fa440; br merge 41 at 8dfe5ff, 42 at e419011, 43 with fb7a6d6's merge-base. [dfq1m]'s check fails against the old spawn-count.bash and passes against the new. Quick run of every area passed: test.bash 2424/0, fuzz 310/0, parity 31/0, spawn counts clean. shellcheck, backlog-check.bash and test-id.bash --check clean.
+	- Swept: all 24 measures, each against today's count. None sits above or below its number.
+	- Acceptance signoff: Self-closed: numbers and a note line, its test passed.
+	- Closed: 20261123-165403
 
 - Code Review 20261120 item 39: 6 closed items don't say their tests were watched to fail, and 1 has no signoff row
 	- ID: 2026112017135312
