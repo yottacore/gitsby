@@ -740,6 +740,19 @@ func (a *app) prCreateDisp() string {
 	return a.pr.cli + " " + a.prCreateVerb() + " " + a.prBaseFlag() + " " + a.prTarget() + " --title " + shellWord(a.pr.title, true)
 }
 
+// prOkLine names the PR's branch and the base the git host merges it into, for the
+// state block. Empty for pr create, whose base the plan line names.
+func (a *app) prOkLine() string {
+	if a.pr.sub != "ok" || a.pr.headBranch == "" || a.pr.baseBranch == "" {
+		return ""
+	}
+	from := " from "
+	if a.pr.fork {
+		from = " from a fork's "
+	}
+	return "#" + a.pr.num + from + a.pr.headBranch + " into " + a.pr.baseBranch
+}
+
 // prOkMoves is whether pr ok ends on the PR's merge target rather than on the
 // branch it started from. The merge deletes origin's copy of the PR's branch, so
 // a branch tracking that one has nothing left to pull, and neither has a branch

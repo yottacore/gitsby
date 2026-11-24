@@ -753,15 +753,20 @@ func (a *app) showStatus(withIdentity bool) {
 	// fabricate one.
 	a.out.clean("Default branch: " + a.defaultBranchDisp())
 	a.out.clean("Current branch: " + strings.TrimRight(a.branchDisp("")+" "+a.branchSync(), " "))
-	// Pre-flight only, and only for the two commands that make a branch: the line
-	// above is where you ARE, which is exactly what misled here - it says 'dev'
-	// while the plan checks out main.
+	// Pre-flight only, and only for the commands that make or merge a branch: the
+	// line above is where you ARE, which is exactly what misled here - it says 'dev'
+	// while the plan checks out main. pr ok's merge goes wherever the git host's
+	// base says, which its plan line doesn't name.
 	if withIdentity {
 		switch a.cmd.name {
 		case "br-create":
 			a.out.clean("New branch ...: " + a.mergeTarget() + " :: " + a.cmd.arg)
 		case "br-hotfix":
 			a.out.clean("New branch ...: " + a.defaultBranch() + " :: " + a.cmd.arg)
+		case "pr":
+			if line := a.prOkLine(); line != "" {
+				a.out.clean("Pull request .: " + line)
+			}
 		}
 	}
 	a.out.clean("")

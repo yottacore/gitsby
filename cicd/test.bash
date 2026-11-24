@@ -4714,6 +4714,7 @@ GHEOF
 	)
 	fAssert        "[dfnbj] pr ok of a hotfix PR opened against dev runs"  bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=hotfix/pbx FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7 > '${gh}/prbase1.log' 2>&1"
 	fAssertNotPlan "[dfnbk] and checks out dev, where it went, not main"  'git checkout main'  cat "${gh}/prbase1.log"
+	fAssert        "[dfq5b] and names the PR's branch and its base above the plan"  bash -c "grep -qE '^Pull request \\.+: #7 from hotfix/pbx into dev\$' <<< \"\$(awk '/Going to do/{exit} 1' '${gh}/prbase1.log')\""
 	fAssertNotPlan "[dfnbm] and plans no back-merge, since main never got it"  'git merge origin/main'  cat "${gh}/prbase1.log"
 	fAssert        "[dfnbn] and ends on dev, with the fix in dev and not in main"  bash -c "cd '${pbc}' && [[ \"\$(git branch --show-current)\" == dev ]] && git cat-file -e origin/dev:fix.txt && ! git cat-file -e origin/main:fix.txt 2>/dev/null"
 	fAssertPlan    "[dfnbp] pr ok of a plain PR opened against main plans the back-merge"  'git merge origin/main' \
@@ -4751,6 +4752,7 @@ GHEOF
 	)
 	local pbFork="PATH='${ghp}' FAKE_GH_FORK=1 FAKE_GH_BASE=dev"
 	fAssert        "[dfq0w] pr ok of a fork's PR from its main into dev runs"  bash -c "cd '${pbc}' && ${pbFork} FAKE_GH_HEAD=main FAKE_GH_LOG='${gh}/prfork.log' '${gitsby}' -q pr ok 10 > '${gh}/prfork1.log' 2>&1"
+	fAssertOut     "[dfq5c] and names it as a fork's branch"  "^Pull request \\.+: #10 from a fork's main into dev\$"  cat "${gh}/prfork1.log"
 	fAssert        "[dfq0x] and gh merges it with no branch delete"  bash -c "grep -q '^pr merge 10 --merge \[' '${gh}/prfork.log'"
 	fAssert        "[dfq0y] and main is kept here and on origin, with the fork's work in dev"  bash -c "cd '${pbc}' && git rev-parse --verify --quiet refs/heads/main >/dev/null && git ls-remote --exit-code --heads origin main >/dev/null && git cat-file -e origin/dev:fork.txt"
 	fAssert        "[dfq0z] and stays on main, which it pulls, since origin's main is still there"  bash -c "cd '${pbc}' && [[ \"\$(git branch --show-current)\" == main ]] && ! grep -q 'git checkout' '${gh}/prfork1.log'"
@@ -11463,3 +11465,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261123 JC: The Ctrl+C check puts INT back to default for its run, since a suite started with INT ignored passed that down, [dfq33].
 ##		- 20261123 JC: Every check that brings no gh of its own gets the suite's, logged in nowhere, rather than the box's, [dfq34].
 ##		- 20261123 JC: Each tool version check in the image's recipe fails on a missing tool, [dfq4k]. ssh starts for the run's uid in the image, [dfq4m].
+##		- 20261123 JC: pr ok names the pull request's branch and its base above the plan, a fork's too, [dfq5b] [dfq5c].

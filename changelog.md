@@ -45,6 +45,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The help screen opens by saying what Gitsby does differently: a command that changes anything shows the repo state and the exact git it will run, then asks first.
 
+- `pr ok` names the pull request's branch and the branch it goes into above the plan, as `Pull request .: #8 from hotfix/x into dev`, and says when the branch is a fork's. The plan's merge line names neither, and a pull request opened on the git host's page can go into any branch.
+
 ### Removed
 
 - `cicd/utility/include/gh-account.bash`. Nothing sourced it, and `gitsby raw gh` does what it did.

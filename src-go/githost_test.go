@@ -320,6 +320,28 @@ func TestPrForkDeletesNothing(t *testing.T) { // [dfq0v]
 	}
 }
 
+// The state block names the PR's branch and its base, since the merge line
+// names neither. pr create's plan line names its base already.
+func TestPrOkLine(t *testing.T) { // [dfq5d]
+	for _, tc := range []struct {
+		sub, head, base string
+		fork            bool
+		want            string
+	}{
+		{"ok", "hotfix/x", "dev", false, "#7 from hotfix/x into dev"},
+		{"ok", "feat", "main", false, "#7 from feat into main"},
+		{"ok", "main", "dev", true, "#7 from a fork's main into dev"},
+		{"ok", "feat", "", false, ""},
+		{"create", "feat", "dev", false, ""},
+	} {
+		a := newApp(newPrinter())
+		a.pr.num, a.pr.sub, a.pr.headBranch, a.pr.baseBranch, a.pr.fork = "7", tc.sub, tc.head, tc.base, tc.fork
+		if got := a.prOkLine(); got != tc.want {
+			t.Errorf("%s %s into %q, fork %v: prOkLine() = %q, want %q", tc.sub, tc.head, tc.base, tc.fork, got, tc.want)
+		}
+	}
+}
+
 // 'pr <n>' is the PR and its diff. gh takes a call for each; tea's detail view
 // has the diff in one.
 func TestPrViewArgsPerTool(t *testing.T) { // [dd5ga]

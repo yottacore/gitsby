@@ -393,7 +393,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - pr ok shows the pull request's branch and its base before it asks
 	- ID: 2026112309120161
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261123-091201
@@ -401,8 +401,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Related IDs: 2026112113223086
 	- Requirements [Feature]: Before the prompt, pr ok names the pull request's branch and the base it merges into, such as hotfix/x into dev. The plan's only line about the merge is `gh pr merge 8 --merge --delete-branch`, and since 2026112113223086 the merge goes wherever the git host's base says. GitHub's page offers the default branch as the base, so a feature branch opened there goes into main unless that's changed, and nothing shows it before the answer. Both names are already read in prAcceptPreflight, so it costs no process. The line follows design.md's output rules.
 	- Decisions: No warning and no refusal for a base the branch's name doesn't give, per the 2026-11-23 answer to 2026112113223086. A fix branch made with plain git and opened against main is an ordinary pull request, so showing both names is enough.
+		- The line goes in the state block, beside the 'New branch ...:' line br create and br hotfix print, rather than in the plan, which lists only the git and git host calls the run makes. It names the PR's number too, so it reads against the one typed.
 	- Origin: 1acf747, the fix of 2026112113223086. Found while answering its Check: entry.
 	- Note: Tried 2026-11-23 on b23 with the stand-in gh, on 24cb249, from dev. A hotfix/x pull request against dev and a plain one against main gave the same first 4 plan lines, with no branch named in either. The second differed only by its 3 back-merge lines.
+	- Closed reason: Done
+	- Actual fix [Feature]: The state block above the plan has a line for pr ok, such as 'Pull request .: #8 from hotfix/x into dev', and 'from a fork's main' for a fork's branch. It reads the head, base and fork that prAcceptPreflight already has, so it costs no process. design.md, the UI style guide and the changelog say so.
+	- Branch: nov23-2026112309120161
+	- Commit: 4d2319c
+	- Test case: test.bash [dfq5b] [dfq5c]; Go TestPrOkLine [dfq5d].
+	- Verified: [dfq5b], [dfq5c] and [dfq5d] fail with the line left out and pass with it. The whole quick gate passed with every area (parity 32/0), and lint and unit again after the doc edits.
+	- Swept: every place that shows a PR's branch or base: pr create's plan line already names its base through prCreateDisp, the line is left out for it, and the read-only pr view prints the git host's own view.
+	- Acceptance signoff: Self-closed: its tests failed without the line and pass with it, and the wording follows the state block's label style.
+	- Closed: 20261123-190343
 
 - Stage 7's Go test runs on other boxes have no time limit, so one hung test holds the stage
 	- ID: 2026112021514129
