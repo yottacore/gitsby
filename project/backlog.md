@@ -417,13 +417,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Stage 7's Go test runs on other boxes have no time limit, so one hung test holds the stage
 	- ID: 2026112021514129
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Waiting on automated testing
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-215141
 	- Opened by:
 	- Related IDs: 2026112021204523
 	- Requirements [Feature]: The Windows run in cicd/remote-tests.bash starts the test binary with no -test.timeout and no outer timeout, and the binary's own default is none. [dfk1m] hung there with no output until the run was stopped. Pass -test.timeout to every remote Go test run, so a hung test fails with every goroutine's stack. test.bash's asserts on those command lines change with it.
+	- Needs external testing: stage 7 through stage7-one-box.bash on vm925w and on vmDebARM64, for a real Go test run under the 600 s limit on Windows and under Wine. The Windows run checks cmd hands -test.timeout through start, and both check the run ends well inside the limit.
+	- Actual effort: Low
+	- Progress log: A serial run of the Go tests here, GOMAXPROCS=1, took 93 s at load 2, with the longest test at 53 s.
+	- Decisions: The limit is one config.bash setting in seconds, REMOTE_GO_TEST_TIMEOUT=600, about 6 times that serial run, so remote-tests.bash checks it is a whole number before it goes into a remote command. Wine's outer limit is now that plus 300, which keeps its old 900 s and stays above the test's own, so a hung test prints its stacks first. The flag goes ahead of -test.v, so -test.v stays where the harness stub looks for it.
+	- Fixed: every Go test run in remote-tests.bash, on the Macs, the Unix boxes, under Wine and on Windows, passes -test.timeout from REMOTE_GO_TEST_TIMEOUT. A value that isn't whole seconds stops the stage before any box is reached.
+	- Branch: nov23-2026112021514129
+	- Commit: f026993
+	- Test case: test.bash [dfq5x] every box's Go test run passes the limit, [dfq5y] so does the Wine run, inside its outer limit, [dfq5z] a limit that isn't whole seconds is refused. [dedq5] and [dee74] now want the flag on the Unix and Windows command lines.
+	- Verified: the stage 7 harness block passed 51/0, and against remote-tests.bash before the change [dfq5x], [dfq5y], [dfq5z], [dedq5] and [dee74] fail. With the flag dropped from only the Windows line, [dfq5x], [dfq5y] and [dee74] fail. With it dropped from only the Wine line, [dfq5y] fails. The quick gate of every area passed, test.bash 2441/0, fuzz 310/0, parity 32/0.
+	- Swept: every test binary run in remote-tests.bash: fRunPosix's Go test run and its Wine run, and fRunWindows' run. git grep for -test.v finds no other remote run. cicd.bash's own unit run goes through go test, which has its own 10 minute default.
 
 - Put an ssh client in the cicd image, so the ssh stall tests run in the quick gate
 	- ID: 2026112020462150

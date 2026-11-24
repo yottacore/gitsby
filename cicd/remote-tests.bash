@@ -29,6 +29,8 @@
 ##		  the helper, the lock takes each box itself, and a VM that is asleep is skipped.
 ##		- The Windows box runs first, since vm925w can't start once another VM has its port.
 ##		- The Windows box runs its Go tests on half its cores, in the BelowNormal class.
+##		- Each box's Go test run stops at REMOTE_GO_TEST_TIMEOUT, from config.bash, as a failure with
+##		  every goroutine's stack, so a hung test can't hold the stage.
 ##		- The Go tests are built with the image's Go when cicd.bash runs this with the image, and
 ##		  with this box's otherwise.
 ##		- The boxes, the lock and the paths are in config.bash, under stage 7.
@@ -82,6 +84,8 @@ esac; done
 for spec in "${REMOTE_UNIX_HOSTS[@]}"; do
 	[[ "${REMOTE_UNIX_TARGETS[${spec%%:*}]:-}" == */* ]] || fUsage "config.bash: REMOTE_UNIX_TARGETS has no target like freebsd/amd64 for ${spec%%:*}"
 done
+[[ "${REMOTE_GO_TEST_TIMEOUT:-}" =~ ^[1-9][0-9]*$ ]] || fUsage "config.bash: REMOTE_GO_TEST_TIMEOUT is not a whole number of seconds"
+goTestFlags="-test.timeout=${REMOTE_GO_TEST_TIMEOUT}s -test.v"
 for name in "${!REMOTE_UNIX_WINE[@]}"; do
 	[[ "${REMOTE_UNIX_WINE[${name}]}" == windows/* ]] || fUsage "config.bash: REMOTE_UNIX_WINE for ${name} is not a target like windows/arm64"
 done
@@ -226,7 +230,7 @@ fRunPosix(){
 
 	fEcho_Clean "  ${lockName}: go test (${target})"
 	rc=0
-	fRemote "${sshName}" "echo ${mark}; ${budgetSh}; ${dirSh}; cd \"\$d/tree/${GO_MODULE_DIR}\" && \$lo ./${EXE_NAME}-test -test.v" -n >"${log}" 2>&1 || rc=$?
+	fRemote "${sshName}" "echo ${mark}; ${budgetSh}; ${dirSh}; cd \"\$d/tree/${GO_MODULE_DIR}\" && \$lo ./${EXE_NAME}-test ${goTestFlags}" -n >"${log}" 2>&1 || rc=$?
 	if ((rc == 255)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection during go test"; fResult "${lockName}" lost; return 0; fi
 	fGoTestLines "${log}" "${root}/${GO_MODULE_DIR}"
 	if ((rc)); then fGoTestFailures "${log}"; fEcho_Clean "  FAIL: ${lockName} go test"; failed=1; fi
@@ -242,12 +246,13 @@ fRunPosix(){
 		else
 			fEcho_Clean "  ${lockName}: go test (${wineTarget} under Wine)"
 			## No display, and none of Wine's first-run extras. Wine spun forever here once, so it
-			## gets a limit, and wineserver -k takes down what timeout leaves.
+			## gets a limit, and wineserver -k takes down what timeout leaves. The limit is above the
+			## test's own, so a hung test prints its stacks before timeout ends Wine.
 			rc=0
 			fRemote "${sshName}" "echo ${mark}; ${budgetSh}; ${dirSh}; cd \"\$d/tree/${GO_MODULE_DIR}\" || exit 1
 				unset DISPLAY WAYLAND_DISPLAY
 				export WINEPREFIX=\"\$d/wine\" WINEDEBUG=-all WINEDLLOVERRIDES='mscoree,mshtml,winemenubuilder.exe=d'
-				timeout 900 \$lo wine ./${EXE_NAME}-test-$(fTag "${wineTarget}").exe -test.v; r=\$?
+				timeout $((REMOTE_GO_TEST_TIMEOUT + 300)) \$lo wine ./${EXE_NAME}-test-$(fTag "${wineTarget}").exe ${goTestFlags}; r=\$?
 				wineserver -k 2>/dev/null
 				exit \$r" -n >"${wineLog}" 2>&1 || rc=$?
 			if ((rc == 255)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection during the Wine go test"; fResult "${lockName}" lost; return 0; fi
@@ -288,7 +293,7 @@ fRunWindows(){
 		## no busy rule. set /a echoes its answer, hence ahead of the marker. start leaves the test's
 		## code in ERRORLEVEL but cmd exits 0, so call exit passes it on. The caret keeps the line's
 		## own expansion off it, so call reads it after start is done.
-		fRemote "${sshName}" "set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo ${mark}& cd /d \"${dir}\\${GO_MODULE_DIR}\" && start \"\" /belownormal /b /wait ${EXE_NAME}-test.exe -test.v& call exit %^ERRORLEVEL%" -n >"${log}" 2>&1 || rc=$?
+		fRemote "${sshName}" "set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo ${mark}& cd /d \"${dir}\\${GO_MODULE_DIR}\" && start \"\" /belownormal /b /wait ${EXE_NAME}-test.exe ${goTestFlags}& call exit %^ERRORLEVEL%" -n >"${log}" 2>&1 || rc=$?
 	fi
 	## Through the guard, and only a folder this run made. The guard reads %TEMP% itself.
 	if grep -qx made "${setupLog}"; then
@@ -542,3 +547,4 @@ if ((${#failed[@]})); then exit 1; fi
 ##		- 2026-11-06 JC: Its own scratch folder goes through fSafeRm. The commands on the boxes are unchanged.
 ##		- 2026-11-06 JC: The old trees on the Mac and Unix boxes, and the Windows box's folder, go through a copy of the guard on the box: safe-rm.sh and safe-rm.ps1, sent with the command. The marker and made checks stay.
 ##		- 2026-11-07 JC: Errors go through fUsage, and the Windows note has vm925w's port as it is now.
+##		- 2026-11-24 JC: Every Go test run takes -test.timeout from REMOTE_GO_TEST_TIMEOUT, and the Wine limit is 300 s above it.

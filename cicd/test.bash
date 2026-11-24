@@ -1474,10 +1474,29 @@ fRemoteBudget(){
 }
 ## After a run: b26's Go tests and test.bash ran on the budget, and it comes out right.
 fRemoteBudgetUsed(){
-	grep -qE '^ssh b26 .*export GOMAXPROCS .* [$]lo [.]/gitsby-test -test[.]v$' "${rtLog}" \
+	grep -qE '^ssh b26 .*export GOMAXPROCS .* [$]lo [.]/gitsby-test -test[.]timeout=[0-9]+s -test[.]v$' "${rtLog}" \
 		&& grep -qE '^ssh b26 .*export GOMAXPROCS .* [$]lo [^ ]+/bash cicd/test[.]bash$' "${rtLog}" \
 		&& [[ "$(fRemoteBudget 8 3.00)" == $'4\nnice -n 19'* && "$(fRemoteBudget 8 4.50)" == $'2\n'* && "$(fRemoteBudget 1 0.00)" == $'1\n'* \
 			&& "$(fRemoteBudget 16 9.00 mac)" == $'4\nnice -n 19'* && "$(fRemoteBudget 16 7.00 mac)" == $'8\n'* ]]
+}
+## The Go test limit in the fixture's config.bash, in seconds.
+fRemoteGoLimit(){ sed -n 's/^REMOTE_GO_TEST_TIMEOUT=//p' "${rt}/cicd/config.bash" | tail -n 1 ;}
+## After a run: it ran the Go tests on $1 boxes, and each run passed that limit to the test binary.
+fRemoteGoLimited(){
+	local v="" n="" t=""
+	v="$(fRemoteGoLimit)"
+	n="$(grep -cE '^ssh .*-test[.]v([;& ]|$)' "${rtLog}" || true)"
+	t="$(grep -cE "^ssh .* -test[.]timeout=${v}s -test[.]v([;& ]|\$)" "${rtLog}" || true)"
+	[[ -n "${v}" && "${n}" == "$1" && "${t}" == "${n}" ]]
+}
+## After a run with vmDebARM64's Wine on: it passed, Wine ran the Go tests with that limit, under
+## an outer one 300 s longer, and so did the 4 boxes.
+fRemoteWineLimited(){
+	local v=""
+	v="$(fRemoteGoLimit)"
+	[[ "${rtRc}" == 0 && -n "${v}" ]] && fRemoteGoLimited 5 \
+		&& grep -qE "^ssh tester@vmDebARM64 .*[[:space:]]timeout $((v + 300)) [\$]lo wine [.]/gitsby-test-windows-arm64[.]exe -test[.]timeout=${v}s -test[.]v; r=" "${rtLog}" \
+		&& grep -qxF '  vmDebARM64: go test (windows/arm64 under Wine)' "${rtOut}"
 }
 ## True when the last run made a folder under %TEMP% on the Windows box $1, and removed that one
 ## through the guard.
@@ -9793,6 +9812,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 					p='${rtBin}':"\${PATH}"; [[ ! -e '${rtFail}/brewgo-'"\${host}" ]] || p='${rtSys}'
 					if [[ "\${host}" == b26 ]]; then exec env -u HOST_TEMP HOME="\${h}/home" TMPDIR="\${h}/" PATH="\${p}" "\${BASH}" -c "\${cmd//\/usr\/local\/bin/${rtUsrLocal}}"; fi
 					HOME="\${h}/home" HOST_TEMP="\${h}" PATH='${rtBin}':"\${PATH}" exec bash -c "\${cmd}" ;;
+				*'command -v wine'*) echo '@@gitsby-remote-tests@@'; echo yes ;;
 				*'command -v'*) echo '@@gitsby-remote-tests@@'; cat '${rtFail}/lacks-'"\${host}" 2>/dev/null || true ;;
 				*mkdir*) cat > /dev/null; echo '@@gitsby-remote-tests@@'; [[ ! -e '${rtFail}/nomkdir-'"\${host}" ]] || exit 1; echo made ;;
 				*-test.v*)
@@ -9919,7 +9939,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[ddg8j] a failing Go test fails the run, with its line and its output" \
 			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL aaaab TestA' '${rtOut}' && grep -qF 'a_test.go:4: boom' '${rtOut}' && grep -qxF '  passed on: b26; failed on: b29w' '${rtOut}'"
 		fAssert "[dee74] the Windows box runs its Go tests on half its cores, never under 1, in the BelowNormal class" \
-			bash -c "grep -qF 'ssh b29w set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo @@gitsby-remote-tests@@& cd /d ' '${rtLog}' && grep -qE '^ssh b29w .* && start \"\" /belownormal /b /wait gitsby-test\.exe -test\.v& call exit %\^ERRORLEVEL%\$' '${rtLog}'"
+			bash -c "grep -qF 'ssh b29w set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo @@gitsby-remote-tests@@& cd /d ' '${rtLog}' && grep -qE '^ssh b29w .* && start \"\" /belownormal /b /wait gitsby-test\.exe -test\.timeout=[0-9]+s -test\.v& call exit %\^ERRORLEVEL%\$' '${rtLog}'"
 		: > "${rtFail}/gofail0-b29w"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/gofail0-b29w"
@@ -9977,6 +9997,15 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			bash -c "grep -qE '^ssh bsdtest@vmFreeBSD echo @@gitsby-remote-tests@@; .*cd \"[\$]d/tree\" && [\$]lo bash cicd/test\.bash' '${rtLog}' && grep -qE '^ssh tester@vmDebARM64 echo @@gitsby-remote-tests@@; .*cd \"[\$]d/tree\" && [\$]lo bash cicd/test\.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*tar -xf .*go mod download' '${rtLog}' && grep -qF '  vmDebARM64: test.bash against the linux/arm64 build' '${rtOut}'"
 		fAssert "[dedpg] each Unix box's copy goes under its temp root too, not its home" \
 			bash -c "[[ -f '${rtBsd}/.gitsby-remote-tests' && -f '${rtArm}/.gitsby-remote-tests' && ! -e '${rtBsd%/*}/home/gitsby-remote-tests' && ! -e '${rtArm%/*}/home/gitsby-remote-tests' ]]"
+		fAssert "[dfq5x] every box's Go test run has config.bash's time limit, so a hung test fails with its stacks"  fRemoteGoLimited 4
+		echo 'declare -gA REMOTE_UNIX_WINE=([vmDebARM64]="windows/arm64")' >> "${rt}/cicd/config.bash"
+		fRemoteRun "${rtBins[@]}"
+		fAssert "[dfq5y] so does the Go test run under Wine, inside a Wine limit 300 s longer"  fRemoteWineLimited
+		echo "REMOTE_GO_TEST_TIMEOUT='10m'" >> "${rt}/cicd/config.bash"
+		fRemoteRun "${rtBins[@]}"
+		fRemoteConfig
+		fAssert "[dfq5z] a Go test limit that isn't whole seconds is refused before any box is reached" \
+			bash -c "[[ '${rtRc}' == 2 ]] && grep -qxF 'config.bash: REMOTE_GO_TEST_TIMEOUT is not a whole number of seconds' '${rtOut}' && ! grep -q '^ssh ' '${rtLog}'"
 		echo 'go ' > "${rtFail}/lacks-tester@vmDebARM64"
 		fRemoteRun "${rtBins[@]}"
 		rm -f -- "${rtFail:?}/lacks-tester@vmDebARM64"
@@ -11466,3 +11495,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261123 JC: Every check that brings no gh of its own gets the suite's, logged in nowhere, rather than the box's, [dfq34].
 ##		- 20261123 JC: Each tool version check in the image's recipe fails on a missing tool, [dfq4k]. ssh starts for the run's uid in the image, [dfq4m].
 ##		- 20261123 JC: pr ok names the pull request's branch and its base above the plan, a fork's too, [dfq5b] [dfq5c].
+##		- 20261124 JC: Every stage 7 Go test run passes config.bash's time limit, under Wine too, and a limit that isn't whole seconds is refused, [dfq5x] [dfq5y] [dfq5z].
