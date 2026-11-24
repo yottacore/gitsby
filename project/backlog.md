@@ -185,13 +185,25 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 enhancement 1: Comments are wrapped at a fixed column
 	- ID: 2026111910222759
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
+	- Closed reason: Done
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102227
 	- Opened by:
 	- Requirements [Feature]: Directive 2026-11-18, Line length: a long comment may be wrapped where it reads best, never at a fixed column. Go comments wrap near 80 and bash near 95. Rewrap a comment by sense when it is next edited, rather than in one sweep. ruff.toml may set line-length = 320.
 	- Origin: New directive, not a regression. About 800 comment runs match.
+	- Decisions:
+		- No sweep of the existing comments, as the requirement says. Each is rewrapped by sense when next edited, and the style guide now says so, so no child item tracks them.
+		- ruff.toml's own header comment was rewrapped, since it was edited.
+		- No other config sets a width: gofmt has none, .golangci.yml has no line-length linter, and shellcheck and PSScriptAnalyzerSettings.psd1 check none.
+	- Actual fix [Feature]: style-guide.md's comment rules say lines have no length limit, and a long comment wraps where it reads best, never at a fixed column. ruff.toml sets line-length = 320.
+	- Branch: nov24-2026111910222759
+	- Test case: none. A style rule and a config value that no selected rule reads. Checked that ruff's E501 passes the Python files under ruff.toml and flags 30 lines without it.
+	- Swept: ruff.toml, src-go/.golangci.yml, PSScriptAnalyzerSettings.psd1 and .markdownlint.jsonc for a width setting.
+	- Verified: the quick gate passed with every area, ruff under ruff.toml and markdownlint included.
+	- Acceptance signoff: Self-closed: the requirement's own rule and setting.
+	- Closed: 20261124-105924
 
 - Code Review 20261119 enhancement 2: account apply and account list spawn git var more than they need
 	- ID: 2026111910222745

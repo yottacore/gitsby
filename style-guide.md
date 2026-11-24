@@ -44,6 +44,8 @@ Scope: The product itself is Go now. Go's *formatting* is `gofmt` - the lint sta
 
 - Terse. Explain *why*, not *what*. Don't restate the next line of code.
 
+- No line length limit, for code or comments. A long comment may be wrapped where it reads best, never at a fixed column, so its lines come out uneven. A comment wrapped at a fixed column gets rewrapped when it is next edited, not in a sweep.
+
 - No decorative flair or banner dividers. (The one exception: full-width section-rule comments between major blocks.)
 
 - The file header carries purpose, copyright, and license, in the existing format: `©` copyright line, license name and URL, SPDX identifier.
