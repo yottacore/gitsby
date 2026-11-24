@@ -84,8 +84,13 @@ func (a *app) checkoutsAhead() []string {
 // refuseHeldBranch: git won't check out a branch another worktree has, or is
 // rebasing or bisecting, and finds that only at the checkout, after the park push.
 func (a *app) refuseHeldBranch() error {
-	for _, branch := range a.checkoutsAhead() {
-		where, ok := a.branchRefs().held[branch]
+	ahead := a.checkoutsAhead()
+	if len(ahead) == 0 {
+		return nil
+	}
+	held := a.heldElsewhere(ahead)
+	for _, branch := range ahead {
+		where, ok := held[branch]
 		what, fix := "checked out", "Switch that worktree to another branch, then run this again."
 		if !ok {
 			var op string
@@ -112,6 +117,40 @@ func (a *app) refuseHeldBranch() error {
 		}, nil)
 	}
 	return nil
+}
+
+// heldElsewhere maps each of branches that another worktree has checked out to
+// that worktree's folder. %(worktreepath) makes for-each-ref read every worktree,
+// which at a few hundred costs more than the rest of the run's own query, so it's
+// asked only here, for these branches alone. With no linked worktree nothing else
+// can hold a branch, and that needs no spawn to tell.
+func (a *app) heldElsewhere(branches []string) map[string]string {
+	held := map[string]string{}
+	if a.worktreesDir != "" && !hasLinkedWorktree(a.worktreesDir) {
+		return held
+	}
+	args := []string{"for-each-ref", "--format=%(refname)%00%(HEAD)%00%(worktreepath)"}
+	for _, branch := range branches {
+		args = append(args, "refs/heads/"+branch)
+	}
+	for _, line := range runLines("git", args...) {
+		fields := strings.Split(line, "\x00")
+		if len(fields) != 3 || fields[1] == "*" || fields[2] == "" {
+			continue
+		}
+		// A pattern also matches the refs under it, such as dev/x under dev.
+		if name, ok := strings.CutPrefix(fields[0], "refs/heads/"); ok && slices.Contains(branches, name) {
+			held[name] = fields[2]
+		}
+	}
+	return held
+}
+
+// hasLinkedWorktree: whether git keeps a linked worktree's git dir in dir, as git
+// worktree add makes one.
+func hasLinkedWorktree(dir string) bool {
+	entries, _ := os.ReadDir(dir) // none until a worktree is added
+	return slices.ContainsFunc(entries, fs.DirEntry.IsDir)
 }
 
 // busyElsewhere: the folder of another worktree that is rebasing or bisecting

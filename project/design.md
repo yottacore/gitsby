@@ -226,6 +226,7 @@ The rule for every path that hands out a token. The token goes only to the host 
 	- `br create`, `br hotfix`, `br switch`, `br merge`, `pr ok` and `release` ask, each for the branches it checks out. `br prune` already skipped a branch it couldn't delete.
 	- A worktree whose folder was deleted by hand still holds its branch, so the refusal names `git worktree prune` there. `git worktree prune` passes over a locked worktree, so for a locked one the refusal names mounting the folder again, or `git worktree unlock` and then prune (2026-11-21).
 	- A branch another worktree is rebasing or bisecting is held too, since git refuses to check it out the same way (2026-11-20). HEAD is detached there, so git's list of checked-out branches doesn't name it. gitsby reads that worktree's `rebase-merge`, `rebase-apply` and `BISECT_START` as git does, which costs no spawn.
+	- Only a run that checks a branch out asks git which worktree has it, for those branches alone, and only once a linked worktree exists (2026-11-24). That query reads every worktree, which with 200 of them added about 8 ms to `status`, `whoami` and `sync`, none of which checks anything out.
 
 - `--staged` commits the index only, and its pulls go without `--autostash` (2026-10-05).
 	- It is a flag on `pullcom`, `sync`, `pr create`, `release`, and the branch commands that commit before they move. Any other command refuses it, since ignoring it would sweep in the edits it was typed to keep out. It is opt-in: a file staged long ago would otherwise make a commit quietly smaller.

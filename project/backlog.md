@@ -80,13 +80,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 enhancement 5: Every command reads %(worktreepath), read-only ones included
 	- ID: 2026112017135153
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171351
 	- Opened by:
 	- Requirements [Feature]: At 200 worktrees, status went from 17 to 25 ms, whoami from 13 to 21, sync from 57 to 85 and br create from 45 to 64. Only refuseHeldBranch reads the field. Query it only when checkoutsAhead isn't empty.
 	- Origin: d757dc3 (Code Review 20261119 item 13). Measured on 5af785f and 576d891.
+	- Closed reason: Done
+	- Actual fix: The run's branch query no longer reads %(worktreepath). refuseHeldBranch asks for it in a for-each-ref of its own, only when checkoutsAhead isn't empty, for those branches alone, and only once a linked worktree exists, which it tells from the worktrees folder enterRepo already names. design.md says so.
+	- Branch: nov24-2026112017135153
+	- Commit: 4023b46
+	- Test case: Go TestWorktreePathOnlyAhead [dfr1s].
+	- Verified: [dfr1s] fails with %(worktreepath) put back in the run's query, and with the linked-worktree check taken out. [dfh8b], [dfkyp] and [dfjzf] pass. At 200 worktrees, by user plus system time over 2 sets of 20 runs each at load 4 on 32 cores: status 28 to 22 ms, whoami 23 to 17, sync 38 to 30, br create off dev 33 to 30. With no linked worktree the 2 builds are level. A br switch refused for a held branch went from 10 to 12 ms, for the spawn it adds. The quick gate passed with every area: test.bash 2445/0, fuzz 310/0, parity 32/0, spawn counts unchanged. gosec 37, as before, none in the changed lines.
+	- Swept: branchRefs was the only reader of %(worktreepath), and refuseHeldBranch the only reader of its held map. No other call runs git worktree list. busyElsewhere and worktreeLocked read files, not git.
+	- Decisions: A run that checks a branch out with a linked worktree present pays one more spawn, about 2 ms, rather than every run paying for the worktree read. Keeping the field in the one query for the 6 commands that may check out would add no spawn, but br create off dev and the others with nothing ahead would still pay. With no linked worktree only this one exists, so the query is skipped.
+	- Acceptance signoff: Self-closed: its test failed before the change and passes after, and each command timed is faster than on the build before it.
+	- Closed: 20261124-100909
 
 - Code Review 20261120 enhancement 6: 28 places start a sentence in lower case after a label and colon
 	- ID: 2026112017135139
