@@ -307,7 +307,7 @@ fMeasure(){
 fMeasure "[dbftf] status"                              11 pipe repo        -q --no-fetch status
 fMeasure "[dbjeq] whoami"                               7 pipe repo        -q --no-fetch whoami
 fMeasure "[dbftg] br list"                              7 pipe repo        -q --no-fetch br list
-fMeasure "[dbfth] account list"                         8 pipe repo        -q --no-fetch account list
+fMeasure "[dbfth] account list"                         6 pipe repo        -q --no-fetch account list
 fMeasure "[dbftj] repo url"                             6 pipe repo        -q --no-fetch repo url
 fMeasure "[dbftk] pullcom"                             21 pipe repo        -q --no-fetch pullcom "spawn count"
 fMeasure "[ddf68] pullcom with a fetch"                 28 pipe repo        -q pullcom "spawn count"
@@ -320,7 +320,7 @@ fMeasure "[deytk] br prune of five branches"           31 pipe prune5      -q --
 fMeasure "[ddf4z] status with a fetch"                 17 tty  repo        status
 fMeasure "[ddf50] status in an account folder"         19 tty  acct-ssh    --no-fetch status
 fMeasure "[ddf51] whoami in an account folder"         15 tty  acct-ssh    --no-fetch whoami
-fMeasure "[ddf52] account list with accounts"          12 tty  acct-ssh    --no-fetch account list
+fMeasure "[ddf52] account list with accounts"          10 tty  acct-ssh    --no-fetch account list
 fMeasure "[ddf53] status in an https account folder"   15 tty  acct-https  --no-fetch status
 fMeasure "[df04s] status in a tea ssh folder"          16 tty  acct-gitea  --no-fetch status
 fMeasure "[df04t] whoami in a tea ssh folder"          12 tty  acct-gitea  --no-fetch whoami
@@ -447,3 +447,4 @@ TZ=UTC0 gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261110 JC: A push that has an upstream asks for-each-ref where it goes, 1 more each: br switch of a staged change 37 -> 38, pr create in the Gitea folder 42 -> 43.
 ##		- 20261120 JC: Reads the baseline once, not once per command, and writes the record in one go.
 ##		- 20261123 JC: Names each count over its expected one that the headroom let pass. Expected counts raised for the rises that sat there: account list 7 -> 8 and 11 -> 12 for reading every global git config file, br merge 41 -> 43 and 52 -> 54 for the no-shared-history refusal and the upstream read after the checkout. pr create in the GitLab folder 31 -> 30.
+##		- 20261124 JC: account list 8 -> 6 and 12 -> 10, since with no account fragment folder it no longer asks git for the global config files.

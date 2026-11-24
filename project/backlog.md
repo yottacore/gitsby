@@ -208,13 +208,29 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 enhancement 2: account apply and account list spawn git var more than they need
 	- ID: 2026111910222745
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102227
 	- Opened by:
 	- Requirements [Feature]: Cache the global config list for the run, and skip it when there is no fragment folder. apply went from 18 to 25 git calls, account list from 6 to 7.
 	- Origin: a4fa440 and later round-20261111 and nov18 apply fixes. Measured against d5e76f2.
+	- Closed reason: Done
+	- Decisions:
+		- apply and its plan still read every global file when the fragment folder is gone, since a rule pointing into it is still ours to take out, and the plan names that removal. Only the 2 warnings skip.
+		- The cache key is PATH and the variables git reads to find its global files, so a run that changes none of them asks once, and a test that moves HOME asks again.
+		- No apply measure in spawn-count.bash, since its fixture points the global config at /dev/null, which apply can't replace. The Go test [dfr3p] counts git var across the plan, the apply and the listing instead.
+	- Actual fix [Feature]: The global config list is asked once per run and kept, keyed on the environment that decides it. account list's relative-rule warning and account set's rerun note skip it when the fragment folder isn't there, since git skips an include whose file is missing.
+	- Branch: nov24-2026111910222745
+	- Commit: a4304ec
+	- Test case: Go [dfr3p], [dfr3q]; spawn counts [dbfth], [ddf52].
+	- Verified:
+		- [dfr3p] fails on the build before this, with git var run 2 times with no fragment folder and 6 times over plan, apply and listing, and passes after. [dfr3q] fails with GIT_CONFIG_GLOBAL dropped from the key, and with the cached list handed out without a copy.
+		- Spawn counts: account list 8 -> 6 and with accounts 12 -> 10. On a 2-account fixture, apply 21 -> 17 the first time and 23 -> 20 after, account set 12 -> 11.
+		- Quick gate, all areas: test.bash 2447/0, fuzz 310/0, parity 32/0. gosec 37, as on dev.
+	- Swept: every call of globalGitConfigs and accountManagedIncludes: apply, its plan, account list and account set. No other code reads git var.
+	- Acceptance signoff: Self-closed: the requirement's own change, and its test failed before and passed after.
+	- Closed: 20261124-110857
 
 - Code Review 20261119 enhancement 3: br switch from a protected branch checks the tree twice
 	- ID: 2026111910222732

@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -232,8 +233,36 @@ func globLiteral(s string) string {
 // globalGitConfigs: every file git reads as the global config, in the order it reads
 // them, so a rule in the last one wins. 'git config --global' reads only the one it
 // writes, which hid our rules in the other from every apply after ~/.gitconfig came
-// along. git var lists them since 2.42; an older git gets git's rule for it.
+// along. Asked once per run, since apply needs it for its plan, its write and the
+// listing.
 func globalGitConfigs() []string {
+	key := ""
+	for _, name := range globalConfigEnv {
+		key += os.Getenv(name) + "\x00"
+	}
+	globalConfigCache.Lock()
+	defer globalConfigCache.Unlock()
+	files, ok := globalConfigCache.files[key]
+	if !ok {
+		files = askGlobalGitConfigs()
+		globalConfigCache.files[key] = files
+	}
+	return slices.Clone(files)
+}
+
+// globalConfigEnv is what decides where git looks for its global config, and which
+// git answers. It keys the cache, so a test that moves HOME gets a fresh answer.
+var globalConfigEnv = []string{"PATH", "HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL", "USERPROFILE", "HOMEDRIVE", "HOMEPATH"}
+
+// globalConfigCache keeps globalGitConfigs' answers. Locked, as toolCache is.
+var globalConfigCache = struct {
+	sync.Mutex
+	files map[string][]string
+}{files: map[string][]string{}}
+
+// askGlobalGitConfigs is globalGitConfigs uncached. git var lists the files since
+// 2.42; an older git gets git's rule for it.
+func askGlobalGitConfigs() []string {
 	if out, ok := runOutOK("git", "var", "GIT_CONFIG_GLOBAL"); ok {
 		var files []string
 		for _, line := range splitLines(out) {
@@ -295,6 +324,9 @@ type managedInclude struct{ file, key string }
 // points into the directory we own, in git's reading order. Those are ours to replace;
 // anything else in there was written by hand and is left alone.
 func (c *config) accountManagedIncludes() []managedInclude {
+	if c.includeDir() == "" {
+		return nil
+	}
 	var out []managedInclude
 	var seen []string
 	for _, file := range globalGitConfigs() {
@@ -308,6 +340,17 @@ func (c *config) accountManagedIncludes() []managedInclude {
 		}
 	}
 	return out
+}
+
+// liveManagedIncludes is accountManagedIncludes for a warning about rules plain git
+// still follows. With no fragment folder there are none, since git skips an include
+// whose file isn't there, so a config never applied asks git nothing. apply and its
+// plan read them all, as a rule into a removed folder is still ours to take out.
+func (c *config) liveManagedIncludes() []managedInclude {
+	if dir := c.includeDir(); dir == "" || !pathExists(dir) {
+		return nil
+	}
+	return c.accountManagedIncludes()
 }
 
 // managedIncludesIn is accountManagedIncludes for one file.
@@ -1023,7 +1066,7 @@ func managedIncludePattern(key string) (string, bool) {
 // relative folder, left by an older apply. A '**/' one is a pathcontains rule.
 func (c *config) relativeManagedIncludes() []string {
 	var out []string
-	for _, managed := range c.accountManagedIncludes() {
+	for _, managed := range c.liveManagedIncludes() {
 		pattern, ok := managedIncludePattern(managed.key)
 		if !ok || strings.HasPrefix(pattern, "**/") || slices.Contains(out, pattern) {
 			continue
@@ -1847,7 +1890,7 @@ func (a *app) cmdAccountSet() error {
 	a.out.statusNotes("Wrote the accounts file.", noteLines("File", nativePath(t.file)))
 	// gitsby reads the file itself, but plain git reads the fragments, which keep the
 	// old values until apply writes them again (2026112017135793).
-	if len(a.cfg.accountManagedIncludes()) > 0 {
+	if len(a.cfg.liveManagedIncludes()) > 0 {
 		a.out.status("Plain git still uses what the last account apply wrote. Run '" + meName + " account apply' to update it.")
 	}
 	return nil
