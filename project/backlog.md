@@ -59,13 +59,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 enhancement 4: Every park push runs the full branch query again
 	- ID: 2026112017135167
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171351
 	- Opened by:
 	- Requirements [Feature]: At 5,000 local and 5,000 remote branches, sync went from 694 to 894 ms, pr create from 707 to 961, br create off a feature branch from 1074 to 1292, and br merge from 1161 to 1390. pushDest now reads branchRefs, about 8 times heavier than its old query of heads only, and the commit step clears the cache, so the query runs twice. Read the push fields for the current branch alone, or keep them across the commit.
 	- Origin: ca1f916, nov19b (Code Review 20261119 item 1). Spawn counts didn't change. Measured on 5af785f and 576d891.
+	- Closed reason: Done
+	- Actual fix: The push step builds its push from the cached branch query while the run still has it. Once a commit or checkout dropped it, the step reads only the local branches' push and upstream fields and which one is checked out, in one for-each-ref without the short names or origin's branches, as pushDest did before ca1f916. The plan and the refusals before it still read the whole query, which the other checks share. Spawn counts are unchanged.
+	- Branch: nov24-2026112017135167
+	- Commit: 33bcc0c
+	- Test case: Go TestPushStepRefs [dfr1g].
+	- Verified: [dfr1g] fails all 10 of its cases with pushArgs put back to the whole query, and fails with the push ref left out of the step's read. At 5,000 local and 5,000 remote branches, by user plus system time over 6 runs each at load 3 on 32 cores: sync 828 to 652 ms, br create off a feature branch 1197 to 1037, br merge 1452 to 1295. A trace shows one whole query fewer in sync, br create, br merge and pr create, and the same spawn count. There the step's query takes 13 ms and the whole one 168. The quick gate passed with every area: test.bash 2445/0, fuzz 310/0, parity 32/0, spawn counts unchanged. gosec 37, as before, none in the changed lines.
+	- Swept: every push step goes through pushArgs, through pushCurrent: the park pushes of sync, br switch, br create, br hotfix, br merge, pr create and release, br merge's push of the target, release's pushes and repo connect's. plannedPushes, the plan's push lines and parkHead read while the query is cached. br create and br merge still run the whole query once more after the park push, for reads ahead of the checkout, and br merge once at its end. Those aren't push reads and were left alone.
+	- Decisions: The narrow read is only at the push step, and only once the cache is gone. Before the plan the whole query runs anyway, so a narrow read there would add a spawn. It reads every local branch rather than the checked-out one alone, since naming that one would take a spawn of its own once the step dropped the current branch.
+	- Acceptance signoff: Self-closed: its test failed before the change and passes after, and the timings are back below the regression's.
+	- Closed: 20261124-095813
 
 - Code Review 20261120 enhancement 5: Every command reads %(worktreepath), read-only ones included
 	- ID: 2026112017135153

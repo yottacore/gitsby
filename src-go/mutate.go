@@ -624,11 +624,35 @@ func (a *app) refuseGoneBranch() error {
 // refused the ones in plannedPushes, so one reaching here comes after a commit, a
 // merge or a tag.
 func (a *app) pushArgs() ([]string, error) {
-	p := a.currentPush("")
+	p := a.pushIn(a.stepPushRefs(), "", "")
 	if p.refused != "" {
 		return nil, usagef("%s To publish it under its own name, run 'git branch --unset-upstream' and push it again.", p.refused)
 	}
 	return p.args(), nil
+}
+
+// stepPushRefs is what the push step reads to build its push: branchRefs while the
+// run still has it, else the push fields of the local branches alone. The commit or
+// checkout before the step dropped branchRefs, and the push drops it again, so the
+// whole query would run for this one read. Its short names and origin's branches
+// make it over 10 times heavier at thousands of branches.
+func (a *app) stepPushRefs() branchRefs {
+	if a.git.branches.known {
+		return a.git.branches.value
+	}
+	refs := branchRefs{push: map[string]pushRefs{}}
+	for _, line := range runLines("git", "for-each-ref", "--format=%(refname)%00%(push:remotename)%00%(push:remoteref)%00%(upstream:remotename)%00%(upstream:remoteref)%00%(HEAD)", "refs/heads/") {
+		fields := strings.Split(line, "\x00")
+		name, ok := strings.CutPrefix(fields[0], "refs/heads/")
+		if len(fields) != 6 || !ok {
+			continue
+		}
+		refs.push[name] = pushRefs{pushRemote: fields[1], pushRef: fields[2], upRemote: fields[3], upRef: fields[4]}
+		if fields[5] == "*" {
+			refs.head = name
+		}
+	}
+	return refs
 }
 
 // plannedPush is a push and where it lands. The guards before the plan and the plan's
@@ -652,9 +676,14 @@ func (a *app) currentPush(kind string) plannedPush {
 }
 
 // branchPush is currentPush for any branch, empty meaning the current one. The step
-// pushes it once it's checked out, through currentPush, so the two agree.
+// pushes it once it's checked out, through the same pushIn, so the two agree.
 func (a *app) branchPush(kind, branch string) plannedPush {
-	d := a.pushDestOf(branch)
+	return a.pushIn(a.branchRefs(), kind, branch)
+}
+
+// pushIn is branchPush read from refs.
+func (a *app) pushIn(refs branchRefs, kind, branch string) plannedPush {
+	d := a.pushDestIn(refs, branch)
 	// upstream for the current branch, since upstreamOf would ask its name again
 	// after the commit step dropped it.
 	up := a.upstream()
@@ -816,7 +845,12 @@ func (a *app) pushDest() pushDest { return a.pushDestOf("") }
 
 // pushDestOf is pushDest for any branch, empty meaning the current one.
 func (a *app) pushDestOf(branch string) pushDest {
-	refs := a.branchRefs()
+	return a.pushDestIn(a.branchRefs(), branch)
+}
+
+// pushDestIn is pushDestOf read from refs, of which it needs push and head, and
+// origin for a branch that isn't here.
+func (a *app) pushDestIn(refs branchRefs, branch string) pushDest {
 	if branch == "" {
 		branch = refs.head
 		if branch == "" {
