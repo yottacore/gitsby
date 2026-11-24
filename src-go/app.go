@@ -109,6 +109,7 @@ type repoState struct {
 	defaultBranch  cached[string]
 	mergeTarget    cached[string]
 	originFetch    cached[[]string]
+	pushConfig     cached[[]string]
 	// submodule.recurse, which no step of ours sets.
 	submoduleRecurse cached[bool]
 }
@@ -129,6 +130,7 @@ func (r *repoState) forget() {
 	r.aheadBehind.forget()
 	r.contextDir.forget()
 	r.originFetch.forget()
+	r.pushConfig.forget()
 }
 
 // hostState is what this run knows about the host side of things, as opposed to

@@ -2692,6 +2692,27 @@ fRunSuite(){
 	( cd "${p2A}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git remote add up "${p2U}" && git checkout --quiet -b feat && git push --quiet -u up feat && echo two > g.txt )
 	fAssertPlan "[dfk18] the park push's plan line names a remote other than origin"  "^ +git push \(branch 'feat', to 'feat' on 'up'\) \*$"  bash -c "cd '${p2A}' && '${gitsby}' -q sync two"
 	fAssert     "[dfk19] and the run pushes there"  bash -c "[[ \"\$(git -C '${p2U}' rev-parse feat)\" == \"\$(git -C '${p2A}' rev-parse feat)\" ]] && ! git -C '${p2O}' show-ref --verify --quiet refs/heads/feat"
+	## A push of a branch the command checks out later is on the same list: br merge's target,
+	## the back-merge, and release's default branch and dev. Under simple, one tracking a branch of
+	## another name was refused only at the step, after the merge or the tag (2026112020293534).
+	local obO="${work}/$1-obo.git" obA="${work}/$1-oba"
+	git init --quiet --bare -b main "${obO}"
+	git clone --quiet "${obO}" "${obA}" 2>/dev/null
+	( cd "${obA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git push --quiet origin main:dev main:up && git fetch --quiet && git branch --quiet --track dev origin/up && git checkout --quiet -b feat && echo two > g.txt && git add --all && git commit --quiet -m "on feat" && git push --quiet -u origin feat )
+	## $1 is the branch the refusal names.
+	fObRefused(){ local branch="$1" out="" head=""; shift; head="$(git -C "${obA}" rev-parse dev)"
+		out="$(cd "${obA}" && "${gitsby}" -q "$@" 2>&1)" && return 1
+		grep -qF "'git branch --unset-upstream ${branch}'" <<< "${out}" && grep -qF 'Nothing was done.' <<< "${out}" &&
+			[[ "$(git -C "${obA}" branch --show-current)" == feat && "$(git -C "${obA}" rev-parse dev)" == "${head}" && -z "$(git -C "${obA}" tag)" ]] ;}
+	fAssert "[dfq6c] br merge -q refuses before the plan when its target's push would be refused, naming it"  fObRefused dev br merge
+	git -C "${obA}" config branch.main.merge refs/heads/up
+	git -C "${obA}" config branch.dev.merge refs/heads/dev
+	fAssert "[dfq6d] release -q refuses before the plan when the default branch's push would be, with nothing tagged"  fObRefused main release v1.0.0
+	git -C "${obA}" config branch.main.merge refs/heads/main
+	git -C "${obA}" config branch.dev.merge refs/heads/up
+	git -C "${obA}" config push.default upstream
+	fAssertPlan "[dfq6e] where git takes it, br merge's plan line names where the target's push lands"  "^ +git push \(branch 'dev', to 'up'\) \*$"  bash -c "cd '${obA}' && '${gitsby}' -q br merge"
+	fAssert     "[dfq6f] and the run lands there"  bash -c "[[ \"\$(git -C '${obO}' rev-parse up)\" == \"\$(git -C '${obA}' rev-parse dev)\" && \"\$(git -C '${obO}' rev-parse dev)\" != \"\$(git -C '${obA}' rev-parse dev)\" ]]"
 
 	## A shallow clone fetches only main, so origin's dev never shows, and br merge went into
 	## main. The branch commands refuse until the fetch is widened. A single-branch clone of dev

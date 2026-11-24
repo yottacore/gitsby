@@ -472,13 +472,13 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Test case: test.bash [dfk10] to [dfk1c]; Go TestPlannedPushesEveryCommand [dfk0z] and TestPlannedPushDisp [dfk0y].
 	- Progress log:
 		- 20261120: The core is in, with items 10 (2026112017135749) and 45 (2026112017135225). Each command's pushes of the branch it stands on are one list, plannedPushes in mutate.go, with each push's branch, remote, ref and kind. The refusal before the plan, the --direct and gone-branch checks, and the plan's push line read it, and the step builds its push the same way. [dfk0z] walks the usages table, so a new mutating command fails until it's put on the list or named as one that doesn't push.
-		- The pushes of other branches, and the one target helper for pr create and pr ok, are child 2026112020293534. The helper comes with item 18's fix (2026112017135624).
+		- The pushes of other branches, and the one target helper for pr create and pr ok, are child 2026112020293534. The helper comes with item 18's fix (2026112017135624). That child closed 2026-11-23, so no child is open.
 	- Commit: ccb0c7f
 
 - Put the pushes of other branches on the push list: br merge's target, the hotfix back-merge, and release's default branch and dev
 	- ID: 2026112020293534
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-202935
@@ -489,6 +489,21 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Estimated effort: Avg
 	- Progress log: Open questions for the design: a target that isn't local yet has no push fields to read until the checkout makes it, so where remote.pushDefault sends it would mean copying git's rule. The atomic push names origin and the target's own name, and release pushes dev only when it has an upstream.
 		- 20261121: the pr create and pr ok target helper is done, as prTarget in pr.go, through 2026112017135624. The other pushes are still open.
+	- Closed reason: Done
+	- Actual fix [Feature]: br merge's push of its target, the back-merge into dev after a hotfix from br merge or pr ok, and release's pushes of the default branch and dev are on plannedPushes in mutate.go, as kinds merge, back-merge and release. A push git would refuse is refused before the plan, naming 'git branch --unset-upstream <branch>'. mergePushesOwn reads its targets from the list, and the plan's push line for each of those branches names where it goes. The step still builds each push once the branch is checked out, with the same function. design.md and the changelog say so.
+	- Branch: nov23-2026112020293534
+	- Test case: test.bash [dfq6c] to [dfq6f]; Go TestOtherBranchPushes [dfq6b].
+	- Verified: [dfq6c] and [dfq6d] fail on the build before the fix, which merged into dev or cut the tag and then had the push refused, and pass with it. [dfq6b] fails with git's rule for a branch not here yet taken out, with every refusal held to something left to push, with the old unset text, and with release's dev push left off. The quick gate passed with every area: test.bash 2445/0, fuzz 310/0, parity 32/0, spawn counts unchanged. gosec 37, as before, none in the changed lines.
+	- Swept: every push the Go build makes. The pushCurrent and pushIfOnline callers are the park pushes, br merge's target, the back-merge, release's default branch and dev, and repo connect's, all on the list now. br merge's atomic push, the tag push, the leased deletes and a new branch's first publish name their refs in full, so push.default can't refuse them. Every 'git push *' plan line for another branch reads pushLine.
+	- Decisions: A branch the checkout has yet to make follows git's rule for its push: its own pushRemote, then remote.pushDefault, then origin, through that remote's push refspecs. One git config call reads them, and only when such a branch is on the list.
+		- br merge's atomic push still names origin and the target's own name, since the merge has to reach origin before origin's copy of the branch is deleted. Its plan line already says so.
+		- A push of another branch is refused before the plan whether or not anything new would go, since the merge or the release nearly always sends something. The one case where nothing goes is a back-merge with nothing new, which is refused too.
+		- release's dev push shows in the plan only when dev has an upstream, which is when cmdRelease pushes it. The plan showed it always.
+		- The refusal names the branch in 'git branch --unset-upstream <branch>', since the bare form acts on the current branch.
+		- 20261123: TestPlannedPushesEveryCommand [dfk0z] wants park and merge for br merge, and park and release for release, where it wanted park alone. The rest of the test is as it was.
+	- Acceptance signoff: Self-closed: its tests failed before the fix and pass after, and the sweep is answered.
+	- Closed: 20261123-193951
+	- Commit: 0b18d49
 
 - Code Review 20261120 enhancement 4: Every park push runs the full branch query again
 	- ID: 2026112017135167

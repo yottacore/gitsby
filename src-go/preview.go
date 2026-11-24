@@ -72,7 +72,7 @@ func (a *app) preview(what string) {
 			a.out.clean(planPad + "git push --atomic (the merge, and the leased delete of origin's '" + a.mergeHead() + "') *")
 			a.out.clean(planPad + "git branch -d " + a.currentBranch() + " *")
 		} else {
-			a.out.clean(planPad + "git push *")
+			a.out.clean(planPad + a.pushLine("merge", a.branchTarget("")))
 			a.out.clean(planPad + "git branch -d " + a.currentBranch() + " *")
 			a.out.clean(planPad + "git push --force-with-lease origin --delete " + a.mergeHead() + " *")
 		}
@@ -241,7 +241,7 @@ func (a *app) planPull(branch string, extra ...string) {
 func (a *app) previewBackMerge() {
 	a.out.clean(planPad + a.checkoutDisp(a.mergeTarget()))
 	a.out.clean(planPad + "git merge " + a.backMergeRef())
-	a.out.clean(planPad + "git push *")
+	a.out.clean(planPad + a.pushLine("back-merge", a.mergeTarget()))
 }
 
 // previewPr reads the same spellings the commands run, so a plan on a Gitea host
@@ -290,12 +290,15 @@ func (a *app) previewRelease() {
 		}
 		a.out.clean(planPad + "git tag -a " + a.rel.tag)
 	}
-	a.out.clean(planPad + "git push *")
+	a.out.clean(planPad + a.pushLine("release", a.defaultBranch()))
 	a.out.clean(planPad + "git push origin tag " + a.rel.tag + " *")
 	if hasDev {
 		a.out.clean(planPad + a.checkoutDisp("dev") + " *")
 		a.out.clean(planPad + "git merge --ff-only " + a.defaultBranch() + " *")
-		a.out.clean(planPad + "git push *")
+		// cmdRelease pushes dev only when it has an upstream.
+		if a.upstreamOf("dev").full != "" {
+			a.out.clean(planPad + a.pushLine("release", "dev"))
+		}
 	}
 	// cmdRelease goes back only to a branch that isn't main or dev, so a run started
 	// on either ends on the last branch shown above.
