@@ -33,6 +33,18 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- test.bash [dee5h] failed once in a quick run, then passed
+	- ID: 2026112411401874
+	- Type: Bug
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261124-114018
+	- Opened by:
+	- Progress log:
+		- 20261124: failed once in the container quick run on round nov24 (passed: 2446, failed: 1, skipped: 1), with the line `FAIL dee5h a run's folder is <start time>_<NNN> under HOST_TEMP, with TMPDIR, TEMP and TMP pointed at it and its pid in it`. The next quick run passed it, and so did the round's gate run on 180fe9f.
+		- The round changed only the text of cicd.bash's fDie messages, not the run folder code `fGateRunFolder` checks. A stamp read across a second or minute boundary is one guess, unverified.
+
 - The pipeline's FAILED lines and the utility scripts' errors start in lower case after their label
 	- ID: 2026112410304905
 	- Type: Enhancement
