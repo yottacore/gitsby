@@ -631,11 +631,13 @@ func (a *app) pushArgs() ([]string, error) {
 	return p.args(), nil
 }
 
-// plannedPush is a push of the current branch and where it lands. The guards before
-// the plan and the plan's push line read it from plannedPushes, and the step builds
-// it the same way, so none of them can name a push the others don't. kind is why it
-// goes: "park" sends the current branch's work before the command moves on, and
-// "connect" is repo connect's push onto an origin already set.
+// plannedPush is a push and where it lands. The guards before the plan and the plan's
+// push lines read it from plannedPushes, and the step builds it the same way, so
+// none of them can name a push the others don't. kind is why it goes: "park" sends
+// the current branch's work before the command moves on, and "connect" is repo
+// connect's push onto an origin already set. The rest push a branch the command
+// checks out later: "merge" is br merge's target, "back-merge" is dev after a
+// hotfix, and "release" is the default branch and dev.
 type plannedPush struct {
 	kind string
 	pushDest
@@ -646,48 +648,100 @@ type plannedPush struct {
 // first publish: up to origin under its own name, tracking origin's copy from then
 // on.
 func (a *app) currentPush(kind string) plannedPush {
-	d := a.pushDest()
-	if !a.hasUpstream() {
+	return a.branchPush(kind, "")
+}
+
+// branchPush is currentPush for any branch, empty meaning the current one. The step
+// pushes it once it's checked out, through currentPush, so the two agree.
+func (a *app) branchPush(kind, branch string) plannedPush {
+	d := a.pushDestOf(branch)
+	// upstream for the current branch, since upstreamOf would ask its name again
+	// after the commit step dropped it.
+	up := a.upstream()
+	if branch != "" {
+		up = a.upstreamOf(branch)
+	}
+	if up.full == "" {
 		return plannedPush{kind: kind, pushDest: pushDest{branch: d.branch, remote: "origin", ref: "refs/heads/" + d.branch}, first: true}
 	}
 	return plannedPush{kind: kind, pushDest: d}
 }
 
-// plannedPushes is every push of the current branch this command makes, none with
-// no origin or, for a park push, offline. br create and br hotfix carry a protected
-// branch's tree off rather than push it, and br switch to where it stands doesn't
-// move. A new command that pushes the current branch belongs here, or its push
-// reaches git unguarded and the plan can name it wrong.
+// plannedPushes is every push this command makes: none with no origin, and only
+// repo connect's offline. br create and br hotfix carry a protected branch's tree off
+// rather than push it, and br switch to where it stands doesn't move. A new command
+// that pushes belongs here, or its push reaches git unguarded and the plan can name
+// it wrong.
 func (a *app) plannedPushes() []plannedPush {
-	kind := "park"
+	if !a.hasOrigin() {
+		return nil
+	}
+	var pushes []plannedPush
+	if kind := a.ownPushKind(); kind == "connect" || (kind == "park" && !a.isOffline()) {
+		pushes = append(pushes, a.currentPush(kind))
+	}
+	if a.isOffline() {
+		return pushes
+	}
+	switch a.cmd.name {
+	case "br-merge":
+		pushes = append(pushes, a.branchPush("merge", a.branchTarget("")))
+		if a.isHotfixBranch("") && a.mergeTarget() != a.defaultBranch() {
+			pushes = append(pushes, a.branchPush("back-merge", a.mergeTarget()))
+		}
+	case "pr":
+		if a.prOkBackMerges() {
+			pushes = append(pushes, a.branchPush("back-merge", a.mergeTarget()))
+		}
+	case "release":
+		pushes = append(pushes, a.branchPush("release", a.defaultBranch()))
+		// cmdRelease pushes dev only when it has an upstream.
+		if a.mergeTarget() == "dev" && a.upstreamOf("dev").full != "" {
+			pushes = append(pushes, a.branchPush("release", "dev"))
+		}
+	}
+	return pushes
+}
+
+// ownPushKind is the kind of this command's push of the branch it stands on, empty
+// when it makes none.
+func (a *app) ownPushKind() string {
 	switch a.cmd.name {
 	case "sync", "br-merge", "release":
 	case "br-switch":
 		if a.currentBranch() == a.switchTarget() {
-			return nil
+			return ""
 		}
 	case "br-create", "br-hotfix":
 		if a.isProtectedBranch("") {
-			return nil
+			return ""
 		}
 	case "pr":
 		if a.pr.sub != "create" {
-			return nil
+			return ""
 		}
 	case "repo-create", "repo-connect":
 		// Settled after preflight, so settleTarget asks again. A new origin gets a
 		// first publish, and gh's create pushes for itself.
 		if a.tgt.connectMode != "push" {
-			return nil
+			return ""
 		}
-		kind = "connect"
+		return "connect"
 	default:
-		return nil
+		return ""
 	}
-	if !a.hasOrigin() || (kind == "park" && a.isOffline()) {
-		return nil
+	return "park"
+}
+
+// pushLine is the plan's line for the push of branch that plannedPushes lists, or
+// where it would go when the list has none, as offline.
+func (a *app) pushLine(kind, branch string) string {
+	for _, p := range a.plannedPushes() {
+		if p.kind == kind && p.branch == branch {
+			return p.disp()
+		}
 	}
-	return []plannedPush{a.currentPush(kind)}
+	return a.branchPush(kind, branch).disp()
 }
 
 // parkPush is the command's park push, if it makes one.
@@ -758,13 +812,21 @@ func (a *app) pushCurrent() error {
 // the upstream, as for the pull.
 type pushDest struct{ branch, remote, ref, refused string }
 
-func (a *app) pushDest() pushDest {
+func (a *app) pushDest() pushDest { return a.pushDestOf("") }
+
+// pushDestOf is pushDest for any branch, empty meaning the current one.
+func (a *app) pushDestOf(branch string) pushDest {
 	refs := a.branchRefs()
-	branch := refs.head
 	if branch == "" {
-		branch = a.currentBranch()
+		branch = refs.head
+		if branch == "" {
+			branch = a.currentBranch()
+		}
 	}
-	p := refs.push[branch]
+	p, local := refs.push[branch]
+	if _, onOrigin := refs.origin[branch]; !local && onOrigin && branch != a.currentBranch() {
+		p = a.newBranchPush(branch)
+	}
 	d := pushDest{branch: branch, remote: cmp.Or(p.pushRemote, p.upRemote, "origin")}
 	own := "refs/heads/" + branch
 	switch {
@@ -781,10 +843,57 @@ func (a *app) pushDest() pushDest {
 		case "upstream", "tracking", "nothing":
 			d.ref = p.upRef
 		default:
-			d.refused = "'" + branch + "' tracks '" + a.upstream().short + "', a branch of another name, so under push.default=simple git won't push it."
+			d.refused = "'" + branch + "' tracks '" + a.upstreamOf(branch).short + "', a branch of another name, so under push.default=simple git won't push it."
 		}
 	}
 	return d
+}
+
+// newBranchPush is pushRefs for a branch the run's checkout makes, tracking origin's
+// copy, which has no push fields to read until then. So git's rule: the push remote
+// is the branch's own setting, then remote.pushDefault, then origin, and that
+// remote's push refspecs map the name, as for-each-ref does for a branch that's
+// here. One that maps nothing goes under its own name.
+func (a *app) newBranchPush(branch string) pushRefs {
+	p := pushRefs{upRemote: "origin", upRef: "refs/heads/" + branch}
+	var pushDefault string
+	specs := map[string][]string{}
+	for _, line := range a.pushConfig() {
+		key, value, _ := strings.Cut(line, " ")
+		switch {
+		case key == "remote.pushdefault":
+			pushDefault = value
+		case key == "branch."+branch+".pushremote":
+			p.pushRemote = value
+		case strings.HasPrefix(key, "remote.") && strings.HasSuffix(key, ".push"):
+			remote := strings.TrimSuffix(strings.TrimPrefix(key, "remote."), ".push")
+			specs[remote] = append(specs[remote], value)
+		}
+	}
+	p.pushRemote = cmp.Or(p.pushRemote, pushDefault, "origin")
+	for _, spec := range specs[p.pushRemote] {
+		spec = strings.TrimPrefix(spec, "+")
+		if strings.HasPrefix(spec, "^") {
+			continue
+		}
+		src, dst, ok := strings.Cut(spec, ":")
+		if !ok {
+			dst = src
+		}
+		if to, ok := refspecMap(src, dst, "refs/heads/"+branch); ok {
+			p.pushRef = to
+			break
+		}
+	}
+	return p
+}
+
+// pushConfig is every setting newBranchPush reads, in one call, as 'key value'
+// lines with the section and key in lower case.
+func (a *app) pushConfig() []string {
+	return a.git.pushConfig.get(func() []string {
+		return runLines("git", "config", "--get-regexp", `^(remote\.pushdefault|branch\..*\.pushremote|remote\..*\.push)$`)
+	})
 }
 
 // parkHead is the branch on origin the park push sends the current branch to.
@@ -841,24 +950,9 @@ func (a *app) mergeHead() string {
 // push with commits made on it directly, which sync there would ask about with
 // --direct. The merge itself isn't one. Empty when there's none.
 func (a *app) mergePushesOwn() string {
-	var targets []string
-	switch a.cmd.name {
-	case "br-merge":
-		targets = append(targets, a.branchTarget(""))
-		if a.isHotfixBranch("") {
-			targets = append(targets, a.mergeTarget()) // the back-merge
-		}
-	case "pr":
-		if a.prOkBackMerges() {
-			targets = append(targets, a.mergeTarget())
-		}
-	}
-	if len(targets) == 0 || !a.hasOrigin() || a.isOffline() {
-		return ""
-	}
-	for _, target := range targets {
-		if a.ownCommitsOn(target) {
-			return target
+	for _, p := range a.plannedPushes() {
+		if (p.kind == "merge" || p.kind == "back-merge") && a.ownCommitsOn(p.branch) {
+			return p.branch
 		}
 	}
 	return ""
@@ -918,10 +1012,11 @@ func (d pushDest) refusal() error {
 // refusePlannedPushes: a push in plannedPushes would be refused by git, or a park
 // push would land on a protected branch from one that isn't, which only br switch
 // and sync may do, with --direct. release from main or dev pushes that branch
-// itself, which is what it's for. Asked only when something would go, since a
-// branch made from origin/main and never touched has nothing to push. Before the
-// plan, under -q or not, since neither can be answered at the prompt, and git
-// would refuse the push only after the commit.
+// itself, which is what it's for. A push of the current branch is asked about only
+// when something would go, since a branch made from origin/main and never touched
+// has nothing to push. A push of another branch always has the merge to send.
+// Before the plan, under -q or not, since neither can be answered at the prompt,
+// and git would refuse the push only after the commit, the merge or the tag.
 func (a *app) refusePlannedPushes() error {
 	for _, p := range a.plannedPushes() {
 		target, ok := p.target()
@@ -931,8 +1026,12 @@ func (a *app) refusePlannedPushes() error {
 			continue
 		}
 		// A first publish goes up under its own name.
-		if p.first || (!isAhead() && !a.commitPending()) {
+		own := p.kind == "park" || p.kind == "connect"
+		if p.first || (own && !isAhead() && !a.commitPending()) {
 			continue
+		}
+		if !ok && p.branch != a.currentBranch() {
+			return usagef("%s Nothing was done. To publish it under its own name, run 'git branch --unset-upstream %s' first.", p.refused, typedArg(p.branch, runtime.GOOS))
 		}
 		if !ok {
 			return p.refusal()

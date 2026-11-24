@@ -1355,10 +1355,8 @@ func lockBeside(file string, wait time.Duration, words lockWords) (unlock func()
 	}
 }
 
-// lockFix is the Fix for a lock that stayed put. Takes the platform, so both are
+// lockFixFor is the Fix for a lock that stayed put. Takes the platform, so both are
 // testable from either.
-func lockFix(goos, lock string) []string { return lockFixFor(goos, lock, accountsLock.who) }
-
 func lockFixFor(goos, lock, who string) []string {
 	stale := "If no " + who + " is running, a run that was stopped left it behind. Remove it, then run this again"
 	if goos == "windows" {

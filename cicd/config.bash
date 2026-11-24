@@ -350,6 +350,13 @@ REMOTE_UNIX_DIR="gitsby/remote-tests"
 ## Wine is not Windows, so this adds to the Windows box's run, and doesn't replace it. A box
 ## without wine skips it with a note. vmDebARM64 needs arm64.nobti on its kernel line for this.
 declare -gA REMOTE_UNIX_WINE=([vmDebARM64]="windows/arm64")
+## Seconds each box's Go test run may take, passed as -test.timeout, so a hung test fails with
+## every goroutine's stack rather than holding the stage. The test binary has no limit of its own.
+## About 3 times vm925w's run of 215 s, the slowest native one (2026-11-24).
+REMOTE_GO_TEST_TIMEOUT=600
+## The same for the run under Wine, about 3 times its 471 s on vmDebARM64. Wine's own limit is
+## 300 more, for Wine's setup, and so a hung test prints its stacks before Wine is stopped.
+REMOTE_GO_TEST_TIMEOUT_WINE=1400
 
 ## Stage 8: backup + publish to git (runs from repo root). The engine always
 ## passes --quiet (it already gave the message prompt) and, when it has one,
@@ -402,3 +409,5 @@ PUBLISH_AUTO_MESSAGE=""
 ##		- 2026-11-10 JC: RELEASE_VERSION_RE and fIsReleaseVersion, the release version shape that release.bash, gen-winres.bash and the demo share with 'gitsby release'.
 ##		- 2026-11-20 JC: PUBLISH_PATHS, the only tracked files publish commits.
 ##		- 2026-11-20 JC: fReleaseTags, the tag scan those three share, which sorts a candidate suffixed after a dot below its release.
+##		- 2026-11-24 JC: REMOTE_GO_TEST_TIMEOUT, the limit on each stage 7 Go test run.
+##		- 2026-11-24 JC: REMOTE_GO_TEST_TIMEOUT_WINE, its own limit for the run under Wine.

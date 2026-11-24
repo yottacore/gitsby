@@ -163,6 +163,19 @@ confRe="${confRel//./\\.}"
 fStubShim(){ ((isWindows)) && printf '@echo off\r\nbash "%s" %%*\r\n' "$1" > "$1.cmd"; return 0 ;}
 ## Write a stub from stdin, runnable by both builds.
 fStub(){ cat > "$1"; chmod +x "$1"; fStubShim "$1" ;}
+
+## The gh of every check that brings none of its own: logged in nowhere, and it notes each call.
+## The box's gh reads the real ~/.config/gh and keyring, prints a stored token for a login it
+## holds, and writes its device id there. A check's own gh goes ahead of it on PATH.
+ghSealLog="${work}/sealed-gh.log"
+mkdir -p "${work}/sealed-bin"
+fStub "${work}/sealed-bin/gh" <<-EOF
+	#!/usr/bin/env bash
+	printf '%s\n' "\$*" >> '${ghSealLog}'
+	printf '%s\n' 'gh: not logged in to any host' >&2
+	exit 1
+EOF
+export PATH="${work}/sealed-bin:${PATH}"
 ## PowerShell and .NET have no MSYS mount table, so '/tmp/x' and '/c/x' resolve against the root
 ## of the current drive - 'C:\tmp\x', 'C:\c\x'. Any path interpolated into a pwsh command line
 ## needs the platform's own spelling, or the statement fails and the check reports on nothing.
@@ -477,7 +490,9 @@ fMakeGateFixture(){
 	fGateStub "${gateDir}/cicd/utility/n8git_backup-and-publish" n8git_backup-and-publish "[[ ! -v GIT_BACKUP_AND_PUBLISH_PATHS ]] || printf 'paths=[%s]\\n' \"\${GIT_BACKUP_AND_PUBLISH_PATHS}\" >> '${gateCalls}'"
 	for s in markdownlint golangci-lint govulncheck ruff pip-audit; do fGateStub "${gateDir}/bin/${s}" "${s}"; done
 	## Says what GOFLAGS it was handed.
-	fGateStub "${gateDir}/bin/staticcheck" staticcheck "printf 'staticcheck GOFLAGS=%s\\n' \"\${GOFLAGS:-}\" >> '${gateCalls}'"
+	## 'staticcheck-tests' fails only the run without the tests.
+	fGateStub "${gateDir}/bin/staticcheck" staticcheck "printf 'staticcheck GOFLAGS=%s\\n' \"\${GOFLAGS:-}\" >> '${gateCalls}'
+		[[ \"\${1:-}\" != -tests=false || ! -e '${gateFail}/staticcheck-tests' ]] || exit 1"
 	## A build leaves its -o file. 'docker-run' fails a run, 'docker-hang' stalls one. 'images',
 	## 'vols' and 'running' are what it lists, 'modprune' what the prune prints; 'docker-noimage'
 	## and 'docker-novol' say none.
@@ -828,12 +843,14 @@ fGateRunTmp(){
 ## Ctrl+C reaches the whole foreground group, the run log's tee with it. The run still closes its
 ## step with FAIL, says what it removed, exits 130 and leaves no folder. Job control gives the run
 ## a group of its own, and keeps INT live, which a background job otherwise starts out ignoring.
+## A suite started with INT ignored, as by '&' from a script, passes that down, and bash can't
+## trap a signal ignored on entry, so env puts it back to default before the run starts.
 fGateCtrlC(){
 	local t="${gateDir}/tmp-ctrlc" pid="" i=0 rc=0
 	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}"
 	: > "${gateFail}/hang"; rm -f -- "${gateFail:?}/hung"
 	set -m
-	( cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" HOST_TEMP="" GITSBY_CICD_MEM_SCOPE=fixture CICD_MEM_CAP="" exec ./cicd/cicd.bash -y --no-container --quick --no-sync --no-publish --no-dogfood ) </dev/null >"${gateOut}" 2>&1 &
+	( cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" HOST_TEMP="" GITSBY_CICD_MEM_SCOPE=fixture CICD_MEM_CAP="" exec env --default-signal=INT ./cicd/cicd.bash -y --no-container --quick --no-sync --no-publish --no-dogfood ) </dev/null >"${gateOut}" 2>&1 &
 	pid=$!
 	set +m
 	for ((i = 0; i < 100; i++)); do [[ -e "${gateFail}/hung" ]] && break; sleep 0.05; done
@@ -841,6 +858,7 @@ fGateCtrlC(){
 	rm -f -- "${gateFail:?}/hang"
 	[[ "${rc}" == 130 && -z "$(ls -A "${t}/gitsby")" ]] && grep -qE '; FAIL ' "${gateOut}" && grep -qx 'Cleanup: removed the run folder' "${gateOut}"
 }
+fGateCtrlCIgnored(){ ( trap '' INT; fGateCtrlC ) ;}
 ## --list prints the plan and the IDs in each step that runs, from the suites and the Go tests,
 ## and runs nothing: no tool but docker's probe, and no temp folder. The suite's check and the Go
 ## test are written so this file doesn't hold them as tests of its own.
@@ -1456,10 +1474,39 @@ fRemoteBudget(){
 }
 ## After a run: b26's Go tests and test.bash ran on the budget, and it comes out right.
 fRemoteBudgetUsed(){
-	grep -qE '^ssh b26 .*export GOMAXPROCS .* [$]lo [.]/gitsby-test -test[.]v$' "${rtLog}" \
+	grep -qE '^ssh b26 .*export GOMAXPROCS .* [$]lo [.]/gitsby-test -test[.]timeout=[0-9]+s -test[.]v$' "${rtLog}" \
 		&& grep -qE '^ssh b26 .*export GOMAXPROCS .* [$]lo [^ ]+/bash cicd/test[.]bash$' "${rtLog}" \
 		&& [[ "$(fRemoteBudget 8 3.00)" == $'4\nnice -n 19'* && "$(fRemoteBudget 8 4.50)" == $'2\n'* && "$(fRemoteBudget 1 0.00)" == $'1\n'* \
 			&& "$(fRemoteBudget 16 9.00 mac)" == $'4\nnice -n 19'* && "$(fRemoteBudget 16 7.00 mac)" == $'8\n'* ]]
+}
+## The Go test limit $1 in the fixture's config.bash, in seconds, REMOTE_GO_TEST_TIMEOUT when left out.
+fRemoteGoLimit(){ sed -n "s/^${1:-REMOTE_GO_TEST_TIMEOUT}=//p" "${rt}/cicd/config.bash" | tail -n 1 ;}
+## After a run: it ran the Go tests on $1 boxes, and each native run passed the native limit to the
+## test binary, and each run under Wine the Wine one.
+fRemoteGoLimited(){
+	local v="" vw="" n="" t="" w=""
+	v="$(fRemoteGoLimit)" vw="$(fRemoteGoLimit REMOTE_GO_TEST_TIMEOUT_WINE)"
+	n="$(grep -cE '^ssh .*-test[.]v([;& ]|$)' "${rtLog}" || true)"
+	t="$(grep -vE '[[:space:]]wine ' "${rtLog}" | grep -cE "^ssh .* -test[.]timeout=${v}s -test[.]v([;& ]|\$)" || true)"
+	w="$(grep -cE "^ssh .*[[:space:]]wine [^ ]+[.]exe -test[.]timeout=${vw}s -test[.]v; " "${rtLog}" || true)"
+	[[ -n "${v}" && -n "${vw}" && "${v}" != "${vw}" && "${n}" == "$1" && "$((t + w))" == "${n}" ]]
+}
+## After a run with vmDebARM64's Wine on: it passed, Wine ran the Go tests with its own limit, under
+## an outer one 300 s longer, and the 4 boxes with theirs.
+fRemoteWineLimited(){
+	local vw=""
+	vw="$(fRemoteGoLimit REMOTE_GO_TEST_TIMEOUT_WINE)"
+	[[ "${rtRc}" == 0 && -n "${vw}" ]] && fRemoteGoLimited 5 \
+		&& grep -qE "^ssh tester@vmDebARM64 .*[[:space:]]timeout $((vw + 300)) [\$]lo wine [.]/gitsby-test-windows-arm64[.]exe -test[.]timeout=${vw}s -test[.]v; r=" "${rtLog}" \
+		&& grep -qxF '  vmDebARM64: go test (windows/arm64 under Wine)' "${rtOut}"
+}
+## True when a run with the limit $1 set to 10m in config.bash stopped with usage, naming it, and
+## reached no box. config.bash is put back after.
+fRemoteLimitRefused(){
+	echo "$1='10m'" >> "${rt}/cicd/config.bash"
+	fRemoteRun --mac-bin "${rtMacBin}"
+	fRemoteConfig
+	[[ "${rtRc}" == 2 ]] && grep -qxF "config.bash: $1 is not a whole number of seconds" "${rtOut}" && ! grep -q '^ssh ' "${rtLog}"
 }
 ## True when the last run made a folder under %TEMP% on the Windows box $1, and removed that one
 ## through the guard.
@@ -1557,6 +1604,19 @@ fEarlyClose(){
 	done < <(fTrackedBash)
 	((n)) || echo "(no files)"
 }
+## Functions defined in the pipeline's bash whose name shows up nowhere else in it, as file: name.
+## Any other mention counts as a call, so a name only a comment keeps is missed, not flagged.
+fUnusedFunctions(){
+	local f="" n=""
+	local -a files=()
+	while IFS= read -r f; do files+=("${root}/${f}"); done < <(cd "${root}" && git ls-files 'cicd/*.bash')
+	((${#files[@]})) || { echo "(no files)"; return 0; }
+	for f in "${files[@]}"; do
+		while IFS= read -r n; do
+			(($(cat -- "${files[@]}" | grep -cwF -- "${n}") > 1)) || printf '%s: %s\n' "${f#"${root}"/}" "${n}"
+		done < <(sed -nE 's/^[[:space:]]*(function[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\(\)[[:space:]]*\{.*/\2/p' "${f}" | sort -u)
+	done
+}
 ## Tracked scripts and Go files, legacy/ too, that name a terminal multiplexer or a kill by process
 ## name. A file with no extension counts when it starts with #!.
 fKillByName(){
@@ -1637,6 +1697,32 @@ ok = pkg.get("dependencies") == deps and pk[""].get("dependencies") == deps and 
 	and pk.get("node_modules/markdownlint-cli", {}).get("version") == want and others \
 	and all(re.fullmatch(r"sha512-[A-Za-z0-9+/]{86}==", v.get("integrity", "")) and v.get("resolved", "").startswith("https://registry.npmjs.org/") for v in others)
 sys.exit(0 if ok else 1)' "${want}" "${dir}"
+}
+## Each tool version check in the image's recipe, run as the build runs it, under sh with only
+## the check's version set: it passes on that version, and fails on another and on a tool that
+## isn't there. Prints each one that doesn't, and nothing when all do. $1 the recipe, the
+## repo's own by default.
+fImageVersionChecks(){
+	local dockerfile="${1:-${root}/cicd/container/Dockerfile}" dir="${work}/version-checks" line="" tool="" var="" want="9.8.7" rc=0
+	local -i n=0
+	mkdir -p "${dir}/bin" && ln -sf "$(command -v awk)" "${dir}/bin/awk" || return 1
+	while IFS= read -r line; do
+		n+=1
+		line="${line#*&& }"; line="${line% \\}"
+		var="$(sed -n 's/.*want="\${\([A-Za-z_]*\)}".*/\1/p' <<< "${line}")"
+		tool="${line#PATH=\"* }"; tool="${tool%% *}"
+		[[ -n "${var}" && "${tool}" =~ ^[a-z][a-z-]*$ ]] || { echo "can't read: ${line}"; continue; }
+		# shellcheck disable=SC2016  ## The stub's own variable.
+		printf '#!/bin/sh\nprintf "%%s\\n" "${STUB}"\n' > "${dir}/bin/${tool}" && chmod +x "${dir}/bin/${tool}"
+		rc=0; env -i PATH="${dir}/bin" "${var}=${want}" STUB="${want} ${want} ${want}" /bin/sh -c "${line}" >/dev/null 2>&1 || rc=$?
+		((rc == 0)) || echo "${tool}: fails on its own version"
+		rc=0; env -i PATH="${dir}/bin" "${var}=${want}" STUB="0.0 0.0 0.0" /bin/sh -c "${line}" >/dev/null 2>&1 || rc=$?
+		((rc != 0)) || echo "${tool}: passes on another version"
+		rm -f -- "${dir:?}/bin/${tool:?}"
+		rc=0; env -i PATH="${dir}/bin" "${var}=${want}" /bin/sh -c "${line}" >/dev/null 2>&1 || rc=$?
+		((rc != 0)) || echo "${tool}: passes when it isn't there"
+	done < <(grep -E '\| awk -v want=' "${dockerfile}")
+	((n >= 5)) || echo "found ${n} version checks, not 5"
 }
 ## Whether the script $1 refuses a bash below its floor before running anything: a copy with the
 ## floor raised past any real bash, named as the original, has to exit 1 with the one line. A
@@ -2616,6 +2702,27 @@ fRunSuite(){
 	( cd "${p2A}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git remote add up "${p2U}" && git checkout --quiet -b feat && git push --quiet -u up feat && echo two > g.txt )
 	fAssertPlan "[dfk18] the park push's plan line names a remote other than origin"  "^ +git push \(branch 'feat', to 'feat' on 'up'\) \*$"  bash -c "cd '${p2A}' && '${gitsby}' -q sync two"
 	fAssert     "[dfk19] and the run pushes there"  bash -c "[[ \"\$(git -C '${p2U}' rev-parse feat)\" == \"\$(git -C '${p2A}' rev-parse feat)\" ]] && ! git -C '${p2O}' show-ref --verify --quiet refs/heads/feat"
+	## A push of a branch the command checks out later is on the same list: br merge's target,
+	## the back-merge, and release's default branch and dev. Under simple, one tracking a branch of
+	## another name was refused only at the step, after the merge or the tag (2026112020293534).
+	local obO="${work}/$1-obo.git" obA="${work}/$1-oba"
+	git init --quiet --bare -b main "${obO}"
+	git clone --quiet "${obO}" "${obA}" 2>/dev/null
+	( cd "${obA}" && echo one > f.txt && git add --all && git commit --quiet -m "initial" && git push --quiet -u origin main && git push --quiet origin main:dev main:up && git fetch --quiet && git branch --quiet --track dev origin/up && git checkout --quiet -b feat && echo two > g.txt && git add --all && git commit --quiet -m "on feat" && git push --quiet -u origin feat )
+	## $1 is the branch the refusal names.
+	fObRefused(){ local branch="$1" out="" head=""; shift; head="$(git -C "${obA}" rev-parse dev)"
+		out="$(cd "${obA}" && "${gitsby}" -q "$@" 2>&1)" && return 1
+		grep -qF "'git branch --unset-upstream ${branch}'" <<< "${out}" && grep -qF 'Nothing was done.' <<< "${out}" &&
+			[[ "$(git -C "${obA}" branch --show-current)" == feat && "$(git -C "${obA}" rev-parse dev)" == "${head}" && -z "$(git -C "${obA}" tag)" ]] ;}
+	fAssert "[dfq6c] br merge -q refuses before the plan when its target's push would be refused, naming it"  fObRefused dev br merge
+	git -C "${obA}" config branch.main.merge refs/heads/up
+	git -C "${obA}" config branch.dev.merge refs/heads/dev
+	fAssert "[dfq6d] release -q refuses before the plan when the default branch's push would be, with nothing tagged"  fObRefused main release v1.0.0
+	git -C "${obA}" config branch.main.merge refs/heads/main
+	git -C "${obA}" config branch.dev.merge refs/heads/up
+	git -C "${obA}" config push.default upstream
+	fAssertPlan "[dfq6e] where git takes it, br merge's plan line names where the target's push lands"  "^ +git push \(branch 'dev', to 'up'\) \*$"  bash -c "cd '${obA}' && '${gitsby}' -q br merge"
+	fAssert     "[dfq6f] and the run lands there"  bash -c "[[ \"\$(git -C '${obO}' rev-parse up)\" == \"\$(git -C '${obA}' rev-parse dev)\" && \"\$(git -C '${obO}' rev-parse dev)\" != \"\$(git -C '${obA}' rev-parse dev)\" ]]"
 
 	## A shallow clone fetches only main, so origin's dev never shows, and br merge went into
 	## main. The branch commands refuse until the fetch is widened. A single-branch clone of dev
@@ -3511,6 +3618,9 @@ fRunSuite(){
 	## The account the key authenticates as is the question this line exists to answer, so it
 	## leads. The old line answered with the OS login, which is neither that nor the connect user.
 	fAssertOut    "[dakp5] ssh line names the account the key authenticates as"  "SSH \.+: acmedev \("  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	## No gh of its own here, so whatever gh status asks goes to the suite's, never the box's.
+	fAssert       "[dfq34] a check with no gh of its own reaches the suite's sealed one" \
+		bash -c ": > '${ghSealLog}'; ${sidRun} '${gitsby}' -q -NoFetch status >/dev/null 2>&1; grep -q '^auth token --user ' '${ghSealLog}'"
 	## Anchored to the SSH line: a bare 'git@github.com' also matches the Remote line right above
 	## it, so the loose form was satisfied by the broken output too.
 	fAssertOut    "[dakp6] ssh line names the user git actually connects as"     "SSH \.+: .*\(git@github\.com\)$"  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
@@ -3682,7 +3792,9 @@ case "$1 $2" in
 	               [[ "${FAKE_GH_PRVIEW:-}" == fail ]] && { echo "GraphQL: Could not resolve to a PullRequest" >&2; exit 1 ;}
 	               echo "${FAKE_GH_HEAD:-$(git branch --show-current)}"     ## the PR's own head branch
 	               echo "${FAKE_GH_BASE:-dev}"                               ## ... the one it goes into, where pr merge puts it
-	               echo "${FAKE_GH_STATE:-OPEN}" ;;                          ## ... and whether it is still open
+	               echo "${FAKE_GH_STATE:-OPEN}"                             ## ... whether it is still open
+	               ## ... and whether it is on a fork, when asked, since gh prints only the fields asked for.
+	               if [[ "$*" == *isCrossRepository* ]]; then if [[ -n "${FAKE_GH_FORK:-}" ]]; then echo true; else echo false; fi; fi ;;
 	"pr diff")     echo "diff --git a/work.txt b/work.txt" ;;
 	"pr merge")    ## Merge the branch into the base, then drop it from the remote. Real gh does the delete
 	               ## over the API, so the caller's origin/* copy survives it - restore the ref to match.
@@ -3690,6 +3802,14 @@ case "$1 $2" in
 	               ## It merges what ORIGIN has, not the local branch - the whole point of the
 	               ## unpushed-commit guard - and deletes the local copy too, with -D, like gh does.
 	               prBranch="${FAKE_GH_HEAD:-$(git branch --show-current)}"
+	               ## A fork's PR is merged from the refs/pull/<n>/head GitHub keeps on origin. gh skips
+	               ## the git host's delete for it, and with --delete-branch still takes ours of that name.
+	               if [[ -n "${FAKE_GH_FORK:-}" ]]; then
+	                 prKeep="$(git ls-remote origin "refs/pull/$3/head")"
+	                 git push --quiet origin "${prKeep%%[[:space:]]*}:refs/heads/${FAKE_GH_BASE:-dev}"
+	                 [[ " $* " == *" --delete-branch "* && "${prBranch}" != "$(git branch --show-current)" ]] && git branch -D "${prBranch}" >/dev/null
+	                 exit 0
+	               fi
 	               prKeep="$(git rev-parse "refs/remotes/origin/${prBranch}")"
 	               git push --quiet origin "${prKeep}:refs/heads/${FAKE_GH_BASE:-dev}"
 	               git push --quiet origin --delete "${prBranch}"
@@ -4263,8 +4383,21 @@ GHEOF
 		bash -c "cd '${hn}/c' && '${gitsby}' -q -NoFetch br hotfix code >/dev/null 2>&1; echo v2 > src-go/main.go; '${gitsby}' -q -NoFetch br land 'Fix' 2>&1"
 	## An empty answer read as nothing changed, when the comparison couldn't run at all.
 	( cd "${hn}/c" || exit 1; git checkout --quiet main && git tag -a v1.0.0 -m v1.0.0 && git checkout --quiet --orphan hotfix/stray && git rm -rfq . && echo x > stray.go && git add stray.go && git commit --quiet -m stray )
-	fAssertOut "[dcnqy] a hotfix that can't be compared says so"  "'hotfix/stray' shares no history with 'main'" \
+	fAssertOut "[dcnqy] a hotfix that shares no history with main is refused, not read as unchanged"  "'hotfix/stray' shares no history with 'main'" \
 		bash -c "cd '${hn}/c' && '${gitsby}' -q -NoFetch br land 'Stray' 2>&1"
+	## The refusal above comes before the comparison, so only a diff that fails on its own reaches
+	## the note now. A git that refuses just that diff stands in for one.
+	local cmpShim="${work}/$1-cmpshim"
+	mkdir -p "${cmpShim}"
+	fStub "${cmpShim}/git" <<-EOF
+		#!/usr/bin/env bash
+		for a in "\$@"; do
+			if [[ "\${a}" == *'...refs/heads/hotfix/nocompare' ]]; then echo "fatal: diff refused for this check" >&2; exit 128; fi
+		done
+		exec '$(command -v git)' "\$@"
+	EOF
+	fAssertOut "[dfq48] a hotfix whose comparison fails says it couldn't tell"  "NOTE: couldn't tell whether this hotfix changes more than documentation\." \
+		bash -c "cd '${hfc}' && '${gitsby}' -q -NoFetch br hotfix nocompare >/dev/null 2>&1; echo v5 > src-go/main.go; env PATH='${cmpShim}':\"\${PATH}\" '${gitsby}' -q -NoFetch br land 'No compare' 2>&1"
 	## A back-merge conflict must leave dev untouched and the tree clean, not half-merged.
 	fAssert    "[daenh] a conflicting back-merge leaves dev alone"  \
 		bash -c "cd '${hfc}' && git checkout --quiet dev && echo devtext > README.md && git commit --quiet -am devtext && git push --quiet && '${gitsby}' -q -NoFetch br hotfix clash >/dev/null 2>&1 && echo hftext > README.md && '${gitsby}' -q -NoFetch update wip >/dev/null 2>&1 && '${gitsby}' -q -NoFetch br land Clash >/dev/null 2>&1; [[ \"\$(git show origin/main:README.md)\" == hftext && \"\$(git show origin/dev:README.md)\" == devtext ]]"
@@ -4631,6 +4764,7 @@ GHEOF
 	)
 	fAssert        "[dfnbj] pr ok of a hotfix PR opened against dev runs"  bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=hotfix/pbx FAKE_GH_BASE=dev '${gitsby}' -q pr ok 7 > '${gh}/prbase1.log' 2>&1"
 	fAssertNotPlan "[dfnbk] and checks out dev, where it went, not main"  'git checkout main'  cat "${gh}/prbase1.log"
+	fAssert        "[dfq5b] and names the PR's branch and its base above the plan"  bash -c "grep -qE '^Pull request \\.+: #7 from hotfix/pbx into dev\$' <<< \"\$(awk '/Going to do/{exit} 1' '${gh}/prbase1.log')\""
 	fAssertNotPlan "[dfnbm] and plans no back-merge, since main never got it"  'git merge origin/main'  cat "${gh}/prbase1.log"
 	fAssert        "[dfnbn] and ends on dev, with the fix in dev and not in main"  bash -c "cd '${pbc}' && [[ \"\$(git branch --show-current)\" == dev ]] && git cat-file -e origin/dev:fix.txt && ! git cat-file -e origin/main:fix.txt 2>/dev/null"
 	fAssertPlan    "[dfnbp] pr ok of a plain PR opened against main plans the back-merge"  'git merge origin/main' \
@@ -4655,6 +4789,30 @@ GHEOF
 		bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=main FAKE_GH_BASE=dev '${gitsby}' -q pr ok 9 2>&1 || true"
 	fAssertNotOut  "[dfnct] without the release hint, which is only for dev into main"  "as a release" \
 		bash -c "cd '${pbc}' && PATH='${ghp}' FAKE_GH_HEAD=main FAKE_GH_BASE=dev '${gitsby}' -q pr ok 9 2>&1 || true"
+	## A fork's pull request proposes the fork's branch, whatever it's called, and its merge takes
+	## nothing of origin's or ours. So one from a fork's main merges, and a branch here that only
+	## shares the name of a fork's isn't asked about or deleted. GitHub keeps the fork's commits on
+	## origin as refs/pull/<n>/head.
+	(
+		cd "${pbc}" || exit 1
+		git fetch --quiet origin && git checkout --quiet main
+		git checkout --quiet -b pbfork origin/dev && echo fork > fork.txt && git add --all && git commit --quiet -m fork
+		git push --quiet origin pbfork:refs/pull/10/head && git checkout --quiet main && git branch --quiet -D pbfork
+		git checkout --quiet -b pblocal main && echo mine > mine.txt && git add --all && git commit --quiet -m mine && git checkout --quiet main
+	)
+	local pbFork="PATH='${ghp}' FAKE_GH_FORK=1 FAKE_GH_BASE=dev"
+	fAssert        "[dfq0w] pr ok of a fork's PR from its main into dev runs"  bash -c "cd '${pbc}' && ${pbFork} FAKE_GH_HEAD=main FAKE_GH_LOG='${gh}/prfork.log' '${gitsby}' -q pr ok 10 > '${gh}/prfork1.log' 2>&1"
+	fAssertOut     "[dfq5c] and names it as a fork's branch"  "^Pull request \\.+: #10 from a fork's main into dev\$"  cat "${gh}/prfork1.log"
+	fAssert        "[dfq0x] and gh merges it with no branch delete"  bash -c "grep -q '^pr merge 10 --merge \[' '${gh}/prfork.log'"
+	fAssert        "[dfq0y] and main is kept here and on origin, with the fork's work in dev"  bash -c "cd '${pbc}' && git rev-parse --verify --quiet refs/heads/main >/dev/null && git ls-remote --exit-code --heads origin main >/dev/null && git cat-file -e origin/dev:fork.txt"
+	fAssert        "[dfq0z] and stays on main, which it pulls, since origin's main is still there"  bash -c "cd '${pbc}' && [[ \"\$(git branch --show-current)\" == main ]] && ! grep -q 'git checkout' '${gh}/prfork1.log'"
+	(
+		cd "${pbc}" || exit 1
+		git checkout --quiet -b pbfork2 origin/dev && echo fork2 > fork2.txt && git add --all && git commit --quiet -m fork2
+		git push --quiet origin pbfork2:refs/pull/11/head && git checkout --quiet main && git branch --quiet -D pbfork2
+	)
+	fAssert        "[dfq10] a fork's PR from a branch named like one only here runs, with no push asked for"  bash -c "cd '${pbc}' && ${pbFork} FAKE_GH_HEAD=pblocal '${gitsby}' -q pr ok 11 >/dev/null 2>&1"
+	fAssert        "[dfq11] and that branch is kept here, with its own commit"  bash -c "cd '${pbc}' && [[ \"\$(git log -1 --pretty=%s pblocal)\" == mine ]] && git cat-file -e origin/dev:fork2.txt"
 
 	## The bash version gate. Bash build only - the PowerShell one needs no bash at all.
 	local vg="${work}/vgate"
@@ -5567,8 +5725,10 @@ GHEOF
 	git clone --quiet "${cf}/origin.git" "${cf}/theirs"
 	( cd "${cf}/theirs" && printf 'line1\nTHEIRS\nline3\n' > shared.txt && git add --all && git commit --quiet -m "their edit" && git push --quiet origin main )
 	( cd "${cf}/mine" && printf 'line1\nMINE\nline3\n' > shared.txt )
-	fAssertFail "[daf7w] update refuses a conflicted autostash reapply"  bash -c "cd '${cf}/mine' && '${gitsby}' -q update 'mine'"
-	fAssertOut  "[daf7x] and names the conflicted file"  'shared\.txt'  bash -c "cd '${cf}/mine' && '${gitsby}' -q update 'mine' 2>&1"
+	## The refusal's own list, from the first run: the status block names the file too, and a
+	## second run's names it as UU, so a grep of all output passed with the list taken out.
+	fAssertFail "[daf7w] update refuses a conflicted autostash reapply"  bash -c "cd '${cf}/mine' && '${gitsby}' -q update 'mine' > '${cf}/update.out' 2>&1"
+	fAssert     "[daf7x] and names the conflicted file"  bash -c "grep -qx '    shared\.txt' <<< \"\$(grep -A1 -F 'Unresolved conflicts; nothing was committed:' '${cf}/update.out')\""
 	fAssert     "[daf7y] and commits no conflict markers"  bash -c "cd '${cf}/mine' && ! git log -p | grep -q '<<<<<<<'"
 	fAssert     "[daf7z] and leaves the merge unresolved for the user"  bash -c "cd '${cf}/mine' && [[ -n \"\$(git diff --name-only --diff-filter=U)\" ]]"
 
@@ -8166,7 +8326,7 @@ LGEOF
 	cp "${root}/cicd/utility/backlog-check.bash" "${blc}/cicd/utility/"
 	git init -q "${blc}"
 	printf '%s\n' '- Code Review 20260101 item 1: open' $'\t- Status: Queued' $'\t- Origin: x' \
-		'- Code Review 20260101 item 2: closed' $'\t- Status: Closed' $'\t- Origin: x' \
+		'- Code Review 20260101 item 2: closed' $'\t- Status: Closed' $'\t- Origin: x' $'\t- Acceptance signoff: Self-closed: x' $'\t- Closed: 20260101-120000' \
 		'- ✅ Code review 20260102' $'\t- 🔘 Code Review 20260102 item 1: open' $'\t\t- Origin: x' \
 		$'\t- ✅ Code Review 20260102 item 2: closed' $'\t\t- Origin: x' > "${blc}/backlog.md"
 	fAssertOut "[defny] the backlog gate counts the open review items, and only those" '\(2 listed\)$' \
@@ -8310,6 +8470,9 @@ LGEOF
 		chmod +x "${sc}/cicd/utility/spawn-count-near.bash"
 		fAssert "[ddf82] and passes a count one over its expected one" \
 			bash -c "out=\$('${sc}/cicd/utility/spawn-count-near.bash' 2>&1) && grep -qE '^  PASS dbftf status: 4\$' <<< \"\$out\""
+		## But names it, and only it, or a rise in our own code sits in the headroom until the next one fails it.
+		fAssert "[dfq1m] and names a count over its expected one that the headroom let pass" \
+			bash -c "out=\$('${sc}/cicd/utility/spawn-count-near.bash' 2>&1) && grep -qE '^  1 over their expected count, inside the headroom \(dbftf\); ' <<< \"\$out\""
 		## A command that stops early starts fewer processes, which would read as a gain.
 		cp -R "${sc}" "${work}/scx"
 		fStub "${work}/scx/src-go/gitsby" <<-'EOF'
@@ -8444,11 +8607,32 @@ LGEOF
 		bash -c "out=\$('${bl}/cicd/utility/backlog-check.bash' -q --backlog '${bl}/project/no-origin.md' 2>&1); [[ \$? == 1 ]] && grep -qxF '  Code Review 20260101 item 4' <<< \"\$out\" && ! grep -qF 'item 1' <<< \"\$out\""
 	## The new item format: a top-level title with its rows a tab in, open by its Status row. The
 	## gate read only the old one, so a round filed this way was never checked.
-	printf '# Backlog\n\n## Issues\n\n- Code Review 20260102 item 1: x\n\t- Status: Waiting on signoff\n\t- Origin: y\n\n- Code Review 20260102 item 2: x\n\t- Status: Queued\n\t- Why: z\n\n- Code Review 20260102 enhancement 3: x\n\t- Status: Closed\n\t- Closed reason: Done\n\n- Code Review 20260102 item 4: x\n\t- Status: Closed\n\t- Closed reason: Moot\n\n- Code Review 20260102 item 5: x\n\t- Status: Canceled\n\n- Code Review 20260102 item 6: x\n\t- Status: Deferred\n\n- Another item\n\t- Status: Queued\n\n## Old format\n\n\t- 🔘 Code Review 20260101 item 1: x\n\t\t- Origin: y\n' > "${bl}/project/new-format.md"
+	printf '# Backlog\n\n## Issues\n\n- Code Review 20260102 item 1: x\n\t- Status: Waiting on signoff\n\t- Origin: y\n\n- Code Review 20260102 item 2: x\n\t- Status: Queued\n\t- Why: z\n\n- Code Review 20260102 enhancement 3: x\n\t- Status: Closed\n\t- Closed reason: Done\n\t- Acceptance signoff: Self-closed: x\n\t- Closed: 20260102-120000\n\n- Code Review 20260102 item 4: x\n\t- Status: Closed\n\t- Closed reason: Moot\n\t- Acceptance signoff: Self-closed: x\n\t- Closed: 20260102-120000\n\n- Code Review 20260102 item 5: x\n\t- Status: Canceled\n\n- Code Review 20260102 item 6: x\n\t- Status: Deferred\n\n- Another item\n\t- Status: Queued\n\n## Old format\n\n\t- 🔘 Code Review 20260101 item 1: x\n\t\t- Origin: y\n' > "${bl}/project/new-format.md"
 	fAssertOut "[ddf4q] and counts open review items in the new format too" 'Origin: present on every open review item \(3 listed\)' \
 		bash -c "sed '/item 2: x/,/Why: z/ s/Why: z/Origin: y/' '${bl}/project/new-format.md' > '${bl}/project/new-format-ok.md' && '${bl}/cicd/utility/backlog-check.bash' --backlog '${bl}/project/new-format-ok.md'"
 	fAssert "[ddf4r] and fails an open one with no Origin row, by name, leaving the closed ones be" \
 		bash -c "out=\$('${bl}/cicd/utility/backlog-check.bash' -q --backlog '${bl}/project/new-format.md' 2>&1); [[ \$? == 1 ]] && [[ \$(grep -c '^  ' <<< \"\$out\") == 1 ]] && grep -qxF '  Code Review 20260102 item 2' <<< \"\$out\""
+	## A closed item with no Closed: date. 4 closed by hand went unseen, since no rule read the row.
+	## Closed reason: isn't it, and old-format items, open ones and Canceled ones have none to give.
+	printf '%s\n' '# Backlog' '' '## Issues' '' '- Bug one' $'\t- ID: 2026010100000001' $'\t- Status: Closed' $'\t- Closed reason: Done' $'\t- Acceptance signoff: Self-closed: x' '' \
+		'- Bug two' $'\t- ID: 2026010100000002' $'\t- Status: Closed' $'\t- Closed reason: Done' $'\t- Acceptance signoff: Self-closed: x' $'\t- Closed: 20260101-120000' '' \
+		'- Bug three' $'\t- Status: Queued' '' '- Bug four' $'\t- Status: Canceled' '' '- Bug five' $'\t- Status: Closed' $'\t- Acceptance signoff: Self-closed: x' '' \
+		'## Old format' '' $'\t- ✅ Bug six' $'\t\t- Status: Closed' > "${bl}/project/no-closed.md"
+	fAssert "[dfq27] and fails a closed item with no Closed row, by ID where it has one, leaving the rest be" \
+		bash -c "out=\$('${bl}/cicd/utility/backlog-check.bash' -q --backlog '${bl}/project/no-closed.md' 2>&1); [[ \$? == 1 ]] && [[ \$(grep -c '^  ' <<< \"\$out\") == 2 ]] && grep -qxF '  2026010100000001 Bug one' <<< \"\$out\" && grep -qxF '  Bug five' <<< \"\$out\""
+	fAssertOut "[dfq28] and passes once each has one, counting the closed items" 'Closed: present on every closed item \(3 listed\)' \
+		bash -c "awk '{ print } /^\t- Status: Closed\$/ { print \"\t- Closed: 20260101-120000\" }' '${bl}/project/no-closed.md' > '${bl}/project/no-closed-ok.md' && '${bl}/cicd/utility/backlog-check.bash' --backlog '${bl}/project/no-closed-ok.md'"
+	## A closed item with no Acceptance signoff row saying why it closed. 41 closed by hand had none.
+	## An empty row says nothing, and a sub-bullet a level down isn't the item's row.
+	printf '%s\n' '# Backlog' '' '## Issues' '' '- Bug one' $'\t- ID: 2026010100000001' $'\t- Status: Closed' $'\t- Closed: 20260101-120000' $'\t- Progress log:' $'\t\t- Acceptance signoff: x' '' \
+		'- Bug two' $'\t- ID: 2026010100000002' $'\t- Status: Closed' $'\t- Acceptance signoff: Self-closed: x' $'\t- Closed: 20260101-120000' '' \
+		'- Bug three' $'\t- Status: Closed' $'\t- Acceptance signoff: ' $'\t- Closed: 20260101-120000' '' \
+		'- Bug four' $'\t- Status: Queued' '' '- Bug five' $'\t- Status: Canceled' '' \
+		'## Old format' '' $'\t- ✅ Bug six' $'\t\t- Status: Closed' > "${bl}/project/no-signoff.md"
+	fAssert "[dfq2k] and fails a closed item with no Acceptance signoff row, or an empty one, by ID where it has one, leaving the rest be" \
+		bash -c "out=\$('${bl}/cicd/utility/backlog-check.bash' -q --backlog '${bl}/project/no-signoff.md' 2>&1); [[ \$? == 1 ]] && [[ \$(grep -c '^  ' <<< \"\$out\") == 2 ]] && grep -qxF '  2026010100000001 Bug one' <<< \"\$out\" && grep -qxF '  Bug three' <<< \"\$out\""
+	fAssertOut "[dfq2m] and passes once each says why, counting the closed items" 'Acceptance signoff: present on every closed item \(3 listed\)' \
+		bash -c "awk '/^\t- Acceptance signoff:/ { next } { print } /^\t- Status: Closed\$/ { print \"\t- Acceptance signoff: Self-closed: x\" }' '${bl}/project/no-signoff.md' > '${bl}/project/no-signoff-ok.md' && '${bl}/cicd/utility/backlog-check.bash' --backlog '${bl}/project/no-signoff-ok.md'"
 	## A test is known by its ID, so a new label on an old ID is an edit. The fixture lines spell
 	## the check names through %s, or the ID gate below would read them as checks of this file.
 	local bi="${work}/bl-ids" chk=fAssert ref=fRefuse mea=fMeasure
@@ -8532,6 +8716,8 @@ LGEOF
 		test -z "$(fKillByName)"
 	fAssert "[deyrt] no tracked bash outside legacy/ pipes into head or grep -q where pipefail would see the writer's SIGPIPE" \
 		test -z "$(fEarlyClose)"
+	fAssert "[dfq49] every function the pipeline's bash defines is called somewhere in it" \
+		test -z "$(fUnusedFunctions)"
 	## CodeQL comes from the image, checked against the sum config.bash keeps beside its version.
 	fAssert "[de55x] the image installs CodeQL's Go bundle and checks it against config.bash's sum" \
 		bash -c "grep -qx 'ARG CODEQL_SHA256' '${root}/cicd/container/Dockerfile' && grep -q 'codeql-bundle-go-linux64\.tar\.zst' '${root}/cicd/container/Dockerfile' && grep -qF 'echo \"\${CODEQL_SHA256}  cq.tar.zst\" | sha256sum -c -' '${root}/cicd/container/Dockerfile' && grep -qE '^CODEQL_SHA256=\"[0-9a-f]{64}\"\$' '${root}/cicd/config.bash'"
@@ -8544,6 +8730,16 @@ LGEOF
 		fPyYamlFromLock
 	fAssert "[df50y] markdownlint-cli and its packages come from the lock, pinned by sha512, at the version config.bash records, and the image runs none of their scripts" \
 		fMarkdownlintFromLock
+	## awk with no input exits 0, and sh has no pipefail, so a check reading only in its main rule passed on nothing.
+	fAssert "[dfq4k] each tool version check in the image's recipe fails on another version and on a missing tool" \
+		test -z "$(fImageVersionChecks)"
+	## The image's run has the caller's uid, which has no passwd entry there, and ssh won't start without one.
+	## printenv, since fGateRun's subshells set the marker and shellcheck reads that as lost here.
+	if [[ -n "$(printenv GITSBY_CICD_IN_CONTAINER)" ]]; then
+		fAssert "[dfq4m] in the image, ssh starts for the run's uid"  ssh -F /dev/null -G stall.example.test
+	else
+		fSkip "[dfq4m] runs in the image"
+	fi
 	## What --leakcheck makes of CodeQL's report, on reports written here.
 	if command -v python3 >/dev/null 2>&1; then
 		local cqAll="main.go main_test.go vendor/x/y.go" cqMissing=""
@@ -8817,6 +9013,10 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dcmam] and runs every lint check and the unit tests" \
 			fGateCalled '^shellcheck [^-]' '^markdownlint ' '^python3 -m py_compile' 'Invoke-ScriptAnalyzer -Path' '^gofmt -l' \
 				'^go vet -p [0-9]+ ' '^staticcheck ' '^golangci-lint run --concurrency [0-9]+ ' '^gen-winres\.bash --check -q' '^backlog-check\.bash -q' '^go test -race -p [0-9]+ '
+		fAssert "[dfq3x] and staticcheck's unused check without the tests"  fGateCalled '^staticcheck -tests=false -checks U1000 \./\.\.\.$'
+		: > "${gateFail}/staticcheck-tests"
+		fAssert "[dfq3y] which fails the gate on code only a test calls"  fGateSays 1 'staticcheck: code only the tests call' --no-container --gate
+		rm -f -- "${gateFail:?}/staticcheck-tests"
 		## Each pwsh start costs about a second, and the version check used to start its own.
 		fAssert "[ddf5g] and starts pwsh once, handing it every PowerShell file" \
 			bash -c "[[ \$(grep -c '^pwsh ' '${gateCalls}') == 1 ]] && grep '^pwsh ' '${gateCalls}' | grep -qF \"'install.ps1','cicd/utility/run-latest.ps1'\""
@@ -8893,6 +9093,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--leakcheck ' <<< \"\$out\" && grep -qE -- '^ +--no-leakcheck ' <<< \"\$out\""
 		fAssert "[de5m8] a run's temp files are gone once it ends, stopped or not"  fGateRunTmp
 		fAssert "[df33r] Ctrl+C, which stops the run log's tee too, still closes the step with FAIL and removes the run folder"  fGateCtrlC
+		fAssert "[dfq33] and so it does when the suite started with INT ignored, as a second copy started with '&' does"  fGateCtrlCIgnored
 		fAssert "[dee4y] --list prints the steps and each one's test IDs, and runs nothing"  fGateList
 		fAssert "[defmr] each step opens and closes with its time, numbered out of the steps that run, under a rule 79 wide"  fGateSteps
 		fAssert "[defms] a step that fails closes with FAIL"  fGateStepFail
@@ -9642,6 +9843,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 					p='${rtBin}':"\${PATH}"; [[ ! -e '${rtFail}/brewgo-'"\${host}" ]] || p='${rtSys}'
 					if [[ "\${host}" == b26 ]]; then exec env -u HOST_TEMP HOME="\${h}/home" TMPDIR="\${h}/" PATH="\${p}" "\${BASH}" -c "\${cmd//\/usr\/local\/bin/${rtUsrLocal}}"; fi
 					HOME="\${h}/home" HOST_TEMP="\${h}" PATH='${rtBin}':"\${PATH}" exec bash -c "\${cmd}" ;;
+				*'command -v wine'*) echo '@@gitsby-remote-tests@@'; echo yes ;;
 				*'command -v'*) echo '@@gitsby-remote-tests@@'; cat '${rtFail}/lacks-'"\${host}" 2>/dev/null || true ;;
 				*mkdir*) cat > /dev/null; echo '@@gitsby-remote-tests@@'; [[ ! -e '${rtFail}/nomkdir-'"\${host}" ]] || exit 1; echo made ;;
 				*-test.v*)
@@ -9768,7 +9970,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[ddg8j] a failing Go test fails the run, with its line and its output" \
 			bash -c "[[ '${rtRc}' == 1 ]] && grep -qxF '  FAIL aaaab TestA' '${rtOut}' && grep -qF 'a_test.go:4: boom' '${rtOut}' && grep -qxF '  passed on: b26; failed on: b29w' '${rtOut}'"
 		fAssert "[dee74] the Windows box runs its Go tests on half its cores, never under 1, in the BelowNormal class" \
-			bash -c "grep -qF 'ssh b29w set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo @@gitsby-remote-tests@@& cd /d ' '${rtLog}' && grep -qE '^ssh b29w .* && start \"\" /belownormal /b /wait gitsby-test\.exe -test\.v& call exit %\^ERRORLEVEL%\$' '${rtLog}'"
+			bash -c "grep -qF 'ssh b29w set /a GOMAXPROCS=%NUMBER_OF_PROCESSORS%/2 >nul& (if %NUMBER_OF_PROCESSORS% LSS 2 set GOMAXPROCS=1)& echo @@gitsby-remote-tests@@& cd /d ' '${rtLog}' && grep -qE '^ssh b29w .* && start \"\" /belownormal /b /wait gitsby-test\.exe -test\.timeout=[0-9]+s -test\.v& call exit %\^ERRORLEVEL%\$' '${rtLog}'"
 		: > "${rtFail}/gofail0-b29w"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}/gofail0-b29w"
@@ -9826,6 +10028,14 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			bash -c "grep -qE '^ssh bsdtest@vmFreeBSD echo @@gitsby-remote-tests@@; .*cd \"[\$]d/tree\" && [\$]lo bash cicd/test\.bash' '${rtLog}' && grep -qE '^ssh tester@vmDebARM64 echo @@gitsby-remote-tests@@; .*cd \"[\$]d/tree\" && [\$]lo bash cicd/test\.bash' '${rtLog}' && grep -q '^ssh bsdtest@vmFreeBSD .*tar -xf .*go mod download' '${rtLog}' && grep -qF '  vmDebARM64: test.bash against the linux/arm64 build' '${rtOut}'"
 		fAssert "[dedpg] each Unix box's copy goes under its temp root too, not its home" \
 			bash -c "[[ -f '${rtBsd}/.gitsby-remote-tests' && -f '${rtArm}/.gitsby-remote-tests' && ! -e '${rtBsd%/*}/home/gitsby-remote-tests' && ! -e '${rtArm%/*}/home/gitsby-remote-tests' ]]"
+		fAssert "[dfq5x] every box's Go test run has config.bash's time limit, so a hung test fails with its stacks"  fRemoteGoLimited 4
+		echo 'declare -gA REMOTE_UNIX_WINE=([vmDebARM64]="windows/arm64")' >> "${rt}/cicd/config.bash"
+		fRemoteRun "${rtBins[@]}"
+		fAssert "[dfq5y] the Go test run under Wine has its own, longer limit, inside a Wine limit 300 s longer"  fRemoteWineLimited
+		fRemoteConfig
+		local rtLimits=0
+		fRemoteLimitRefused REMOTE_GO_TEST_TIMEOUT && fRemoteLimitRefused REMOTE_GO_TEST_TIMEOUT_WINE && rtLimits=1
+		fAssert "[dfq5z] a Go test limit that isn't whole seconds, native or Wine, is refused before any box is reached"  test "${rtLimits}" == 1
 		echo 'go ' > "${rtFail}/lacks-tester@vmDebARM64"
 		fRemoteRun "${rtBins[@]}"
 		rm -f -- "${rtFail:?}/lacks-tester@vmDebARM64"
@@ -10391,10 +10601,23 @@ GLEOF
 	## The base comes from the git host, through each tool's own field for it.
 	fAssertOut "[dfnbv] pr ok reads the PR's base through tea" "Branch '-tb' starts with a dash" \
 		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_HEAD=feat FAKE_TEA_BASE=-tb '${gitsby}' -q -NoFetch pr ok 7 2>&1 || true"
+	## A fork's main isn't origin's, so it isn't refused as a protected branch. It gets as far as
+	## the base this clone has no copy of. tea puts the fork's owner before the branch.
+	fAssertOut "[dfq12] pr ok reads a fork's head through tea, and doesn't refuse its main"  "goes into 'tbgone', which this clone has no copy of" \
+		bash -c "cd '${fgRepo}' && PATH='${fgPath}' FAKE_TEA_HEAD=someone:main FAKE_TEA_BASE=tbgone '${gitsby}' -q -NoFetch pr ok 7 2>&1 || true"
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssertOut "[dfnbw] and through glab, where a merge request with no target_branch can't be read" "Can't read PR #7" \
 		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
 		'{"iid":7,"state":"opened","source_branch":"glfeat"}' "${gitsby}"
+	## glab gives the project each branch is in. They differ for a fork's merge request.
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssertOut "[dfq13] pr ok reads a fork's merge request through glab, and doesn't refuse its main"  "goes into 'glgone', which this clone has no copy of" \
+		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
+		'{"iid":7,"state":"opened","source_branch":"main","target_branch":"glgone","source_project_id":41,"target_project_id":7}' "${gitsby}"
+	# shellcheck disable=SC2016  ## the inner shell does the expanding.
+	fAssertOut "[dfq14] and refuses origin's own main, from the same project"  "PR #7 proposes 'main', a protected branch" \
+		bash -c 'cd "$1" && PATH="$2" FAKE_GLAB_VIEW="$3" "$4" -q -NoFetch pr ok 7 2>&1 || true' _ "${fgGl}" "${fgGlPath}" \
+		'{"iid":7,"state":"opened","source_branch":"main","target_branch":"glgone","source_project_id":7,"target_project_id":7}' "${gitsby}"
 	## glab's merge takes only GitLab's copy of the branch, so pr ok deletes ours after it, as gh and
 	## tea do in theirs. Origin is a GitLab ssh url, carried to a local bare by a stub ssh.
 	local fgMr="${fg}/glmerge"
@@ -11297,3 +11520,10 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261122 JC: pr ok merges into the base the git host gives the pull request, through gh, tea and glab, and owes dev a back-merge only when that base is main, [dfnbj] to [dfnbw]. Through glab it deletes the merged branch here too, and pr create's plan names --target-branch, [dfnbx] to [dfnc2].
 ##		- 20261122 JC: Finishing a release whose push was refused, from main with an edit or a new file, refuses and leaves them, rather than committing past the tag, [dfndg] to [dfndp].
 ##		- 20261122 JC: pr create asks about an open PR from the branch its push lands on, [dfngf]. raw gh pointed at another host says it isn't acting as the account, [dfngg] [dfngh]. pr ok --no-fetch on the PR's own branch moves to the merge target, [dfngj] [dfngk]. install.ps1's stored PATH update runs over a stand-in key, [dfngz].
+##		- 20261123 JC: pr ok merges a pull request from a fork's main, or from a fork's branch named like one only here, with no branch delete, and stays on the branch it ran from, through gh, [dfq0w] to [dfq11]. tea and glab read a fork's head, [dfq12] to [dfq14].
+##		- 20261123 JC: The Ctrl+C check puts INT back to default for its run, since a suite started with INT ignored passed that down, [dfq33].
+##		- 20261123 JC: Every check that brings no gh of its own gets the suite's, logged in nowhere, rather than the box's, [dfq34].
+##		- 20261123 JC: Each tool version check in the image's recipe fails on a missing tool, [dfq4k]. ssh starts for the run's uid in the image, [dfq4m].
+##		- 20261123 JC: pr ok names the pull request's branch and its base above the plan, a fork's too, [dfq5b] [dfq5c].
+##		- 20261124 JC: Every stage 7 Go test run passes config.bash's time limit, under Wine too, and a limit that isn't whole seconds is refused, [dfq5x] [dfq5y] [dfq5z].
+##		- 20261124 JC: The run under Wine has its own, longer limit, [dfq5y] [dfq5z].

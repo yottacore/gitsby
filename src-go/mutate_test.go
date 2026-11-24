@@ -11,11 +11,14 @@ package main
 
 import (
 	"cmp"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -174,16 +177,17 @@ func TestPlannedPushDisp(t *testing.T) { // [dfk0y]
 	}
 }
 
-// Every mutating command that pushes the branch it stands on lists that push in
-// plannedPushes, which the guards before the plan read. One left out commits and
-// then has git refuse the push, as release and repo connect did. noPush is the
-// rest, so a new command fails here until it's put on one side.
+// Every mutating command that pushes lists its pushes in plannedPushes, which the
+// guards before the plan read. One left out commits and then has git refuse the
+// push, as release and repo connect did. noPush is the rest, so a new command
+// fails here until it's put on one side. pr ok pushes only dev's back-merge, which
+// TestOtherBranchPushes covers.
 func TestPlannedPushesEveryCommand(t *testing.T) { // [dfk0z]
 	_, clone := gitTestRepo(t)
 	runGit(t, clone, "checkout", "-q", "-b", "feat")
 	runGit(t, clone, "push", "-q", "-u", "origin", "feat")
 	t.Chdir(clone)
-	want := map[string]string{"sync": "park", "br-switch": "park", "br-create": "park", "br-hotfix": "park", "br-merge": "park", "pr create": "park", "release": "park", "repo-create": "connect", "repo-connect": "connect"}
+	want := map[string][]string{"sync": {"park"}, "br-switch": {"park"}, "br-create": {"park"}, "br-hotfix": {"park"}, "br-merge": {"park", "merge"}, "pr create": {"park"}, "release": {"park", "release"}, "repo-create": {"connect"}, "repo-connect": {"connect"}}
 	noPush := map[string]bool{"pullcom": true, "br-prune": true, "pr ok": true, "repo-clone": true, "repo-url": true, "account-apply": true, "account-set": true, "account-unset": true}
 	seen := map[string]bool{}
 	for _, u := range usages {
@@ -231,11 +235,11 @@ func TestPlannedPushesEveryCommand(t *testing.T) { // [dfk0z]
 			kinds = append(kinds, p.kind)
 		}
 		switch {
-		case want[key] != "" && !slices.Equal(kinds, []string{want[key]}):
+		case want[key] != nil && !slices.Equal(kinds, want[key]):
 			t.Errorf("%s: plannedPushes kinds = %q, want %q", key, kinds, want[key])
-		case want[key] == "" && !noPush[key]:
-			t.Errorf("%s: a mutating command in neither list; say whether it pushes the current branch", key)
-		case want[key] == "" && len(kinds) > 0:
+		case want[key] == nil && !noPush[key]:
+			t.Errorf("%s: a mutating command in neither list; say whether it pushes", key)
+		case want[key] == nil && len(kinds) > 0:
 			t.Errorf("%s: plannedPushes kinds = %q, want none", key, kinds)
 		}
 	}
@@ -243,6 +247,110 @@ func TestPlannedPushesEveryCommand(t *testing.T) { // [dfk0z]
 		if !seen[key] {
 			t.Errorf("%s: no longer settles from usages", key)
 		}
+	}
+}
+
+// A push of a branch the command checks out later is on the list too: br merge's
+// target, the back-merge into dev, and release's default branch and dev. Its plan
+// line names where it lands, checked against the push the step builds once the
+// branch is checked out, and one git would refuse is refused before the plan. A
+// target not here yet goes where git's rule sends it once the checkout makes it.
+func TestOtherBranchPushes(t *testing.T) { // [dfq6b]
+	origin, clone := gitTestRepo(t)
+	runGit(t, clone, "push", "-q", "origin", "main:dev", "main:up")
+	runGit(t, clone, "remote", "add", "fork", origin)
+	runGit(t, clone, "fetch", "-q", "--all")
+	runGit(t, clone, "checkout", "-q", "-b", "feat")
+	runGit(t, clone, "push", "-q", "-u", "origin", "feat")
+	runGit(t, clone, "checkout", "-q", "-b", "hotfix/x", "main")
+	runGit(t, clone, "push", "-q", "-u", "origin", "hotfix/x")
+	t.Chdir(clone)
+	type push struct{ kind, branch, disp string }
+	tests := []struct {
+		name, from, cmd, sub string
+		localDev             bool
+		config               [][2]string
+		want                 []push
+		refused              string
+	}{
+		{"merge, dev here", "feat", "br-merge", "", true, nil,
+			[]push{{"park", "feat", "git push (branch 'feat') *"}, {"merge", "dev", "git push (branch 'dev') *"}}, ""},
+		{"merge, dev not here", "feat", "br-merge", "", false, nil,
+			[]push{{"park", "feat", "git push (branch 'feat') *"}, {"merge", "dev", "git push (branch 'dev') *"}}, ""},
+		{"merge, dev not here, push remote", "feat", "br-merge", "", false, [][2]string{{"remote.pushDefault", "fork"}},
+			[]push{{"park", "feat", "git push (branch 'feat', to 'feat' on 'fork') *"}, {"merge", "dev", "git push (branch 'dev', to 'dev' on 'fork') *"}}, ""},
+		{"merge, dev not here, its own push remote", "feat", "br-merge", "", false, [][2]string{{"branch.dev.pushRemote", "fork"}},
+			[]push{{"park", "feat", "git push (branch 'feat') *"}, {"merge", "dev", "git push (branch 'dev', to 'dev' on 'fork') *"}}, ""},
+		{"merge, dev not here, renaming refspec", "feat", "br-merge", "", false, [][2]string{{"remote.origin.push", "refs/heads/dev:refs/heads/other"}},
+			[]push{{"park", "feat", "git push (branch 'feat') *"}, {"merge", "dev", "git push (branch 'dev', to 'other') *"}}, ""},
+		{"merge, dev tracks another name, upstream", "feat", "br-merge", "", true, [][2]string{{"branch.dev.merge", "refs/heads/up"}, {"push.default", "upstream"}},
+			[]push{{"park", "feat", "git push (branch 'feat') *"}, {"merge", "dev", "git push (branch 'dev', to 'up') *"}}, ""},
+		{"merge, dev tracks another name, simple", "feat", "br-merge", "", true, [][2]string{{"branch.dev.merge", "refs/heads/up"}},
+			[]push{{"park", "feat", "git push (branch 'feat') *"}, {"merge", "dev", "git push (branch 'dev') *"}}, "'git branch --unset-upstream dev'"},
+		{"hotfix merge and back-merge", "hotfix/x", "br-merge", "", true, nil,
+			[]push{{"park", "hotfix/x", "git push (branch 'hotfix/x') *"}, {"merge", "main", "git push (branch 'main') *"}, {"back-merge", "dev", "git push (branch 'dev') *"}}, ""},
+		{"pr ok back-merge", "feat", "pr", "ok", true, [][2]string{{"branch.dev.merge", "refs/heads/up"}, {"push.default", "upstream"}},
+			[]push{{"back-merge", "dev", "git push (branch 'dev', to 'up') *"}}, ""},
+		{"pr ok back-merge, simple", "feat", "pr", "ok", true, [][2]string{{"branch.dev.merge", "refs/heads/up"}},
+			[]push{{"back-merge", "dev", "git push (branch 'dev') *"}}, "'git branch --unset-upstream dev'"},
+		{"release", "feat", "release", "", true, nil,
+			[]push{{"park", "feat", "git push (branch 'feat') *"}, {"release", "main", "git push (branch 'main') *"}, {"release", "dev", "git push (branch 'dev') *"}}, ""},
+		{"release, main tracks another name", "feat", "release", "", true, [][2]string{{"branch.main.merge", "refs/heads/up"}},
+			[]push{{"park", "feat", "git push (branch 'feat') *"}, {"release", "main", "git push (branch 'main') *"}, {"release", "dev", "git push (branch 'dev') *"}}, "'git branch --unset-upstream main'"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.localDev {
+				runGit(t, clone, "branch", "-q", "--track", "dev", "origin/dev")
+			}
+			runGit(t, clone, "checkout", "-q", tc.from)
+			for _, kv := range tc.config {
+				runGit(t, clone, "config", kv[0], kv[1])
+			}
+			t.Cleanup(func() {
+				runGit(t, clone, "checkout", "-q", "feat")
+				for _, kv := range tc.config {
+					runGit(t, clone, "config", "--unset", kv[0])
+				}
+				runGit(t, clone, "config", "branch.main.merge", "refs/heads/main")
+				runGit(t, clone, "branch", "-q", "-D", "dev")
+			})
+			a := newApp(newPrinter())
+			a.cmd.name, a.pr.sub = tc.cmd, tc.sub
+			if tc.sub == "ok" {
+				a.pr.headBranch, a.pr.baseBranch = "hotfix/x", "main"
+			}
+			var got []push
+			for _, p := range a.plannedPushes() {
+				got = append(got, push{p.kind, p.branch, p.disp()})
+				if p.kind != "park" && a.pushLine(p.kind, p.branch) != p.disp() {
+					t.Errorf("pushLine(%q, %q) = %q, want %q", p.kind, p.branch, a.pushLine(p.kind, p.branch), p.disp())
+				}
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("plannedPushes = %q, want %q", got, tc.want)
+			}
+			err := a.refusePlannedPushes()
+			switch {
+			case tc.refused == "" && err != nil:
+				t.Errorf("refusePlannedPushes() = %v, want none", err)
+			case tc.refused != "" && (err == nil || !strings.Contains(err.Error(), tc.refused) || !strings.Contains(err.Error(), "Nothing was done")):
+				t.Errorf("refusePlannedPushes() = %v, want a refusal naming %s", err, tc.refused)
+			}
+			// The step pushes it from the branch, once the checkout made it.
+			for _, p := range tc.want {
+				if p.kind == "park" {
+					continue
+				}
+				runGit(t, clone, a.checkoutArgs(p.branch)...)
+				b := newApp(newPrinter())
+				if step := b.currentPush(p.kind).disp(); step != p.disp {
+					t.Errorf("%s: the step's push is %q, the plan's %q", p.branch, step, p.disp)
+				}
+				runGit(t, clone, "checkout", "-q", tc.from)
+				a.git.forget()
+			}
+		})
 	}
 }
 
@@ -528,35 +636,98 @@ func TestTreeDirtyUntrackedHidden(t *testing.T) { // [dfh4g]
 	}
 }
 
-// Every git status a check or the plan reads says which untracked files it wants,
-// so the user's status.showUntrackedFiles can't hide one that add will take.
-func TestStatusNamesUntracked(t *testing.T) { // [dfh4h]
+// gitSite is one git call or argument list in src-go: where it is, and the words
+// after the subcommand, with "" for any that isn't a string literal.
+type gitSite struct {
+	at   string
+	args []string
+}
+
+// gitSites finds every argument list in src-go that runs git's sub, by parsing
+// rather than by line, so global options ahead of it, -c and -C with their values,
+// and a call split over lines all count. A list that starts with sub counts too,
+// such as the one diffArgs builds. A list made at runtime isn't seen.
+func gitSites(t *testing.T, sub string) []gitSite {
+	t.Helper()
 	files, err := filepath.Glob("*.go")
 	if err != nil || len(files) < 10 {
 		t.Fatalf("found %d sources: %v", len(files), err)
 	}
-	call := regexp.MustCompile(`"git",\s*("-c",\s*"[^"]*",\s*)*"status"`)
-	found := 0
+	lit := func(e ast.Expr) (string, bool) {
+		b, ok := e.(*ast.BasicLit)
+		if !ok || b.Kind != token.STRING {
+			return "", false
+		}
+		s, err := strconv.Unquote(b.Value)
+		return s, err == nil
+	}
+	// git's global options that take their value as the next word.
+	valued := map[string]bool{"-C": true, "-c": true, "--git-dir": true, "--work-tree": true, "--namespace": true, "--config-env": true, "--super-prefix": true}
+	fset := token.NewFileSet()
+	var sites []gitSite
 	for _, file := range files {
 		if strings.HasSuffix(file, "_test.go") {
 			continue
 		}
-		src, err := os.ReadFile(file)
+		f, err := parser.ParseFile(fset, file, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for i, line := range strings.Split(string(src), "\n") {
-			if !call.MatchString(line) {
-				continue
+		ast.Inspect(f, func(n ast.Node) bool {
+			var list []ast.Expr
+			switch n := n.(type) {
+			case *ast.CallExpr:
+				list = n.Args
+			case *ast.CompositeLit:
+				list = n.Elts
+			default:
+				return true
 			}
-			found++
-			if !strings.Contains(line, `"--untracked-files=`) {
-				t.Errorf("%s:%d runs git status without --untracked-files: %s", file, i+1, strings.TrimSpace(line))
+			if len(list) == 0 {
+				return true
 			}
+			i := 0
+			if first, _ := lit(list[0]); first == "git" {
+				for i = 1; i < len(list); i++ {
+					word, ok := lit(list[i])
+					if !ok || !strings.HasPrefix(word, "-") {
+						break
+					}
+					if valued[word] {
+						i++
+					}
+				}
+			}
+			if i >= len(list) {
+				return true
+			}
+			if word, _ := lit(list[i]); word != sub {
+				return true
+			}
+			site := gitSite{at: fset.Position(list[i].Pos()).String()}
+			for _, e := range list[i+1:] {
+				word, _ := lit(e)
+				site.args = append(site.args, word)
+			}
+			sites = append(sites, site)
+			return true
+		})
+	}
+	return sites
+}
+
+// Every git status a check or the plan reads says which untracked files it wants,
+// so the user's status.showUntrackedFiles can't hide one that add will take. "no"
+// would hide them as the setting did.
+func TestStatusNamesUntracked(t *testing.T) { // [dfh4h]
+	sites := gitSites(t, "status")
+	for _, site := range sites {
+		if !slices.Contains(site.args, "--untracked-files=normal") && !slices.Contains(site.args, "--untracked-files=all") {
+			t.Errorf("%s runs git status without --untracked-files=normal or all: %q", site.at, site.args)
 		}
 	}
-	if found < 4 {
-		t.Errorf("found %d git status calls, want at least 4; the pattern no longer matches the source", found)
+	if len(sites) < 4 {
+		t.Errorf("found %d git status calls, want at least 4; the search no longer finds them", len(sites))
 	}
 }
 
@@ -649,12 +820,23 @@ func TestDiffReadsSeeSubmoduleMove(t *testing.T) { // [dfjwh]
 // Every git diff read in src-go goes through diffArgs, so no new one can come back
 // blind to the conflict or the edit [dfjwf] makes.
 func TestDiffReadsUseDiffArgs(t *testing.T) { // [dfjwg]
-	files, err := filepath.Glob("*.go")
-	if err != nil || len(files) < 10 {
-		t.Fatalf("found %d sources: %v", len(files), err)
+	want := []string{"--no-relative", "--no-textconv", "--no-ext-diff", "--ignore-submodules=none"}
+	helper := 0
+	for _, site := range gitSites(t, "diff") {
+		if slices.Equal(site.args, want) {
+			helper++
+			continue
+		}
+		t.Errorf("%s runs git diff without diffArgs: %q", site.at, site.args)
 	}
-	call := regexp.MustCompile(`("git",\s*|\[\]string\{)"diff"`)
-	helper, found := 0, 0
+	if helper != 1 {
+		t.Errorf("found %d diffArgs bodies, want 1", helper)
+	}
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
 	for _, file := range files {
 		if strings.HasSuffix(file, "_test.go") {
 			continue
@@ -663,22 +845,7 @@ func TestDiffReadsUseDiffArgs(t *testing.T) { // [dfjwg]
 		if err != nil {
 			t.Fatal(err)
 		}
-		for i, line := range strings.Split(string(src), "\n") {
-			if strings.Contains(line, "diffArgs(") && !strings.Contains(line, "func diffArgs(") {
-				found++
-			}
-			if !call.MatchString(line) {
-				continue
-			}
-			if strings.Contains(line, `"diff", "--no-relative", "--no-textconv", "--no-ext-diff", "--ignore-submodules=none"`) {
-				helper++
-				continue
-			}
-			t.Errorf("%s:%d runs git diff without diffArgs: %s", file, i+1, strings.TrimSpace(line))
-		}
-	}
-	if helper != 1 {
-		t.Errorf("found %d diffArgs bodies, want 1", helper)
+		found += strings.Count(string(src), "diffArgs(") - strings.Count(string(src), "func diffArgs(")
 	}
 	if found < 5 {
 		t.Errorf("found %d diffArgs calls, want at least 5; the pattern no longer matches the source", found)

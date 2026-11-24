@@ -28,13 +28,15 @@ COPY utility/include/safe-rm.sh /usr/local/lib/gitsby/safe-rm.sh
 # packages are what the demo renderer draws with, and python3-venv holds ruff and pip-audit.
 # Pillow isn't among them. It comes from the lock below, since trixie's has advisories
 # fixed only upstream. Apt's lists go in the step's folder, so they leave through the guard.
+# openssh-client is for the Go tests that run a real ssh. ssh won't start for a uid with no
+# passwd entry, as the run's is here, so cicd.bash gives it one through libnss-wrapper.
 RUN mkdir -p /tmp/gitsby/apt/partial \
 	&& apt-get -o Dir::State::Lists=/tmp/gitsby/apt update \
 	&& apt-get -o Dir::State::Lists=/tmp/gitsby/apt install -y --no-install-recommends \
 		bash ca-certificates curl openssl xz-utils zstd unzip gcc libc6-dev \
 		python3 python3-fonttools python3-gi python3-gi-cairo gir1.2-pango-1.0 python3-venv \
 		fontconfig fonts-dejavu-core fonts-noto-color-emoji gifsicle \
-		libicu76 libgssapi-krb5-2 \
+		libicu76 libgssapi-krb5-2 openssh-client libnss-wrapper \
 	&& . /usr/local/lib/gitsby/safe-rm.sh && fSafeRm /tmp/gitsby/apt && rmdir /tmp/gitsby
 
 # The demo's face. The emoji font above is Debian's, a different build from the one on
@@ -52,7 +54,8 @@ RUN cd /tmp \
 # ones on the system python. The lock pins every wheel by hash. Its Pillow goes on the system
 # python, next to Debian's gi and cairo, where the demo can import it, and so does PyYAML, for
 # test.bash's workflow parse check. Apt installed neither, so pip's guard for Debian's own
-# packages has nothing to guard there.
+# packages has nothing to guard there. Each version check here and below judges at awk's END,
+# since sh has no pipefail and awk exits 0 on no input, which is what a missing tool prints.
 ARG VER_ruff
 ARG VER_pip_audit
 ARG VER_Pillow
@@ -66,11 +69,11 @@ RUN : "${VER_ruff:?}${VER_pip_audit:?}${VER_Pillow:?}${VER_gifsicle:?}" \
 	&& /opt/pytools/bin/pip --python /usr/bin/python3 install -q --no-cache-dir --disable-pip-version-check --root-user-action=ignore \
 		--break-system-packages --require-hashes --no-deps --only-binary=:all: -r /tmp/sys.txt \
 	&& ln -s /opt/pytools/bin/ruff /opt/pytools/bin/pip-audit /usr/local/bin/ \
-	&& ruff --version | awk -v want="${VER_ruff}" '{ if ($2 != want) { print "ruff " $2; exit 1 } }' \
-	&& pip-audit --version | awk -v want="${VER_pip_audit}" '{ if ($2 != want) { print "pip-audit " $2; exit 1 } }' \
+	&& ruff --version | awk -v want="${VER_ruff}" 'NR==1 { v = $2 } END { if (v != want) { print "ruff " v; exit 1 } }' \
+	&& pip-audit --version | awk -v want="${VER_pip_audit}" 'NR==1 { v = $2 } END { if (v != want) { print "pip-audit " v; exit 1 } }' \
 	&& python3 -c "import PIL; assert PIL.__version__ == '${VER_Pillow}', PIL.__version__" \
 	&& python3 -I -c 'import yaml' \
-	&& gifsicle --version | awk -v want="${VER_gifsicle}" 'NR==1 { if ($NF != want) { print "gifsicle " $NF; exit 1 } }' \
+	&& gifsicle --version | awk -v want="${VER_gifsicle}" 'NR==1 { v = $NF } END { if (v != want) { print "gifsicle " v; exit 1 } }' \
 	&& rm -f /tmp/pytools.txt /tmp/venv.txt /tmp/sys.txt
 
 # git and strace are newer on the host than in trixie, and both change a spawn count.
@@ -129,7 +132,7 @@ RUN : "${VER_go:?}${VER_shellcheck:?}${VER_markdownlint:?}${VER_PSScriptAnalyzer
 	&& mkdir /opt/node && tar -C /opt/node --strip-components=1 -xJf node.txz \
 	&& (cd /opt/markdownlint && PATH="/opt/node/bin:${PATH}" npm ci --ignore-scripts --omit=dev --no-fund --no-audit --cache /tmp/gitsby/dl/npm) \
 	&& ln -s /opt/markdownlint/node_modules/.bin/markdownlint /usr/local/bin/markdownlint \
-	&& PATH="/opt/node/bin:${PATH}" markdownlint --version | awk -v want="${VER_markdownlint}" '{ if ($1 != want) { print "markdownlint " $1; exit 1 } }' \
+	&& PATH="/opt/node/bin:${PATH}" markdownlint --version | awk -v want="${VER_markdownlint}" 'NR==1 { v = $1 } END { if (v != want) { print "markdownlint " v; exit 1 } }' \
 	&& curl -fsSLo pwsh.tgz "https://github.com/PowerShell/PowerShell/releases/download/v${PWSH_VER}/powershell-${PWSH_VER}-linux-x64.tar.gz" \
 	&& echo "${PWSH_SHA256}  pwsh.tgz" | sha256sum -c - \
 	&& mkdir /opt/pwsh && tar -C /opt/pwsh -xzf pwsh.tgz && chmod +x /opt/pwsh/pwsh \
@@ -167,7 +170,7 @@ RUN : "${VER_codeql:?}${CODEQL_SHA256:?}${CODEQL_PY_SHA256:?}" \
 	&& tar -C /opt --zstd -xf cq.tar.zst \
 	&& tar -C /opt --zstd -xf cqpy.tar.zst --exclude=codeql/qlpacks/codeql/python-examples \
 	&& ln -s /opt/codeql/codeql /usr/local/bin/codeql \
-	&& codeql version --format=terse | awk -v want="${VER_codeql}" '{ if ($1 != want) { print "codeql " $1; exit 1 } }' \
+	&& codeql version --format=terse | awk -v want="${VER_codeql}" 'NR==1 { v = $1 } END { if (v != want) { print "codeql " v; exit 1 } }' \
 	&& cd / && . /usr/local/lib/gitsby/safe-rm.sh && fSafeRm /tmp/gitsby/cq && rmdir /tmp/gitsby
 
 # Out of the last step's folder first, or the build makes it again.

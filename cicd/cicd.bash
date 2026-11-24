@@ -407,6 +407,14 @@ if ((! listOnly)); then
 	trap 'exit 130' INT; trap 'exit 143' TERM
 	export TMPDIR="${runTmp}" TEMP="${runTmp}" TMP="${runTmp}"
 	fSweepRuns
+	## The container runs as the caller's uid, which the image has no passwd entry for, and ssh
+	## won't start without one. nss_wrapper gives it one, for this run's processes only.
+	nssWrapper=(/usr/lib/*/libnss_wrapper.so)
+	if [[ -n "${GITSBY_CICD_IN_CONTAINER:-}" && -f "${nssWrapper[0]}" ]] && ! getent passwd "$(id -u)" >/dev/null 2>&1; then
+		{ cat /etc/passwd; printf '%s:x:%s:%s::%s:/bin/sh\n' "${APP_NAME}" "$(id -u)" "$(id -g)" "${HOME}"; } > "${runTmp}/passwd"
+		{ cat /etc/group; getent group "$(id -g)" >/dev/null 2>&1 || printf '%s:x:%s:\n' "${APP_NAME}" "$(id -g)"; } > "${runTmp}/group"
+		export LD_PRELOAD="${nssWrapper[0]}" NSS_WRAPPER_PASSWD="${runTmp}/passwd" NSS_WRAPPER_GROUP="${runTmp}/group"
+	fi
 fi
 
 ## Brief beat after each stage header so the cheap fast stages stay readable.
@@ -593,6 +601,8 @@ fStageLint(){
 	fEcho "OK: gofmt + go vet clean"
 	if command -v staticcheck >/dev/null 2>&1; then
 		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" staticcheck ./...) || fDie "staticcheck findings"
+		## The run above counts a test as a caller, so code only the tests call passes it.
+		(cd "${root}/${GO_MODULE_DIR}" && GOMAXPROCS="${BUILD_JOBS}" staticcheck -tests=false -checks U1000 ./...) || fDie "staticcheck: code only the tests call"
 		fEcho "OK: staticcheck clean"
 	else
 		fEcho "WARNING: staticcheck skipped (not installed: go install honnef.co/go/tools/cmd/staticcheck@latest)"
@@ -1570,3 +1580,5 @@ fEcho_Clean
 ##		- 2026-11-20 JC: Stage 0 also stops when the edits it carried over clash with what came in, which git reports at exit 0. The merge or fast-forward is backed out and the edits put back.
 ##		- 2026-11-21 JC: The message prompt, the plan and --help say a blank answer gets an automatic message, which the publisher writes under --quiet. They said it opened the editor.
 ##		- 2026-11-21 JC: Stage 0 stashes the edits itself and puts them back with --index, so staged edits stay staged across a merge or fast-forward that goes in clean. Stage 6 leaves a demo gif that was edited before the run as it is.
+##		- 2026-11-23 JC: Lint also runs staticcheck's unused check without the tests, so code only a test calls fails the gate.
+##		- 2026-11-23 JC: In the container, the run's uid gets a passwd entry through nss_wrapper, so ssh starts there.

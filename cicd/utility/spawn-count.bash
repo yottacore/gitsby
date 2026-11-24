@@ -307,27 +307,27 @@ fMeasure(){
 fMeasure "[dbftf] status"                              11 pipe repo        -q --no-fetch status
 fMeasure "[dbjeq] whoami"                               7 pipe repo        -q --no-fetch whoami
 fMeasure "[dbftg] br list"                              7 pipe repo        -q --no-fetch br list
-fMeasure "[dbfth] account list"                         7 pipe repo        -q --no-fetch account list
+fMeasure "[dbfth] account list"                         8 pipe repo        -q --no-fetch account list
 fMeasure "[dbftj] repo url"                             6 pipe repo        -q --no-fetch repo url
 fMeasure "[dbftk] pullcom"                             21 pipe repo        -q --no-fetch pullcom "spawn count"
 fMeasure "[ddf68] pullcom with a fetch"                 28 pipe repo        -q pullcom "spawn count"
 fMeasure "[dbftm] br switch"                           28 pipe repo        -q --no-fetch br switch main
-fMeasure "[df37t] br merge"                             41 pipe feature     -q --no-fetch br merge
-fMeasure "[df37v] br merge with a fetch"                52 pipe feature     -q br merge
+fMeasure "[df37t] br merge"                             43 pipe feature     -q --no-fetch br merge
+fMeasure "[df37v] br merge with a fetch"                54 pipe feature     -q br merge
 fMeasure "[df37w] br switch of a staged change"         38 pipe staged      -q --no-fetch --staged br switch dev
 fMeasure "[dbftn] br prune"                            31 pipe repo        -q --no-fetch br prune
 fMeasure "[deytk] br prune of five branches"           31 pipe prune5      -q --no-fetch br prune
 fMeasure "[ddf4z] status with a fetch"                 17 tty  repo        status
 fMeasure "[ddf50] status in an account folder"         19 tty  acct-ssh    --no-fetch status
 fMeasure "[ddf51] whoami in an account folder"         15 tty  acct-ssh    --no-fetch whoami
-fMeasure "[ddf52] account list with accounts"          11 tty  acct-ssh    --no-fetch account list
+fMeasure "[ddf52] account list with accounts"          12 tty  acct-ssh    --no-fetch account list
 fMeasure "[ddf53] status in an https account folder"   15 tty  acct-https  --no-fetch status
 fMeasure "[df04s] status in a tea ssh folder"          16 tty  acct-gitea  --no-fetch status
 fMeasure "[df04t] whoami in a tea ssh folder"          12 tty  acct-gitea  --no-fetch whoami
 fMeasure "[df04v] repo url in a tea ssh folder"         8 pipe acct-gitea  -q --no-fetch repo url
 fMeasure "[df051] pullcom in a tea ssh folder"         27 pipe acct-gitea  -q --no-fetch pullcom "spawn count"
 fMeasure "[df052] pr create in a tea ssh folder"       43 pipe acct-gitea  -q --no-fetch pr create
-fMeasure "[df37x] pr create in a glab ssh folder"      31 pipe acct-glab   -q --no-fetch pr create
+fMeasure "[df37x] pr create in a glab ssh folder"      30 pipe acct-glab   -q --no-fetch pr create
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Each count against its limit, then against the newest previous run; then record this one.
@@ -347,6 +347,9 @@ if [[ -n "${baseline}" ]]; then
 fi
 
 declare -i regressed=0 overLimit=0 underLimit=0 failedRun=0
+## Over the expected count but inside the headroom passes, so a rise in our own code would sit
+## there unseen until one more spawn fails it. These get named at the end.
+declare -a overExpect=()
 ## One line per command, whatever it did, so a -q-less run shows each count and its verdict:
 ## PASS, FAIL or SKIP, then its test ID, as the suites print theirs.
 if [[ -z "${baseline}" ]]; then
@@ -370,6 +373,7 @@ for ((i = 0; i < ${#labels[@]}; i++)); do
 		continue
 	fi
 	(( counts[i] < expects[i] )) && underLimit=$((underLimit + 1))
+	(( counts[i] > expects[i] )) && overExpect+=("${ids[i]}")
 	was="${baseWas["${labels[i]}"]:-}"
 	[[ -n "${was}" ]] || { ((quiet)) || fEcho_Clean "  PASS ${ids[i]} ${labels[i]}: ${counts[i]}, new"; continue; }
 	## Arithmetic on text from a file runs any $(...) in an array subscript, so only digits go on.
@@ -386,6 +390,7 @@ for ((i = 0; i < ${#labels[@]}; i++)); do
 	fi
 done
 ((quiet)) || ((underLimit == 0)) || fEcho_Clean "  ${underLimit} under their expected count; lower those numbers in ${BASH_SOURCE[0]##*/} to keep the gain."
+((quiet)) || ((${#overExpect[@]} == 0)) || fEcho_Clean "  ${#overExpect[@]} over their expected count, inside the headroom (${overExpect[*]}); a rise that is meant raises those numbers in ${BASH_SOURCE[0]##*/}."
 
 declare -i originMoved=0
 if [[ "$(fOriginRefs)" == "${originRefs}" ]]; then fOk "[dez8s] the fixture's origins are as built, after every command"
@@ -441,3 +446,4 @@ TZ=UTC0 gfs_rotate "${countDir}" spawn tsv >/dev/null 2>&1 || true
 ##		- 20261110 JC: A measure fails when its command exits nonzero. The fake tea answers pulls list and pulls create, so pr create in the Gitea folder runs to the end.
 ##		- 20261110 JC: A push that has an upstream asks for-each-ref where it goes, 1 more each: br switch of a staged change 37 -> 38, pr create in the Gitea folder 42 -> 43.
 ##		- 20261120 JC: Reads the baseline once, not once per command, and writes the record in one go.
+##		- 20261123 JC: Names each count over its expected one that the headroom let pass. Expected counts raised for the rises that sat there: account list 7 -> 8 and 11 -> 12 for reading every global git config file, br merge 41 -> 43 and 52 -> 54 for the no-shared-history refusal and the upstream read after the checkout. pr create in the GitLab folder 31 -> 30.

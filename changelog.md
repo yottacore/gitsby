@@ -45,6 +45,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The help screen opens by saying what Gitsby does differently: a command that changes anything shows the repo state and the exact git it will run, then asks first.
 
+- `pr ok` names the pull request's branch and the branch it goes into above the plan, as `Pull request .: #8 from hotfix/x into dev`, and says when the branch is a fork's. The plan's merge line names neither, and a pull request opened on the git host's page can go into any branch.
+
 ### Removed
 
 - `cicd/utility/include/gh-account.bash`. Nothing sourced it, and `gitsby raw gh` does what it did.
@@ -119,11 +121,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `pr ok` refuses a pull request from `main`, `dev` or the default branch, before anything runs, and says to merge it on the git host's page. Its merge deletes the branch it merged, so one from `dev` into `main`, opened on the git host's page, deleted `dev` on origin where the git host allowed it, and here. For `dev` into `main` it names `release`.
 
+- `pr ok` merges a pull request from a fork with no branch delete, here or on the git host, and doesn't refuse one from the fork's `main` or `dev`. It read the fork's branch as origin's branch of that name. One from a fork's `main` was refused as a protected branch, one from a branch named like a branch only here was told to push that branch, and through gh the merge would have deleted the branch here of that name.
+
 - The plan for `pr create` on GitLab names `--target-branch`, the flag glab runs with. It said `--base`, which glab doesn't have.
 
 - `br merge` on a branch that tracks one of another name deletes that branch from origin once it's merged. It named the current branch, so the branch it pushed to stayed on origin, and the leased delete of an older branch of that name warned that it had commits the merge didn't, which wasn't so. Where its push goes to another remote, to a ref that isn't a branch, or to `main` or `dev`, it's refused before the plan.
 
 - `release` and `repo connect` on a branch that git won't push, such as one tracking a branch of another name under `push.default=simple`, refuse before the plan, as `sync` does. They committed the tree first, then stopped at the push with a message saying nothing was done. `release` from a branch whose push lands on `main` or `dev` refuses too, naming `sync --direct`. The plan's push line names the remote when it isn't origin, and `repo connect`'s line names the push that runs.
+
+- `br merge`, `pr ok` and `release` refuse before the plan when git won't push a branch they push after checking it out, such as `dev` tracking a branch of another name under `push.default=simple`. That covers `br merge`'s target, the merge back into `dev` after a hotfix, and `release`'s default branch and `dev`. They merged or tagged first, then stopped at the push. Each push's line in the plan names where it goes when that isn't origin's branch of the same name.
 
 - `br merge` warns before its push of `dev` sends commits made on `dev` itself, the way `sync` there does, and with `-q` it refuses. So does a hotfix's merge back into `dev`, from `br merge` and `pr ok`. They used to go to origin's `dev` with the merge, at exit 0.
 

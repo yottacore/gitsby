@@ -24,8 +24,9 @@ type prRequest struct {
 	sub        string // "create" or "ok"; empty for the bare list and the numeric view
 	num        string
 	title      string
-	headBranch string   // the PR's branch on origin: read from the host for ok, from the push for create
+	headBranch string   // the PR's branch: read from the host for ok, from the push for create
 	baseBranch string   // what the PR merges into, as the git host has it: ok only
+	fork       bool     // headBranch is on another repo, such as a fork, not origin: ok only
 	tool       hostTool // which CLI answers for this repo's host
 	cli        string   // that tool as this machine spells it
 }
@@ -165,21 +166,31 @@ func (a *app) prApproveArgs() []string {
 	return []string{"pr", "review", a.pr.num, "--approve"}
 }
 
+// prMergeArgs deletes the PR's branch with the merge, except for a fork's: that
+// branch isn't ours, and gh's --delete-branch would still take a local branch of
+// the same name, such as main.
 func (a *app) prMergeArgs() []string {
 	if a.pr.tool == toolGlab {
+		if a.pr.fork {
+			return a.glabArgs("mr", "merge", a.pr.num, "--yes")
+		}
 		return a.glabArgs("mr", "merge", a.pr.num, "--remove-source-branch", "--yes")
 	}
 	if a.pr.tool == toolTea {
 		return []string{"pulls", "merge", a.pr.num, "--style", "merge"}
+	}
+	if a.pr.fork {
+		return []string{"pr", "merge", a.pr.num, "--merge"}
 	}
 	return []string{"pr", "merge", a.pr.num, "--merge", "--delete-branch"}
 }
 
 // prCleanArgs is the branch delete gh folds into its own merge and tea does not.
 // Without it 'pr ok' merges and leaves both feature branches standing on a Gitea
-// host - the same command tidying up on one git host and not the other.
+// host - the same command tidying up on one git host and not the other. None for
+// a fork's PR, as in prMergeArgs.
 func (a *app) prCleanArgs() []string {
-	if a.pr.tool == toolTea {
+	if a.pr.tool == toolTea && !a.pr.fork {
 		return []string{"pulls", "clean", a.pr.num}
 	}
 	return nil
@@ -189,10 +200,11 @@ func (a *app) prCleanArgs() []string {
 // takes only the git host's copy: glab's --remove-source-branch leaves ours, where
 // gh's --delete-branch and tea's clean take both. -D as gh does it, since the
 // preflight refused a branch with commits origin's copy lacks, and the run asks
-// again just before. Not while pr ok stays on that branch, which git won't delete.
+// again just before. Not while pr ok stays on that branch, which git won't delete,
+// and not for a fork's PR, whose branch only shares a name with ours.
 func (a *app) prLocalCleanArgs() []string {
 	head := a.pr.headBranch
-	if a.pr.tool != toolGlab || !a.branchExistsLocal(head) || (head == a.currentBranch() && !a.prOkMoves()) {
+	if a.pr.tool != toolGlab || a.pr.fork || !a.branchExistsLocal(head) || (head == a.currentBranch() && !a.prOkMoves()) {
 		return nil
 	}
 	return []string{"branch", "-D", head}
@@ -208,12 +220,15 @@ func gitDisp(args []string) string {
 }
 
 // glabMR is the part of glab's JSON for a merge request that we read. A small
-// reader takes the 4 fields: encoding/json cost 344 KB of binary for them.
+// reader takes the 6 fields: encoding/json cost 344 KB of binary for them. The
+// project IDs are numbers as written, and differ when the source is a fork.
 type glabMR struct {
-	IID    string
-	State  string
-	Source string
-	Target string
+	IID           string
+	State         string
+	Source        string
+	Target        string
+	SourceProject string
+	TargetProject string
 }
 
 // readGlabMR reads one merge request from glab's JSON: the object itself, or the
@@ -232,8 +247,11 @@ func readGlabMR(out string, list bool) (glabMR, bool) {
 		}
 		switch key {
 		case "iid":
-			mr.IID = j.lit()
-			ok = jsonNumberRE.MatchString(mr.IID) && strings.Trim(mr.IID, "0123456789") == ""
+			mr.IID, ok = j.wholeNumber()
+		case "source_project_id":
+			mr.SourceProject, ok = j.wholeNumber()
+		case "target_project_id":
+			mr.TargetProject, ok = j.wholeNumber()
 		case "state":
 			mr.State, ok = j.str()
 		case "source_branch":
@@ -302,6 +320,12 @@ func (j *jsonScan) items(end byte, item func() bool) bool {
 			return false
 		}
 	}
+}
+
+// wholeNumber is a JSON number with no sign, fraction or exponent, as written.
+func (j *jsonScan) wholeNumber() (string, bool) {
+	n := j.lit()
+	return n, jsonNumberRE.MatchString(n) && strings.Trim(n, "0123456789") == ""
 }
 
 // lit is a number, true, false or null, as written.
@@ -566,50 +590,55 @@ func (a *app) openPrForBranch(prBranch string) string {
 	return runOut("gh", "pr", "list", "--head", prBranch, "--state", "open", "--json", "number", "--jq", ".[0].number // empty")
 }
 
-// readPr asks the git host which branch a PR proposes, which one it goes into, and
-// whether it's still open. ok is "we got an answer"; the caller refuses on !ok,
-// before the plan.
-func (a *app) readPr() (head, base, state string, ok bool) {
+// readPr asks the git host which branch a PR proposes, which one it goes into,
+// whether it's still open, and whether the branch is on another repo, such as a
+// fork. A fork's branch can share a name with one of origin's, main included, so
+// the name alone doesn't say which. ok is "we got an answer"; the caller refuses
+// on !ok, before the plan.
+func (a *app) readPr() (head, base, state string, fork, ok bool) {
 	if a.pr.tool == toolGlab {
 		out, ran := runOutOK(a.pr.cli, a.glabArgs("mr", "view", a.pr.num, "--output", "json")...)
 		mr, read := readGlabMR(out, false)
 		if !ran || !read || mr.Source == "" || mr.Target == "" {
-			return "", "", "", false
+			return "", "", "", false, false
 		}
 		// glab says 'opened' where gh and tea say open.
 		state = strings.ToLower(mr.State)
 		if state == "opened" {
 			state = "open"
 		}
-		return mr.Source, mr.Target, state, true
+		return mr.Source, mr.Target, state, mr.SourceProject != mr.TargetProject, true
 	}
 	if a.pr.tool == toolTea {
 		out, ran := runOutOK(a.pr.cli, "pulls", a.pr.num, "--fields", "index,head,base,state", "--output", "tsv")
 		if !ran {
-			return "", "", "", false
+			return "", "", "", false, false
 		}
 		records := parseTeaTable(out)
 		if len(records) != 1 {
-			return "", "", "", false
+			return "", "", "", false, false
 		}
-		return headBranchName(records[0]["head"]), records[0]["base"], records[0]["state"], true
+		// tea puts the fork's owner before the branch, and 'delete:' for a fork
+		// that's gone. A branch name can't hold a colon.
+		head = records[0]["head"]
+		return headBranchName(head), records[0]["base"], records[0]["state"], strings.Contains(head, ":"), true
 	}
-	info, ran := runOutOK("gh", "pr", "view", a.pr.num, "--json", "headRefName,baseRefName,state", "--jq", ".headRefName, .baseRefName, .state")
+	info, ran := runOutOK("gh", "pr", "view", a.pr.num, "--json", "headRefName,baseRefName,state,isCrossRepository", "--jq", ".headRefName, .baseRefName, .state, .isCrossRepository")
 	fields := splitLines(info)
-	if !ran || len(fields) != 3 {
-		return "", "", "", false
+	if !ran || len(fields) != 4 || (fields[3] != "true" && fields[3] != "false") {
+		return "", "", "", false, false
 	}
-	return fields[0], fields[1], fields[2], true
+	return fields[0], fields[1], fields[2], fields[3] == "true", true
 }
 
 // prAcceptPreflight is 'pr ok <n>', which runs from anywhere: ask gh which branch the PR
 // proposes and whether it's still open, with no fallback to the current branch.
 func (a *app) prAcceptPreflight(prBranch string) error {
-	head, base, state, ok := a.readPr()
+	head, base, state, fork, ok := a.readPr()
 	if !ok || head == "" || base == "" {
 		return usagef("Can't read PR #%s; check the number, and that %s can see this repo.", a.pr.num, a.pr.cli)
 	}
-	a.pr.headBranch, a.pr.baseBranch = head, base
+	a.pr.headBranch, a.pr.baseBranch, a.pr.fork = head, base, fork
 	// Case-insensitively: gh answers 'OPEN' and tea answers 'open', and comparing
 	// against one spelling makes every PR on the other git host read as already closed.
 	if !strings.EqualFold(state, "open") {
@@ -630,7 +659,7 @@ func (a *app) prAcceptPreflight(prBranch string) error {
 	// Work that never reached origin is outside the PR and outside the merge -
 	// refuse, don't lose it.
 	if a.treeDirty() || isAhead() {
-		if prBranch == a.pr.headBranch {
+		if prBranch == a.pr.headBranch && !a.pr.fork {
 			return usagef("'%s' has changes that aren't on origin, so PR #%s can't include them. Run '%s sync' first.", prBranch, a.pr.num, meName)
 		}
 		return usagef("'%s' has changes that aren't on origin. Park them first: %s sync", prBranch, meName)
@@ -638,8 +667,9 @@ func (a *app) prAcceptPreflight(prBranch string) error {
 	// Asked of the PR's own branch by name, wherever we are standing: gh deletes it
 	// with 'branch -D' either way, and '@{u}' above answers nothing at all for a
 	// branch that was pushed without -u - so standing on that one, the guard passed
-	// and the commits went with the branch.
-	if a.branchExistsLocal(a.pr.headBranch) {
+	// and the commits went with the branch. A fork's PR deletes nothing, and a
+	// branch here of the same name isn't its.
+	if !a.pr.fork && a.branchExistsLocal(a.pr.headBranch) {
 		if !a.branchExistsRemote(a.pr.headBranch) {
 			return usagef("'%s' is here but not on origin, so PR #%s holds none of it - and it would be deleted. Push it first:\n  git push -u origin %s", a.pr.headBranch, a.pr.num, typedArg(a.pr.headBranch, runtime.GOOS))
 		}
@@ -653,11 +683,12 @@ func (a *app) prAcceptPreflight(prBranch string) error {
 // refuseProtectedPrHead: every tool's merge deletes the PR's branch, on the git
 // host and here, so a PR from main or dev (opened on the git host's page, since
 // pr create won't) would take that branch with it. Refused, as br merge refuses
-// landing one, rather than merged with the delete left off, which a git host's
-// own delete-on-merge setting could still undo.
+// landing one, rather than merged with the delete left off, since release is how
+// dev goes into main. A fork's main or dev isn't origin's, and its merge deletes
+// nothing.
 func (a *app) refuseProtectedPrHead() error {
 	head := a.pr.headBranch
-	if !a.isProtectedBranch(head) {
+	if a.pr.fork || !a.isProtectedBranch(head) {
 		return nil
 	}
 	release := ""
@@ -709,15 +740,29 @@ func (a *app) prCreateDisp() string {
 	return a.pr.cli + " " + a.prCreateVerb() + " " + a.prBaseFlag() + " " + a.prTarget() + " --title " + shellWord(a.pr.title, true)
 }
 
+// prOkLine names the PR's branch and the base the git host merges it into, for the
+// state block. Empty for pr create, whose base the plan line names.
+func (a *app) prOkLine() string {
+	if a.pr.sub != "ok" || a.pr.headBranch == "" || a.pr.baseBranch == "" {
+		return ""
+	}
+	from := " from "
+	if a.pr.fork {
+		from = " from a fork's "
+	}
+	return "#" + a.pr.num + from + a.pr.headBranch + " into " + a.pr.baseBranch
+}
+
 // prOkMoves is whether pr ok ends on the PR's merge target rather than on the
 // branch it started from. The merge deletes origin's copy of the PR's branch, so
 // a branch tracking that one has nothing left to pull, and neither has a branch
 // with no upstream. Any other branch stays, and its own upstream is pulled. The
 // plan, the worktree check and the run all read this, and only before the merge,
-// since the merge is what changes the answer.
+// since the merge is what changes the answer. A fork's PR leaves origin's branch
+// of the same name standing.
 func (a *app) prOkMoves() bool {
 	up := a.upstream().full
-	return up == "" || up == "refs/remotes/origin/"+a.pr.headBranch
+	return up == "" || (!a.pr.fork && up == "refs/remotes/origin/"+a.pr.headBranch)
 }
 
 func (a *app) cmdPrAccept() error {

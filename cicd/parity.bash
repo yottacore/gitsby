@@ -73,6 +73,20 @@ fUnsetInheritedGitConfig(){ unset GIT_CONFIG_COUNT "${!GIT_CONFIG_KEY_@}" "${!GI
 fUnsetInheritedGitConfig
 unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR GITSBY_ACCOUNT GITSBY_RAW_ACTIVE
 
+## Both builds ask gh for an account's token. The box's gh reads the real ~/.config/gh and
+## keyring, and prints a stored token for a login it holds, so they get one logged in nowhere,
+## which notes each call.
+ghSealLog="${work}/sealed-gh.log"
+mkdir -p "${work}/sealed-bin"
+cat > "${work}/sealed-bin/gh" <<-EOF
+	#!/usr/bin/env bash
+	printf '%s\n' "\$*" >> '${ghSealLog}'
+	printf '%s\n' 'gh: not logged in to any host' >&2
+	exit 1
+EOF
+chmod +x "${work}/sealed-bin/gh"
+export PATH="${work}/sealed-bin:${PATH}"
+
 ## Output helpers, the same family as cicd.bash's: fEcho_Clean prints a line as given and
 ## collapses repeated blanks, fEcho prints a "[ ... ]" status line, and fUsage refuses the
 ## command line.
@@ -145,38 +159,6 @@ fSame(){
 	else
 		fBad "${label}"
 		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
-	fi
-}
-
-## Same as fSame, with one deliberate difference removed from both sides first. Used where this
-## build says something the frozen one never did and the rest of the line still has to match; the
-## removal is spelled out at the call site so it cannot quietly widen.
-fSameStripped(){
-	local -r label="${1}"; local -r drop="${2}"; local -r dir="${3}"; shift 3
-	local a="" b=""
-	a="$(fRunNew "${dir}" "${@}" | sed -E "${drop}")"
-	b="$(fRunRef "${dir}" "${@}" | sed -E "${drop}")"
-	if [[ "${a}" == "${b}" ]]; then
-		fOk "${label}"
-	else
-		fBad "${label}"
-		diff <(printf '%s\n' "${a}") <(printf '%s\n' "${b}") | sed 's/^/      /' | head -12 || true
-	fi
-}
-
-fSameField(){
-	## One labeled line out of each build's output, compared. Used where the surrounding block
-	## legitimately differs: each runtime echoes a path the way it spells one, and 'C:\x' against
-	## '/c/x' is not a finding - what the two must agree on is what they RESOLVED from it.
-	local -r label="${1}"; local -r pattern="${2}"; local -r dir="${3}"; shift 3
-	local a="" b=""
-	a="$(fRunNew "${dir}" "${@}" | grep -E "${pattern}" || true)"
-	b="$(fRunRef "${dir}" "${@}" | grep -E "${pattern}" || true)"
-	if [[ "${a}" == "${b}" ]]; then
-		fOk "${label}"
-	else
-		fBad "${label}"
-		printf '      this build: %s\n      frozen:     %s\n' "${a:-(no such line)}" "${b:-(no such line)}"
 	fi
 }
 
@@ -394,6 +376,12 @@ for name in mixed MIXED MiXeD; do
 	fSameLead  "[db603] GITSBY_ACCOUNT='${name}' resolves the same" '^Account' "${tree}" -q -NoFetch --config "${__cfg}" status
 	unset GITSBY_ACCOUNT
 done
+## The account above has a login, so each build asked gh for its token, and asked the suite's.
+if grep -q '^auth token --user caseacct --hostname ' "${ghSealLog}" 2>/dev/null && grep -qx 'auth token --user caseacct' "${ghSealLog}"; then
+	fOk "[dfq35] both builds' gh calls reach the suite's sealed gh, never the box's"
+else
+	fBad "[dfq35] a build's gh call missed the suite's sealed gh, so it went to the box's"
+fi
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## File encoding. A BOM is invisible in an editor and in 'Get-Content', and has broken both the
@@ -436,3 +424,4 @@ fEcho_Clean "parity passed: ${pass}, differed: ${fail}"
 ##		- 20261109 JC: Each flat fixture is written to its own file, since a second conversion of one path in the same second kept it flat.
 ##		- 20261109 JC: Inherited git config is dropped by name, not by a loop on GIT_CONFIG_COUNT, whose arithmetic ran a command hidden in a subscript.
 ##		- 20261110 JC: The new spellings are compared in a repo where pullcom, sync and br merge each print something of their own, since outside one every repo command prints the same refusal and an alias routed to the wrong command passed.
+##		- 20261123 JC: Both builds get a gh of the suite's own, logged in nowhere, rather than the box's, [dfq35].

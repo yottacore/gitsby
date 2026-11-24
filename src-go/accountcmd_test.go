@@ -1415,8 +1415,8 @@ func TestLockFix(t *testing.T) { // [dcnkc]
 		{"linux", "/h/it's/c.shcl.lock", []string{"If no other gitsby is running, a run that was stopped left it behind. Remove it, then run this again:", `  rm '/h/it'\''s/c.shcl.lock'`}},
 	}
 	for _, tc := range tests {
-		if got := lockFix(tc.goos, tc.lock); !slices.Equal(got, tc.want) {
-			t.Errorf("lockFix(%s, %s) = %q, want %q", tc.goos, tc.lock, got, tc.want)
+		if got := lockFixFor(tc.goos, tc.lock, accountsLock.who); !slices.Equal(got, tc.want) {
+			t.Errorf("lockFixFor(%s, %s) = %q, want %q", tc.goos, tc.lock, got, tc.want)
 		}
 	}
 }
@@ -2047,7 +2047,7 @@ func TestFixLiteralsPaste(t *testing.T) { // [df35x]
 		for cmd, lines := range map[string][]string{
 			"chmod u+r": unreadableFix("linux", file, fs.ErrPermission),
 			"chmod u+x": lookupFix("linux", file, fs.ErrPermission),
-			"rm":        lockFix("linux", file+".lock"),
+			"rm":        lockFixFor("linux", file+".lock", accountsLock.who),
 		} {
 			want := map[string]string{"chmod u+x": dir, "rm": file + ".lock"}[cmd]
 			if want == "" {

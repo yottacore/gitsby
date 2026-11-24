@@ -99,7 +99,7 @@ Continue? (y|n):
 
 - Whatever the plan claims is known before it prints. A fact that needs the network is fetched first.
 
-- A command that creates a branch names it in the state block, as `New branch ...: main :: login-form`.
+- A command that creates a branch names it in the state block, as `New branch ...: main :: login-form`. `pr ok` names the pull request's branch and its base there, as `Pull request .: #8 from hotfix/x into dev`.
 
 - A warning meant to change the answer goes last, right above the prompt, where it can't scroll away behind the plan.
 
