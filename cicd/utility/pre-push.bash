@@ -29,7 +29,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -50,7 +50,7 @@ IFS= read -r -d '' shimText <<'EOF' || true
 if [[ -n "${GIT_PREFIX:-}" ]]; then top="${PWD}"; else top="$(git rev-parse --show-toplevel)" || exit 1; fi
 hook="${top}/cicd/utility/pre-push.bash"
 if [[ ! -x "${hook}" ]]; then
-	printf '%s\n' "pre-push: this checkout has no cicd/utility/pre-push.bash, so this push is not gated." >&2
+	printf '%s\n' "pre-push: This checkout has no cicd/utility/pre-push.bash, so this push is not gated." >&2
 	exit 0
 fi
 exec "${hook}" "$@"
@@ -66,9 +66,9 @@ fEcho(){       if [[ -n "$*"     ]]; then fEcho_Clean "[ $* ]"; else fEcho_Clean
 fUsage(){ fEcho_Clean "$1 (try --help)" >&2; exit 2; }
 
 fInstall(){
-	local hp line target verb="installed" tmp
+	local hp line target verb="Installed" tmp
 	if [[ "$(uname -s)" != Linux ]]; then
-		fEcho_Clean "pre-push: the gate runs on Linux only, like the rest of cicd/. No hook installed." >&2
+		fEcho_Clean "pre-push: The gate runs on Linux only, like the rest of cicd/. No hook installed." >&2
 		exit 1
 	fi
 	if [[ "$(git -C "${root}" rev-parse --is-inside-work-tree 2>/dev/null || true)" != true ]]; then
@@ -92,7 +92,7 @@ fInstall(){
 	mkdir -p -- "$(dirname -- "${target}")"
 	if [[ -e "${target}" || -L "${target}" ]]; then
 		if cmp -s -- "${target}" <(printf '%s' "${shimText}"); then
-			fEcho_Clean "pre-push: already installed: ${target}"
+			fEcho_Clean "pre-push: Already installed: ${target}"
 			exit 0
 		fi
 		if ! grep -qxF -- "${marker}" "${target}" 2>/dev/null; then
@@ -102,7 +102,7 @@ fInstall(){
 			} >&2
 			exit 1
 		fi
-		verb="updated"
+		verb="Updated"
 	fi
 	tmp="$(mktemp -- "${target}.XXXXXX")"
 	printf '%s' "${shimText}" > "${tmp}"
@@ -208,14 +208,14 @@ fHook(){
 		## <local ref> <local sha> <remote ref> <remote sha>. A delete is "(delete) 000... <ref> <sha>".
 		read -r _ lsha rref rsha <<< "${line}"
 		if [[ ! "${lsha}" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
-			fEcho_Clean "pre-push: unexpected line from git: ${line}" >&2
+			fEcho_Clean "pre-push: Unexpected line from git: ${line}" >&2
 			exit 1
 		fi
 		if [[ "${lsha}" =~ ^0+$ ]]; then continue; fi
 		## Only main. Other branches are work in progress, and a tag points at a commit that
 		## was gated when main went out.
 		if [[ "${rref}" != refs/heads/main ]]; then
-			fEcho_Clean "pre-push: not gated: ${rref} (only main is gated)"
+			fEcho_Clean "pre-push: Not gated: ${rref} (only main is gated)"
 			continue
 		fi
 		commit="$(git -C "${root}" rev-parse --verify -q "${lsha}^{commit}" || true)"
@@ -230,7 +230,7 @@ fHook(){
 	((${#commits[@]})) || exit 0
 
 	if [[ "$(uname -s)" != Linux ]]; then
-		fEcho_Clean "pre-push: the gate runs on Linux only; this push is not gated."
+		fEcho_Clean "pre-push: The gate runs on Linux only; this push is not gated."
 		exit 0
 	fi
 	common="$(git -C "${root}" rev-parse --path-format=absolute --git-common-dir)"
@@ -239,9 +239,9 @@ fHook(){
 	## Two pushes at once would check out two commits into one worktree. Released on exit.
 	exec 9>"${lockFile}"
 	if ! flock -n 9; then
-		fEcho_Clean "pre-push: another gate is running in this repo; waiting for it (up to 10 minutes)."
+		fEcho_Clean "pre-push: Another gate is running in this repo; waiting for it (up to 10 minutes)."
 		if ! flock -w 600 9; then
-			fEcho_Clean "pre-push: gave up waiting for ${lockFile}. Nothing was pushed." >&2
+			fEcho_Clean "pre-push: Gave up waiting for ${lockFile}. Nothing was pushed." >&2
 			exit 1
 		fi
 	fi
@@ -261,7 +261,7 @@ fHook(){
 			continue
 		fi
 		if fSkipsGate "${commit}" "${remotes[i]}"; then
-			fEcho_Clean "pre-push: not gated: ${short} (${branch}) changes only paths its cicd/config.bash lists in MERGE_GATE_SKIP."
+			fEcho_Clean "pre-push: Not gated: ${short} (${branch}) changes only paths its cicd/config.bash lists in MERGE_GATE_SKIP."
 			continue
 		fi
 		fSnapshot "${commit}"
@@ -272,7 +272,7 @@ fHook(){
 		if [[ "${rc}" != 0 ]]; then
 			{
 				fEcho_Clean
-				fEcho_Clean "pre-push: the gate failed on ${short} (${branch}), so nothing was pushed."
+				fEcho_Clean "pre-push: The gate failed on ${short} (${branch}), so nothing was pushed."
 				fEcho_Clean "It checked that commit as committed, in ${snap}. To repeat it: (cd ${snap} && cicd/cicd.bash ${gateOpt})"
 				fEcho_Clean "To push without the gate this once: git push --no-verify"
 			} >&2

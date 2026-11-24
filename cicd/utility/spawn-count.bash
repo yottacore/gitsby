@@ -39,7 +39,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -73,7 +73,7 @@ fFail(){ local id="${1%%\] *}"; fEcho_Clean "  FAIL ${id#\[} ${1#*\] }"; }
 ## A SKIP for each command, named as fMeasure names it below.
 command -v strace >/dev/null 2>&1 || { sed -n 's/^fMeasure "\[\([^]]*\)\] \([^"]*\)".*/  SKIP \1 \2 (no strace)/p' "${BASH_SOURCE[0]}"; exit 0; }
 exe="${root}/${GO_MODULE_DIR}/${EXE_NAME}"
-[[ -x "${exe}" ]] || fDie "no build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd.bash stage 2, or 'go build' there"
+[[ -x "${exe}" ]] || fDie "No build at ${GO_MODULE_DIR}/${EXE_NAME} - run cicd.bash stage 2, or 'go build' there"
 
 fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
 work="$(mktemp -d "${safeTmp}/gitsby-spawn.XXXXXX")"
@@ -397,16 +397,16 @@ if [[ "$(fOriginRefs)" == "${originRefs}" ]]; then fOk "[dez8s] the fixture's or
 else fFail "[dez8s] the fixture's origins are as built, after every command"; originMoved=1; fi
 
 if ((originMoved)); then
-	fDie "spawn counts ran against an origin a command had changed; nothing recorded."
+	fDie "Spawn counts ran against an origin a command had changed; nothing recorded."
 fi
 if ((failedRun)); then
-	fDie "a measured command failed; nothing recorded."
+	fDie "A measured command failed; nothing recorded."
 fi
 if ((overLimit)); then
-	fDie "spawn counts went over their limits; nothing recorded."$'\n'"  A deliberate rise raises the expected count beside the command in ${BASH_SOURCE[0]##*/}."
+	fDie "Spawn counts went over their limits; nothing recorded."$'\n'"  A deliberate rise raises the expected count beside the command in ${BASH_SOURCE[0]##*/}."
 fi
 if ((regressed)) && ((! record)); then
-	fDie "spawn counts regressed against $(basename "${baseline}"); nothing recorded."$'\n'"  Re-run with --record to accept the new counts as the baseline."
+	fDie "Spawn counts regressed against $(basename "${baseline}"); nothing recorded."$'\n'"  Re-run with --record to accept the new counts as the baseline."
 fi
 
 ## UTC, as the run in the image is, so the newest record is the newest run on any box.

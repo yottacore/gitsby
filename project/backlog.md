@@ -36,7 +36,8 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - The pipeline's FAILED lines and the utility scripts' errors start in lower case after their label
 	- ID: 2026112410304905
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
+	- Closed reason: Done
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261124-103049
@@ -46,6 +47,22 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Estimated effort: Low
 	- Notes: test.bash asserts many of these messages. [dfr2g] skips them, since the label is added inside fDie; a check needs to read fDie's callers.
 	- Origin: Found while working 2026112410210775, whose text named only the WARNING, Error and Note lines.
+	- Progress log: 2026-11-24: Every fDie message in cicd/ starts with a capital after its label, in cicd.bash, release.bash, image-go.bash and the utilities. So does every error a utility prints after its own name: safe-rm in all 3 copies, pre-push, parity, backlog-check, test-id, lint-report, spawn-report, codeql-findings and gen-demo-gif, with their skip and fail helpers. The bash version refusal in every pipeline script says 'Needs bash 4.4'.
+	- Branch: nov24-2026112410304905
+	- Test case: test.bash [dfr2v] reads every fDie caller, every error after a utility's own name, and the utilities' skip and fail helpers. test.bash asserts given new values, below.
+	- Verified: [dfr2v] fails on the scripts before the change, naming 166 lines, and passes after. The quick run passed every area: lint and unit, test.bash 2447/0, fuzz 310/0, parity 32/0. [dee5h] failed once in an earlier run and passed on the rerun, with no change to what it reads.
+	- Swept: every tracked .bash, .sh, .ps1 and .py under cicd/, for fDie callers, fSkip and fail() in the utilities, and each utility's name followed by a colon. The 3 safe-rm copies (.bash, .sh, .ps1) match.
+	- Closed: 20261124-105200
+	- Acceptance signoff: Self-closed: mechanical, and its new check fails before the change and passes after.
+	- Decisions:
+		- Only the first word after the label is judged, as [dfr2g] does. A label nested after a tool's or option's name keeps its case, such as 'FAILED: staticcheck: code only the tests call' and 'FAILED: --publish: there is no tag'.
+		- A tool's, script's or option's name, a remote's name, a variable or a path after the label stays as it is, such as 'FAILED: go test failures', 'FAILED: origin has no tag' and 'test-id: --rev goes with --list'.
+		- Left as they are: fUsage lines with no label, such as 'unknown option: x (try --help)', and errors that carry no label, such as fuzz.bash's 'no build at src-go/gitsby' and gen-checksums' 'no files to checksum'. The rule is about text after a label.
+		- Left as they are: n8git_backup-and-publish, a shared script kept as its upstream ships it, the gen stubs' 'fake gh: unhandled' lines, gfs-rotate's 'rotate: <value>' and remote-tests' 'note:' line on the remote box.
+		- legacy/bin/gitsby keeps 'needs bash 4.4', since the frozen 2.x script is the parity baseline. [daept] asserts it, so it stays.
+		- pre-push's 'Installed' and 'Updated' come from a variable, which [dfr2v] can't read. [dcmbk] and [dcmbm] assert them.
+		- No changelog line, since only the case of one letter changed.
+		- 2026-11-24: test asserts given new values for this change, lower case to capital after the label: [ddf4h] 'Needs bash 4.4', [ddf3v] 'No icon', [dd5m0] 'Found no tests', [df345] 'No build at', [dez5h], [df50j] and [dfhks] 'Refused,', [db6y9] 'The pipeline did not pass', [df4xw] 'The pipeline left', [ddf6d] and [ddf19] 'Not a 64-bit', [ddf6d] 'Couldn't build', [ddgkc] 'The changelog's vNEXT', [df4xt] 'On', [df4xv] 'Branch', [ddf3q] 'Couldn't read', [df4y0] 'The v1.2.4 tag', [df4yq] 'Couldn't stamp', [ddf85] 'Can't work out', [ddf1a] 'Two builds', [de54a] and [de54h] 'Soak test failed', [dd5fq] and [df3gz] 'Fuzzing', [dd5fs] 'Spawn counts regressed', [dd5g3] 'Diverged', [dfk07], [dfk09] and [dfkwp] 'Uncommitted edits', [dd5f2] 'No integration branch', [dcmbk] 'Installed', [dcmbm] 'Updated' and 'Already installed', [dcmb5] and [dcmb7] 'Not gated'.
 
 - The pipeline scripts and installers start a sentence in lower case after a label
 	- ID: 2026112410210775

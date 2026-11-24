@@ -36,7 +36,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -82,7 +82,7 @@ fDie(){ printf '%s\n' "gen-winres: $*" >&2; exit 1; }
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 if ((iconOnly)); then
 	for tool in magick icotool optipng; do command -v "${tool}" >/dev/null 2>&1 || fDie "--icon needs ${tool}."; done
-	[[ -f "${logo}" ]] || fDie "no logo at assets/$(basename "${logo}")."
+	[[ -f "${logo}" ]] || fDie "No logo at assets/$(basename "${logo}")."
 	fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
 	tmp="$(mktemp -d "${safeTmp}/gitsby-ico.XXXXXX")"
 	trap 'fSafeRm "${tmp:?}" >/dev/null' EXIT
@@ -106,7 +106,7 @@ fi
 if [[ -z "${version}" ]]; then
 	versions="$(fReleaseTags -C "${root}" 2>/dev/null || true)"
 	version="${versions%%$'\n'*}"
-	[[ -n "${version}" ]] || fDie "no v* tag to take a version from; pass one."
+	[[ -n "${version}" ]] || fDie "No v* tag to take a version from; pass one."
 fi
 fIsReleaseVersion "${version}" || fDie "'${version}' is not a vX.Y.Z version."
 verStr="${version#v}"
@@ -114,7 +114,7 @@ verStr="${version#v}"
 ## strings Explorer displays.
 verMajor="${BASH_REMATCH[1]}"; verMinor="${BASH_REMATCH[2]}"; verPatch="${BASH_REMATCH[3]}"
 
-[[ -f "${icon}" ]] || fDie "no icon at assets/$(basename "${icon}") - run with --icon."
+[[ -f "${icon}" ]] || fDie "No icon at assets/$(basename "${icon}") - run with --icon."
 
 if [[ -z "${goversioninfo}" ]]; then
 	## Refused where it would silently publish the wrong bytes. --check answers 3 instead, which is
@@ -129,7 +129,7 @@ fi
 ## No ID marker in LegalCopyright, on purpose: Explorer shows it on the Properties tab. The years
 ## come from the program, so the Properties tab and --about can't disagree.
 copyrightYear="$(sed -n 's/^[[:space:]]*copyrightYear[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "${root}/${GO_MODULE_DIR}/main.go" || true)"
-[[ -n "${copyrightYear}" ]] || fDie "couldn't read copyrightYear from ${GO_MODULE_DIR}/main.go."
+[[ -n "${copyrightYear}" ]] || fDie "Couldn't read copyrightYear from ${GO_MODULE_DIR}/main.go."
 fpWriteJson(){
 	cat > "$1" <<-JSON
 		{
@@ -180,7 +180,7 @@ for t in "${RELEASE_TARGETS[@]}"; do
 	[[ "${t}" == windows/* ]] || continue
 	arches+=("${t##*/}")
 done
-((${#arches[@]})) || fDie "no windows targets in RELEASE_TARGETS."
+((${#arches[@]})) || fDie "No windows targets in RELEASE_TARGETS."
 
 out="${root}/${GO_MODULE_DIR}"
 fSafeRm_Init || exit 1; safeTmp="$(fSafeRm_Tmp)" || exit 1
@@ -194,7 +194,7 @@ fpWriteJson "${json}"
 
 declare -i differed=0
 for arch in "${arches[@]}"; do
-	flags="$(fpArchFlags "${arch}")" || fDie "no goversioninfo flags known for windows/${arch}."
+	flags="$(fpArchFlags "${arch}")" || fDie "No goversioninfo flags known for windows/${arch}."
 	name="resource_windows_${arch}.syso"
 	# shellcheck disable=2086  ## 'quote to prevent word splitting.' The flag string is meant to split.
 	"${goversioninfo}" ${flags} -o "${work}/${name}" "${json}" || fDie "goversioninfo failed for windows/${arch}."

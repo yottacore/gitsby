@@ -35,7 +35,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -59,7 +59,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 fEcho_Clean(){ ((quiet)) || printf '%s\n' "$*"; }
-[[ -r "${backlog}" ]] || fUsage "backlog-check: no backlog at ${backlog}"
+[[ -r "${backlog}" ]] || fUsage "backlog-check: No backlog at ${backlog}"
 git -C "${root}" rev-parse --git-dir >/dev/null 2>&1 || fUsage "backlog-check: ${root} is not a git repo"
 
 findings=0
@@ -91,7 +91,7 @@ reviewScan="$(awk '
 noOrigin="$(sed -n 's/^missing //p' <<< "${reviewScan}")"
 openCount="$(grep -c '^open ' <<< "${reviewScan}" || true)"
 if [[ -n "${noOrigin}" ]]; then
-	echo "backlog-check: open review items with no 'Origin:' sub-bullet:"
+	echo "backlog-check: Open review items with no 'Origin:' sub-bullet:"
 	while IFS= read -r line; do echo "  ${line}"; done <<< "${noOrigin}"
 	findings=1
 else
@@ -106,19 +106,19 @@ if [[ -z "${base}" ]]; then
 	done
 fi
 if [[ -z "${base}" ]]; then
-	fEcho_Clean "backlog-check: no integration branch found; removed-check test skipped"
+	fEcho_Clean "backlog-check: No integration branch found; removed-check test skipped"
 else
 	mergeBase="$(git -C "${root}" merge-base HEAD "${base}" 2>/dev/null || true)"
 	if [[ -z "${mergeBase}" ]]; then
-		fEcho_Clean "backlog-check: no merge base with ${base}; removed-check test skipped"
+		fEcho_Clean "backlog-check: No merge base with ${base}; removed-check test skipped"
 	else
-		[[ -r "${testIdCmd}" ]] || fUsage "backlog-check: no test-id.bash beside this script, at ${testIdCmd}"
+		[[ -r "${testIdCmd}" ]] || fUsage "backlog-check: No test-id.bash beside this script, at ${testIdCmd}"
 		## Each test as "<id> <label>", from the scan test-id.bash checks IDs with, so a check any
 		## helper makes, anywhere on its line, counts. A suite gone from the tree has none left.
-		before="$(bash "${testIdCmd}" --list --root "${root}" --rev "${mergeBase}" "${suites[@]}")" || fUsage "backlog-check: could not list the tests at ${base}"
+		before="$(bash "${testIdCmd}" --list --root "${root}" --rev "${mergeBase}" "${suites[@]}")" || fUsage "backlog-check: Could not list the tests at ${base}"
 		present=(); for s in "${suites[@]}"; do [[ -f "${root}/${s}" ]] && present+=("${s}"); done
 		after=""
-		if ((${#present[@]})); then after="$(bash "${testIdCmd}" --list --root "${root}" "${present[@]}")" || fUsage "backlog-check: could not list the tests"; fi
+		if ((${#present[@]})); then after="$(bash "${testIdCmd}" --list --root "${root}" "${present[@]}")" || fUsage "backlog-check: Could not list the tests"; fi
 		## Only a line the branch adds can name a removal. One already there at the base, such as the
 		## item that added the check, says nothing about why it went. A backlog git has no copy of
 		## at the base is all new.
@@ -150,12 +150,12 @@ else
 		n="${scan[0]:-0}"; unnamed=""
 		for line in "${scan[@]:1}"; do unnamed+="${line}"$'\n'; done
 		if [[ -n "${unnamed}" ]]; then
-			echo "backlog-check: suite checks removed since ${base} and not named on a backlog line this branch adds:"
+			echo "backlog-check: Suite checks removed since ${base} and not named on a backlog line this branch adds:"
 			while IFS= read -r line; do [[ -n "${line}" ]] && echo "  \"${line}\""; done <<< "${unnamed}"
 			echo "  Name each one in the backlog, by its ID, with the decision it encoded and why that changed."
 			findings=1
 		else
-			fEcho_Clean "backlog-check: removed suite checks all named in the backlog (${n} removed since ${base})"
+			fEcho_Clean "backlog-check: Removed suite checks all named in the backlog (${n} removed since ${base})"
 		fi
 	fi
 fi
@@ -182,7 +182,7 @@ closedScan="$(awk '
 noClosed="$(sed -n 's/^missing //p' <<< "${closedScan}")"
 closedCount="$(grep -c '^closed ' <<< "${closedScan}" || true)"
 if [[ -n "${noClosed}" ]]; then
-	echo "backlog-check: closed items with no 'Closed:' row:"
+	echo "backlog-check: Closed items with no 'Closed:' row:"
 	while IFS= read -r line; do echo "  ${line}"; done <<< "${noClosed}"
 	findings=1
 else
@@ -190,7 +190,7 @@ else
 fi
 unsigned="$(sed -n 's/^unsigned //p' <<< "${closedScan}")"
 if [[ -n "${unsigned}" ]]; then
-	echo "backlog-check: closed items with no 'Acceptance signoff:' row saying why they closed:"
+	echo "backlog-check: Closed items with no 'Acceptance signoff:' row saying why they closed:"
 	while IFS= read -r line; do echo "  ${line}"; done <<< "${unsigned}"
 	findings=1
 else

@@ -26,7 +26,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -42,7 +42,7 @@ while (($#)); do case "$1" in
 	--no-mark) noMark=1; shift ;;
 	--dir)     dir="${2:-}"; shift 2 ;;
 	-h|--help) grep -E '^##' "$0" | sed 's/^##\t\?//'; exit 0 ;;
-	*) echo "spawn-report: unknown option: $1" >&2; exit 2 ;;
+	*) echo "spawn-report: Unknown option: $1" >&2; exit 2 ;;
 esac; done
 
 fSkip(){ echo "spawn-report: $1" >&2; exit 2; }
@@ -60,9 +60,9 @@ fNewestTwo(){
 	done | sort -r | sed -n '1,2p'
 }
 
-[[ -d "${dir}" ]] || fSkip "no spawn dir: ${dir}"
+[[ -d "${dir}" ]] || fSkip "No spawn dir: ${dir}"
 newestTwo="$(fNewestTwo "${dir}")"
-[[ -n "${newestTwo}" ]] || fSkip "no recordings in ${dir}"
+[[ -n "${newestTwo}" ]] || fSkip "No recordings in ${dir}"
 ts="$(printf '%s\n' "${newestTwo}" | sed -n '1p' | cut -f1)"
 newest="$(printf '%s\n' "${newestTwo}" | sed -n '1p' | cut -f2)"
 prev="$(printf '%s\n' "${newestTwo}" | sed -n '2p' | cut -f2)"
@@ -78,7 +78,7 @@ fi
 ##	Record before printing, same as lint-report: a caller that closes stdout early
 ##	still records the look.
 if ((check)) && ((! noMark)) && [[ -n "${ts}" ]]; then
-	printf '%s\n' "${ts}" > "${marker}" 2>/dev/null || echo "spawn-report: could not write marker: ${marker}" >&2
+	printf '%s\n' "${ts}" > "${marker}" 2>/dev/null || echo "spawn-report: Could not write marker: ${marker}" >&2
 fi
 
 ## The previous counts by label, read once. A label listed twice keeps both, so fCount refuses it.

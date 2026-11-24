@@ -37,7 +37,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -123,11 +123,11 @@ refBuild="${root}/legacy/bin/gitsby"
 ## A missing build is a step that compared nothing, unlike a missing frozen one, which is the end
 ## state the header names.
 if [[ ! -x "${newBuild}" ]]; then
-	fEcho_Clean "parity: no build at src-go/gitsby - run 'go build' there, or cicd.bash's test step" >&2
+	fEcho_Clean "parity: No build at src-go/gitsby - run 'go build' there, or cicd.bash's test step" >&2
 	exit 1
 fi
 if [[ ! -f "${refBuild}" ]]; then
-	fEcho_Clean "parity: no frozen build at legacy/bin/gitsby - nothing to compare against, skipping."
+	fEcho_Clean "parity: No frozen build at legacy/bin/gitsby - nothing to compare against, skipping."
 	exit 0
 fi
 
@@ -210,7 +210,7 @@ fSameExit(){
 }
 
 fEcho_Clean
-fEcho "gitsby parity: this build vs the frozen v2.1.0 script"
+fEcho "gitsby parity: This build vs the frozen v2.1.0 script"
 fEcho_Clean
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••

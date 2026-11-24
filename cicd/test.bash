@@ -22,7 +22,7 @@
 
 
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404 )); then
-	printf '%s\n' "${0##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
+	printf '%s\n' "${0##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}. On macOS, install one with 'brew install bash' and put it first on PATH." >&2; exit 1
 fi
 set -Eeuo pipefail
 
@@ -359,6 +359,30 @@ fLabelsCapitalized(){ local f="" line="" word="" n=0 bad=0
 			echo "lower case after its label: ${f}: ${line#"${line%%[![:space:]]*}"}"; bad=1
 		done < "${root}/${f}"
 	done < <(cd "${root}" && git ls-files -- 'cicd/*.bash' 'cicd/*.ps1' install.bash install.ps1 ':!cicd/test.bash')
+	((n > 0 && bad == 0))
+}
+## Succeeds when every fDie message in the pipeline scripts, and every error a utility script
+## prints after its own name, starts with a capital. fDie adds its label inside, so this reads
+## the callers. Skip and fail helpers in the utilities count too. A tool's, script's or option's
+## name, or a path, stays as it is spelled. test.bash and the shared n8git script are left out.
+fFailedCapitalized(){ local f="" line="" word="" names="" n=0 bad=0; local -a more=()
+	local -a asIs=(docker markdownlint ruff staticcheck golangci-lint govulncheck pip-audit git gh go gofmt
+		shellcheck goversioninfo icotool origin "origin's" py_compile)
+	names="$(cd "${root}" && git ls-files -- 'cicd/utility/*' | sed 's|.*/||; s|\.[a-z0-9]*$||' | sort -u | paste -sd '|')"
+	IFS='|' read -ra more <<< "${names}"; asIs+=("${more[@]}")
+	while IFS= read -r f; do
+		while IFS= read -r line; do
+			[[ "${line}" =~ ^[[:space:]]*# ]] && continue
+			if [[ "${line}" =~ fDie\ +[\"\']([^\ \"\']+) ]] \
+				|| [[ "${line}" =~ (^|[\"\' ])(${names}|\$\{0##\*/\}):\ +([^\ \"\']+) ]] \
+				|| [[ "${f}" == cicd/utility/* && "${line}" =~ (fSkip|fail)\ *\(?f?[\"\']([^\ \"\']+) ]]; then
+				word="${BASH_REMATCH[-1]}"
+			else continue; fi
+			n=$((n + 1)); word="${word%%[:,;.]}"
+			[[ "${word}" =~ ^[a-z] && ! "${word}" =~ [/.] && " ${asIs[*]} " != *" ${word} "* ]] || continue
+			echo "lower case after its label: ${f}: ${line#"${line%%[![:space:]]*}"}"; bad=1
+		done < "${root}/${f}"
+	done < <(cd "${root}" && git ls-files -- 'cicd/*.bash' 'cicd/*.sh' 'cicd/*.ps1' 'cicd/*.py' ':!cicd/test.bash' ':!cicd/utility/n8git_*')
 	((n > 0 && bad == 0))
 }
 ## Succeeds when install.bash's --help names every option its argument loop takes.
@@ -1100,7 +1124,7 @@ fGateContainerLeak(){
 fGateLeakStops(){
 	: > "${gateFail}/$1"
 	local rc=0
-	fGateSays 1 'soak test failed' -y --no-container --leakcheck --no-lint --no-test --no-fuzz --no-parity --no-demogif --no-remote --no-sync --no-publish --no-dogfood --quick || rc=1
+	fGateSays 1 'Soak test failed' -y --no-container --leakcheck --no-lint --no-test --no-fuzz --no-parity --no-demogif --no-remote --no-sync --no-publish --no-dogfood --quick || rc=1
 	rm -f -- "${gateFail:?}/$1"
 	return "${rc}"
 }
@@ -1292,7 +1316,7 @@ fGateQuietSuites(){
 ## --install-hook hands over to the installer: the hook is in place, and no stage or gate header
 ## was printed on the way.
 fGateInstallHook(){
-	fGateSays 0 '^pre-push: installed ' --install-hook \
+	fGateSays 0 '^pre-push: Installed ' --install-hook \
 		&& grep -qxF '## gitsby pre-push gate - installed by cicd/cicd.bash --install-hook' "${gateDir}/.git/hooks/pre-push" \
 		&& ! grep -qE '[0-9]/[0-9]  ' "${gateOut}"
 }
@@ -1749,7 +1773,7 @@ fBashFloorRefuses(){
 	sed 's/< 404 ))/< 9999 ))/' "${root}/$1" > "${dir}/${1##*/}"
 	if cmp -s "${root}/$1" "${dir}/${1##*/}"; then return 1; fi
 	out="$(cd "${dir}" && bash "./${1##*/}" </dev/null 2>&1)" || rc=$?
-	[[ "${rc}" == 1 && "${out}" == "${1##*/}: needs bash 4.4 or newer, and this is bash ${BASH_VERSION}."* && "${out}" != *$'\n'* ]]
+	[[ "${rc}" == 1 && "${out}" == "${1##*/}: Needs bash 4.4 or newer, and this is bash ${BASH_VERSION}."* && "${out}" != *$'\n'* ]]
 }
 
 ## Whether shellcheck's brace rule is on for the whole of script $1. The directive has to come
@@ -4977,6 +5001,7 @@ GHEOF
 		fInstallerDated "${goInst}" bash "${goInst}" --version
 	fAssert     "[dfjqf] every PowerShell file outside legacy/ is plain ASCII"  fPsAllAscii
 	fAssert     "[dfr2g] pipeline and installer text starts with a capital after its label"  fLabelsCapitalized
+	fAssert     "[dfr2v] every FAILED line and utility error starts with a capital after its label"  fFailedCapitalized
 	fAssertOut  "[dbfk9] go installer refuses a bad --target"         "--target takes"            bash -c "bash '${goInst}' --target bogus"
 	fAssertOut  "[dbfka] go installer refuses a valueless --target"   "--target needs a value"    bash -c "bash '${goInst}' --target"
 	## --arch names the asset now rather than being accepted and ignored, so the two spellings
@@ -7541,7 +7566,7 @@ LGEOF
 	fAssert "[db6y8] release.bash runs the pipeline before touching anything" \
 		grep -q 'cicd.bash --no-publish' "${relBash}"
 	fAssert "[db6y9] and treats a failing pipeline as fatal" \
-		grep -q 'the pipeline did not pass' "${relBash}"
+		grep -q 'The pipeline did not pass' "${relBash}"
 	## -y alone is unattended but not quiet, and would print every check line of the phase 1 run.
 	# shellcheck disable=SC2016  ## the inner shell does the expanding.
 	fAssert "[dd5ej] and release.bash -q runs it quiet" \
@@ -7675,7 +7700,7 @@ LGEOF
 		git -C "${relRepo}" push --quiet -u origin feature 2>/dev/null
 		fRelRun --dry-run
 		fAssert "[df4xt] release.bash refuses to cut from a branch 'gitsby release' doesn't cut from" \
-			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"on 'feature', and a release is cut from 'main'.\" '${relOut}' && ! grep -qF 'Phase 1 OK' '${relOut}'"
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"On 'feature', and a release is cut from 'main'.\" '${relOut}' && ! grep -qF 'Phase 1 OK' '${relOut}'"
 		git -C "${relRepo}" checkout --quiet main
 		git -C "${relRepo}" push --quiet origin --delete feature 2>/dev/null
 		git -C "${relRepo}" branch --quiet -D feature
@@ -7686,7 +7711,7 @@ LGEOF
 		git -C "${rel}/other" push --quiet 2>/dev/null
 		fRelRun --dry-run
 		fAssert "[df4xv] and refuses when that branch is behind origin's, which it fetches first" \
-			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"branch 'main' is behind origin's. Pull it, then run again.\" '${relOut}' && ! grep -qF 'Phase 1 OK' '${relOut}'"
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"Branch 'main' is behind origin's. Pull it, then run again.\" '${relOut}' && ! grep -qF 'Phase 1 OK' '${relOut}'"
 		git -C "${relRepo}" pull --quiet --ff-only 2>/dev/null
 		## With a dev, the release merges dev into main, so a commit main has and dev doesn't goes
 		## into the tag untested.
@@ -7772,7 +7797,7 @@ LGEOF
 		fRelRun -y
 		# shellcheck disable=SC2016  ## the inner shell does the expanding.
 		fAssert "[ddf3q] release.bash says so when 'pr create' prints no pull URL" \
-			bash -c '[[ "$1" == 1 ]] && grep -qF -- "$2" "$3"' _ "${relRc}" "couldn't read a PR number out of 'pr create' output." "${relOut}"
+			bash -c '[[ "$1" == 1 ]] && grep -qF -- "$2" "$3"' _ "${relRc}" "Couldn't read a PR number out of 'pr create' output." "${relOut}"
 		git -C "${relRepo}" checkout -q -- .
 		## Phase 3, which no dry run reaches. releases/latest can't be reached, and the build's own
 		## --version exits 3, and either one ended the run with nothing said. The published binary
@@ -7915,7 +7940,7 @@ LGEOF
 		printf '#!/usr/bin/env bash\necho rewritten >> install.bash\n' > "${rel}/pipeline-hook"; chmod +x "${rel}/pipeline-hook"
 		fRelRun -y
 		fAssert "[df4xw] release.bash stops before phase 2 when the pipeline left the tree changed" \
-			bash -c "[[ '${relRc}' == 1 ]] && grep -qF 'the pipeline left the working tree changed, and the version PR would take that in: install.bash.' '${relOut}' && ! grep -qF 'Phase 2: merge' '${relOut}'"
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF 'The pipeline left the working tree changed, and the version PR would take that in: install.bash.' '${relOut}' && ! grep -qF 'Phase 2: merge' '${relOut}'"
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" tag -d v1.2.4 >/dev/null 2>&1 || true
 		fStub "${rel}/pipeline-hook" <<-EOF
@@ -7953,7 +7978,7 @@ LGEOF
 		echo 'release v1.2.4' > "${rel}/gitsby-hook-at"
 		fRelRun -y
 		fAssert "[df4y0] and before publishing when the tag holds more than the version PR" \
-			bash -c "[[ '${relRc}' == 1 ]] && grep -qF 'the v1.2.4 tag holds more than PR #7 on the tested commit.' '${relOut}' && ! grep -qF 'Phase 3: publish' '${relOut}'"
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF 'The v1.2.4 tag holds more than PR #7 on the tested commit.' '${relOut}' && ! grep -qF 'Phase 3: publish' '${relOut}'"
 		rm -f -- "${rel:?}/gitsby-hook" "${rel:?}/gitsby-hook-at"
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" reset --quiet --keep "${relHead}"
@@ -7968,7 +7993,7 @@ LGEOF
 		fRelRun -y
 		rm -f -- "${rel:?}/stub-fail"
 		fAssert "[df4yq] release.bash says the version branch is pushed when phase 2 stops after 'br create'" \
-			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"couldn't stamp the Windows resource; rel-1.2.4 is pushed, with no PR. Delete it, then run again.\" '${relOut}' && ! grep -qF 'opened PR' '${relOut}'"
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"Couldn't stamp the Windows resource; rel-1.2.4 is pushed, with no PR. Delete it, then run again.\" '${relOut}' && ! grep -qF 'opened PR' '${relOut}'"
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" tag -d v1.2.4 >/dev/null 2>&1 || true
 		## A Mac build that isn't Mach-O is refused by the joiner, and that stops phase 1.
@@ -7983,7 +8008,7 @@ LGEOF
 		relState="$(fRelState)"
 		fRelRun -y
 		fAssert "[ddf6d] release.bash stops before tagging when the Mac builds won't join" \
-			bash -c "[[ '${relRc}' == 1 ]] && grep -qF 'not a 64-bit Mach-O build' '${relOut}' && grep -qF \"couldn't build or checksum darwin/universal; nothing has been changed.\" '${relOut}'"
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF 'Not a 64-bit Mach-O build' '${relOut}' && grep -qF \"Couldn't build or checksum darwin/universal; nothing has been changed.\" '${relOut}'"
 		fAssert "[ddf6e] and leaves HEAD, the tags and origin as they were"  test "${relState}" = "$(fRelState)"
 		git -C "${relRepo}" tag -d v1.2.4 >/dev/null 2>&1 || true
 		## A head reading the tag list quit at the first line, and git died writing the rest once
@@ -8001,7 +8026,7 @@ LGEOF
 		git -C "${relRepo}" tag v1.3.0rc1
 		fRelRun --dry-run
 		fAssert "[ddf85] and refuses to bump a tag whose patch isn't digits" \
-			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"can't work out the version after v1.3.0rc1\" '${relOut}'"
+			bash -c "[[ '${relRc}' == 1 ]] && grep -qF \"Can't work out the version after v1.3.0rc1\" '${relOut}'"
 		git -C "${relRepo}" tag -d v1.3.0rc1 >/dev/null
 		## The shcl move sat on a commit pin for weeks, waiting on its tag.
 		printf '%s\n' 'module x' '' 'require (' '	example.com/m v1.2.0' '	example.com/n/v3 v3.0.0-20261001214152-b10c2009d36c' ')' > "${relRepo}/src-go/go.mod"
@@ -8026,16 +8051,16 @@ LGEOF
 		local relSame=0; if [[ "${relState}" == "$(fRelState)" ]]; then relSame=1; fi
 		# shellcheck disable=SC2016  ## the inner shell does the expanding.
 		fAssert "[ddgkc] release.bash refuses a vNEXT section that already has a downloads table, and changes nothing" \
-			bash -c '[[ "$1" == 1 && "$4" == 1 ]] && grep -qF -- "$2" "$3"' _ "${relRc}" "the changelog's vNEXT section already has a '### Downloads' heading" "${relOut}" "${relSame}"
+			bash -c '[[ "$1" == 1 && "$4" == 1 ]] && grep -qF -- "$2" "$3"' _ "${relRc}" "The changelog's vNEXT section already has a '### Downloads' heading" "${relOut}" "${relSame}"
 		git clone --quiet "${relRepo}" "${rel}/winres" 2>/dev/null
 		cp "${root}/cicd/utility/gen-winres.bash" "${rel}/winres/cicd/utility/"
-		fAssertOut "[ddf3v] and so does gen-winres.bash" 'gen-winres: no icon at assets/gitsby\.ico' \
+		fAssertOut "[ddf3v] and so does gen-winres.bash" 'gen-winres: No icon at assets/gitsby\.ico' \
 			bash "${rel}/winres/cicd/utility/gen-winres.bash" -q
 		## v1.2.3rc1 made a patch number of 0rc1, and the resource failed to build after the pipeline.
 		# shellcheck disable=SC2016  ## the inner shell does the expanding.
 		fAssert "[df4yn] gen-winres.bash refuses a version 'gitsby release' or git would, and takes v1.2.3.4" \
 			bash -c 'for v in v1.2.3rc1 v1.2.3.lock v1.2.3-; do o="$(bash "$1" -q "${v}" 2>&1)"; [[ "${o}" == *"'"'"'${v}'"'"' is not a vX.Y.Z version."* ]] || exit 1; done
-				o="$(bash "$1" -q v1.2.3.4 2>&1)"; [[ "${o}" == *"no icon at assets/gitsby.ico"* ]]' _ "${rel}/winres/cicd/utility/gen-winres.bash"
+				o="$(bash "$1" -q v1.2.3.4 2>&1)"; [[ "${o}" == *"No icon at assets/gitsby.ico"* ]]' _ "${rel}/winres/cicd/utility/gen-winres.bash"
 		## A suffix after a dot went into the patch number: v1.2.3.beta gave "Patch": 3.beta.
 		mkdir -p "${rel}/winres/assets" "${rel}/winbin"; : > "${rel}/winres/assets/gitsby.ico"
 		printf '\tcopyrightYear = "2026"\n' > "${rel}/winres/src-go/main.go"
@@ -8429,9 +8454,9 @@ LGEOF
 			&& [[ \$(wc -c < '${fatDir}/fat') -eq 32783 ]] \
 			&& tail -c +16385 '${fatDir}/fat' | head -c 15 | cmp -s - '${fatDir}/amd64' \
 			&& tail -c +32769 '${fatDir}/fat' | cmp -s - '${fatDir}/arm64'"
-	fAssertOut "[ddf19] and refuses a build that is not 64-bit Mach-O" 'not a 64-bit Mach-O build' \
+	fAssertOut "[ddf19] and refuses a build that is not 64-bit Mach-O" 'Not a 64-bit Mach-O build' \
 		"${fatJoin}" "${fatDir}/bad" "${fatDir}/amd64" "${fatDir}/elf"
-	fAssertOut "[ddf1a] and two builds for one CPU" 'two builds for one CPU' \
+	fAssertOut "[ddf1a] and two builds for one CPU" 'Two builds for one CPU' \
 		"${fatJoin}" "${fatDir}/bad" "${fatDir}/arm64" "${fatDir}/arm64"
 	fAssert "[ddf1b] dogfood builds macOS universal, and joins it with that script" \
 		bash -c "cd '${root}' && source cicd/config.bash && [[ \" \${DOGFOOD_TARGETS[*]} \" == *' darwin/universal '* ]] && grep -q 'macho-universal\.bash' cicd/cicd.bash && [[ ! -e '${fatDir}/bad' ]]"
@@ -8618,7 +8643,7 @@ LGEOF
 	printf '# Backlog\n\n\t- 🔘 Code Review 20260101 item 1: x\n\t\t- Origin: y\n\t- 🔘 Code Review 20260101 item 4: x\n\t\t- Why: z\n' > "${bl}/project/no-origin.md"
 	fAssertOut "[dd5f1] the backlog gate counts the open review items it read" 'Origin: present on every open review item \(2 listed\)' \
 		"${bl}/cicd/utility/backlog-check.bash"
-	fAssertOut "[dd5f2] and skips the removed-check rule with no integration branch" 'no integration branch found; removed-check test skipped' \
+	fAssertOut "[dd5f2] and skips the removed-check rule with no integration branch" 'No integration branch found; removed-check test skipped' \
 		"${bl}/cicd/utility/backlog-check.bash"
 	fAssert "[dd5f3] and fails an open review item with no Origin line, by name" \
 		bash -c "out=\$('${bl}/cicd/utility/backlog-check.bash' -q --backlog '${bl}/project/no-origin.md' 2>&1); [[ \$? == 1 ]] && grep -qxF '  Code Review 20260101 item 4' <<< \"\$out\" && ! grep -qF 'item 1' <<< \"\$out\""
@@ -8717,7 +8742,7 @@ LGEOF
 		fSkipBlock "test-id.bash --at (no GNU date)"
 	fi
 	fAssert "[dd5m0] the ID check fails a tree where it finds no tests" \
-		bash -c "out=\$('${root}/cicd/utility/test-id.bash' --check --root '${work}/no-such-tree' 2>&1); [[ \$? == 1 ]] && grep -q '^test-id: found no tests under ' <<< \"\$out\""
+		bash -c "out=\$('${root}/cicd/utility/test-id.bash' --check --root '${work}/no-such-tree' 2>&1); [[ \$? == 1 ]] && grep -q '^test-id: Found no tests under ' <<< \"\$out\""
 	## A file no glob names is linted by nothing, and a glob that names nothing is a file that moved.
 	fAssert "[dd5f4] every tracked markdown file is in a markdown lint glob" \
 		test -z "$(cd "${root}" && git ls-files '*.md' | fLintUncovered MD_LINT_GLOBS)"
@@ -9428,11 +9453,11 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		cp "${root}/cicd/utility/include/safe-rm.bash" "${parNo}/cicd/utility/include/"
 		: > "${parNo}/legacy/bin/gitsby"
 		fAssert "[df345] parity.bash fails when there is no build to compare" \
-			bash -c "out=\$('${parNo}/cicd/parity.bash' 2>&1); [[ \$? == 1 ]] && grep -qF 'parity: no build at src-go/gitsby' <<< \"\${out}\""
+			bash -c "out=\$('${parNo}/cicd/parity.bash' 2>&1); [[ \$? == 1 ]] && grep -qF 'parity: No build at src-go/gitsby' <<< \"\${out}\""
 		: > "${gateFail}/go-fuzz"
 		fGateOnly fuzz
 		rm -f -- "${gateFail:?}/go-fuzz"
-		fAssert "[dd5fq] and a crasher stops the run, naming the target"  fGateRanSaying 1 'fuzzing found a crasher in FuzzA'
+		fAssert "[dd5fq] and a crasher stops the run, naming the target"  fGateRanSaying 1 'Fuzzing found a crasher in FuzzA'
 		fAssert "[deh0c] and prints what go said about it"  fGateRanSaying 1 '^fuzz: crasher input'
 		fAssert "[df3gx] and stops at once, with no second try" \
 			bash -c "[[ \"\$(grep -c -- ' -fuzz \\^FuzzA' '${gateCalls}')\" == 1 ]]"
@@ -9446,7 +9471,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fGateOnly fuzz --no-leakcheck
 		rm -f -- "${gateFail:?}/go-fuzz-noinput"
 		fAssert "[df3gz] and fails without calling it a crasher when the second run saves none either" \
-			bash -c "[[ '${gateRc}' == 1 ]] && grep -qF 'fuzzing FuzzA failed twice and saved no failing input' '${gateOut}' && grep -qF 'context deadline exceeded' '${gateOut}' && ! grep -qF crasher '${gateOut}'"
+			bash -c "[[ '${gateRc}' == 1 ]] && grep -qF 'Fuzzing FuzzA failed twice and saved no failing input' '${gateOut}' && grep -qF 'context deadline exceeded' '${gateOut}' && ! grep -qF crasher '${gateOut}'"
 		: > "${gateFail}/fuzz"
 		fGateOnly fuzz
 		rm -f -- "${gateFail:?}/fuzz"
@@ -9454,7 +9479,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		: > "${gateFail}/spawn-count"
 		fGateOnly fuzz
 		rm -f -- "${gateFail:?}/spawn-count"
-		fAssert "[dd5fs] and a spawn count that rose"  fGateRanSaying 1 'spawn counts regressed'
+		fAssert "[dd5fs] and a spawn count that rose"  fGateRanSaying 1 'Spawn counts regressed'
 		fAssert "[dd5ft] the module has at least five fuzz targets for stage 3 to find" \
 			bash -c "[[ \"\$(cd '${root}/src-go' && env -u XDG_CONFIG_HOME -u APPDATA go test -list 'Fuzz.*' . | grep -c '^Fuzz')\" -ge 5 ]]"
 		## Stage 5 on a box with none of the shared dirs, then with the first one this box's target names.
@@ -9533,7 +9558,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fGateUpstream four
 		local syncHead=""; syncHead="$(git -C "${gateDir}" rev-parse HEAD)"
 		fGateOnly sync
-		fAssert "[dd5g3] a tree that diverged from origin and doesn't merge clean stops the run"  fGateRanSaying 1 'diverged from origin: 3 local, 1 remote, and they don.t merge clean'
+		fAssert "[dd5g3] a tree that diverged from origin and doesn't merge clean stops the run"  fGateRanSaying 1 'Diverged from origin: 3 local, 1 remote, and they don.t merge clean'
 		fAssert "[dfjmd] and is left as it was, its uncommitted edit included" \
 			bash -c "[[ \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(git -C '${gateDir}' diff --name-only HEAD -- notes.txt upstream.txt)\" == notes.txt && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == wip && -z \"\$(git -C '${gateDir}' stash list)\" ]] && ! git -C '${gateDir}' rev-parse -q --verify MERGE_HEAD"
 		## Commits that merge clean, under an edit in the tree that clashes with origin's. git
@@ -9545,7 +9570,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		echo staged >> "${gateDir}/local.txt" && git -C "${gateDir}" add local.txt
 		syncHead="$(git -C "${gateDir}" rev-parse HEAD)"
 		fGateOnly sync
-		fAssert "[dfk07] stage 0 stops when an uncommitted edit clashes with what it merged in"  fGateRanSaying 1 'uncommitted edits clash with origin in notes.txt, so the merge was backed out'
+		fAssert "[dfk07] stage 0 stops when an uncommitted edit clashes with what it merged in"  fGateRanSaying 1 'Uncommitted edits clash with origin in notes.txt, so the merge was backed out'
 		fAssert "[dfk08] and backs the merge out, with the edits put back and the staged one still staged" \
 			bash -c "[[ \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == clash && \"\$(git -C '${gateDir}' diff --cached --name-only)\" == local.txt && \"\$(git -C '${gateDir}' diff --name-only)\" == notes.txt && -z \"\$(git -C '${gateDir}' stash list)\" && -z \"\$(git -C '${gateDir}' ls-files -u)\" ]]"
 		## The same over a fast-forward, with a stash entry of the user's that has to stay.
@@ -9555,7 +9580,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		echo clash >> "${gateDir}/notes.txt"
 		syncHead="$(git -C "${gateDir}" rev-parse HEAD)"
 		fGateOnly sync
-		fAssert "[dfk09] and when one clashes with what it fast-forwarded over"  fGateRanSaying 1 'uncommitted edits clash with origin in notes.txt, so the merge was backed out'
+		fAssert "[dfk09] and when one clashes with what it fast-forwarded over"  fGateRanSaying 1 'Uncommitted edits clash with origin in notes.txt, so the merge was backed out'
 		fAssert "[dfk0a] and backs that out too, with the edit put back and the older stash entry left alone" \
 			bash -c "[[ \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(tail -n 1 '${gateDir}/notes.txt')\" == clash && \"\$(git -C '${gateDir}' diff --name-only HEAD)\" == notes.txt && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' && -z \"\$(git -C '${gateDir}' ls-files -u)\" ]]"
 		## Staged edits stay staged over a fast-forward and a merge that go in clean: a file staged
@@ -9590,7 +9615,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		syncHead="$(git -C "${gateDir}" rev-parse HEAD)"
 		fGateOnly sync
 		fAssert "[dfkwp] a staged edit that clashes with what came in stops the run, named, with the edit still staged" \
-			bash -c "[[ '${gateRc}' == 1 && \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(git -C '${gateDir}' show :notes.txt | tail -n 1)\" == mine && -z \"\$(git -C '${gateDir}' diff --name-only)\" && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' && -z \"\$(git -C '${gateDir}' ls-files -u)\" ]] && grep -qF 'uncommitted edits clash with origin in notes.txt, so the merge was backed out' '${gateOut}'"
+			bash -c "[[ '${gateRc}' == 1 && \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(git -C '${gateDir}' show :notes.txt | tail -n 1)\" == mine && -z \"\$(git -C '${gateDir}' diff --name-only)\" && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' && -z \"\$(git -C '${gateDir}' ls-files -u)\" ]] && grep -qF 'Uncommitted edits clash with origin in notes.txt, so the merge was backed out' '${gateOut}'"
 		git -C "${gateDir}" remote set-url origin "${work}/gate-pipe-nowhere.git"
 		fGateOnly sync
 		fAssert "[dd5g4] an origin it can't reach is a warning, not a stop"  fGateRanSaying 0 "WARNING: Can't reach origin"
@@ -9632,7 +9657,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		printf '%s\n' '#!/usr/bin/env bash' '## gitsby pre-push gate - installed by cicd/cicd.bash --install-hook' \
 			'exec "$(git rev-parse --show-toplevel)/cicd/utility/pre-push.bash" "$@"' > "${hookFile}"
 		fAssert "[dcmbm] and an older hook of ours is replaced" \
-			bash -c "out=\$('${hookRepo}/cicd/utility/pre-push.bash' --install) && grep -qxF 'pre-push: updated ${hookFile}' <<< \"\$out\" && out=\$('${hookRepo}/cicd/utility/pre-push.bash' --install) && grep -qF 'already installed' <<< \"\$out\""
+			bash -c "out=\$('${hookRepo}/cicd/utility/pre-push.bash' --install) && grep -qxF 'pre-push: Updated ${hookFile}' <<< \"\$out\" && out=\$('${hookRepo}/cicd/utility/pre-push.bash' --install) && grep -qF 'Already installed' <<< \"\$out\""
 		## Fresh clones for the refusals, so none of them depends on the install above.
 		local hookRepo3="${hookDir}/repo3" hookRepo4="${hookDir}/repo4" hookRepo5="${hookDir}/repo5"
 		local hookElsewhere="${hookDir}/hooks-elsewhere" hookUname="${hookDir}/uname-bin" hookForeign=""
@@ -9678,7 +9703,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		git -C "${hookRepo}" checkout --quiet main
 		hookRc=0; fHookPush "${hookRepo}" origin side || hookRc=$?
 		fAssert "[dcmb5] a branch other than main is not gated" \
-			bash -c "[[ '${hookRc}' == 0 && ! -s '${hookLog}' ]] && grep -qF 'not gated: refs/heads/side' '${hookOut}' && [[ -n \"\$(git -C '${hookRepo}' ls-remote origin refs/heads/side)\" ]]"
+			bash -c "[[ '${hookRc}' == 0 && ! -s '${hookLog}' ]] && grep -qF 'Not gated: refs/heads/side' '${hookOut}' && [[ -n \"\$(git -C '${hookRepo}' ls-remote origin refs/heads/side)\" ]]"
 		hookRc=0; fHookPush "${hookRepo}" origin +side:refs/heads/main || hookRc=$?
 		fAssert "[dd25y] main pushed from another branch is gated at that commit" \
 			bash -c "[[ '${hookRc}' == 0 ]] && grep -qF '|--gate|side|' '${hookLog}'"
@@ -9689,7 +9714,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		git -C "${hookRepo}" tag t1 main
 		hookRc=0; fHookPush "${hookRepo}" origin t1 || hookRc=$?
 		fAssert "[dcmb7] a tag push runs no gate" \
-			bash -c "[[ '${hookRc}' == 0 && ! -s '${hookLog}' ]] && grep -qF 'not gated: refs/tags/t1' '${hookOut}'"
+			bash -c "[[ '${hookRc}' == 0 && ! -s '${hookLog}' ]] && grep -qF 'Not gated: refs/tags/t1' '${hookOut}'"
 		git -C "${hookRepo}" branch b1 side
 		git -C "${hookRepo}" branch b2 side
 		hookRc=0; fHookPush "${hookRepo}" origin +b1:refs/heads/main b2 || hookRc=$?
@@ -9918,7 +9943,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		mkdir -p "${rtStage}/old.99/sub" "${rtMac}/kept"; echo keepme > "${rtMac}/kept/canary.txt"; ln -s "${rtMac}/kept" "${rtStage}/old.link"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		fAssert "[dez5h] the Mac's copy step removes its old trees through the guard, and leaves an old.* that is a link" \
-			bash -c "[[ '${rtRc}' == 0 && ! -e '${rtStage}/old.99' && -L '${rtStage}/old.link' && -f '${rtMac}/kept/canary.txt' ]] && grep -qF 'safe-rm: refused, a link: ${rtStage}/old.link' '${rtOut}' && grep -qF 'note: ${rtStage}/old.link would not go' '${rtOut}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
+			bash -c "[[ '${rtRc}' == 0 && ! -e '${rtStage}/old.99' && -L '${rtStage}/old.link' && -f '${rtMac}/kept/canary.txt' ]] && grep -qF 'safe-rm: Refused, a link: ${rtStage}/old.link' '${rtOut}' && grep -qF 'note: ${rtStage}/old.link would not go' '${rtOut}' && grep -qxF '  passed on: b26 b29w' '${rtOut}'"
 		rm -f -- "${rtStage:?}/old.link"
 		## The script the Windows box got, run under pwsh, with a cmd.exe that moves the folder aside.
 		if command -v pwsh >/dev/null 2>&1; then
@@ -9940,7 +9965,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			# shellcheck disable=SC2016  ## the inner shell does the expanding.
 			fAssert "[df50j] the Windows box's guard refuses a folder whose path holds a character cmd acts on, and leaves it" \
 				env PATH="${rtWinBin}:${PATH}" bash -c 'mkdir -p "$1/a&b/test_gitsby_1/sub" && out="$(TEMP="$1/a&b" pwsh -NoProfile -NonInteractive -Command ". \"$2\"; if (fSafeRm \"$1/a&b/test_gitsby_1\") { exit 1 }" 2>&1 </dev/null)" \
-					&& [[ "${out}" == *"safe-rm: refused, a character cmd would act on:"* && -d "$1/a&b/test_gitsby_1/sub" ]]' _ "${rtWinTemp}" "${rtGuard}.fn.ps1"
+					&& [[ "${out}" == *"safe-rm: Refused, a character cmd would act on:"* && -d "$1/a&b/test_gitsby_1/sub" ]]' _ "${rtWinTemp}" "${rtGuard}.fn.ps1"
 			## The same over the class: cmd also splits at , ; and =, so only a short safe set gets by.
 			## Each temp folder holds one other character, and one holds only safe ones, an 8.3 ~ and
 			## a letter past ASCII among them, which goes as usual.
@@ -9949,7 +9974,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			# shellcheck disable=SC2016  ## the inner shell does the expanding.
 			fAssert "[dfhks] the Windows box's guard lets only letters, digits, space and _.:~\\/- through to cmd, whatever else the temp path holds" \
 				env PATH="${rtWinBin}:${PATH}" SR_GUARD="${rtGuard}.fn.ps1" bash -c 'n=0; for c in , ";" = "!" "'"'"'" + "[" "]" "{" "}" @ "#" "\$" "\`" "	" "&" "%" "^" "*" "?"; do n=$((n+1)); t="$1/class-${n}/a${c}b"; mkdir -p "${t}/test_gitsby_1/sub" || exit 1; out="$(TEMP="${t}" pwsh -NoProfile -NonInteractive -File "$2" 2>&1 </dev/null)"; \
-					[[ "${out}" == *"safe-rm: refused, a character cmd would act on:"* && "${out}" == *left* && -d "${t}/test_gitsby_1/sub" ]] || { echo "not refused: [${c}] ${out}"; exit 1; }; done; \
+					[[ "${out}" == *"safe-rm: Refused, a character cmd would act on:"* && "${out}" == *left* && -d "${t}/test_gitsby_1/sub" ]] || { echo "not refused: [${c}] ${out}"; exit 1; }; done; \
 					t="$1/class-ok/Ab 9~1.é_-x"; mkdir -p "${t}/test_gitsby_1/sub" && out="$(TEMP="${t}" pwsh -NoProfile -NonInteractive -File "$2" 2>&1 </dev/null)" && [[ "${out}" == *gone* && ! -e "${t}/test_gitsby_1" && -d "${t}/test_gitsby_1.gone/sub" ]]' _ "${rtWinTemp}" "${rtGuard}.class.ps1"
 		else
 			fSkip "[dez5g] needs pwsh"

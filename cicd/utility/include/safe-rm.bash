@@ -26,16 +26,16 @@ fSafeRm_Takes(){
 fSafeRm(){
 	local p="${1:-}" real=''
 	if [[ "${#}" -ne 1 || -z "${p}" || "${p}" == *..* || "${p}" == *//* || "${p}" == *$'\n'* ]]; then
-		printf 'safe-rm: refused, bad path: "%s"\n' "${p}" >&2; return 1
+		printf 'safe-rm: Refused, bad path: "%s"\n' "${p}" >&2; return 1
 	fi
 	p="${p%/}"
 	if ! fSafeRm_Takes "${p}"; then
-		printf 'safe-rm: refused, not under a tmp folder, or a whole project temp folder: %s\n' "${p}" >&2; return 1
+		printf 'safe-rm: Refused, not under a tmp folder, or a whole project temp folder: %s\n' "${p}" >&2; return 1
 	fi
-	if [[ -L "${p}" ]]; then printf 'safe-rm: refused, a link: %s\n' "${p}" >&2; return 1; fi
-	if [[ ! -e "${p}" ]]; then printf 'safe-rm: refused, not there: %s\n' "${p}" >&2; return 1; fi
-	real="$(cd -P -- "${p%/*}/" 2> /dev/null && pwd -P)" || { printf 'safe-rm: refused, not there: %s\n' "${p}" >&2; return 1; }
-	if [[ "${real%/}/${p##*/}" != "${p}" ]]; then printf 'safe-rm: refused, goes through a link: %s\n' "${p}" >&2; return 1; fi
+	if [[ -L "${p}" ]]; then printf 'safe-rm: Refused, a link: %s\n' "${p}" >&2; return 1; fi
+	if [[ ! -e "${p}" ]]; then printf 'safe-rm: Refused, not there: %s\n' "${p}" >&2; return 1; fi
+	real="$(cd -P -- "${p%/*}/" 2> /dev/null && pwd -P)" || { printf 'safe-rm: Refused, not there: %s\n' "${p}" >&2; return 1; }
+	if [[ "${real%/}/${p##*/}" != "${p}" ]]; then printf 'safe-rm: Refused, goes through a link: %s\n' "${p}" >&2; return 1; fi
 	rm -r -f "${__safeRmOneFs}" -- "${p}" && printf 'removed %s\n' "${p}"
 }
 
@@ -49,17 +49,17 @@ fSafeRm_Under(){
 	parent="${parent%/}"
 	if [[ "${parent}" != /?* || "${parent}" == *..* || "${parent}" == *//* || "${parent}" == *$'\n'* || ! -d "${parent}" ]] \
 		|| [[ "$(cd -P -- "${parent}" 2> /dev/null && pwd -P)" != "${parent}" ]]; then
-		printf 'safe-rm: refused, bad parent or one through a link: "%s"\n' "${parent}" >&2; return 1
+		printf 'safe-rm: Refused, bad parent or one through a link: "%s"\n' "${parent}" >&2; return 1
 	fi
 	(($#)) || return 0
 	for p in "$@"; do
 		if [[ "${p}" != "${parent}"/?* || "${p}" == *..* || "${p}" == *//* || "${p}" == *$'\n'* || "${p}" == */ ]]; then
-			printf 'safe-rm: refused, not under %s: "%s"\n' "${parent}" "${p}" >&2; return 1
+			printf 'safe-rm: Refused, not under %s: "%s"\n' "${parent}" "${p}" >&2; return 1
 		fi
 		cur="${parent}"; rel="${p#"${parent}"/}/"
 		while [[ -n "${rel}" ]]; do
 			cur+="/${rel%%/*}"; rel="${rel#*/}"
-			if [[ -L "${cur}" ]]; then printf 'safe-rm: refused, a link or through one: %s\n' "${p}" >&2; return 1; fi
+			if [[ -L "${cur}" ]]; then printf 'safe-rm: Refused, a link or through one: %s\n' "${p}" >&2; return 1; fi
 		done
 	done
 	chmod -R u+w -- "$@" 2> /dev/null || true
@@ -71,7 +71,7 @@ fSafeRm_IfThere(){ if [[ -e "${1:-}" || -L "${1:-}" ]]; then fSafeRm "${1:-}" >/
 
 ## For a script that may run outside cicd.bash: HOST_TEMP resolved and exported.
 fSafeRm_Init(){
-	HOST_TEMP="$(cd -P -- "${HOST_TEMP:-${TMPDIR:-/tmp}}" 2> /dev/null && pwd -P)" || { printf 'safe-rm: no temp folder at %s\n' "${HOST_TEMP:-${TMPDIR:-/tmp}}" >&2; return 1; }
+	HOST_TEMP="$(cd -P -- "${HOST_TEMP:-${TMPDIR:-/tmp}}" 2> /dev/null && pwd -P)" || { printf 'safe-rm: No temp folder at %s\n' "${HOST_TEMP:-${TMPDIR:-/tmp}}" >&2; return 1; }
 	export HOST_TEMP
 }
 
@@ -80,7 +80,7 @@ fSafeRm_Init(){
 ## TMPDIR is the run's folder.
 fSafeRm_Tmp(){
 	local t
-	t="$(cd -P -- "${TMPDIR:-/tmp}" 2> /dev/null && pwd -P)" || { printf 'safe-rm: no temp folder at %s\n' "${TMPDIR:-/tmp}" >&2; return 1; }
+	t="$(cd -P -- "${TMPDIR:-/tmp}" 2> /dev/null && pwd -P)" || { printf 'safe-rm: No temp folder at %s\n' "${TMPDIR:-/tmp}" >&2; return 1; }
 	t="${t%/}"
 	if ! fSafeRm_Takes "${t}/x"; then t="${HOST_TEMP%/}/${APP_NAME:?}"; mkdir -p -- "${t}" || return 1; fi
 	printf '%s\n' "${t}"

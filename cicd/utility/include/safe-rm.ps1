@@ -29,9 +29,9 @@ function fSafeRm([string]$p) {
         elseif ($item.FullName -match '[^\p{L}\p{M}\p{N} _.:~\\/-]') { $why = 'a character cmd would act on' }
         elseif ($item.Parent.FullName.TrimEnd('\', '/') -ne $root -or $item.Name -notmatch '^test_gitsby_[0-9-]+$') { $why = 'not a stage 7 folder right under the temp folder' }
     }
-    if ($why) { [Console]::Error.WriteLine("safe-rm: refused, ${why}: $p"); return $false }
+    if ($why) { [Console]::Error.WriteLine("safe-rm: Refused, ${why}: $p"); return $false }
     $null = & cmd.exe /d /c rmdir /s /q $item.FullName
-    if (Test-Path -LiteralPath $item.FullName) { [Console]::Error.WriteLine("safe-rm: some of $p would not go"); return $false }
+    if (Test-Path -LiteralPath $item.FullName) { [Console]::Error.WriteLine("safe-rm: Some of $p would not go"); return $false }
     [Console]::Out.WriteLine("removed $p")
     return $true
 }

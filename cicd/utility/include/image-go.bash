@@ -55,7 +55,7 @@ fImageGo(){
 ## version can't run on the old image. Uses the caller's here, APP_NAME and fDie.
 fImageRecipe(){
 	local recipe="${here:?}/container/Dockerfile" toolSpec toolName
-	[[ -f "${recipe}" ]] || fDie "missing ${recipe}"
+	[[ -f "${recipe}" ]] || fDie "Missing ${recipe}"
 	containerArgs=(--build-arg "VER_go=${GO_RELEASE_TOOLCHAIN#go}")
 	for toolSpec in "${GO_TOOL_VERSIONS[@]}" "${TOOL_VERSIONS[@]}"; do
 		toolName="${toolSpec%%=*}"; toolName="VER_${toolName//-/_}"
@@ -79,11 +79,11 @@ fImageBuild(){
 		## The one it replaces goes at the end of a cicd.bash run that passes on this one.
 		fEcho_Clean "building ${containerImage}"
 		## From cicd/, so the recipe can copy the guard in.
-		docker build -q -t "${containerImage}" -f "${here}/container/Dockerfile" "${containerArgs[@]}" --label "dev.run=${run}" "${here}" >/dev/null || fDie "image build failed"
+		docker build -q -t "${containerImage}" -f "${here}/container/Dockerfile" "${containerArgs[@]}" --label "dev.run=${run}" "${here}" >/dev/null || fDie "Image build failed"
 	fi
 	## Made here rather than by the first run that mounts it, so it has the labels.
 	if ! docker volume inspect "${APP_NAME}-cicd-cache" >/dev/null 2>&1; then
-		docker volume create --label "dev.project=${APP_NAME}" --label "dev.run=${run}" "${APP_NAME}-cicd-cache" >/dev/null || fDie "can't make the ${APP_NAME}-cicd-cache volume"
+		docker volume create --label "dev.project=${APP_NAME}" --label "dev.run=${run}" "${APP_NAME}-cicd-cache" >/dev/null || fDie "Can't make the ${APP_NAME}-cicd-cache volume"
 	fi
 }
 
