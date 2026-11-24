@@ -163,6 +163,19 @@ confRe="${confRel//./\\.}"
 fStubShim(){ ((isWindows)) && printf '@echo off\r\nbash "%s" %%*\r\n' "$1" > "$1.cmd"; return 0 ;}
 ## Write a stub from stdin, runnable by both builds.
 fStub(){ cat > "$1"; chmod +x "$1"; fStubShim "$1" ;}
+
+## The gh of every check that brings none of its own: logged in nowhere, and it notes each call.
+## The box's gh reads the real ~/.config/gh and keyring, prints a stored token for a login it
+## holds, and writes its device id there. A check's own gh goes ahead of it on PATH.
+ghSealLog="${work}/sealed-gh.log"
+mkdir -p "${work}/sealed-bin"
+fStub "${work}/sealed-bin/gh" <<-EOF
+	#!/usr/bin/env bash
+	printf '%s\n' "\$*" >> '${ghSealLog}'
+	printf '%s\n' 'gh: not logged in to any host' >&2
+	exit 1
+EOF
+export PATH="${work}/sealed-bin:${PATH}"
 ## PowerShell and .NET have no MSYS mount table, so '/tmp/x' and '/c/x' resolve against the root
 ## of the current drive - 'C:\tmp\x', 'C:\c\x'. Any path interpolated into a pwsh command line
 ## needs the platform's own spelling, or the statement fails and the check reports on nothing.
@@ -828,12 +841,14 @@ fGateRunTmp(){
 ## Ctrl+C reaches the whole foreground group, the run log's tee with it. The run still closes its
 ## step with FAIL, says what it removed, exits 130 and leaves no folder. Job control gives the run
 ## a group of its own, and keeps INT live, which a background job otherwise starts out ignoring.
+## A suite started with INT ignored, as by '&' from a script, passes that down, and bash can't
+## trap a signal ignored on entry, so env puts it back to default before the run starts.
 fGateCtrlC(){
 	local t="${gateDir}/tmp-ctrlc" pid="" i=0 rc=0
 	fSafeRm_IfThere "${t:?}"; mkdir -p "${t}"
 	: > "${gateFail}/hang"; rm -f -- "${gateFail:?}/hung"
 	set -m
-	( cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" HOST_TEMP="" GITSBY_CICD_MEM_SCOPE=fixture CICD_MEM_CAP="" exec ./cicd/cicd.bash -y --no-container --quick --no-sync --no-publish --no-dogfood ) </dev/null >"${gateOut}" 2>&1 &
+	( cd "${gateDir}" && HOME="${gateDir}/home" PATH="${gateDir}/bin:${PATH}" TMPDIR="${t}" HOST_TEMP="" GITSBY_CICD_MEM_SCOPE=fixture CICD_MEM_CAP="" exec env --default-signal=INT ./cicd/cicd.bash -y --no-container --quick --no-sync --no-publish --no-dogfood ) </dev/null >"${gateOut}" 2>&1 &
 	pid=$!
 	set +m
 	for ((i = 0; i < 100; i++)); do [[ -e "${gateFail}/hung" ]] && break; sleep 0.05; done
@@ -841,6 +856,7 @@ fGateCtrlC(){
 	rm -f -- "${gateFail:?}/hang"
 	[[ "${rc}" == 130 && -z "$(ls -A "${t}/gitsby")" ]] && grep -qE '; FAIL ' "${gateOut}" && grep -qx 'Cleanup: removed the run folder' "${gateOut}"
 }
+fGateCtrlCIgnored(){ ( trap '' INT; fGateCtrlC ) ;}
 ## --list prints the plan and the IDs in each step that runs, from the suites and the Go tests,
 ## and runs nothing: no tool but docker's probe, and no temp folder. The suite's check and the Go
 ## test are written so this file doesn't hold them as tests of its own.
@@ -3511,6 +3527,9 @@ fRunSuite(){
 	## The account the key authenticates as is the question this line exists to answer, so it
 	## leads. The old line answered with the OS login, which is neither that nor the connect user.
 	fAssertOut    "[dakp5] ssh line names the account the key authenticates as"  "SSH \.+: acmedev \("  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
+	## No gh of its own here, so whatever gh status asks goes to the suite's, never the box's.
+	fAssert       "[dfq34] a check with no gh of its own reaches the suite's sealed one" \
+		bash -c ": > '${ghSealLog}'; ${sidRun} '${gitsby}' -q -NoFetch status >/dev/null 2>&1; grep -q '^auth token --user ' '${ghSealLog}'"
 	## Anchored to the SSH line: a bare 'git@github.com' also matches the Remote line right above
 	## it, so the loose form was satisfied by the broken output too.
 	fAssertOut    "[dakp6] ssh line names the user git actually connects as"     "SSH \.+: .*\(git@github\.com\)$"  bash -c "${sidRun} '${gitsby}' -q -NoFetch status"
@@ -8950,6 +8969,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			bash -c "out=\$('${gateDir}/cicd/cicd.bash' --help) && grep -qE -- '^ +--leakcheck ' <<< \"\$out\" && grep -qE -- '^ +--no-leakcheck ' <<< \"\$out\""
 		fAssert "[de5m8] a run's temp files are gone once it ends, stopped or not"  fGateRunTmp
 		fAssert "[df33r] Ctrl+C, which stops the run log's tee too, still closes the step with FAIL and removes the run folder"  fGateCtrlC
+		fAssert "[dfq33] and so it does when the suite started with INT ignored, as a second copy started with '&' does"  fGateCtrlCIgnored
 		fAssert "[dee4y] --list prints the steps and each one's test IDs, and runs nothing"  fGateList
 		fAssert "[defmr] each step opens and closes with its time, numbered out of the steps that run, under a rule 79 wide"  fGateSteps
 		fAssert "[defms] a step that fails closes with FAIL"  fGateStepFail
@@ -11368,3 +11388,5 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261122 JC: Finishing a release whose push was refused, from main with an edit or a new file, refuses and leaves them, rather than committing past the tag, [dfndg] to [dfndp].
 ##		- 20261122 JC: pr create asks about an open PR from the branch its push lands on, [dfngf]. raw gh pointed at another host says it isn't acting as the account, [dfngg] [dfngh]. pr ok --no-fetch on the PR's own branch moves to the merge target, [dfngj] [dfngk]. install.ps1's stored PATH update runs over a stand-in key, [dfngz].
 ##		- 20261123 JC: pr ok merges a pull request from a fork's main, or from a fork's branch named like one only here, with no branch delete, and stays on the branch it ran from, through gh, [dfq0w] to [dfq11]. tea and glab read a fork's head, [dfq12] to [dfq14].
+##		- 20261123 JC: The Ctrl+C check puts INT back to default for its run, since a suite started with INT ignored passed that down, [dfq33].
+##		- 20261123 JC: Every check that brings no gh of its own gets the suite's, logged in nowhere, rather than the box's, [dfq34].

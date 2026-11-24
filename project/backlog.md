@@ -141,7 +141,7 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261120 item 41: [df33r] fails whenever another copy of the suite runs
 	- ID: 2026112017135283
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171352
@@ -152,11 +152,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Reproduced [Bug]: 2026-11-20 on b23. The failure is confirmed and the cause is plausible.
 	- Possible cause [Bug]: fGateCtrlC waits at most 5 seconds for the hung marker at test.bash:793, and the vet stub sleeps only 5 seconds at test.bash:479.
 	- Origin: c7caa93 (2026-11-09). No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: The suite passed down an ignored INT. A copy started with '&' from a script starts with INT ignored, and bash can't trap a signal ignored on entry, so cicd.bash's 'exit 130' trap never ran and the run went on to the end. The 5-second wait wasn't it: the hung marker came within 0.2 s in every run, alone or beside another copy.
+	- Actual fix [Bug]: fGateCtrlC starts the run through 'env --default-signal=INT', so INT is live whatever the suite started with.
+	- Decisions: Fixed in the check, not in cicd.bash. A run started in the background gets no Ctrl+C from a terminal, so only the check's own kill was affected.
+	- Test case: test.bash [dfq33] (fGateCtrlC under an ignored INT), beside [df33r].
+	- Verified: [dfq33] fails on the unfixed fGateCtrlC (2 of 2, the run ended 'done') and passes after. The whole suite started with '&' passed 2430/0, [df33r] and [dfq33] included. Quick gate passed, all areas: test.bash 2430/0, fuzz 310/0, parity 32/0.
+	- Swept: every INT sent in cicd/*.bash, cicd/utility/*.bash and the Go tests. fGateCtrlC's kill is the only one. fGateRunTmp and the docker-hang stop send TERM, which a background job doesn't start out ignoring.
+	- Branch: nov23-2026112017135283
+	- Commit: cd219ac
+	- Acceptance signoff: Self-closed: reproduced, its test failed before the fix and passes after.
+	- Progress log: 2026-11-23: Rig: private/claude_simple/tools/ctrlc-rig.bash runs fGateCtrlC alone, N times.
+	- Closed: 20261123-175734
 
 - Code Review 20261120 item 42: Some test.bash checks run the real gh
 	- ID: 2026112017135269
 	- Type: Bug
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261120-171352
@@ -166,6 +178,17 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Expected behavior [Bug]: Every check runs a stub gh, or a gh config folder inside the work folder.
 	- Reproduced [Bug]: 2026-11-20 on b23. Confirmed.
 	- Origin: The 2 blocks are older, renumbered in a5ce9cc. [dfh7j] and [dfh7k] are 88a9013 (2026111910223162). No round saw it.
+	- Closed reason: Done
+	- Actual cause [Bug]: Neither test.bash nor parity.bash put a gh of its own on PATH for checks that bring none, so gitsby's token, login and protocol probes, and the v2.1.0 build's, ran the box's gh. A logging gh first on PATH got 47 calls from test.bash and 18 from parity.bash, most with the real HOME.
+	- Actual fix [Bug]: Both suites put a gh of their own first on PATH at the start. It answers as logged in nowhere, exits 1, and notes each call in the work folder. A check's own gh still goes ahead of it.
+	- Decisions: One gh for the whole suite, rather than a stub per block, so a new block can't miss it. It answers as logged in nowhere. The suites passed with the box's logged-in gh, with none in the image, and with a failing gh ahead of both, so no check leans on its answer.
+	- Test case: test.bash [dfq34] (status with no gh of its own reaches the suite's), parity.bash [dfq35] (both builds' token probes reach it).
+	- Verified: [dfq34] fails with the suite's gh taken off PATH and passes after, and so does [dfq35] (parity 31/1, then 32/0). With a logging gh first on PATH, the fixed test.bash sent it no calls, against 47 before. Quick gate passed, all areas: test.bash 2430/0, fuzz 310/0, parity 32/0. test.bash on the box with --no-container: 2430/0.
+	- Swept: the sshid, repourl, sparse, GIT_DIR ([dfh7j], [dfh7k]) and v2.1.0 flat-file blocks, and the 2 calls from the work folder, all now reach the suite's gh. fuzz.bash has its own gh and sent the logging one nothing. glab got no calls from any suite. tea isn't on this box, so not measured. Windows boxes don't run test.bash, where the build would skip the stub's .cmd.
+	- Branch: nov23-2026112017135283
+	- Commit: f13b8c9
+	- Acceptance signoff: Self-closed: reproduced, its tests failed before the fix and pass after.
+	- Closed: 20261123-175734
 
 - Code Review 20261120 item 43: [dfh4h] misses a git status call with an option ahead of status
 	- ID: 2026112017135255
