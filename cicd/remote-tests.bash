@@ -29,8 +29,9 @@
 ##		  the helper, the lock takes each box itself, and a VM that is asleep is skipped.
 ##		- The Windows box runs first, since vm925w can't start once another VM has its port.
 ##		- The Windows box runs its Go tests on half its cores, in the BelowNormal class.
-##		- Each box's Go test run stops at REMOTE_GO_TEST_TIMEOUT, from config.bash, as a failure with
-##		  every goroutine's stack, so a hung test can't hold the stage.
+##		- Each box's Go test run stops at REMOTE_GO_TEST_TIMEOUT, or REMOTE_GO_TEST_TIMEOUT_WINE under
+##		  Wine, from config.bash, as a failure with every goroutine's stack, so a hung test can't
+##		  hold the stage.
 ##		- The Go tests are built with the image's Go when cicd.bash runs this with the image, and
 ##		  with this box's otherwise.
 ##		- The boxes, the lock and the paths are in config.bash, under stage 7.
@@ -85,7 +86,10 @@ for spec in "${REMOTE_UNIX_HOSTS[@]}"; do
 	[[ "${REMOTE_UNIX_TARGETS[${spec%%:*}]:-}" == */* ]] || fUsage "config.bash: REMOTE_UNIX_TARGETS has no target like freebsd/amd64 for ${spec%%:*}"
 done
 [[ "${REMOTE_GO_TEST_TIMEOUT:-}" =~ ^[1-9][0-9]*$ ]] || fUsage "config.bash: REMOTE_GO_TEST_TIMEOUT is not a whole number of seconds"
+[[ "${REMOTE_GO_TEST_TIMEOUT_WINE:-}" =~ ^[1-9][0-9]*$ ]] || fUsage "config.bash: REMOTE_GO_TEST_TIMEOUT_WINE is not a whole number of seconds"
 goTestFlags="-test.timeout=${REMOTE_GO_TEST_TIMEOUT}s -test.v"
+## Wine runs the same tests about 3 times slower.
+wineTestFlags="-test.timeout=${REMOTE_GO_TEST_TIMEOUT_WINE}s -test.v"
 for name in "${!REMOTE_UNIX_WINE[@]}"; do
 	[[ "${REMOTE_UNIX_WINE[${name}]}" == windows/* ]] || fUsage "config.bash: REMOTE_UNIX_WINE for ${name} is not a target like windows/arm64"
 done
@@ -252,7 +256,7 @@ fRunPosix(){
 			fRemote "${sshName}" "echo ${mark}; ${budgetSh}; ${dirSh}; cd \"\$d/tree/${GO_MODULE_DIR}\" || exit 1
 				unset DISPLAY WAYLAND_DISPLAY
 				export WINEPREFIX=\"\$d/wine\" WINEDEBUG=-all WINEDLLOVERRIDES='mscoree,mshtml,winemenubuilder.exe=d'
-				timeout $((REMOTE_GO_TEST_TIMEOUT + 300)) \$lo wine ./${EXE_NAME}-test-$(fTag "${wineTarget}").exe ${goTestFlags}; r=\$?
+				timeout $((REMOTE_GO_TEST_TIMEOUT_WINE + 300)) \$lo wine ./${EXE_NAME}-test-$(fTag "${wineTarget}").exe ${wineTestFlags}; r=\$?
 				wineserver -k 2>/dev/null
 				exit \$r" -n >"${wineLog}" 2>&1 || rc=$?
 			if ((rc == 255)); then fEcho_Clean "  SKIP: ${lockName}, lost the connection during the Wine go test"; fResult "${lockName}" lost; return 0; fi
@@ -548,3 +552,4 @@ if ((${#failed[@]})); then exit 1; fi
 ##		- 2026-11-06 JC: The old trees on the Mac and Unix boxes, and the Windows box's folder, go through a copy of the guard on the box: safe-rm.sh and safe-rm.ps1, sent with the command. The marker and made checks stay.
 ##		- 2026-11-07 JC: Errors go through fUsage, and the Windows note has vm925w's port as it is now.
 ##		- 2026-11-24 JC: Every Go test run takes -test.timeout from REMOTE_GO_TEST_TIMEOUT, and the Wine limit is 300 s above it.
+##		- 2026-11-24 JC: The run under Wine takes its own limit, REMOTE_GO_TEST_TIMEOUT_WINE.

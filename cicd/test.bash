@@ -1479,24 +1479,34 @@ fRemoteBudgetUsed(){
 		&& [[ "$(fRemoteBudget 8 3.00)" == $'4\nnice -n 19'* && "$(fRemoteBudget 8 4.50)" == $'2\n'* && "$(fRemoteBudget 1 0.00)" == $'1\n'* \
 			&& "$(fRemoteBudget 16 9.00 mac)" == $'4\nnice -n 19'* && "$(fRemoteBudget 16 7.00 mac)" == $'8\n'* ]]
 }
-## The Go test limit in the fixture's config.bash, in seconds.
-fRemoteGoLimit(){ sed -n 's/^REMOTE_GO_TEST_TIMEOUT=//p' "${rt}/cicd/config.bash" | tail -n 1 ;}
-## After a run: it ran the Go tests on $1 boxes, and each run passed that limit to the test binary.
+## The Go test limit $1 in the fixture's config.bash, in seconds, REMOTE_GO_TEST_TIMEOUT when left out.
+fRemoteGoLimit(){ sed -n "s/^${1:-REMOTE_GO_TEST_TIMEOUT}=//p" "${rt}/cicd/config.bash" | tail -n 1 ;}
+## After a run: it ran the Go tests on $1 boxes, and each native run passed the native limit to the
+## test binary, and each run under Wine the Wine one.
 fRemoteGoLimited(){
-	local v="" n="" t=""
-	v="$(fRemoteGoLimit)"
+	local v="" vw="" n="" t="" w=""
+	v="$(fRemoteGoLimit)" vw="$(fRemoteGoLimit REMOTE_GO_TEST_TIMEOUT_WINE)"
 	n="$(grep -cE '^ssh .*-test[.]v([;& ]|$)' "${rtLog}" || true)"
-	t="$(grep -cE "^ssh .* -test[.]timeout=${v}s -test[.]v([;& ]|\$)" "${rtLog}" || true)"
-	[[ -n "${v}" && "${n}" == "$1" && "${t}" == "${n}" ]]
+	t="$(grep -vE '[[:space:]]wine ' "${rtLog}" | grep -cE "^ssh .* -test[.]timeout=${v}s -test[.]v([;& ]|\$)" || true)"
+	w="$(grep -cE "^ssh .*[[:space:]]wine [^ ]+[.]exe -test[.]timeout=${vw}s -test[.]v; " "${rtLog}" || true)"
+	[[ -n "${v}" && -n "${vw}" && "${v}" != "${vw}" && "${n}" == "$1" && "$((t + w))" == "${n}" ]]
 }
-## After a run with vmDebARM64's Wine on: it passed, Wine ran the Go tests with that limit, under
-## an outer one 300 s longer, and so did the 4 boxes.
+## After a run with vmDebARM64's Wine on: it passed, Wine ran the Go tests with its own limit, under
+## an outer one 300 s longer, and the 4 boxes with theirs.
 fRemoteWineLimited(){
-	local v=""
-	v="$(fRemoteGoLimit)"
-	[[ "${rtRc}" == 0 && -n "${v}" ]] && fRemoteGoLimited 5 \
-		&& grep -qE "^ssh tester@vmDebARM64 .*[[:space:]]timeout $((v + 300)) [\$]lo wine [.]/gitsby-test-windows-arm64[.]exe -test[.]timeout=${v}s -test[.]v; r=" "${rtLog}" \
+	local vw=""
+	vw="$(fRemoteGoLimit REMOTE_GO_TEST_TIMEOUT_WINE)"
+	[[ "${rtRc}" == 0 && -n "${vw}" ]] && fRemoteGoLimited 5 \
+		&& grep -qE "^ssh tester@vmDebARM64 .*[[:space:]]timeout $((vw + 300)) [\$]lo wine [.]/gitsby-test-windows-arm64[.]exe -test[.]timeout=${vw}s -test[.]v; r=" "${rtLog}" \
 		&& grep -qxF '  vmDebARM64: go test (windows/arm64 under Wine)' "${rtOut}"
+}
+## True when a run with the limit $1 set to 10m in config.bash stopped with usage, naming it, and
+## reached no box. config.bash is put back after.
+fRemoteLimitRefused(){
+	echo "$1='10m'" >> "${rt}/cicd/config.bash"
+	fRemoteRun --mac-bin "${rtMacBin}"
+	fRemoteConfig
+	[[ "${rtRc}" == 2 ]] && grep -qxF "config.bash: $1 is not a whole number of seconds" "${rtOut}" && ! grep -q '^ssh ' "${rtLog}"
 }
 ## True when the last run made a folder under %TEMP% on the Windows box $1, and removed that one
 ## through the guard.
@@ -10021,12 +10031,11 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dfq5x] every box's Go test run has config.bash's time limit, so a hung test fails with its stacks"  fRemoteGoLimited 4
 		echo 'declare -gA REMOTE_UNIX_WINE=([vmDebARM64]="windows/arm64")' >> "${rt}/cicd/config.bash"
 		fRemoteRun "${rtBins[@]}"
-		fAssert "[dfq5y] so does the Go test run under Wine, inside a Wine limit 300 s longer"  fRemoteWineLimited
-		echo "REMOTE_GO_TEST_TIMEOUT='10m'" >> "${rt}/cicd/config.bash"
-		fRemoteRun "${rtBins[@]}"
+		fAssert "[dfq5y] the Go test run under Wine has its own, longer limit, inside a Wine limit 300 s longer"  fRemoteWineLimited
 		fRemoteConfig
-		fAssert "[dfq5z] a Go test limit that isn't whole seconds is refused before any box is reached" \
-			bash -c "[[ '${rtRc}' == 2 ]] && grep -qxF 'config.bash: REMOTE_GO_TEST_TIMEOUT is not a whole number of seconds' '${rtOut}' && ! grep -q '^ssh ' '${rtLog}'"
+		local rtLimits=0
+		fRemoteLimitRefused REMOTE_GO_TEST_TIMEOUT && fRemoteLimitRefused REMOTE_GO_TEST_TIMEOUT_WINE && rtLimits=1
+		fAssert "[dfq5z] a Go test limit that isn't whole seconds, native or Wine, is refused before any box is reached"  test "${rtLimits}" == 1
 		echo 'go ' > "${rtFail}/lacks-tester@vmDebARM64"
 		fRemoteRun "${rtBins[@]}"
 		rm -f -- "${rtFail:?}/lacks-tester@vmDebARM64"
@@ -11517,3 +11526,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261123 JC: Each tool version check in the image's recipe fails on a missing tool, [dfq4k]. ssh starts for the run's uid in the image, [dfq4m].
 ##		- 20261123 JC: pr ok names the pull request's branch and its base above the plan, a fork's too, [dfq5b] [dfq5c].
 ##		- 20261124 JC: Every stage 7 Go test run passes config.bash's time limit, under Wine too, and a limit that isn't whole seconds is refused, [dfq5x] [dfq5y] [dfq5z].
+##		- 20261124 JC: The run under Wine has its own, longer limit, [dfq5y] [dfq5z].
