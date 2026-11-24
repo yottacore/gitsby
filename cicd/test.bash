@@ -2113,6 +2113,11 @@ fRunSuite(){
 	( cd "${directA}" && echo three > h.txt && git add --all && git commit --quiet -m "on side" && git checkout --quiet main && git merge --quiet --no-ff side -m "merge side" )
 	fAssert "[dffyh] a merge on main needs no --direct for br switch to send it" \
 		bash -c "cd '${directA}' && '${gitsby}' -q br switch side && [[ \"\$(git -C '${directO}' rev-parse main)\" == \"\$(git rev-parse main)\" ]]"
+	## The dirty refusal already asked status about main's tree, so the direct-push check
+	## doesn't ask again.
+	( cd "${directA}" && git checkout --quiet main )
+	fAssert "[dfr3z] br switch off a clean main reads the tree's status once" \
+		bash -c "cd '${directA}' && GIT_TRACE='${work}/$1-direct.trace' '${gitsby}' -q --no-fetch br switch side && [[ \"\$(git branch --show-current)\" == side ]] && [[ \"\$(grep -c ' status --porcelain=v2' '${work}/$1-direct.trace')\" == 1 ]]"
 	## A branch deleted on origin after its pull request merged still has its upstream set, and
 	## git reads that as none once the fetch prunes it. sync and br switch's park push would put
 	## it back as a first publish, so they warn above the prompt, and -q refuses.

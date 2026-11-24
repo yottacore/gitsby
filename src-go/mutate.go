@@ -330,8 +330,7 @@ func (a *app) directPush() (push, committed bool) {
 	if (a.cmd.name != "sync" && a.cmd.name != "br-switch") || a.opt.direct {
 		return false, false
 	}
-	// br switch parks only when it moves, and offline its push is skipped. A dirty
-	// protected tree was refused before this.
+	// br switch parks only when it moves, and offline its push is skipped.
 	p, ok := a.parkPush()
 	if !ok {
 		return false, false
@@ -343,6 +342,12 @@ func (a *app) directPush() (push, committed bool) {
 	}
 	if a.ownCommitsAhead() {
 		return true, true
+	}
+	// br switch refused a dirty protected tree in preflight, so asking status again
+	// would only repeat that answer. One that isn't protected but pushes to one
+	// wasn't asked.
+	if a.cmd.name == "br-switch" && a.isProtectedBranch("") {
+		return false, false
 	}
 	return a.commitPending(), false
 }

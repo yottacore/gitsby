@@ -235,13 +235,23 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 - Code Review 20261119 enhancement 3: br switch from a protected branch checks the tree twice
 	- ID: 2026111910222732
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261119-102227
 	- Opened by:
 	- Requirements [Feature]: directPush returns early for br switch once ownCommitsAhead is read, since preflight already refused a dirty protected tree.
 	- Origin: bb905b6 and 8dfe5ff (nov18). Two identical git status calls in a row, by strace.
+	- Closed reason: Done
+	- Decisions: The early return is only for a br switch off a branch that is protected itself, since that is the one preflight's dirty refusal asks about. A branch that isn't protected but whose push lands on one still asks commitPending.
+		- 20261124: spawn-count.bash [dbftm]'s expected count is 27, where it was 28.
+	- Branch: nov24-2026111910222732
+	- Commit: 7c7beed
+	- Test case: test.bash [dfr3z]. spawn-count.bash [dbftm], now 27.
+	- Verified: [dfr3z] fails on the build before the change, with 2 status reads, and passes after. The quick run passed every area: test.bash 2448/0, fuzz 310/0, parity 32/0, spawn counts with [dbftm] 28 -> 27.
+	- Swept: every treeDirty and commitPending caller. sync's directPush has no earlier read. refusePlannedPushes reads commitPending for br switch only where git would refuse the push, and release's 2 reads weren't measured, so both were left alone.
+	- Acceptance signoff: Self-closed: the change does what the item asked, and its test fails before and passes after.
+	- Closed: 20261124-112023
 
 - Code Review 20261119 enhancement 4: gitsby.exe can't start in a folder past 260 characters
 	- ID: 2026111910222718

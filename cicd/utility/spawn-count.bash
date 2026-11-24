@@ -311,7 +311,7 @@ fMeasure "[dbfth] account list"                         6 pipe repo        -q --
 fMeasure "[dbftj] repo url"                             6 pipe repo        -q --no-fetch repo url
 fMeasure "[dbftk] pullcom"                             21 pipe repo        -q --no-fetch pullcom "spawn count"
 fMeasure "[ddf68] pullcom with a fetch"                 28 pipe repo        -q pullcom "spawn count"
-fMeasure "[dbftm] br switch"                           28 pipe repo        -q --no-fetch br switch main
+fMeasure "[dbftm] br switch"                           27 pipe repo        -q --no-fetch br switch main
 fMeasure "[df37t] br merge"                             43 pipe feature     -q --no-fetch br merge
 fMeasure "[df37v] br merge with a fetch"                54 pipe feature     -q br merge
 fMeasure "[df37w] br switch of a staged change"         38 pipe staged      -q --no-fetch --staged br switch dev
