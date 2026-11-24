@@ -495,7 +495,7 @@ else
 		## From the files phase 1 built. Phase 3 builds the same set again from the tag.
 		dlTable="$(fpDownloadsTable)"
 		if [[ -z "${dlTable}" ]]; then
-			fEcho_Clean "WARNING: phase 1 built no binaries to link, so the changelog gets no downloads table."
+			fEcho_Clean "WARNING: Phase 1 built no binaries to link, so the changelog gets no downloads table."
 		else
 			fpChangelogAddDownloads "${clLine}" "${dlTable}" || fDie "couldn't add the downloads table to the changelog; ${relBranch} is pushed, with no PR. Delete it, then run again."
 		fi
@@ -549,7 +549,7 @@ fi
 notes="$(mktemp)"
 awk -v ver="## ${version} " -v start="$(fpChangelogStart)" \
 	'NR>=start && index($0, ver)==1 {f=1; next} f && /^## /{exit} f' "${changelog}" > "${notes}" || true
-[[ -s "${notes}" ]] || fEcho_Clean "WARNING: no changelog section found for ${version}; the release body will be empty."
+[[ -s "${notes}" ]] || fEcho_Clean "WARNING: No changelog section found for ${version}; the release body will be empty."
 ## The table was written from phase 1's build, and these are phase 3's files. Same targets, so
 ## they should match; say so where they don't.
 if ((! dryRun)); then
@@ -558,10 +558,10 @@ if ((! dryRun)); then
 		{ s = $0; while ((i = index(s, ENVIRON["DL"])) > 0) { s = substr(s, i + length(ENVIRON["DL"])); j = index(s, ")"); if (j) print substr(s, 1, j - 1) } }' "${notes}")
 	for f in "${linkedList[@]}"; do
 		linked["${f}"]=1
-		[[ -f "${assets}/${f}" ]] || fEcho_Clean "WARNING: the release notes link ${f}, which isn't being published."
+		[[ -f "${assets}/${f}" ]] || fEcho_Clean "WARNING: The release notes link ${f}, which isn't being published."
 	done
 	for f in "${assets}"/*; do
-		[[ -n "${linked[${f##*/}]:-}" ]] || fEcho_Clean "WARNING: the release notes don't link ${f##*/}, which is being published."
+		[[ -n "${linked[${f##*/}]:-}" ]] || fEcho_Clean "WARNING: The release notes don't link ${f##*/}, which is being published."
 	done
 fi
 nativeAsset="$(fpAssetName "$(go env GOOS)" "$(go env GOARCH)")"
@@ -570,7 +570,7 @@ buildLine=""
 if [[ -n "${buildLine}" ]]; then
 	printf '\n---\n\n%s\n' "${buildLine}" >> "${notes}"
 else
-	fEcho_Clean "WARNING: couldn't read a build number out of ${nativeAsset}; the notes will not name one."
+	fEcho_Clean "WARNING: Couldn't read a build number out of ${nativeAsset}; the notes will not name one."
 fi
 
 preArgs=(); preSay=""
@@ -622,15 +622,15 @@ if ! fWould "verify releases/latest, download and run this platform's published 
 		fSafeRm "${lineHome:?}" >/dev/null
 		lineTag="$(printf '%s\n' "${lineOut}" | sed -n 's/^  - Download [^ ]* (\(.*\)) from .*/\1/p' | sed -n '1p')"
 		if [[ -z "${lineTag}" ]]; then
-			fEcho_Clean "WARNING: the install line stopped before naming a release: $(printf '%s\n' "${lineOut}" | sed -n 's/^Error: //p' | sed -n '1p')"
+			fEcho_Clean "WARNING: The install line stopped before naming a release: $(printf '%s\n' "${lineOut}" | sed -n 's/^Error: //p' | sed -n '1p')"
 		elif [[ "${lineTag}" == "${version}" ]]; then
 			fEcho_Clean "the install line takes ${version}"
 		elif ((prerelease)) && ! fpIsCandidate "${lineTag}"; then
 			fEcho_Clean "the install line stays on ${lineTag}, a full release with a binary; ${version} is taken by naming it"
 		elif ((prerelease)); then
-			fEcho_Clean "WARNING: the install line takes ${lineTag}, neither ${version} nor a full release."
+			fEcho_Clean "WARNING: The install line takes ${lineTag}, neither ${version} nor a full release."
 		else
-			fEcho_Clean "WARNING: the install line takes ${lineTag}, not ${version}."
+			fEcho_Clean "WARNING: The install line takes ${lineTag}, not ${version}."
 		fi
 	else
 		fEcho_Clean "WARNING: ${version} has no install.bash, so which release the install line takes went unchecked."
@@ -690,3 +690,4 @@ echo
 ##		- 20261110 JC: The version is checked against RELEASE_VERSION_RE, the shape 'gitsby release' takes. A version it refused, such as v3.0.0-, got the bump merged first. A stop after 'br create' says the branch is pushed, which it is.
 ##		- 20261119 JC: A suffix after a dot, as in v3.0.0.rc1, makes a pre-release and promotes to its plain version, as a dash does. Only a dash did, so that one published as a full release.
 ##		- 20261120 JC: The tag scan is fReleaseTags, so v3.0.0.rc1 no longer reads as newer than v3.0.0. The default branch is read from origin/HEAD's full ref; --short read a tag named origin/main as the branch, and the check on origin's main was skipped. The current branch comes from branch --show-current, since a tag named dev made it heads/dev and the run refused.
+##		- 20261124 JC: Warnings start with a capital after their label.

@@ -592,7 +592,7 @@ fStageLint(){
 		[[ "${toolHave}" == "${toolWant}" ]] || toolDrift+=( "${toolName} ${toolHave:-unknown} (recorded ${toolWant})" )
 	done
 	mapfile -t -O "${#toolDrift[@]}" toolDrift < <(fToolDrift "${TOOL_VERSIONS[@]%%=*}")
-	((${#toolDrift[@]} == 0)) || fEcho "WARNING: tool versions differ from the recorded set: ${toolDrift[*]}"
+	((${#toolDrift[@]} == 0)) || fEcho "WARNING: Tool versions differ from the recorded set: ${toolDrift[*]}"
 	unformatted="$(cd "${root}/${GO_MODULE_DIR}" && gofmt -l .)"
 	[[ -z "${unformatted}" ]] || fDie "gofmt wants to reformat: ${unformatted}"
 	## Same core budget as the builds: BUILD_JOBS caps the go tool's workers, and
@@ -622,7 +622,7 @@ fStageLint(){
 	"${WINRES_CMD[@]}" --check -q || winresStatus=$?
 	case "${winresStatus}" in
 		0) fEcho "OK: windows resource current" ;;
-		3) fEcho "WARNING: windows resource check skipped (not installed: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.5.0)" ;;
+		3) fEcho "WARNING: Windows resource check skipped (not installed: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.5.0)" ;;
 		*) fDie "windows resource is stale" ;;
 	esac
 	## Two backlog rules the review rounds kept leaking through: every open review item
@@ -687,7 +687,7 @@ fLeakCheck(){
 	## Only ever the files the test writes, so no recursive delete.
 	while IFS= read -r old; do
 		rm -f -- "${old:?}"/heap-round-*.pprof "${old:?}/soak.txt"
-		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: kept ${old}, which has more in it than the soak test wrote"
+		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: Kept ${old}, which has more in it than the soak test wrote"
 	done < <(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_[0-9]*-[0-9]*' | sort -r | tail -n +21)
 	if ((soakOnly)); then fEcho_Clean "CodeQL skipped (--quick), add with --leakcheck"; return 0; fi
 	fCodeQL
@@ -767,7 +767,7 @@ fCodeQL(){
 	## Only ever the reports, so no recursive delete.
 	while IFS= read -r old; do
 		rm -f -- "${old:?}"/*.sarif
-		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: kept ${old}, which has more in it than CodeQL's reports"
+		rmdir -- "${old}" 2>/dev/null || fEcho "WARNING: Kept ${old}, which has more in it than CodeQL's reports"
 	done < <(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'codeql_[0-9]*-[0-9]*' | sort -r | tail -n +21)
 }
 
@@ -1160,7 +1160,7 @@ if ((doSync)); then
 		fEcho_Clean "no upstream for this branch - nothing to sync"
 	elif ! git fetch --quiet 2>/dev/null; then
 		## Offline is the other ordinary state. Warn and build what is here.
-		fEcho_Clean "WARNING: can't reach origin - building without refreshing"
+		fEcho_Clean "WARNING: Can't reach origin - building without refreshing"
 	else
 		## Left is behind, right is ahead: what origin has that we don't, and the reverse.
 		counts="$(git rev-list --left-right --count '@{u}...HEAD' 2>/dev/null || echo "0	0")"
@@ -1361,7 +1361,7 @@ if ((${#DOGFOOD_TARGETS[@]})); then
 	for t in "${DOGFOOD_TARGETS[@]}"; do
 		exe="${EXE_NAME}"; [[ "${t}" == windows/* ]] && exe="${EXE_NAME}.exe"
 		if [[ -z "${dogfoodDest[${t}]}" ]]; then
-			fEcho "WARNING: no ${t} dogfood dest exists/writable (${dogfoodAll[${t}]}); skipping"
+			fEcho "WARNING: No ${t} dogfood dest exists/writable (${dogfoodAll[${t}]}); skipping"
 			continue
 		fi
 		## Built into the module dir under the target's own name, so the native binary the
@@ -1400,12 +1400,12 @@ else
 		demoVersion="${demoTag#v}"
 		demoBuildEpoch="$(git log -1 --format=%ct "${demoTag}^{commit}" 2>/dev/null || true)"
 	elif [[ -n "${demoTag}" ]]; then
-		fEcho "WARNING: the newest v* tag '${demoTag}' is not a version, so the demo build is stamped 0.0.0"
+		fEcho "WARNING: The newest v* tag '${demoTag}' is not a version, so the demo build is stamped 0.0.0"
 	fi
 	demogifBin="${root}/${GO_MODULE_DIR}/${EXE_NAME}-demo"
 	if ! (cd "${root}/${GO_MODULE_DIR}" && CGO_ENABLED=0 GOAMD64=v1 \
 		go build "${GO_BUILD_FLAGS[@]}" -p "${BUILD_JOBS}" -ldflags "${GO_LDFLAGS_COMMON} -X main.version=${demoVersion} -X main.buildEpoch=${demoBuildEpoch}" -o "${demogifBin}" .); then
-		fEcho "WARNING: demo build failed, so no demo gif was rendered (continuing)"
+		fEcho "WARNING: Demo build failed, so no demo gif was rendered (continuing)"
 	elif (cd "${root}" && python3 "${DEMOGIF_CMD[@]}" ${harnessQuiet[@]+"${harnessQuiet[@]}"} --out "${demogifTmp}" --bin "${demogifBin}"); then
 		if [[ -n "${DEMOGIF_OPT_CMD[*]:-}" ]] && command -v "${DEMOGIF_OPT_CMD[0]}" >/dev/null 2>&1; then
 			demogifWas=$(stat -c%s "${demogifTmp}")
@@ -1429,13 +1429,13 @@ else
 			## --no-container, so the difference may be the tool's. A warning, as a tool version
 			## is everywhere else.
 			rm -f -- "${demogifTmp:?}"
-			fEcho "WARNING: demo gif differs, but this box has ${demoDrift[*]}, so the committed one stays"
+			fEcho "WARNING: Demo gif differs, but this box has ${demoDrift[*]}, so the committed one stays"
 		elif [[ -n "${handsOff}" ]]; then
 			rm -f -- "${demogifTmp:?}"
-			fEcho "WARNING: demo gif differs; ${handsOff} rewrites no tracked file, so the committed one stays"
+			fEcho "WARNING: Demo gif differs; ${handsOff} rewrites no tracked file, so the committed one stays"
 		elif ((demogifWasEdited)); then
 			rm -f -- "${demogifTmp:?}"
-			fEcho "WARNING: demo gif differs, but ${DEMOGIF_OUT} was already edited when the run started, so it stays as it is"
+			fEcho "WARNING: Demo gif differs, but ${DEMOGIF_OUT} was already edited when the run started, so it stays as it is"
 		else
 			## Keep the new original out of tree (GFS-pruned), then move it into the repo.
 			mkdir -p "${DEMOGIF_ARCHIVE_DIR}"
@@ -1446,11 +1446,11 @@ else
 		fi
 	else
 		rm -f -- "${demogifTmp:?}"
-		fEcho "WARNING: demo gif generation failed (continuing)"
+		fEcho "WARNING: Demo gif generation failed (continuing)"
 	fi
 	rm -f -- "${demogifBin:?}"
 	## The scenario builds its world at a fixed path, since the path is on camera.
-	bash "${root}/cicd/utility/demo/demo-repo.bash" --remove || fEcho "WARNING: left the demo's repos in place"
+	bash "${root}/cicd/utility/demo/demo-repo.bash" --remove || fEcho "WARNING: Left the demo's repos in place"
 fi
 fStepEnd
 
@@ -1582,3 +1582,4 @@ fEcho_Clean
 ##		- 2026-11-21 JC: Stage 0 stashes the edits itself and puts them back with --index, so staged edits stay staged across a merge or fast-forward that goes in clean. Stage 6 leaves a demo gif that was edited before the run as it is.
 ##		- 2026-11-23 JC: Lint also runs staticcheck's unused check without the tests, so code only a test calls fails the gate.
 ##		- 2026-11-23 JC: In the container, the run's uid gets a passwd entry through nss_wrapper, so ssh starts there.
+##		- 2026-11-24 JC: Warnings start with a capital after their label.

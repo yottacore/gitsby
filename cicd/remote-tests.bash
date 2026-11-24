@@ -342,7 +342,7 @@ for f in "${lockFound[@]}"; do
 	if [[ -x "${f}" ]]; then lock="${f}"; break; fi
 done
 if [[ -z "${lock}" ]]; then
-	fEcho_Clean "  SKIP: every box, since there is no host lock script (${REMOTE_LOCK_GLOB})"
+	fEcho_Clean "  SKIP: Every box, since there is no host lock script (${REMOTE_LOCK_GLOB})"
 	exit 0
 fi
 ## The lock reads settings from variables named after its file, and hands out only its Windows
@@ -412,7 +412,7 @@ done
 if ((${#macRun[@]})); then
 	mkdir -p "${work}/mac/tree/${GO_MODULE_DIR}"
 	fBuildTests darwin "${REMOTE_MAC_GOARCH}" "${work}/mac/tree/${GO_MODULE_DIR}/${EXE_NAME}-test" \
-		|| { fEcho_Clean "  FAIL: the Go tests do not build for darwin/${REMOTE_MAC_GOARCH}"; exit 1; }
+		|| { fEcho_Clean "  FAIL: The Go tests do not build for darwin/${REMOTE_MAC_GOARCH}"; exit 1; }
 	if [[ -n "${macBin}" ]]; then
 		cp -f -- "${macBin}" "${work}/mac/tree/${GO_MODULE_DIR}/${EXE_NAME}"
 		chmod +x "${work}/mac/tree/${GO_MODULE_DIR}/${EXE_NAME}"
@@ -423,7 +423,7 @@ for target in "${!unixTargets[@]}"; do
 	tag="$(fTag "${target}")"
 	mkdir -p "${work}/unix-${tag}/tree/${GO_MODULE_DIR}"
 	fBuildTests "${target%%/*}" "${target##*/}" "${work}/unix-${tag}/tree/${GO_MODULE_DIR}/${EXE_NAME}-test" \
-		|| { fEcho_Clean "  FAIL: the Go tests do not build for ${target}"; exit 1; }
+		|| { fEcho_Clean "  FAIL: The Go tests do not build for ${target}"; exit 1; }
 	if [[ -n "${unixBin[${target}]:-}" ]]; then
 		cp -f -- "${unixBin[${target}]}" "${work}/unix-${tag}/tree/${GO_MODULE_DIR}/${EXE_NAME}"
 		chmod +x "${work}/unix-${tag}/tree/${GO_MODULE_DIR}/${EXE_NAME}"
@@ -464,7 +464,7 @@ if ((${#macRun[@]} + ${#unixRun[@]})); then
 		if [[ ! -f "${work}/wine/tree/${GO_MODULE_DIR}/${wineExe}" ]]; then
 			mkdir -p "${work}/wine/tree/${GO_MODULE_DIR}"
 			fBuildTests windows "${wineTarget##*/}" "${work}/wine/tree/${GO_MODULE_DIR}/${wineExe}" \
-				|| { fEcho_Clean "  FAIL: the Go tests do not build for ${wineTarget}"; exit 1; }
+				|| { fEcho_Clean "  FAIL: The Go tests do not build for ${wineTarget}"; exit 1; }
 		fi
 		tag="$(fTag "${REMOTE_UNIX_TARGETS[${entry% *}]}")"
 		if [[ -z "${wineIn[${tag} ${wineExe}]:-}" ]]; then
@@ -476,7 +476,7 @@ fi
 if ((${#winRun[@]})); then
 	mkdir -p "${work}/win/${GO_MODULE_DIR}"
 	fBuildTests windows amd64 "${work}/win/${GO_MODULE_DIR}/${EXE_NAME}-test.exe" \
-		|| { fEcho_Clean "  FAIL: the Go tests do not build for windows/amd64"; exit 1; }
+		|| { fEcho_Clean "  FAIL: The Go tests do not build for windows/amd64"; exit 1; }
 	## Some tests read the module's own source and testdata from where they run.
 	(cd "${root}" && git ls-files -z -co --exclude-standard -- "${GO_MODULE_DIR}") | fExisting > "${work}/win.files"
 	tar -cf "${work}/win.tar" -C "${root}" --null -T "${work}/win.files"
@@ -553,3 +553,4 @@ if ((${#failed[@]})); then exit 1; fi
 ##		- 2026-11-07 JC: Errors go through fUsage, and the Windows note has vm925w's port as it is now.
 ##		- 2026-11-24 JC: Every Go test run takes -test.timeout from REMOTE_GO_TEST_TIMEOUT, and the Wine limit is 300 s above it.
 ##		- 2026-11-24 JC: The run under Wine takes its own limit, REMOTE_GO_TEST_TIMEOUT_WINE.
+##		- 2026-11-24 JC: SKIP and FAIL lines start with a capital after their label.

@@ -345,6 +345,22 @@ fPsAllAscii(){ local f="" n=0
 	done < <(cd "${root}" && git ls-files -- '*.ps1' '*.psm1' '*.psd1' ':!legacy/')
 	((n > 0))
 }
+## Succeeds when the text after a WARNING, NOTE, Note, Error, SKIP or FAIL label in the pipeline
+## scripts and installers starts with a capital. A tool's name or a path after the label stays as
+## it is spelled. test.bash is left out, since its fixtures copy other tools' output.
+fLabelsCapitalized(){ local f="" line="" word="" n=0 bad=0
+	local -a asIs=(docker markdownlint ruff staticcheck golangci-lint govulncheck pip-audit git gh)
+	while IFS= read -r f; do
+		while IFS= read -r line; do
+			[[ "${line}" =~ ^[[:space:]]*# ]] && continue
+			[[ "${line}" =~ (WARNING|NOTE|Note|Error|SKIP|FAIL):\ +([^ ]+) ]] || continue
+			n=$((n + 1)); word="${BASH_REMATCH[2]}"
+			[[ "${word}" =~ ^[a-z] && ! "${word}" =~ [/.] && " ${asIs[*]} " != *" ${word} "* ]] || continue
+			echo "lower case after its label: ${f}: ${line#"${line%%[![:space:]]*}"}"; bad=1
+		done < "${root}/${f}"
+	done < <(cd "${root}" && git ls-files -- 'cicd/*.bash' 'cicd/*.ps1' install.bash install.ps1 ':!cicd/test.bash')
+	((n > 0 && bad == 0))
+}
 ## Succeeds when install.bash's --help names every option its argument loop takes.
 fBashHelpNamesAll(){ local inst="$1" help="" opts="" opt=""
 	help="$(bash "${inst}" --help)"
@@ -745,7 +761,7 @@ fGateHandsOff(){
 		&& ! grep -qE '^n8git_backup-and-publish' "${gateCalls}" \
 		&& grep -qxF "Remote sync .........: (skipped ${1})" "${gateOut}" && grep -qxF "Dogfood .............: (skipped ${1})" "${gateOut}" \
 		&& grep -qxF "Publish (last) ......: (skipped ${1})" "${gateOut}" && ! grep -qE 'Starting (Remote sync|Dogfood|Backup)' "${gateOut}" \
-		&& grep -qF "[ WARNING: demo gif differs; ${1} rewrites no tracked file, so the committed one stays ]" "${gateOut}" \
+		&& grep -qF "[ WARNING: Demo gif differs; ${1} rewrites no tracked file, so the committed one stays ]" "${gateOut}" \
 		&& [[ "$(cat "${gif}")" == old && ! -e "${gif}.new" ]] || rc=1
 	if [[ -f "${gif}.keep" ]]; then mv -f -- "${gif}.keep" "${gif}"; else rm -f -- "${gif:?}"; fi
 	return "${rc}"
@@ -1098,7 +1114,7 @@ fGateLeakPrune(){
 		d="${leakDir}/soak_20200101-0000${i}"; mkdir -p "${d}"; : > "${d}/soak.txt"; : > "${d}/heap-round-030.pprof"
 	done
 	: > "${leakDir}/soak_20200101-000010/notes.txt"
-	fGateSays 0 'WARNING: kept .*/soak_20200101-000010, which has more in it' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
+	fGateSays 0 'WARNING: Kept .*/soak_20200101-000010, which has more in it' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
 		&& [[ "$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'soak_*' | wc -l | tr -d ' ')" == 21 ]] \
 		&& [[ -f "${leakDir}/soak_20200101-000010/notes.txt" && ! -e "${leakDir}/soak_20200101-000011" && -d "${leakDir}/soak_20200101-000013" ]]
 }
@@ -1166,7 +1182,7 @@ fGateCodeQLPrune(){
 	fSafeRm_IfThere "${leakDir:?}"
 	for i in $(seq 10 31); do d="${leakDir}/codeql_20200101-0000${i}"; mkdir -p "${d}"; : > "${d}/linux.sarif"; : > "${d}/windows.sarif"; done
 	: > "${leakDir}/codeql_20200101-000010/notes.txt"
-	fGateSays 0 'WARNING: kept .*/codeql_20200101-000010, which has more in it' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
+	fGateSays 0 'WARNING: Kept .*/codeql_20200101-000010, which has more in it' -y --no-container --quick --leakcheck --no-sync --no-publish --no-dogfood \
 		&& [[ "$(find "${leakDir}" -mindepth 1 -maxdepth 1 -type d -name 'codeql_*' | wc -l | tr -d ' ')" == 21 ]] \
 		&& [[ -f "${leakDir}/codeql_20200101-000010/notes.txt" && ! -e "${leakDir}/codeql_20200101-000011" && -d "${leakDir}/codeql_20200101-000013" ]]
 }
@@ -1302,7 +1318,7 @@ fGateDemoSame(){ fGateDemoRun -y && [[ -n "$1" && "$(fGateDemoBuild)" == "$1" ]]
 ## Stage 6 run with $1: the generator ran, and $2 of its lines (1 or 0) have -q.
 fGateDemoQuiet(){ local gen=""; fGateDemoRun "$1" && gen="$(fGateDemoGen)" && [[ -n "${gen}" && "$(grep -cE -- ' -q( |$)' <<< "${gen}")" == "$2" ]] ;}
 ## Stage 6 with -y while the build fails: the run warns, and the generator never runs.
-fGateDemoBuildFails(){ fGateDemoRun -y && grep -qF 'WARNING: demo build failed' "${gateOut}" && [[ -z "$(fGateDemoGen)" ]] ;}
+fGateDemoBuildFails(){ fGateDemoRun -y && grep -qF 'WARNING: Demo build failed' "${gateOut}" && [[ -z "$(fGateDemoGen)" ]] ;}
 ## A render that differs from the committed gif, made where Pillow isn't at its recorded version,
 ## leaves the committed one alone and says why. At the recorded version it replaces it. Every
 ## render here is "GIF89a", and the committed one starts out as "old".
@@ -1313,7 +1329,7 @@ fGateDemoDrift(){
 	[[ -n "${want}" ]] || return 1
 	printf old > "${gateDir}/assets/demo.gif"
 	echo 0.0.1 > "${gateFail}/pillow"
-	fGateDemoRun -y && grep -qE "^\\[ WARNING: demo gif differs, but this box has Pillow 0\.0\.1 \(recorded ${want//./\\.}\), so the committed one stays" "${gateOut}" \
+	fGateDemoRun -y && grep -qE "^\\[ WARNING: Demo gif differs, but this box has Pillow 0\.0\.1 \(recorded ${want//./\\.}\), so the committed one stays" "${gateOut}" \
 		&& [[ "$(cat "${gateDir}/assets/demo.gif")" == old && ! -e "${gateDir}/assets/demo.gif.new" ]] || rc=1
 	echo "${want}" > "${gateFail}/pillow"
 	((rc)) || { fGateDemoRun -y && grep -qF 'OK: demo gif regenerated' "${gateOut}" && [[ "$(cat "${gateDir}/assets/demo.gif")" == GIF89a ]] ;} || rc=1
@@ -1388,7 +1404,7 @@ fGateStepsGate(){
 }
 ## The gate passes, and says nothing about lint tool versions.
 ## Go tools only: the fixture pins those, and the rest are whatever this box has.
-fGateNoDrift(){ fGateStatus 0 --no-container --gate && ! grep -qE 'tool versions differ.* (staticcheck|golangci-lint|govulncheck|goversioninfo) ' "${gateOut}" ;}
+fGateNoDrift(){ fGateStatus 0 --no-container --gate && ! grep -qE 'Tool versions differ.* (staticcheck|golangci-lint|govulncheck|goversioninfo) ' "${gateOut}" ;}
 ## One -y run with every stage skipped but those named in $1 (sync lint test fuzz parity dogfood
 ## demogif publish), the rest passed on. Its exit status goes to ${gateRc}, output in ${gateOut},
 ## and the calls log starts empty.
@@ -4960,6 +4976,7 @@ GHEOF
 	fAssert     "[dfjqe] go installer --version is dated by its newest History entry" \
 		fInstallerDated "${goInst}" bash "${goInst}" --version
 	fAssert     "[dfjqf] every PowerShell file outside legacy/ is plain ASCII"  fPsAllAscii
+	fAssert     "[dfr2g] pipeline and installer text starts with a capital after its label"  fLabelsCapitalized
 	fAssertOut  "[dbfk9] go installer refuses a bad --target"         "--target takes"            bash -c "bash '${goInst}' --target bogus"
 	fAssertOut  "[dbfka] go installer refuses a valueless --target"   "--target needs a value"    bash -c "bash '${goInst}' --target"
 	## --arch names the asset now rather than being accepted and ignored, so the two spellings
@@ -5349,7 +5366,7 @@ GHEOF
 	fAssertOut "[dfne6] go installer ranks a dot-suffixed pre-release by its own version while no full release has a binary"  'newest pre-release, v3\.1\.0\.rc1' \
 		fRlInstall dotpre v2.1.0 "${rl}/dotpre.json" -y
 	## An explicit tag asks neither the redirect nor the list, and is refused or installed as before.
-	fAssertOut "[ddf9f] go installer still refuses a --tag release with no binary for this platform"  'release v2\.1\.0 publishes no gitsby binary for' \
+	fAssertOut "[ddf9f] go installer still refuses a --tag release with no binary for this platform"  'Release v2\.1\.0 publishes no gitsby binary for' \
 		fRlInstall tag21 v3.0.0 "${rl}/full.json" --tag v2.1.0 -y
 	fAssert    "[ddf9g] and installs a --tag pre-release without looking anything up" \
 		bash -c "out=\$(env HOME='${rl}/h-tagb' PATH='${rl}/bin:${PATH}' FAKE_CALLS='${rl}/calls-tagb' FAKE_LATEST=v3.0.0 FAKE_LIST='${rl}/full.json' FAKE_SUMS_DIR='${rl}/sums' FAKE_ASSET='${ei}/asset' bash '${goInst}' --tag v3.0.0-beta.1 -y 2>&1); grep -q 'stand-in' <<< \"\${out}\" \
@@ -7647,7 +7664,7 @@ LGEOF
 		fAssert "[df1ms] and goes straight to the rebuild and the publish, with no pipeline, cross-build or tag" \
 			bash -c "grep -qF 'would: rebuild ' '${relOut}' && grep -qF 'would: gh release create v1.2.3 with ' '${relOut}' && ! grep -qE 'would: (run cicd|cross-build|branch rel-|gitsby release)' '${relOut}'"
 		fAssert "[df1mt] and finds the tag's dated changelog section for the release body" \
-			bash -c "grep -qF 'would: gh release create v1.2.3 with ' '${relOut}' && ! grep -qF 'no changelog section found' '${relOut}'"
+			bash -c "grep -qF 'would: gh release create v1.2.3 with ' '${relOut}' && ! grep -qF 'No changelog section found' '${relOut}'"
 		fRelRun --dry-run --publish v1.2.4
 		fAssert "[df1mv] release.bash --publish refuses a version with no tag" \
 			bash -c "[[ '${relRc}' != 0 ]] && grep -qF 'there is no tag v1.2.4 here' '${relOut}'"
@@ -7856,7 +7873,7 @@ LGEOF
 		## them made is named both ways round.
 		REL_PHASE1_TREE="${relRepo}" fRelRun -y
 		fAssert "[ddgkb] release.bash warns when what it publishes and the notes' downloads table disagree" \
-			bash -c "[[ '${relRc}' == 0 ]] && grep -qF \"WARNING: the release notes don't link gitsby-plan9-386, which is being published.\" '${relOut}' && grep -qF \"WARNING: the release notes link gitsby-freebsd-arm64, which isn't being published.\" '${relOut}'"
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF \"WARNING: The release notes don't link gitsby-plan9-386, which is being published.\" '${relOut}' && grep -qF \"WARNING: The release notes link gitsby-freebsd-arm64, which isn't being published.\" '${relOut}'"
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" tag -d v1.2.4 >/dev/null
 		## Phase 3 says which release the install line takes, by running the tag's install.bash
@@ -7876,19 +7893,19 @@ LGEOF
 		fReleaseList "v1.3.0-beta.1:true:${relGo}" "v1.2.3:false:${relOld}" > "${rel}/served/releases"
 		fRelRun -y v1.3.0-beta.1
 		fAssert "[ddf9t] release.bash says the install line takes a beta while no full release has a binary" \
-			bash -c "[[ '${relRc}' == 0 ]] && grep -qxF 'the install line takes v1.3.0-beta.1' '${relOut}' && ! grep -q 'WARNING: the install line' '${relOut}'"
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qxF 'the install line takes v1.3.0-beta.1' '${relOut}' && ! grep -q 'WARNING: The install line' '${relOut}'"
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" tag -d v1.3.0-beta.1 >/dev/null
 		fReleaseList "v1.3.0-beta.1:true:${relGo}" "v1.2.3:false:${relGo}" > "${rel}/served/releases"
 		fRelRun -y v1.3.0-beta.1
 		fAssert "[ddf9v] and that it stays on a full release that has one" \
-			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'the install line stays on v1.2.3, a full release with a binary' '${relOut}' && ! grep -q 'WARNING: the install line' '${relOut}'"
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'the install line stays on v1.2.3, a full release with a binary' '${relOut}' && ! grep -q 'WARNING: The install line' '${relOut}'"
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" tag -d v1.3.0-beta.1 >/dev/null
 		fReleaseList "v1.3.0-alpha.1:true:${relGo}" "v1.2.3:false:${relOld}" > "${rel}/served/releases"
 		fRelRun -y v1.3.0-beta.1
 		fAssert "[ddf9w] and warns when it takes an older pre-release instead" \
-			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'WARNING: the install line takes v1.3.0-alpha.1, neither v1.3.0-beta.1 nor a full release.' '${relOut}'"
+			bash -c "[[ '${relRc}' == 0 ]] && grep -qF 'WARNING: The install line takes v1.3.0-alpha.1, neither v1.3.0-beta.1 nor a full release.' '${relOut}'"
 		git -C "${relRepo}" checkout -q -- .
 		git -C "${relRepo}" tag -d v1.3.0-beta.1 >/dev/null
 		## What phase 2 commits and tags has to be what the pipeline tested. A file the pipeline
@@ -9029,11 +9046,11 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		mv "${gateDir}/settings.psd1.away" "${gateDir}/PSScriptAnalyzerSettings.psd1"
 		## This fixture's go answers 'version -m' with nothing, so every tool reads as unknown.
 		fAssert "[dd5fh] and warns when a lint tool's version is not the recorded one" \
-			fGateSays 0 'WARNING: tool versions differ from the recorded set: .*staticcheck unknown \(recorded v' --no-container --gate
+			fGateSays 0 'WARNING: Tool versions differ from the recorded set: .*staticcheck unknown \(recorded v' --no-container --gate
 		## The tools outside Go are compared too. strace stands in for them: nothing here runs it.
 		fGateStub "${gateDir}/bin/strace" strace "echo 'strace -- version 0.1'"
 		fAssert "[dd813] and when a tool outside Go is at another version" \
-			fGateSays 0 'WARNING: tool versions differ from the recorded set: .*strace 0\.1 \(recorded ' --no-container --gate
+			fGateSays 0 'WARNING: Tool versions differ from the recorded set: .*strace 0\.1 \(recorded ' --no-container --gate
 		rm -f -- "${gateDir:?}/bin/strace"
 		## Tied to the gate having passed: a run that did nothing at all adds nothing either.
 		fAssert "[dcman] and nothing the full run adds" \
@@ -9252,7 +9269,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dfjmf] and leaves out one that was already edited when the run started" \
 			bash -c "[[ '${gateRc}' == 0 ]] && grep -qxF 'paths=[]' '${gateCalls}' && grep -qF 'the run changed 0 tracked file(s)' '${gateOut}'"
 		fAssert "[dfkwr] and stage 6 leaves that gif as it is, rather than moving the new render over it" \
-			bash -c "[[ \"\$(cat '${gateDir}/assets/demo.gif')\" == edited && ! -e '${gateDir}/assets/demo.gif.new' ]] && grep -qF 'WARNING: demo gif differs, but assets/demo.gif was already edited when the run started, so it stays as it is' '${gateOut}'"
+			bash -c "[[ \"\$(cat '${gateDir}/assets/demo.gif')\" == edited && ! -e '${gateDir}/assets/demo.gif.new' ]] && grep -qF 'WARNING: Demo gif differs, but assets/demo.gif was already edited when the run started, so it stays as it is' '${gateOut}'"
 		rm -f -- "${gateFail:?}/pillow"
 		## The real publisher, told to commit one of two edited files. Its gitsby runs git, and its
 		## rar is never called with the backup off but has to be there.
@@ -9446,7 +9463,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fAssert "[dd5fv] dogfood falls back to ~/.local/bin for the target this box runs, and only that one" \
 			bash -c "[[ '${gateRc}' == 0 && -f '${gateDir}/home/.local/bin/gitsby' && ! -e '${gateDir}/home/.local/bin/gitsby.exe' ]]"
 		fAssert "[dd5fw] and says the other targets have nowhere to go" \
-			bash -c "grep -qF 'WARNING: no windows/amd64 dogfood dest exists/writable' '${gateOut}' && grep -qF 'WARNING: no darwin/universal dogfood dest exists/writable' '${gateOut}'"
+			bash -c "grep -qF 'WARNING: No windows/amd64 dogfood dest exists/writable' '${gateOut}' && grep -qF 'WARNING: No darwin/universal dogfood dest exists/writable' '${gateOut}'"
 		gateDest="$(cd "${gateDir}" && HOME="${gateDir}/home" bash -c 'source cicd/config.bash && echo "${DOGFOOD_DESTS_LINUX_AMD64[0]}"')"
 		mkdir -p "${gateDest}"
 		rm -f -- "${gateDir:?}/home/.local/bin/gitsby"
@@ -9456,7 +9473,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		rm -f -- "${gateDest:?}/gitsby"
 		fGateOnly dogfood --quick
 		fAssert "[de4bv] --quick dogfoods every target, not only this box's" \
-			bash -c "[[ '${gateRc}' == 0 && -f '${gateDest}/gitsby' ]] && grep -qF 'WARNING: no windows/amd64 dogfood dest exists/writable' '${gateOut}' && grep -qF 'WARNING: no darwin/universal dogfood dest exists/writable' '${gateOut}'"
+			bash -c "[[ '${gateRc}' == 0 && -f '${gateDest}/gitsby' ]] && grep -qF 'WARNING: No windows/amd64 dogfood dest exists/writable' '${gateOut}' && grep -qF 'WARNING: No darwin/universal dogfood dest exists/writable' '${gateOut}'"
 		## Stage 7 hands its harness a universal Mac build joined the way dogfood joins one, and a
 		## build for each Unix box's target.
 		fRemoteBoxes "${gateDir}/cicd/config.bash"
@@ -9576,7 +9593,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 			bash -c "[[ '${gateRc}' == 1 && \"\$(git -C '${gateDir}' rev-parse HEAD)\" == '${syncHead}' && \"\$(git -C '${gateDir}' show :notes.txt | tail -n 1)\" == mine && -z \"\$(git -C '${gateDir}' diff --name-only)\" && \"\$(git -C '${gateDir}' stash list --format=%s)\" == 'On main: older' && -z \"\$(git -C '${gateDir}' ls-files -u)\" ]] && grep -qF 'uncommitted edits clash with origin in notes.txt, so the merge was backed out' '${gateOut}'"
 		git -C "${gateDir}" remote set-url origin "${work}/gate-pipe-nowhere.git"
 		fGateOnly sync
-		fAssert "[dd5g4] an origin it can't reach is a warning, not a stop"  fGateRanSaying 0 "WARNING: can't reach origin"
+		fAssert "[dd5g4] an origin it can't reach is a warning, not a stop"  fGateRanSaying 0 "WARNING: Can't reach origin"
 		fGateOnly ''
 		fAssert "[dd5g5] --no-sync skips it, and says so"  fGateRanSaying 0 '^Remote sync \.+: \(skipped --no-sync\)$'
 		gateDir="${work}/gate"
@@ -9872,7 +9889,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fRemoteRun --mac-bin "${rtMacBin}"
 		mv "${rtLock}.away" "${rtLock}"
 		fAssert "[ddg88] with no host lock script every box is skipped, none is reached, and the run passes" \
-			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: every box, since there is no host lock script' '${rtOut}' && ! grep -q '^ssh ' '${rtLog}'"
+			bash -c "[[ '${rtRc}' == 0 ]] && grep -qF 'SKIP: Every box, since there is no host lock script' '${rtOut}' && ! grep -q '^ssh ' '${rtLog}'"
 		for rtHost in b26 b29w vm925wa vm925w; do : > "${rtFail}/down-${rtHost}"; done
 		fRemoteRun --mac-bin "${rtMacBin}"
 		rm -f -- "${rtFail:?}"/down-*
@@ -10013,7 +10030,7 @@ sys.exit(0 if 0 < ms < 120000 else 1)' "${root}/assets/demo.gif"
 		fRemoteRun
 		rm -f -- "${rtFail:?}/go-build"
 		fAssert "[ddg8q] Go tests that do not build for the Mac fail the run before any box is taken" \
-			bash -c "[[ '${rtRc}' == 1 ]] && grep -qF 'FAIL: the Go tests do not build for darwin/amd64' '${rtOut}' && ! grep -q '^lock ' '${rtLog}'"
+			bash -c "[[ '${rtRc}' == 1 ]] && grep -qF 'FAIL: The Go tests do not build for darwin/amd64' '${rtOut}' && ! grep -q '^lock ' '${rtLog}'"
 		## The Unix boxes, beside the Mac and Windows ones.
 		fRemoteConfig
 		local rtBsd="${work}/remote-unix-bsdtest@vmFreeBSD/gitsby-remote-tests" rtArm="${work}/remote-unix-tester@vmDebARM64/gitsby-remote-tests"
@@ -11527,3 +11544,4 @@ fEcho_Clean "passed: ${pass}, failed: ${fail}, skipped: ${skips}"
 ##		- 20261123 JC: pr ok names the pull request's branch and its base above the plan, a fork's too, [dfq5b] [dfq5c].
 ##		- 20261124 JC: Every stage 7 Go test run passes config.bash's time limit, under Wine too, and a limit that isn't whole seconds is refused, [dfq5x] [dfq5y] [dfq5z].
 ##		- 20261124 JC: The run under Wine has its own, longer limit, [dfq5y] [dfq5z].
+##		- 20261124 JC: The text after a WARNING, SKIP, FAIL, Error or Note label in the pipeline scripts and installers starts with a capital, [dfr2g].

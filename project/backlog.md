@@ -33,10 +33,24 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 
 ## Issues
 
+- The pipeline's FAILED lines and the utility scripts' errors start in lower case after their label
+	- ID: 2026112410304905
+	- Type: Enhancement
+	- Status: Queued
+	- Target version: v3.0.0-rc.1
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261124-103049
+	- Opened by:
+	- Related IDs: 2026112410210775
+	- Requirements [Feature]: About 75 fDie messages in cicd.bash and release.bash print as 'FAILED: ' then lower case, such as "FAILED: can't make ..." and "FAILED: working tree isn't clean." The utility scripts' errors do the same after their own name, such as 'gen-winres: no logo at ...' and 'keep-build: nothing kept yet ...'. A tool's name, a command or a path after the label stays as it is, such as 'FAILED: go test failures' or 'FAILED: shellcheck not installed'.
+	- Estimated effort: Low
+	- Notes: test.bash asserts many of these messages. [dfr2g] skips them, since the label is added inside fDie; a check needs to read fDie's callers.
+	- Origin: Found while working 2026112410210775, whose text named only the WARNING, Error and Note lines.
+
 - The pipeline scripts and installers start a sentence in lower case after a label
 	- ID: 2026112410210775
 	- Type: Enhancement
-	- Status: Queued
+	- Status: Closed
 	- Target version: v3.0.0-rc.1
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261124-102107
@@ -46,6 +60,20 @@ This is the product backlog, until bugs, features, and enhancements move to GitH
 	- Estimated effort: Low
 	- Notes: test.bash asserts some of these lines, such as [dd5g4] and the release checks. An installer change bumps installerVersion in both installers, since [dfjqe] compares them.
 	- Origin: Found while sweeping 2026112017135139, whose count covered src-go and the docs only.
+	- Closed reason: Done
+	- Progress log: 2026-11-24: 28 lines start their text with a capital after the label: 13 WARNING lines in cicd.bash, 8 in release.bash, 5 SKIP and FAIL lines in remote-tests.bash, install.bash's Error line and install.ps1's Note line. Both installers' installerVersion is 2026-11-24, with a History entry.
+	- Branch: nov24-2026112410210775
+	- Commit: b3d6aa0
+	- Test case: test.bash [dfr2g] reads every WARNING, NOTE, Note, Error, SKIP and FAIL line in the pipeline scripts and installers. test.bash asserts given new values, below.
+	- Verified: [dfr2g] fails on the scripts before the change, naming all 28 lines, and passes after. The quick run passed with every area: test.bash 2446/0, fuzz 310/0, parity 32/0.
+	- Swept: every tracked .bash and .ps1 under cicd/ and both installers, for WARNING, NOTE, Note, Error, SKIP, FAIL and OK labels. The fDie lines, which get 'FAILED: ' inside fDie, and the utility scripts' errors are filed as 2026112410304905.
+	- Acceptance signoff: Self-closed: mechanical, and its new check fails before the change and passes after.
+	- Closed: 20261124-103200
+	- Decisions:
+		- A tool's name after the label stays lower case, as in 2026112017135139. So 'WARNING: markdownlint skipped', and the same lines for ruff, staticcheck, golangci-lint, govulncheck and pip-audit, are left as they are, though the requirements quote the first. 'WARNING: docker isn't usable' stays too, and 'WARNING: releases/latest resolves' is a path.
+		- 'OK:' lines are status words, not sentences, and stay, such as 'OK: demo gif unchanged'.
+		- The fDie lines and the utility scripts' errors are their own item, 2026112410304905, since the label is added inside fDie and the requirements didn't name them.
+		- 2026-11-24: test asserts given new values for this change, lower case to capital after the label: test.bash [dd5g4] 'Can't reach origin', the demo gif checks 'Demo gif differs' and 'Demo build failed', the release checks 'The release notes', 'The install line' and 'No changelog section found', the soak and CodeQL checks 'Kept', the dogfood checks 'No windows/amd64' and 'No darwin/universal', the tool drift checks 'Tool versions differ', [ddf9f] 'Release v2.1.0', and remote-tests' 'Every box' and 'The Go tests'.
 
 - Stage 7's Go test runs on other boxes have no time limit, so one hung test holds the stage
 	- ID: 2026112021514129
